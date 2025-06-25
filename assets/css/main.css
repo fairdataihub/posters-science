@@ -1,0 +1,169 @@
+@import "@nuxt/ui";
+@import "tailwindcss";
+@plugin '@tailwindcss/typography';
+
+:root {
+  --ui-radius: var(--radius-lg);
+  --ui-container: var(--container-7xl);
+  --ui-primary: var(--ui-color-primary-500);
+}
+
+.dark {
+  --ui-primary: var(--ui-color-primary-700);
+}
+
+@theme {
+  --font-sans: "Inter", sans-serif;
+
+  --auth-color-primary-400: 56 189 248;
+  --auth-color-primary-500: 14 165 233;
+
+  --auth-color-gray-200: 229 231 235;
+  --auth-color-gray-900: 17 24 39;
+  --auth-color-gray-950: 3 7 18;
+
+  --color-primary-50: var(--ui-color-primary-50);
+  --color-primary-100: var(--ui-color-primary-100);
+  --color-primary-200: var(--ui-color-primary-200);
+  --color-primary-300: var(--ui-color-primary-300);
+  --color-primary-400: var(--ui-color-primary-400);
+  --color-primary-500: var(--ui-color-primary-500);
+  --color-primary-600: var(--ui-color-primary-600);
+  --color-primary-700: var(--ui-color-primary-700);
+  --color-primary-800: var(--ui-color-primary-800);
+  --color-primary-900: var(--ui-color-primary-900);
+  --color-primary-950: var(--ui-color-primary-950);
+}
+
+body {
+  @apply text-base md:text-base dark:text-white;
+}
+
+pre {
+  @apply text-xs whitespace-pre-wrap;
+}
+
+.bg-wrapper {
+  background-image: url("/public/images/background.jpg");
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  min-height: 90vh;
+  border-radius: 20px; /* Rounded corners */
+  margin: 0 15px; /* Space on left and right */
+  overflow: hidden;
+}
+
+.progress-value {
+  animation: load 3s normal forwards;
+  box-shadow: 0 10px 40px -10px #fff;
+  border-radius: 100px;
+  background: #34d399; /* Green progress */
+  height: 30px;
+  width: 0;
+}
+
+@keyframes load {
+  0% {
+    width: 0;
+  }
+  100% {
+    width: 60%;
+  }
+}
+
+.custom-button {
+  position: relative;
+  background-color: #ccffff;
+  border: 2px solid #ccffff;
+  color: #333333;
+  padding: 10px 20px;
+  text-decoration: none;
+  display: inline-block;
+}
+
+.custom-button::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 0;
+  height: 2px;
+  background-color: #333333;
+  transition: width 0.3s ease; /* Transition effect for the underline */
+}
+
+.custom-button:hover::after {
+  width: 100%; /* Underline expands from left to right */
+}
+
+/
+
+/* Contact Section */
+.contact-details {
+  margin-top: 20px;
+}
+
+.contact-details li {
+  list-style: none;
+  margin: 10px 0;
+}
+
+.contact-details li a {
+  text-decoration: none;
+  color: #19302e;
+  font-weight: normal;
+}
+
+.contact-details .fa {
+  margin-right: 10px;
+}
+
+/* Social Media */
+.sociallogos {
+  padding: 20px 0;
+}
+
+.sociallogos .logobox a {
+  padding: 0 10px;
+  text-decoration: none;
+  color: #19302e;
+  font-size: 20px;
+}
+
+/* Responsive Design */
+@media only screen and (max-width: 749px) {
+  .main-footer {
+    padding: 20px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+  .info {
+    padding: 20px 0;
+  }
+}
+
+@media (max-width: 480px) {
+  .main-footer {
+    grid-template-columns: 1fr;
+  }
+  .sociallogos {
+    padding: 20px 0;
+  }
+  .com {
+    padding: 20px 0;
+  }
+}
+
+.font-outline-1,
+.font-outline {
+  -webkit-text-fill-color: transparent;
+  -webkit-text-stroke-width: 1px;
+}
+
+.font-outline-2 {
+  -webkit-text-stroke: 2px black;
+}
+.font-outline-4 {
+  -webkit-text-stroke: 4px black;
+}
