@@ -8,6 +8,6 @@
       <slot />
     </main>
 
-    <AppPublicFooter />
+    <!-- <AppPublicFooter /> -->
   </div>
 </template>

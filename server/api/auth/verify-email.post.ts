@@ -5,6 +5,11 @@ const verifySchema = z.object({
 });
 
 export default defineEventHandler(async (event) => {
+  throw createError({
+    statusCode: 404,
+    statusMessage: "Not enabled",
+  });
+
   const body = await readValidatedBody(event, (b) => verifySchema.safeParse(b));
 
   if (!body.success) {
