@@ -5,6 +5,22 @@
 
 @custom-variant dark (&:is(.dark *));
 
+@theme inline {
+  --animate-aurora: aurora 100s linear infinite;
+  @keyframes aurora {
+    from {
+      background-position:
+        50% 50%,
+        50% 50%;
+    }
+    to {
+      background-position:
+        350% 50%,
+        350% 50%;
+    }
+  }
+}
+
 :root {
   /* Nuxt UI */
   --ui-radius: var(--radius-lg);

@@ -8,9 +8,12 @@ const logout = async () => {
 </script>
 
 <template>
-  <header class="border-b border-gray-200 dark:border-gray-800">
+  <!-- sticky so it floats over the aurora background -->
+  <header
+    class="sticky top-0 w-full border-b border-gray-300 bg-transparent backdrop-blur-3xl"
+  >
     <div
-      class="mx-auto flex max-w-screen-xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8"
+      class="mx-auto flex max-w-screen-2xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8"
     >
       <NuxtLink to="/" class="flex text-2xl font-bold">
         Posters.science

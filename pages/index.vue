@@ -15,49 +15,68 @@ const subscribe = async () => {
 </script>
 
 <template>
-  <div>
-    <section class="bg-white">
-      <div
-        class="mx-auto grid max-w-screen-xl px-4 py-8 lg:grid-cols-12 lg:gap-8 lg:py-16 xl:gap-0"
-      >
-        <div class="mr-auto place-self-center lg:col-span-7">
+  <div class="relative flex min-h-screen w-full items-center overflow-hidden">
+    <section
+      class="relative z-10 mx-auto grid w-full max-w-screen-2xl grid-cols-1 gap-12 px-4 py-8 lg:grid-cols-[2fr_1fr] lg:py-16"
+    >
+      <div class="space-y-6">
+        <UiBlurReveal :delay="0.5" :duration="1">
           <h1
-            class="mb-4 max-w-2xl text-4xl leading-none font-semibold tracking-tight md:text-5xl xl:text-6xl"
+            class="text-3xl leading-snug font-extrabold md:text-4xl lg:text-5xl"
           >
-            Posters.science
+            A brand-new platform to
           </h1>
+        </UiBlurReveal>
 
-          <p class="mb-6 max-w-2xl text-2xl font-semibold text-gray-500">
-            A brand new platform to create, manage and distribute your posters.
-            FAIR for you and everyone else.
-          </p>
+        <UiBlurReveal :delay="0.5" :duration="1">
+          <ul class="ml-6 space-y-[1rem] text-3xl md:text-4xl lg:text-5xl">
+            <li>- create</li>
+            <li>- manage</li>
+            <li>- distribute</li>
+          </ul>
+        </UiBlurReveal>
 
-          <p class="mb-3 max-w-2xl font-normal text-gray-500">
+        <UiBlurReveal :delay="0.5" :duration="1">
+          <h2 class="text-3xl font-extrabold md:text-4xl lg:text-5xl">
+            your posters.<br />FAIR for you and everyone else.
+          </h2>
+        </UiBlurReveal>
+
+        <UiBlurReveal :delay="1" :duration="1">
+          <p class="max-w-prose text-lg text-gray-600 dark:text-slate-400">
             Do you want to be the first to know when we launch? Enter your email
             below and we'll send you a notification when we're ready.
           </p>
+        </UiBlurReveal>
 
-          <div class="flex items-center gap-2">
+        <div class="flex items-center gap-3">
+          <UiBlurReveal :delay="1" :duration="1" class="flex-1">
             <UInput
               v-model="email"
               trailing-icon="i-lucide-at-sign"
               placeholder="Enter your email"
               size="md"
+              class="w-full"
             />
-
+          </UiBlurReveal>
+          <UiBlurReveal :delay="1" :duration="1">
             <UButton
               label="Subscribe"
               size="md"
               color="primary"
               icon="i-lucide-at-sign"
             />
-          </div>
-        </div>
-
-        <div class="hidden lg:col-span-5 lg:mt-0 lg:flex">
-          <img src="/assets/images/hero.png" alt="mockup" />
+          </UiBlurReveal>
         </div>
       </div>
+
+      <UiBlurReveal
+        class="hidden lg:flex lg:items-center lg:justify-end"
+        :delay="0.5"
+        :duration="1"
+      >
+        <img src="/assets/images/hero.png" alt="mockup" />
+      </UiBlurReveal>
     </section>
   </div>
 </template>
