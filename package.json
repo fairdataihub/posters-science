@@ -31,13 +31,15 @@
     "motion-v": "^1.4.0",
     "nodemailer": "^6.10.0",
     "sanitize-html": "^2.14.0",
-    "tailwindcss": "^4.1.11"
+    "tailwindcss": "^4.1.11",
+    "vue3-lottie": "^3.3.1"
   },
   "devDependencies": {
     "@antfu/eslint-config": "^3.14.0",
     "@faker-js/faker": "^9.4.0",
     "@nuxt/devtools": "2.5.0",
     "@nuxt/eslint": "1.4.1",
+    "@nuxt/icon": "1.15.0",
     "@nuxt/ui": "3.2.0",
     "@nuxtjs/eslint-config-typescript": "^12.1.0",
     "@prisma/client": "6.10.1",
