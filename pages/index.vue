@@ -1,6 +1,6 @@
 <script setup lang="ts">
 useSeoMeta({
-  title: "Home",
+  title: "Coming Live Fall 2026",
 });
 
 definePageMeta({
@@ -24,7 +24,7 @@ const subscribe = () => {
           <h1
             class="text-3xl leading-snug font-extrabold md:text-4xl lg:text-5xl"
           >
-            Posters.science: Share Posters<br />Make Discoveries
+            Posters.science: Share Posters,<br />Make Discoveries
           </h1>
         </UiBlurReveal>
 
@@ -91,7 +91,9 @@ const subscribe = () => {
 
             <p class="max-w-prose text-lg text-gray-600 dark:text-slate-400">
               Enter your email below and we will send you a notification when
-              posters.science goes live! You can also track progress from our
+              posters.science goes live! You can also track progress, provide
+              suggestions, or even contribute to this open source project
+              through our
               <NuxtLink
                 to="https://github.com/fairdataihub/posters-science"
                 target="_blank"
