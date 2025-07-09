@@ -82,8 +82,8 @@ aliases:
 # Use a different ssh user than root
 # Uncomment and configure if you need to use a non-root user for SSH access
 #
-# ssh:
-  # user: dev
+ssh:
+  user: dev
 
 # Use a persistent storage volume.
 # Uncomment to add persistent storage that survives container restarts
