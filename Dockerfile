@@ -25,9 +25,10 @@ RUN yarn run build
 FROM node:20-alpine
 
 LABEL maintainer="FAIR Data Innovations Hub <contact@fairdataihub.org>" \
-  description="Posters.science is your new home for scientific posters."
+  description="A platform for disseminating research posters."
 
-RUN apk add --no-cache openssl
+# Busybox is used netcat for waiting for Postgres to be ready
+RUN apk add --no-cache openssl busybox-extras
 
 WORKDIR /app
 
@@ -36,13 +37,14 @@ WORKDIR /app
 COPY --from=builder /app/.output ./
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
+# Copy the Prisma schema & migrations, so `prisma migrate deploy` can see them
+COPY --from=builder /app/prisma ./prisma
 
-# Create startup script that runs migrations before starting the app
-RUN echo '#!/bin/sh' > /app/start.sh && \
-  # echo 'npm run prisma:migrate:deploy' >> /app/start.sh && \
-  echo 'exec node /app/server/index.mjs' >> /app/start.sh && \
-  chmod +x /app/start.sh
+# Copy our startup script and make it executable
+COPY scripts/start.sh /app/scripts/start.sh
+RUN chmod +x /app/scripts/start.sh
 
 EXPOSE 3000
 
-CMD ["/bin/sh", "/app/start.sh"]
+# Run startup script that runs migrations before starting the app
+CMD ["/app/scripts/start.sh"]

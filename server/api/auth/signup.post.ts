@@ -12,6 +12,11 @@ const signupSchema = z.object({
 });
 
 export default defineEventHandler(async (event) => {
+  throw createError({
+    statusCode: 404,
+    statusMessage: "Not enabled",
+  });
+
   const session = await getUserSession(event);
 
   if ("user" in session) {

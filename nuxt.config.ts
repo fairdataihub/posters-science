@@ -1,9 +1,15 @@
+import tailwindcss from "@tailwindcss/vite";
+
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
   compatibilityDate: "2025-01-16",
   css: ["~/assets/css/main.css"],
   devtools: { enabled: true },
-  modules: ["@nuxt/ui", "nuxt-auth-utils", "dayjs-nuxt"],
+  icon: {
+    cssLayer: "base",
+    mode: "css",
+  },
+  modules: ["@nuxt/ui", "nuxt-auth-utils", "dayjs-nuxt", "@nuxt/icon"],
   runtimeConfig: {
     emailVerificationDomain: process.env.EMAIL_VERIFICATION_DOMAIN || "",
     mailFrom: process.env.MAIL_FROM || "noreply@example.com",
@@ -16,5 +22,8 @@ export default defineNuxtConfig({
         ? process.env.ENABLE_EMAIL_VERIFICATION === "true"
         : false,
     },
+  },
+  vite: {
+    plugins: [tailwindcss()],
   },
 });

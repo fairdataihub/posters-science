@@ -34,3 +34,11 @@ model User {
 
     @@index([emailAddress])
 }
+
+model UserInterest {
+    id String @id @default(cuid())
+
+    emailAddress String
+
+    created DateTime @default(now())
+}
