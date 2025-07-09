@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { z } from "zod";
+
 useSeoMeta({
   title: "Coming Live Fall 2026",
 });
@@ -7,10 +9,55 @@ definePageMeta({
   layout: "public",
 });
 
-const email = ref("");
+const toast = useToast();
 
-const subscribe = () => {
-  console.log(email.value);
+const email = ref("");
+const loading = ref(false);
+
+// Email validation schema
+const emailSchema = z.string().email("Please enter a valid email address");
+
+const subscribe = async () => {
+  loading.value = true;
+
+  // Validate email before making API call
+  const emailValidation = emailSchema.safeParse(email.value);
+
+  if (!emailValidation.success) {
+    toast.add({
+      title: "Invalid Email",
+      color: "error",
+      description: emailValidation.error.errors[0].message,
+    });
+    loading.value = false;
+
+    return;
+  }
+
+  await $fetch("/api/register", {
+    body: {
+      emailAddress: email.value,
+    },
+    method: "POST",
+  })
+    .then(() => {
+      toast.add({
+        title: "Thank you for subscribing!",
+        color: "success",
+        description: "You will be notified when posters.science goes live!",
+      });
+      email.value = ""; // Clear the input after successful subscription
+    })
+    .catch((error) => {
+      toast.add({
+        title: "Error",
+        color: "error",
+        description: error.message,
+      });
+    })
+    .finally(() => {
+      loading.value = false;
+    });
 };
 </script>
 
@@ -21,10 +68,11 @@ const subscribe = () => {
     >
       <div class="space-y-6">
         <UiBlurReveal :delay="0.5" :duration="0.2">
-          <h1
-            class="text-3xl leading-snug font-extrabold md:text-4xl lg:text-5xl"
-          >
-            Posters.science: Share Posters,<br />Make Discoveries
+          <h1 class="text-5xl font-extrabold">
+            Posters.science
+            <br />
+
+            <span class="text-3xl"> Share Posters, Make Discoveries </span>
           </h1>
         </UiBlurReveal>
 
@@ -111,24 +159,29 @@ const subscribe = () => {
               v-model="email"
               trailing-icon="i-lucide-at-sign"
               placeholder="Enter your email"
-              size="md"
+              type="email"
+              size="xl"
               class="w-full"
+              :disabled="loading"
             />
           </UiBlurReveal>
 
           <UiBlurReveal :delay="0.5" :duration="1">
             <UButton
               label="Subscribe"
-              size="md"
+              size="xl"
               color="primary"
               icon="i-lucide-at-sign"
+              :loading="loading"
+              :disabled="loading || !email"
+              @click="subscribe"
             />
           </UiBlurReveal>
         </div>
 
         <div>
           <UiBlurReveal :delay="1" :duration="1" class="flex-1">
-            <p class="text-md max-w-prose text-gray-600 dark:text-slate-400">
+            <p class="text-md text-gray-600 dark:text-slate-400">
               The development of posters.science is supported by a grant from
               <NuxtLink
                 to="https://www.navigation.org/"
@@ -142,21 +195,15 @@ const subscribe = () => {
         </div>
       </div>
 
-      <UiBlurReveal
-        class="hidden lg:flex lg:items-center lg:justify-end"
-        :delay="1"
-        :duration="1"
-      >
-        <ClientOnly>
-          <Vue3Lottie
-            animation-link="/assets/lotties/construction.json"
-            :autoplay="false"
-            :height="1000"
-            :width="700"
-            :no-margin="true"
-          />
-        </ClientOnly>
-      </UiBlurReveal>
+      <ClientOnly>
+        <Vue3Lottie
+          animation-link="/assets/lotties/construction.json"
+          :autoplay="false"
+          :height="1000"
+          :width="700"
+          :no-margin="true"
+        />
+      </ClientOnly>
     </section>
   </div>
 </template>

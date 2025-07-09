@@ -10,17 +10,30 @@ export default defineEventHandler(async (event) => {
   );
 
   if (!body.success) {
+    console.log(body.error);
+
     throw createError({
       statusCode: 400,
       statusMessage: "Missing registration information",
     });
   }
 
-  const userInterest = await prisma.userInterest.create({
-    data: {
-      emailAddress: body.data.emailAddress,
+  const emailAddress = body.data.emailAddress.toLowerCase().trim();
+
+  // Check if email already exists
+  const existingUser = await prisma.userInterest.findFirst({
+    where: {
+      emailAddress,
     },
   });
 
-  return userInterest;
+  if (!existingUser) {
+    await prisma.userInterest.create({
+      data: {
+        emailAddress,
+      },
+    });
+  }
+
+  return { message: "User interest registered" };
 });
