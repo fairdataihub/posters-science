@@ -1,9 +1,9 @@
 <script setup lang="ts"></script>
 
 <template>
-  <footer class="border-t border-gray-200 pt-6 dark:border-gray-800">
+  <footer class="z-10 border-t border-gray-200 pt-3 dark:border-gray-800">
     <div
-      class="mx-auto flex max-w-screen-2xl items-center justify-between px-4 pb-4 sm:px-6 lg:px-8"
+      class="mx-auto flex max-w-screen-2xl items-center justify-between px-4 pb-1"
     >
       <!-- <p class="text-sm text-gray-500 dark:text-gray-400">
         Copyright © {{ new Date().getFullYear() }}. All rights reserved.

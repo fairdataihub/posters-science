@@ -62,19 +62,41 @@ const subscribe = async () => {
 </script>
 
 <template>
-  <div class="relative flex min-h-screen w-full items-center overflow-hidden">
+  <div class="relative flex w-full flex-1 overflow-auto">
     <section
-      class="relative z-10 mx-auto grid w-full max-w-screen-2xl grid-cols-1 gap-12 px-4 py-8 lg:grid-cols-[2fr_1fr] lg:py-16"
+      class="relative z-10 mx-auto flex w-full max-w-screen-2xl gap-12 px-6 py-8 lg:py-16"
     >
-      <div class="space-y-6">
-        <UiBlurReveal :delay="0.5" :duration="0.2">
+      <div class="flex flex-col gap-12">
+        <div>
           <h1 class="text-5xl font-extrabold">
             Posters.science
             <br />
 
             <span class="text-3xl"> Share Posters, Make Discoveries </span>
           </h1>
-        </UiBlurReveal>
+
+          <div class="flex items-center gap-3 pt-5">
+            <UInput
+              v-model="email"
+              trailing-icon="i-lucide-at-sign"
+              placeholder="Enter your email"
+              type="email"
+              size="xl"
+              class="w-full"
+              :disabled="loading"
+            />
+
+            <UButton
+              label="Subscribe"
+              size="xl"
+              color="primary"
+              icon="i-lucide-at-sign"
+              :loading="loading"
+              :disabled="loading || !email"
+              @click="subscribe"
+            />
+          </div>
+        </div>
 
         <UiBlurReveal class="space-y-6" :delay="0.2" :duration="0.5">
           <div>
@@ -153,32 +175,6 @@ const subscribe = async () => {
           </div>
         </UiBlurReveal>
 
-        <div class="flex items-center gap-3">
-          <UiBlurReveal :delay="1" :duration="1" class="flex-1">
-            <UInput
-              v-model="email"
-              trailing-icon="i-lucide-at-sign"
-              placeholder="Enter your email"
-              type="email"
-              size="xl"
-              class="w-full"
-              :disabled="loading"
-            />
-          </UiBlurReveal>
-
-          <UiBlurReveal :delay="0.5" :duration="1">
-            <UButton
-              label="Subscribe"
-              size="xl"
-              color="primary"
-              icon="i-lucide-at-sign"
-              :loading="loading"
-              :disabled="loading || !email"
-              @click="subscribe"
-            />
-          </UiBlurReveal>
-        </div>
-
         <div>
           <UiBlurReveal :delay="1" :duration="1" class="flex-1">
             <p class="text-md text-gray-600 dark:text-slate-400">
@@ -195,12 +191,12 @@ const subscribe = async () => {
         </div>
       </div>
 
-      <ClientOnly>
+      <ClientOnly class="hidden lg:block">
         <Vue3Lottie
           animation-link="/assets/lotties/construction.json"
           :autoplay="false"
-          :height="1000"
-          :width="700"
+          :height="800"
+          :width="600"
           :no-margin="true"
         />
       </ClientOnly>
