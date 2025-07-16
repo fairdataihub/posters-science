@@ -74,28 +74,6 @@ const subscribe = async () => {
 
             <span class="text-3xl"> Share Posters, Make Discoveries </span>
           </h1>
-
-          <div class="flex items-center gap-3 pt-5">
-            <UInput
-              v-model="email"
-              trailing-icon="i-lucide-at-sign"
-              placeholder="Enter your email"
-              type="email"
-              size="xl"
-              class="w-full"
-              :disabled="loading"
-            />
-
-            <UButton
-              label="Subscribe"
-              size="xl"
-              color="primary"
-              icon="i-lucide-at-sign"
-              :loading="loading"
-              :disabled="loading || !email"
-              @click="subscribe"
-            />
-          </div>
         </div>
 
         <UiBlurReveal class="space-y-6" :delay="0.2" :duration="0.5">
@@ -169,11 +147,33 @@ const subscribe = async () => {
                 target="_blank"
                 class="text-blue-600 hover:underline dark:text-blue-400"
               >
-                GitHub repository
-              </NuxtLink>
+                GitHub repository </NuxtLink
+              >.
             </p>
           </div>
         </UiBlurReveal>
+
+        <div class="flex items-center gap-3">
+          <UInput
+            v-model="email"
+            trailing-icon="i-lucide-at-sign"
+            placeholder="Enter your email"
+            type="email"
+            size="xl"
+            class="w-full"
+            :disabled="loading"
+          />
+
+          <UButton
+            label="Subscribe"
+            size="xl"
+            color="primary"
+            icon="i-lucide-at-sign"
+            :loading="loading"
+            :disabled="loading || !email"
+            @click="subscribe"
+          />
+        </div>
 
         <div>
           <UiBlurReveal :delay="1" :duration="1" class="flex-1">
