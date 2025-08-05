@@ -2,7 +2,7 @@
 import { z } from "zod";
 
 useSeoMeta({
-  title: "Coming Live Fall 2026",
+  title: "Coming Summer 2026",
 });
 
 definePageMeta({
@@ -134,7 +134,7 @@ const subscribe = async () => {
                 size="26"
               />
 
-              <span>Fall 2026</span>
+              <span>Summer 2026</span>
             </h2>
 
             <p class="max-w-prose text-lg text-gray-600 dark:text-slate-400">
