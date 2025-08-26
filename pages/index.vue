@@ -186,6 +186,16 @@ const subscribe = async () => {
               >
                 The Navigation Fund
               </NuxtLink>
+
+              (Additional details about the grant can be found
+              <NuxtLink
+                rel="noopener noreferrer"
+                class="text-blue-600 hover:underline dark:text-blue-400"
+                to="https://commons.datacite.org/doi.org/10.71707/rk36-9x79"
+                target="_blank"
+              >
+                here</NuxtLink
+              >.)
             </p>
           </UiBlurReveal>
         </div>
