@@ -194,8 +194,8 @@ const subscribe = async () => {
                 to="https://commons.datacite.org/doi.org/10.71707/rk36-9x79"
                 target="_blank"
               >
-                here</NuxtLink
-              >.)
+                DataCite Commons grant record</NuxtLink
+              >).
             </p>
           </UiBlurReveal>
         </div>
