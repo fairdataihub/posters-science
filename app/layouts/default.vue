@@ -93,7 +93,7 @@ const footerItems: NavigationMenuItem[] = [
         </p>
       </template>
 
-      <UNavigationMenu :items="footerItems" variant="link" />
+      <UNavigationMenu :items="footerItems" variant="link" color="primary" />
 
       <template #right>
         <UColorModeButton />

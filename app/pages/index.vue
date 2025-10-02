@@ -76,12 +76,12 @@ const subscribe = async () => {
         <UiBlurReveal class="space-y-6" :delay="0.2" :duration="0.5">
           <div>
             <h2 class="flex items-center gap-2 font-bold">
-              <Icon name="fxemoji:lightbulb" style="color: black" size="26" />
+              <Icon name="fxemoji:lightbulb" size="26" />
 
               <span>The Untapped Power of Scientific Posters</span>
             </h2>
 
-            <p class="max-w-prose text-lg text-gray-600 dark:text-slate-400">
+            <p class="max-w-prose text-lg">
               Millions of posters are presented at scientific conferences and
               meetings every year. They contain a wealth of early stage
               knowledge that could enhance the pace of discoveries, support
@@ -92,12 +92,12 @@ const subscribe = async () => {
 
           <div>
             <h2 class="flex items-center gap-2 font-bold">
-              <Icon name="fluent-emoji:rocket" style="color: black" size="26" />
+              <Icon name="fluent-emoji:rocket" size="26" />
 
               <span>Enter Posters.science</span>
             </h2>
 
-            <p class="max-w-prose text-lg text-gray-600 dark:text-slate-400">
+            <p class="max-w-prose text-lg">
               Not anymore! We are building posters.science, a free and
               open-source platform that helps researchers find a lasting home
               for their posters and get recognition for their effort. The
@@ -110,12 +110,12 @@ const subscribe = async () => {
 
           <div>
             <h2 class="flex items-center gap-2 font-bold">
-              <Icon name="twemoji:microscope" style="color: black" size="26" />
+              <Icon name="twemoji:microscope" size="26" />
 
               <span>From Posters to Breakthroughs</span>
             </h2>
 
-            <p class="max-w-prose text-lg text-gray-600 dark:text-slate-400">
+            <p class="max-w-prose text-lg">
               Posters.science doesn't just stop at sharing posters. The platform
               will also includes tools to easily find, explore, and extract
               knowledge from posters to answer research questions, generate
@@ -125,26 +125,21 @@ const subscribe = async () => {
 
           <div>
             <h2 class="flex items-center gap-2 font-bold">
-              <Icon
-                name="flat-color-icons:calendar"
-                style="color: black"
-                size="26"
-              />
+              <Icon name="flat-color-icons:calendar" size="26" />
 
               <span>Summer 2026</span>
             </h2>
 
-            <p class="max-w-prose text-lg text-gray-600 dark:text-slate-400">
+            <p class="max-w-prose text-lg">
               Enter your email below and we will send you a notification when
               posters.science goes live! You can also track progress, provide
               suggestions, or even contribute to this open source project
               through our
-              <NuxtLink
+              <ULink
                 to="https://github.com/fairdataihub/posters-science"
                 target="_blank"
-                class="text-blue-600 hover:underline dark:text-blue-400"
               >
-                GitHub repository </NuxtLink
+                GitHub repository</ULink
               >.
             </p>
           </div>
@@ -174,24 +169,19 @@ const subscribe = async () => {
 
         <div>
           <UiBlurReveal :delay="1" :duration="1" class="flex-1">
-            <p class="text-md text-gray-600 dark:text-slate-400">
+            <p class="text-md">
               The development of posters.science is supported by a grant from
-              <NuxtLink
-                to="https://www.navigation.org/"
-                target="_blank"
-                class="text-blue-600 hover:underline dark:text-blue-400"
-              >
+              <ULink to="https://www.navigation.org/" target="_blank">
                 The Navigation Fund
-              </NuxtLink>
+              </ULink>
 
               (additional details about the grant can be found in the
-              <NuxtLink
+              <ULink
                 rel="noopener noreferrer"
-                class="text-blue-600 hover:underline dark:text-blue-400"
                 to="https://commons.datacite.org/doi.org/10.71707/rk36-9x79"
                 target="_blank"
               >
-                DataCite Commons grant record</NuxtLink
+                DataCite Commons grant record</ULink
               >).
             </p>
           </UiBlurReveal>
