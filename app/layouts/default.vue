@@ -12,12 +12,27 @@ const logout = async () => {
 const headerItems = computed<NavigationMenuItem[]>(() => [
   {
     label: "Dashboard",
-    to: "/app/dashboard",
-    active: route.path.startsWith("/app/dashboard"),
+    to: "/dashboard",
+    active: route.path.startsWith("/dashboard"),
   },
   {
-    label: "Changelog",
-    to: "https://github.com/fairdataihub/nuxt-starter/CHANGELOG.md",
+    label: "Find Posters",
+    to: "/discover",
+    active: route.path.startsWith("/discover"),
+  },
+  {
+    label: "Share a Poster",
+    to: "/share/upload",
+    active: route.path.startsWith("/share"),
+  },
+  {
+    label: "Learn More",
+    to: "/about",
+    active: route.path.startsWith("/about"),
+  },
+  {
+    label: "GitHub",
+    to: "https://github.com/fairdataihub/posters-science",
     target: "_blank",
   },
 ]);
@@ -35,26 +50,17 @@ const footerItems: NavigationMenuItem[] = [
   <div class="relative">
     <UiAuroraBackground class="absolute inset-0 -z-10 h-full" />
 
-    <UHeader class="!hidden">
+    <UHeader>
       <template #title>
-        <NuxtLink to="/" class="flex text-2xl font-bold"> Nuxt App </NuxtLink>
+        <NuxtLink to="/" class="flex text-2xl font-bold">
+          Posters.Science
+        </NuxtLink>
       </template>
 
       <UNavigationMenu :items="headerItems" />
 
       <template #right>
         <UColorModeButton />
-
-        <UTooltip text="Open on GitHub" :kbds="['meta', 'G']">
-          <UButton
-            color="neutral"
-            variant="ghost"
-            to="https://github.com/fairdataihub/nuxt-starter"
-            target="_blank"
-            icon="i-simple-icons-github"
-            aria-label="GitHub"
-          />
-        </UTooltip>
 
         <AuthState v-slot="{ loggedIn }">
           <UButton
@@ -67,11 +73,9 @@ const footerItems: NavigationMenuItem[] = [
           </UButton>
 
           <div v-else class="flex items-center justify-center gap-3">
-            <UButton to="/login" color="neutral" variant="outline">
-              Sign in
-            </UButton>
+            <UButton to="/login" variant="outline"> Sign in </UButton>
 
-            <UButton to="/signup" color="neutral">
+            <UButton to="/signup">
               <template #trailing>
                 <Icon name="i-heroicons-arrow-right-20-solid" size="20" />
               </template>
@@ -86,7 +90,7 @@ const footerItems: NavigationMenuItem[] = [
       <slot />
     </UMain>
 
-    <UFooter class="">
+    <UFooter>
       <template #left>
         <p class="text-muted text-sm">
           Copyright © {{ new Date().getFullYear() }}
@@ -97,6 +101,15 @@ const footerItems: NavigationMenuItem[] = [
 
       <template #right>
         <UColorModeButton />
+
+        <UButton
+          icon="i-simple-icons-bluesky"
+          color="neutral"
+          variant="ghost"
+          to="https://bluesky.social/profile/fairdataihub.org"
+          target="_blank"
+          aria-label="BlueSky"
+        />
 
         <UButton
           icon="i-simple-icons-github"

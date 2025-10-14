@@ -1,6 +1,5 @@
 # Posters.science
 
-
 ## Getting started
 
 ### Prerequisites/Dependencies

@@ -31,13 +31,13 @@ servers:
 #
 # Note: If using Cloudflare, set encryption mode in SSL/TLS setting to "Full" to enable CF-to-app encryption.
 proxy:
-  ssl: true  # Automatically obtain and configure SSL certificates
-  host: <%= ENV["KAMAL_APP_DOMAIN"] %>  # Your application's domain name
+  ssl: true # Automatically obtain and configure SSL certificates
+  host: <%= ENV["KAMAL_APP_DOMAIN"] %> # Your application's domain name
   # Proxy connects to your container on port 80 by default.
-  app_port: 3000  # Port your Nuxt app runs on inside the container
-  forward_headers: true  # Forward client headers to your application
+  app_port: 3000 # Port your Nuxt app runs on inside the container
+  forward_headers: true # Forward client headers to your application
   healthcheck:
-    timeout: 60  # Health check timeout in seconds
+    timeout: 60 # Health check timeout in seconds
 
 # Credentials for your image host.
 # Configure access to your Docker registry (Docker Hub, GitHub Container Registry, etc.)
@@ -55,7 +55,7 @@ registry:
 # Configure builder setup.
 # Settings for building your Docker image
 builder:
-  arch: amd64  # Target architecture for the built image
+  arch: amd64 # Target architecture for the built image
   # Pass in additional build args needed for your Dockerfile.
   # args:
   #   RUBY_VERSION: <%= ENV["RBENV_VERSION"] || ENV["rvm_ruby_string"] || "#{RUBY_ENGINE}-#{RUBY_ENGINE_VERSION}" %>
@@ -64,27 +64,26 @@ builder:
 # Environment variables are available to your application at runtime
 env:
   clear:
-    NODE_ENV: test  # Set to 'production' for production deployments
+    NODE_ENV: test # Set to 'production' for production deployments
   secret:
-    - DATABASE_URL  # Database connection string
+    - DATABASE_URL # Database connection string
     - NUXT_SESSION_PASSWORD
 
 # Aliases are triggered with "bin/kamal <alias>". You can overwrite arguments on invocation:
 # "bin/kamal app logs -r job" will tail logs from the first server in the job section.
 # These are convenient shortcuts for common operations
 aliases:
-  web-shell: app exec --interactive --reuse "sh"  # Access shell in web container
-  db-shell: accessory exec db --interactive --reuse "bash"  # Access PostgreSQL shell
-  db-backup-shell: accessory exec db-backup --interactive --reuse "sh"  # Access backup container shell
-  backup-db: accessory exec db-backup --interactive "sh ./backup.sh"  # Run database backup
-  restore-db: accessory exec db-backup --interactive "sh ./restore.sh"  # Restore database from backup
+  web-shell: app exec --interactive --reuse "sh" # Access shell in web container
+  db-shell: accessory exec db --interactive --reuse "bash" # Access PostgreSQL shell
+  db-backup-shell: accessory exec db-backup --interactive --reuse "sh" # Access backup container shell
+  backup-db: accessory exec db-backup --interactive "sh ./backup.sh" # Run database backup
+  restore-db: accessory exec db-backup --interactive "sh ./restore.sh" # Restore database from backup
 
 # Use a different ssh user than root
 # Uncomment and configure if you need to use a non-root user for SSH access
 #
 ssh:
   user: dev
-
 # Use a persistent storage volume.
 # Uncomment to add persistent storage that survives container restarts
 #
@@ -108,55 +107,55 @@ ssh:
 # Use accessory services (secrets come from .kamal/secrets).
 # These are additional services that your application depends on
 # accessories:
-  # PostgreSQL database service
-  # db:
-  #   image: postgres:16  # PostgreSQL version 16
-  #   host: <%= ENV["KAMAL_SERVER_IP"] %>  # Host where database runs
+# PostgreSQL database service
+# db:
+#   image: postgres:16  # PostgreSQL version 16
+#   host: <%= ENV["KAMAL_SERVER_IP"] %>  # Host where database runs
 
-  #   directories:
-  #     - data:/var/lib/postgresql/data  # Persistent storage for Postgres data across container restarts (auto creates host directory if it doesn't exist)
-  #   env:
-  #     secret:
-  #       - POSTGRES_DB       # Database name
-  #       - POSTGRES_USER     # Database user
-  #       - POSTGRES_PASSWORD # Database password
-  # redis:
-  #   image: valkey/valkey:8
-  #   host: 192.168.0.2
-  #   port: 6379
-  #   directories:
+#   directories:
+#     - data:/var/lib/postgresql/data  # Persistent storage for Postgres data across container restarts (auto creates host directory if it doesn't exist)
+#   env:
+#     secret:
+#       - POSTGRES_DB       # Database name
+#       - POSTGRES_USER     # Database user
+#       - POSTGRES_PASSWORD # Database password
+# redis:
+#   image: valkey/valkey:8
+#   host: 192.168.0.2
+#   port: 6379
+#   directories:
 
-  # Database backup service using S3/R2 storage
-  # db-backup:
-  #   image: eeshugerman/postgres-backup-s3:16  # Backup tool for PostgreSQL 16
-  #   roles:
-  #     - web # Deploys to all servers in the web role
+# Database backup service using S3/R2 storage
+# db-backup:
+#   image: eeshugerman/postgres-backup-s3:16  # Backup tool for PostgreSQL 16
+#   roles:
+#     - web # Deploys to all servers in the web role
 
-  #   files:
-  #     - scripts/backup.sh:/backup.sh # Import the backup script from the host to the container (auto creates host directory if it doesn't exist)
-    
-  #   directories:
-  #     - /etc/ssl/certs:/etc/ssl/certs:ro # import ssl certificates from the host to the container
+#   files:
+#     - scripts/backup.sh:/backup.sh # Import the backup script from the host to the container (auto creates host directory if it doesn't exist)
 
-  #   env:
-  #     clear:
-  #       SCHEDULE:       "@hourly"
-  #       BACKUP_KEEP_DAYS: 1
+#   directories:
+#     - /etc/ssl/certs:/etc/ssl/certs:ro # import ssl certificates from the host to the container
 
-  #       # S3 / R2 configuration
-  #       S3_REGION:            <%= ENV["S3_DEFAULT_REGION"] %>  # replace auto with DEFAULT_REGION env variable if needed (set to auto for R2)
-  #       S3_BUCKET:            <%= ENV["S3_BUCKET"] %>
-  #       S3_ENDPOINT:          <%= ENV["S3_ENDPOINT"] %>
-  #       S3_PREFIX:            <%= ENV["S3_PREFIX"] %>
-  #       S3_ACCESS_KEY_ID:     <%= ENV["S3_ACCESS_KEY_ID"] %>
-  #       S3_SECRET_ACCESS_KEY: <%= ENV["S3_SECRET_ACCESS_KEY"] %>
+#   env:
+#     clear:
+#       SCHEDULE:       "@hourly"
+#       BACKUP_KEEP_DAYS: 1
 
-  #       # Point at your Kamal Postgres accessory
-  #       # Database credentials
-  #       POSTGRES_PASSWORD: <%= ENV["POSTGRES_PASSWORD"] %>
-  #       POSTGRES_USER:     <%= ENV["POSTGRES_USER"] %>
-  #       POSTGRES_DATABASE: <%= ENV["POSTGRES_DB"] %>
-  #       POSTGRES_HOST:     <%= ENV["DB_HOST"] %>
+#       # S3 / R2 configuration
+#       S3_REGION:            <%= ENV["S3_DEFAULT_REGION"] %>  # replace auto with DEFAULT_REGION env variable if needed (set to auto for R2)
+#       S3_BUCKET:            <%= ENV["S3_BUCKET"] %>
+#       S3_ENDPOINT:          <%= ENV["S3_ENDPOINT"] %>
+#       S3_PREFIX:            <%= ENV["S3_PREFIX"] %>
+#       S3_ACCESS_KEY_ID:     <%= ENV["S3_ACCESS_KEY_ID"] %>
+#       S3_SECRET_ACCESS_KEY: <%= ENV["S3_SECRET_ACCESS_KEY"] %>
 
-  #       # Passphrase for GPG encryption
-  #       PASSPHRASE:         <%= ENV["PASSPHRASE"] %>
+#       # Point at your Kamal Postgres accessory
+#       # Database credentials
+#       POSTGRES_PASSWORD: <%= ENV["POSTGRES_PASSWORD"] %>
+#       POSTGRES_USER:     <%= ENV["POSTGRES_USER"] %>
+#       POSTGRES_DATABASE: <%= ENV["POSTGRES_DB"] %>
+#       POSTGRES_HOST:     <%= ENV["DB_HOST"] %>
+
+#       # Passphrase for GPG encryption
+#       PASSPHRASE:         <%= ENV["PASSPHRASE"] %>

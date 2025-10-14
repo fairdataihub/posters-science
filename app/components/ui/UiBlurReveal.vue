@@ -21,6 +21,7 @@ const container = ref(null);
 const childElements = ref([]);
 const slots = useSlots();
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const children = ref<any>([]);
 
 onMounted(() => {
@@ -40,7 +41,7 @@ function getInitial() {
 
 function getAnimate() {
   return {
-    filter: `blur(0px)`,
+    filter: "blur(0px)",
     opacity: 1,
     y: 0,
   };

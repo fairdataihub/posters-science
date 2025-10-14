@@ -14,9 +14,11 @@ export default defineEventHandler(async (event) => {
   const { user } = session;
   const userId = user.id;
 
-  return await prisma.user.findUnique({
-    where: {
-      id: userId,
-    },
-  });
+  return (
+    (await prisma.poster.findMany({
+      where: {
+        userId,
+      },
+    })) || []
+  );
 });

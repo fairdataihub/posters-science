@@ -12,18 +12,23 @@ const signupSchema = z.object({
 });
 
 export default defineEventHandler(async (event) => {
-  throw createError({
-    statusCode: 404,
-    statusMessage: "Not enabled",
-  });
+  const config = useRuntimeConfig();
+
+  const { environment } = config.public;
+
+  if (environment !== "development") {
+    throw createError({
+      statusCode: 404,
+      statusMessage: "Not enabled",
+    });
+  }
 
   const session = await getUserSession(event);
 
   if ("user" in session) {
-    return sendRedirect(event, "/app/dashboard");
+    return sendRedirect(event, "/dashboard");
   }
 
-  const config = useRuntimeConfig();
   const body = await readValidatedBody(event, (b) => signupSchema.safeParse(b));
 
   if (!body.success) {

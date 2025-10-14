@@ -6,7 +6,7 @@ const config = useRuntimeConfig();
 const { loggedIn } = useUserSession();
 
 if (loggedIn.value) {
-  await navigateTo("/app/dashboard");
+  await navigateTo("/dashboard");
 }
 
 definePageMeta({
@@ -61,11 +61,13 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
           : "You can now log in to your account.",
         icon: "material-symbols:mail-outline",
       });
+
+      navigateTo("/login");
     })
     .catch((error) => {
       console.error(error.data);
       toast.add({
-        title: "Error creating account",
+        title: "Registration failed",
         color: "error",
         description: error.data.statusMessage,
         icon: "material-symbols:error",
@@ -138,8 +140,8 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
 
     <template #footer>
       <p class="text-center text-sm">
-        By signing in, you agree to our
-        <NuxtLink to="/signup" class="text-primary-500 text-sm font-medium">
+        By signing up, you agree to our
+        <NuxtLink to="/terms" class="text-primary-500 text-sm font-medium">
           Terms of Service</NuxtLink
         >.
       </p>

@@ -8,7 +8,7 @@ const route = useRoute();
 const routeQueryParams = route.query;
 
 if (loggedIn.value) {
-  await navigateTo("/app/dashboard");
+  await navigateTo("/dashboard");
 }
 
 definePageMeta({
@@ -60,7 +60,7 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
 
         window.location.href = routeQueryParams.redirect as string;
       } else {
-        window.location.href = "/app/dashboard";
+        window.location.href = "/dashboard";
       }
     })
     .catch((error) => {
@@ -147,7 +147,7 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
     <template #footer>
       <p class="text-center text-sm">
         By signing in, you agree to our
-        <NuxtLink to="/signup" class="text-primary-500 text-sm font-medium">
+        <NuxtLink to="/terms" class="text-primary-500 text-sm font-medium">
           Terms of Service</NuxtLink
         >.
       </p>

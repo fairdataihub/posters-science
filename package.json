@@ -22,6 +22,7 @@
     "prune-branches": "git removed-branches --prune --force"
   },
   "dependencies": {
+    "@nuxt/image": "^1.11.0",
     "@vueuse/core": "13.4.0",
     "bcrypt": "^5.1.1",
     "date-fns": "^4.1.0",
