@@ -17,7 +17,7 @@ function toggleCollapse() {
 // Compute UI classes based on the local collapse state.
 const uiClasses = computed(() => ({
   body: `${contentCollapsed.value ? "opacity-0 -y-3 h-0 !p-0" : "opacity-100 y-0 max-h-auto !p-5"} transition-all origin-top duration-200 ease-in-out`,
-  header: `${contentCollapsed.value ? "border-none" : ""} transition-colors duration-300 py-0 px-0 !p-0 cursor-pointer hover:bg-stone-50 rounded-t-lg`,
+  header: `${contentCollapsed.value ? "border-none" : ""} transition-colors duration-300 py-0 px-0 !p-0 cursor-pointer hover:bg-stone-50 dark:hover:bg-gray-900 rounded-t-lg`,
   root: "shadow-md rounded-lg border border-gray-200 transition-all duration-200 select-none",
 }));
 </script>

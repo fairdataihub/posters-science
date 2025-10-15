@@ -81,16 +81,17 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
       :state="state"
       class="space-y-4"
       :disabled="loading"
+      size="xl"
       @submit="onSubmit"
     >
       <CardCollapsibleContent title="General Information" :collapse="false">
         <div class="space-y-4">
-          <UFormField label="Title" name="title" size="lg">
-            <UInput v-model="state.title" size="lg" />
+          <UFormField label="Title" name="title" size="xl">
+            <UInput v-model="state.title" size="xl" />
           </UFormField>
 
-          <UFormField label="Description" name="description" size="lg">
-            <UTextarea v-model="state.description" class="w-full" size="lg" />
+          <UFormField label="Description" name="description" size="xl">
+            <UTextarea v-model="state.description" class="w-full" size="xl" />
           </UFormField>
         </div>
       </CardCollapsibleContent>
