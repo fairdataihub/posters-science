@@ -51,7 +51,7 @@ const uiClasses = computed(() => ({
       :class="
         contentCollapsed
           ? 'h-0 overflow-hidden p-0 opacity-0'
-          : 'p-5 opacity-100'
+          : 'p-0 opacity-100'
       "
       class="transition-all duration-200 ease-in-out"
     >

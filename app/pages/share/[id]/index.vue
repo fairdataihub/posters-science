@@ -95,12 +95,16 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
         </div>
       </CardCollapsibleContent>
 
+      <CardCollapsibleContent title="Author(s)" :collapse="false">
+        TBD
+      </CardCollapsibleContent>
+
       <UButton
         :disabled="loading"
         class="flex w-full justify-center"
         variant="solid"
-        icon="fluent:save-16-filled"
-        label="Save Changes"
+        icon="i-lucide-arrow-right"
+        label="Continue"
         type="submit"
         size="lg"
       />
