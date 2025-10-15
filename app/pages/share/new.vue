@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { faker } from "@faker-js/faker";
+
 definePageMeta({
   middleware: ["auth"],
 });
@@ -30,6 +32,11 @@ const uploadFile = () => {
   setTimeout(() => {
     status.value = 4;
   }, 5000);
+
+  setTimeout(() => {
+    const id = faker.number.int();
+    navigateTo(`/share/${id}`);
+  }, 6000);
 };
 </script>
 

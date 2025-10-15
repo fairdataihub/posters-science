@@ -61,57 +61,61 @@ if (error.value) {
     />
 
     <UPageGrid>
-      <UCard
-        v-for="poster in posters"
-        :key="poster.id"
-        class="group cursor-pointer overflow-hidden transition-all duration-300 hover:shadow-lg"
+      <NuxtLink
+        v-for="(poster, index) in posters"
+        :key="index + 1"
+        :to="`/share/${index + 1}`"
       >
-        <div class="relative overflow-hidden">
-          <NuxtImg
-            :src="poster.imageUrl"
-            :alt="poster.title"
-            class="h-48 w-full object-cover transition-transform duration-300 group-hover:scale-105"
-          />
+        <UCard
+          class="group cursor-pointer overflow-hidden transition-all duration-300 hover:shadow-lg"
+        >
+          <div class="relative overflow-hidden">
+            <NuxtImg
+              :src="poster.imageUrl"
+              :alt="poster.title"
+              class="h-48 w-full object-cover transition-transform duration-300 group-hover:scale-105"
+            />
 
-          <div class="absolute top-3 right-3">
-            <UBadge
-              :color="poster.status === 'published' ? 'success' : 'warning'"
-              variant="solid"
-              size="sm"
-            >
-              {{ poster.status === "published" ? "Published" : "Draft" }}
-            </UBadge>
-          </div>
-        </div>
-
-        <div class="p-4">
-          <div class="flex flex-col gap-3">
-            <h3 class="line-clamp-2 text-lg font-semibold">
-              {{ poster.title }}
-            </h3>
-
-            <p class="line-clamp-3 text-sm leading-relaxed">
-              {{ poster.description }}
-            </p>
-
-            <div
-              class="flex flex-col justify-between gap-2 border-t border-gray-100 pt-2 text-xs"
-            >
-              <span v-if="poster.publishedAt" class="flex items-center gap-1">
-                <Icon name="heroicons:eye" class="h-3 w-3" />
-                Published
-                {{ dayjs(poster.publishedAt).format("MMMM D, YYYY") }}
-              </span>
-
-              <span class="flex items-center gap-1">
-                <Icon name="heroicons:calendar-days" class="h-3 w-3" />
-
-                Created {{ dayjs(poster.created).format("MMMM D, YYYY") }}
-              </span>
+            <div class="absolute top-3 right-3">
+              <UBadge
+                :color="poster.status === 'published' ? 'success' : 'warning'"
+                variant="solid"
+                size="sm"
+              >
+                {{ poster.status === "published" ? "Published" : "Draft" }}
+              </UBadge>
             </div>
           </div>
-        </div>
-      </UCard>
+
+          <div class="p-4">
+            <div class="flex flex-col gap-3">
+              <h3 class="line-clamp-2 text-lg font-semibold">
+                {{ poster.title }}
+              </h3>
+
+              <p class="line-clamp-3 text-sm leading-relaxed">
+                {{ poster.description }}
+              </p>
+
+              <div
+                class="flex flex-col justify-between gap-2 border-t border-gray-100 pt-2 text-xs"
+              >
+                <span v-if="poster.publishedAt" class="flex items-center gap-1">
+                  <Icon name="heroicons:eye" class="h-3 w-3" />
+                  Published
+                  {{ dayjs(poster.publishedAt).format("MMMM D, YYYY") }}
+                </span>
+
+                <span class="flex items-center gap-1">
+                  <Icon name="heroicons:calendar-days" class="h-3 w-3" />
+
+                  Created {{ dayjs(poster.created).format("MMMM D, YYYY") }}
+                </span>
+              </div>
+            </div>
+          </div>
+        </UCard>
+      </NuxtLink>
     </UPageGrid>
 
     <div v-if="posters.length === 0" class="py-12 text-center">
