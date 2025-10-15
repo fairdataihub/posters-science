@@ -30,7 +30,7 @@ type Poster = {
     givenName: string;
     familyName: string;
   };
-  tags: string[];
+  keywords: string[];
   publishedAt: Date | null;
   created: Date;
   updated: Date;
@@ -66,7 +66,7 @@ if (data.value) {
         givenName: faker.person.firstName(),
         familyName: faker.person.lastName(),
       },
-      tags: Array.from({ length: faker.number.int(10) }, () =>
+      keywords: Array.from({ length: faker.number.int(10) }, () =>
         faker.lorem.word(),
       ),
       publishedAt: faker.date.past(),
@@ -96,7 +96,7 @@ if (error.value) {
 const extractAvailableTags = () => {
   const allTags = new Set<string>();
   posters.value.forEach((poster) => {
-    poster.tags.forEach((tag) => allTags.add(tag));
+    poster.keywords.forEach((tag) => allTags.add(tag));
   });
   availableTags.value = Array.from(allTags).sort();
 };
@@ -108,7 +108,7 @@ const filteredPosters = computed(() => {
   } else {
     return posters.value.filter((poster) =>
       selectedTags.value.some((selectedTag) =>
-        poster.tags.includes(selectedTag),
+        poster.keywords.includes(selectedTag),
       ),
     );
   }
@@ -141,7 +141,6 @@ extractAvailableTags();
     />
 
     <div class="flex gap-6">
-      <!-- Sidebar -->
       <div :class="['block w-80 flex-shrink-0 transition-all duration-300']">
         <UCard class="sticky top-4">
           <template #header>
@@ -151,8 +150,9 @@ extractAvailableTags();
           </template>
 
           <div class="space-y-6">
-            <!-- Date Filters -->
             <div>
+              <h4 class="mb-3 text-sm font-medium">Published</h4>
+
               <UPopover>
                 <UButton
                   color="neutral"
@@ -198,7 +198,6 @@ extractAvailableTags();
               </UPopover>
             </div>
 
-            <!-- Tag Filters -->
             <div>
               <h4 class="mb-3 text-sm font-medium">Tags</h4>
 
@@ -229,7 +228,6 @@ extractAvailableTags();
                   </div>
                 </div>
 
-                <!-- Clear Filters -->
                 <div v-if="selectedTags.length > 0" class="pt-2">
                   <UButton variant="ghost" size="xs" @click="selectedTags = []">
                     Clear all filters
@@ -241,7 +239,6 @@ extractAvailableTags();
         </UCard>
       </div>
 
-      <!-- Main Content -->
       <div class="min-w-0 flex-1">
         <div class="flex items-center justify-between pb-4">
           <div>
@@ -275,83 +272,77 @@ extractAvailableTags();
             v-for="poster in filteredPosters.slice((page - 1) * 9, page * 9)"
             :key="poster.id"
             :to="`/discover/${poster.id}`"
+            class="relative h-full"
           >
             <UCard
-              class="group flex h-full cursor-pointer flex-col overflow-hidden transition-all duration-300 hover:shadow-lg"
+              class="group relative flex h-full flex-1 cursor-pointer flex-col transition-all duration-300 hover:shadow-lg"
             >
-              <div class="relative overflow-hidden">
-                <NuxtImg
-                  :src="poster.imageUrl"
-                  :alt="poster.title"
-                  class="h-48 w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                />
-              </div>
-
-              <div class="flex h-full flex-col p-4">
-                <div class="flex flex-1 flex-col gap-3">
-                  <h3 class="line-clamp-2 text-lg font-semibold">
-                    {{ poster.title }}
-                  </h3>
-
-                  <p class="line-clamp-3 text-sm leading-relaxed">
-                    {{ poster.description }}
-                  </p>
-
-                  <!-- Tags -->
-                  <div class="flex flex-wrap gap-1">
-                    <UBadge
-                      v-for="tag in poster.tags.slice(0, 3)"
-                      :key="tag"
-                      color="neutral"
-                      variant="soft"
-                    >
-                      {{ tag }}
-                    </UBadge>
-
-                    <UBadge
-                      v-if="poster.tags.length > 3"
-                      color="neutral"
-                      variant="soft"
-                      size="xs"
-                    >
-                      +{{ poster.tags.length - 3 }}
-                    </UBadge>
-                  </div>
+              <div class="relative h-full flex-1">
+                <div class="relative overflow-hidden">
+                  <NuxtImg
+                    :src="poster.imageUrl"
+                    :alt="poster.title"
+                    class="h-48 w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                  />
                 </div>
 
-                <!-- Author Info and Footer - Aligned to bottom -->
-                <div class="mt-auto space-y-2">
-                  <!-- Author Info -->
-                  <div
-                    class="flex items-center gap-3 border-t border-gray-100 pt-2"
-                  >
-                    <div class="min-w-0 flex-1">
-                      <p class="truncate text-sm font-medium">
-                        {{ poster.user.givenName }} {{ poster.user.familyName }}
-                      </p>
+                <div class="relative flex flex-col justify-between gap-2 p-2">
+                  <div class="flex flex-col gap-3">
+                    <h3 class="line-clamp-2 text-lg font-semibold">
+                      {{ poster.title }}
+                    </h3>
+
+                    <p class="line-clamp-3 text-sm leading-relaxed">
+                      {{ poster.description }}
+                    </p>
+
+                    <div class="flex flex-wrap gap-1">
+                      <UBadge
+                        v-for="tag in poster.keywords.slice(0, 2)"
+                        :key="tag"
+                        color="neutral"
+                        variant="soft"
+                      >
+                        {{ tag }}
+                      </UBadge>
+
+                      <UBadge
+                        v-if="poster.keywords.length > 2"
+                        color="neutral"
+                        variant="soft"
+                      >
+                        + {{ poster.keywords.length - 2 }}
+                      </UBadge>
                     </div>
                   </div>
 
-                  <!-- Stats and Date -->
-                  <div
-                    class="flex items-center justify-between border-t border-gray-100 pt-2 text-xs"
-                  >
-                    <div class="flex items-center gap-4">
-                      <span class="flex items-center gap-1">
-                        <Icon name="heroicons:eye" class="h-3 w-3" />
-                        {{ poster.views }}
-                      </span>
+                  <div class="flex flex-col">
+                    <p
+                      class="truncate border-t border-gray-100 py-2 text-sm font-medium"
+                    >
+                      {{ poster.user.givenName }} {{ poster.user.familyName }}
+                    </p>
+
+                    <div
+                      class="flex items-center justify-between border-t border-gray-100 pt-2 text-sm"
+                    >
+                      <div class="flex items-center gap-4">
+                        <span class="flex items-center gap-1">
+                          <Icon name="heroicons:eye" />
+                          {{ poster.views }}
+                        </span>
+
+                        <span class="flex items-center gap-1">
+                          <Icon name="heroicons:heart" />
+                          {{ poster.likes }}
+                        </span>
+                      </div>
 
                       <span class="flex items-center gap-1">
-                        <Icon name="heroicons:heart" class="h-3 w-3" />
-                        {{ poster.likes }}
+                        <Icon name="heroicons:calendar-days" />
+                        {{ dayjs(poster.created).format("MMM D, YYYY") }}
                       </span>
                     </div>
-
-                    <span class="flex items-center gap-1">
-                      <Icon name="heroicons:calendar-days" class="h-3 w-3" />
-                      {{ dayjs(poster.created).format("MMM D, YYYY") }}
-                    </span>
                   </div>
                 </div>
               </div>

@@ -148,24 +148,49 @@ const tabItems = [
     <div class="border-b border-gray-200">
       <UContainer class="py-6">
         <div class="flex flex-col items-start justify-between">
-          <UPopover arrow mode="hover">
+          <div class="flex items-center gap-3">
+            <UPopover arrow mode="hover">
+              <UBadge
+                color="primary"
+                variant="soft"
+                size="lg"
+                icon="heroicons:academic-cap"
+              >
+                {{ poster.conference.acronym }} {{ poster.conference.year }}
+              </UBadge>
+
+              <template #content>
+                <p class="px-2 py-1 text-sm">
+                  {{ poster.conference.name }} <br />
+                  {{ poster.conference.venue }} |
+                  {{ poster.conference.location }}
+                </p>
+              </template>
+            </UPopover>
+
             <UBadge
-              color="primary"
+              color="info"
               variant="soft"
               size="lg"
-              icon="heroicons:academic-cap"
+              icon="heroicons:heart"
             >
-              {{ poster.conference.acronym }} {{ poster.conference.year }}
+              {{
+                new Intl.NumberFormat("en-US", { notation: "compact" }).format(
+                  poster.likes || 0,
+                )
+              }}
+              likes
             </UBadge>
 
-            <template #content>
-              <p class="px-2 py-1 text-sm">
-                {{ poster.conference.name }} <br />
-                {{ poster.conference.venue }} |
-                {{ poster.conference.location }}
-              </p>
-            </template>
-          </UPopover>
+            <UBadge color="info" variant="soft" size="lg" icon="heroicons:eye">
+              {{
+                new Intl.NumberFormat("en-US", { notation: "compact" }).format(
+                  poster.views || 0,
+                )
+              }}
+              views
+            </UBadge>
+          </div>
 
           <h1 class="mt-1 mb-2 text-3xl font-bold">
             {{ poster.title }}
