@@ -33,13 +33,14 @@ export default defineNuxtConfig({
   },
   eslint: {},
   echarts: {
-    charts: ["BarChart", "PieChart"],
+    charts: ["BarChart", "PieChart", "LineChart"],
     components: [
       "DatasetComponent",
       "GridComponent",
       "TooltipComponent",
       "ToolboxComponent",
       "TitleComponent",
+      "LegendComponent",
     ],
   },
   image: {

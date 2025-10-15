@@ -1,7 +1,7 @@
 <script setup lang="ts">
 useSeoMeta({
   title: "Metrics",
-  description: "Metrics for the posters.science platform",
+  description: "Metrics for the Posters.science platform",
 });
 
 // Generate fake poster registration data for the last 12 months
@@ -41,6 +41,33 @@ const generatePosterRegistrationData = () => {
 
 const { months, registrations } = generatePosterRegistrationData();
 
+// Calculate trend line data using linear regression
+const calculateTrendLine = (data: number[]) => {
+  const n = data.length;
+  const x = Array.from({ length: n }, (_, i) => i);
+
+  // Calculate means
+  const xMean = x.reduce((sum, val) => sum + val, 0) / n;
+  const yMean = data.reduce((sum, val) => sum + val, 0) / n;
+
+  // Calculate slope and intercept
+  let numerator = 0;
+  let denominator = 0;
+
+  for (let i = 0; i < n; i++) {
+    numerator += (x[i]! - xMean) * (data[i]! - yMean);
+    denominator += (x[i]! - xMean) * (x[i]! - xMean);
+  }
+
+  const slope = numerator / denominator;
+  const intercept = yMean - slope * xMean;
+
+  // Generate trend line points
+  return x.map((xVal) => Math.round(slope * xVal + intercept));
+};
+
+const trendLineData = calculateTrendLine(registrations);
+
 const barChartOption = ref<ECOption>({
   title: {
     text: "Poster Registrations (Last 12 Months)",
@@ -56,9 +83,24 @@ const barChartOption = ref<ECOption>({
       type: "shadow",
     },
     formatter: (params: unknown) => {
-      const data = (params as Array<{ name: string; value: number }>)[0];
+      const data = params as Array<{
+        name: string;
+        value: number;
+        seriesName: string;
+      }>;
+      if (!data || data.length === 0) return "";
 
-      return data ? `${data.name}<br/>Registrations: ${data.value}` : "";
+      let tooltip = `${data[0]?.name}<br/>`;
+
+      data.forEach((item) => {
+        if (item.seriesName === "Poster Registrations") {
+          tooltip += `Registrations: ${item.value}<br/>`;
+        } else if (item.seriesName === "Trend Line") {
+          tooltip += `Trend: ${item.value}<br/>`;
+        }
+      });
+
+      return tooltip;
     },
   },
   grid: {
@@ -90,15 +132,34 @@ const barChartOption = ref<ECOption>({
       type: "bar",
       data: registrations,
       itemStyle: {
-        color: "#3b82f6",
+        color: "#ec4899",
         borderRadius: [4, 4, 0, 0],
       },
       emphasis: {
         itemStyle: {
-          color: "#1d4ed8",
+          color: "#be185d",
         },
       },
       animationDelay: (idx: number) => idx * 100,
+    },
+    {
+      name: "Trend Line",
+      type: "line",
+      data: trendLineData,
+      smooth: true,
+      lineStyle: {
+        color: "#f9a8d4",
+        width: 3,
+        type: "solid",
+      },
+      itemStyle: {
+        color: "#f9a8d4",
+        borderWidth: 2,
+        borderColor: "#fff",
+      },
+      symbol: "circle",
+      symbolSize: 6,
+      z: 10,
     },
   ],
   animationEasing: "elasticOut",
@@ -255,7 +316,7 @@ const conferencePieChartOption = ref({
 <template>
   <div class="mx-auto flex w-full max-w-screen-xl flex-col gap-6 px-6">
     <UPageCTA
-      title="Statistics and metrics for the posters.science platform"
+      title="Statistics and metrics for the Posters.science platform"
       description="Analytics and insights for poster registrations and platform usage"
       variant="naked"
     />
@@ -266,7 +327,7 @@ const conferencePieChartOption = ref({
           <h3 class="text-lg font-semibold">Total Registrations</h3>
         </template>
 
-        <div class="text-3xl font-bold text-blue-600">
+        <div class="text-3xl font-bold text-pink-600">
           {{
             registrations
               .reduce((sum, count) => sum + count, 0)
@@ -282,7 +343,7 @@ const conferencePieChartOption = ref({
           <h3 class="text-lg font-semibold">Average Monthly</h3>
         </template>
 
-        <div class="text-3xl font-bold text-green-600">
+        <div class="text-3xl font-bold text-pink-600">
           {{
             Math.round(
               registrations.reduce((sum, count) => sum + count, 0) / 12,
@@ -298,7 +359,7 @@ const conferencePieChartOption = ref({
           <h3 class="text-lg font-semibold">Peak Month</h3>
         </template>
 
-        <div class="text-3xl font-bold text-purple-600">
+        <div class="text-3xl font-bold text-pink-500">
           {{ Math.max(...registrations).toLocaleString() }}
         </div>
 
@@ -308,36 +369,32 @@ const conferencePieChartOption = ref({
       </UCard>
     </div>
 
-    <UCard>
-      <template #header>
-        <h3 class="text-lg font-semibold">Monthly Registration Trends</h3>
-      </template>
+    <ClientOnly>
+      <UCard>
+        <template #header>
+          <h3 class="text-lg font-semibold">Monthly Registration Trends</h3>
+        </template>
 
-      <div style="height: 500px">
-        <VChart :option="barChartOption" />
+        <div style="height: 500px">
+          <VChart :option="barChartOption" />
+        </div>
+      </UCard>
+    </ClientOnly>
+
+    <ClientOnly>
+      <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <UCard>
+          <div style="height: 600px">
+            <VChart :option="institutionPieChartOption" />
+          </div>
+        </UCard>
+
+        <UCard>
+          <div style="height: 600px">
+            <VChart :option="conferencePieChartOption" />
+          </div>
+        </UCard>
       </div>
-    </UCard>
-
-    <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
-      <UCard>
-        <template #header>
-          <h3 class="text-lg font-semibold">Posters by Institution</h3>
-        </template>
-
-        <div style="height: 400px">
-          <VChart :option="institutionPieChartOption" />
-        </div>
-      </UCard>
-
-      <UCard>
-        <template #header>
-          <h3 class="text-lg font-semibold">Posters by Conference</h3>
-        </template>
-
-        <div style="height: 400px">
-          <VChart :option="conferencePieChartOption" />
-        </div>
-      </UCard>
-    </div>
+    </ClientOnly>
   </div>
 </template>
