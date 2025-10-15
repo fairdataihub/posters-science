@@ -58,16 +58,7 @@ if (error.value) {
     <UPageHeader
       title="Dashboard"
       description="Keep track of all your submitted posters. Edit or delete them as needed."
-    >
-      <template #headline>
-        <UBreadcrumb
-          :items="[
-            { label: 'Home', to: '/' },
-            { label: 'Dashboard', to: '/dashboard' },
-          ]"
-        />
-      </template>
-    </UPageHeader>
+    />
 
     <UPageGrid>
       <UCard
@@ -95,18 +86,16 @@ if (error.value) {
 
         <div class="p-4">
           <div class="flex flex-col gap-3">
-            <h3
-              class="line-clamp-2 text-lg font-semibold text-gray-900 transition-colors duration-200 group-hover:text-sky-600"
-            >
+            <h3 class="line-clamp-2 text-lg font-semibold">
               {{ poster.title }}
             </h3>
 
-            <p class="line-clamp-3 text-sm leading-relaxed text-gray-600">
+            <p class="line-clamp-3 text-sm leading-relaxed">
               {{ poster.description }}
             </p>
 
             <div
-              class="flex flex-col justify-between gap-2 border-t border-gray-100 pt-2 text-xs text-gray-500"
+              class="flex flex-col justify-between gap-2 border-t border-gray-100 pt-2 text-xs"
             >
               <span v-if="poster.publishedAt" class="flex items-center gap-1">
                 <Icon name="heroicons:eye" class="h-3 w-3" />

@@ -17,6 +17,11 @@ export default defineAppConfig({
         root: "w-full",
       },
     },
+    header: {
+      slots: {
+        root: "bg-default/75 backdrop-blur border-b border-default h-(--ui-header-height) static",
+      },
+    },
     link: {
       base: "hover:underline",
       variants: {

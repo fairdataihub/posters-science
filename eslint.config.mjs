@@ -60,7 +60,11 @@ export default withNuxt({
     "vue/html-self-closing": [
       "error",
       {
-        html: "never",
+        html: {
+          void: "always",
+          normal: "always",
+          component: "always",
+        },
       },
     ],
   },

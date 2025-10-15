@@ -22,7 +22,7 @@ const headerItems = computed<NavigationMenuItem[]>(() => [
   },
   {
     label: "Share a Poster",
-    to: "/share/upload",
+    to: "/share/new",
     active: route.path.startsWith("/share"),
   },
   {

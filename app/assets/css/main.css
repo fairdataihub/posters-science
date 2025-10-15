@@ -11,6 +11,8 @@
   --auth-color-gray-200: 229 231 235;
   --auth-color-gray-900: 17 24 39;
   --auth-color-gray-950: 3 7 18;
+
+  --container-8xl: 96rem /* 1536px */;
 }
 
 @theme inline {
