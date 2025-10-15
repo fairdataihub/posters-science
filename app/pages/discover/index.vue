@@ -138,6 +138,16 @@ extractAvailableTags();
     <UPageHeader
       title="Discover Posters"
       description="Find and explore posters on a variety of topics."
+      :links="[
+        {
+          label: 'Smart Search',
+          to: '/discover/smart-search',
+          icon: 'si:ai-fill',
+          size: 'lg',
+          variant: 'solid' as const,
+          color: 'primary' as const,
+        },
+      ]"
     />
 
     <div class="flex gap-6">

@@ -14,6 +14,7 @@ export default defineNuxtConfig({
     "dayjs-nuxt",
     "@nuxt/eslint",
     "@nuxt/image",
+    "nuxt-echarts",
   ],
   runtimeConfig: {
     emailVerificationDomain: process.env.EMAIL_VERIFICATION_DOMAIN || "",
@@ -31,6 +32,16 @@ export default defineNuxtConfig({
     },
   },
   eslint: {},
+  echarts: {
+    charts: ["BarChart", "PieChart"],
+    components: [
+      "DatasetComponent",
+      "GridComponent",
+      "TooltipComponent",
+      "ToolboxComponent",
+      "TitleComponent",
+    ],
+  },
   image: {
     // Options
   },

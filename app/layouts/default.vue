@@ -31,6 +31,11 @@ const headerItems = computed<NavigationMenuItem[]>(() => [
     active: route.path.startsWith("/about"),
   },
   {
+    label: "Metrics",
+    to: "/metrics",
+    active: route.path.startsWith("/metrics"),
+  },
+  {
     label: "GitHub",
     to: "https://github.com/fairdataihub/posters-science",
     target: "_blank",
