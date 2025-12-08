@@ -322,7 +322,7 @@ function pushRow<T extends Record<string, any>>(
     return false;
   }
 
-  // If no requiredFields specified, behave like a simple push
+  // If no requiredFields specified, push
   if (!opts?.requiredFields || opts.requiredFields.length === 0) {
     arr.push(row);
     return true;
@@ -808,7 +808,7 @@ function removeRow<T>(arr: T[], index: number) {
             <div v-for="(d, dIndex) in state.dates" :key="dIndex"
               class="grid gap-3 rounded-lg border border-gray-200 p-3 md:grid-cols-[1.5fr,1.5fr,auto]">
               <div class="flex justify-between">
-                <UFormField class="w-full" :name="`dates.${dIndex}.start`" label="Select Date or Date Range" required>
+                <UFormField class="w-full" :name="`dates.${dIndex}.start`" label="Start Date" required>
                   <UPopover>
                     <UButton color="neutral" variant="subtle" icon="i-lucide-calendar">
                       <template v-if="getDateCalendar(dIndex).startCalendar">
@@ -830,7 +830,7 @@ function removeRow<T>(arr: T[], index: number) {
                 </UFormField>
 
                 <!-- END DATE -->
-                <UFormField class="w-full" :name="`dates.${dIndex}.end`" label="Select Date or Date Range">
+                <UFormField class="w-full" :name="`dates.${dIndex}.end`" label="End date">
                   <UPopover>
                     <UButton color="neutral" variant="subtle" icon="i-lucide-calendar">
                       <template v-if="getDateCalendar(dIndex).endCalendar">
