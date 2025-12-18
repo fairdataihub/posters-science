@@ -22,6 +22,7 @@
     "prune-branches": "git removed-branches --prune --force"
   },
   "dependencies": {
+    "@internationalized/date": "^3.10.0",
     "@nuxt/image": "^1.11.0",
     "@vueuse/core": "13.4.0",
     "bcrypt": "^5.1.1",
@@ -38,7 +39,7 @@
     "@faker-js/faker": "^9.4.0",
     "@nuxt/devtools": "2.5.0",
     "@nuxt/eslint": "^1.9.0",
-    "@nuxt/ui": "^4.0.0",
+    "@nuxt/ui": "^4.2.1",
     "@nuxtjs/eslint-config-typescript": "^12.1.0",
     "@prisma/client": "^6.16.3",
     "@stylistic/eslint-plugin": "^5.4.0",
