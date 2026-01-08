@@ -10,9 +10,9 @@ concurrency:
 
 # Trigger conditions for this workflow
 on:
-  # push:
-  #   branches:
-  #     - main # Deploy on every push to main branch
+  push:
+    branches:
+      - main # Deploy on every push to main branch
   workflow_dispatch: # Allow manual triggering from GitHub UI
 
 jobs:
