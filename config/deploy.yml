@@ -83,7 +83,7 @@ aliases:
 # Uncomment and configure if you need to use a non-root user for SSH access
 #
 ssh:
-  user: dev
+  user: azureuser
 # Use a persistent storage volume.
 # Uncomment to add persistent storage that survives container restarts
 #
