@@ -64,7 +64,7 @@ builder:
 # Environment variables are available to your application at runtime
 env:
   clear:
-    NODE_ENV: test  # Set to 'production' for production deployments
+    NODE_ENV: production  # Set to 'production' for production deployments
   secret:
     - DATABASE_URL  # Database connection string
     - NUXT_SESSION_PASSWORD
@@ -83,7 +83,7 @@ aliases:
 # Uncomment and configure if you need to use a non-root user for SSH access
 #
 ssh:
-  user: dev
+  user: azureuser
 
 # Use a persistent storage volume.
 # Uncomment to add persistent storage that survives container restarts
