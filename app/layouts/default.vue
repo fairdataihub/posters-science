@@ -68,7 +68,12 @@ const footerItems: NavigationMenuItem[] = [
         <UColorModeButton />
 
         <AuthState v-slot="{ loggedIn }">
-          <UButton v-if="loggedIn" color="neutral" variant="outline" @click="logout">
+          <UButton
+            v-if="loggedIn"
+            color="neutral"
+            variant="outline"
+            @click="logout"
+          >
             Logout
           </UButton>
 
@@ -102,11 +107,23 @@ const footerItems: NavigationMenuItem[] = [
       <template #right>
         <UColorModeButton />
 
-        <UButton icon="i-simple-icons-bluesky" color="neutral" variant="ghost"
-          to="https://bluesky.social/profile/fairdataihub.org" target="_blank" aria-label="BlueSky" />
+        <UButton
+          icon="i-simple-icons-bluesky"
+          color="neutral"
+          variant="ghost"
+          to="https://bluesky.social/profile/fairdataihub.org"
+          target="_blank"
+          aria-label="BlueSky"
+        />
 
-        <UButton icon="i-simple-icons-github" color="neutral" variant="ghost"
-          to="https://github.com/fairdataihub/posters-science" target="_blank" aria-label="GitHub" />
+        <UButton
+          icon="i-simple-icons-github"
+          color="neutral"
+          variant="ghost"
+          to="https://github.com/fairdataihub/posters-science"
+          target="_blank"
+          aria-label="GitHub"
+        />
       </template>
     </UFooter>
   </div>

@@ -60,7 +60,7 @@ function getAnimate() {
       :transition="{
         duration: props.duration,
         ease: 'easeInOut',
-        delay: props.delay * index,
+        delay: props.delay * (index as number),
       }"
     >
       <component :is="child" />

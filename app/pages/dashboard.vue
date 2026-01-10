@@ -131,10 +131,12 @@ if (error.value) {
         Get started by creating your first poster.
       </p>
 
-      <UButton color="primary" size="lg">
-        <Icon name="heroicons:plus" class="mr-2 h-5 w-5" />
-        Create Poster
-      </UButton>
+      <NuxtLink to="/share/new">
+        <UButton color="primary" size="lg">
+          <Icon name="heroicons:plus" class="mr-2 h-5 w-5" />
+          Create Poster
+        </UButton>
+      </NuxtLink>
     </div>
   </div>
 </template>
