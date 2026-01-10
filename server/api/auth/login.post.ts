@@ -7,16 +7,6 @@ const loginSchema = z.object({
 });
 
 export default defineEventHandler(async (event) => {
-  // const config = useRuntimeConfig();
-  // const { environment } = config.public;
-
-  // if (environment !== "development") {
-  //   throw createError({
-  //     statusCode: 404,
-  //     statusMessage: "Not enabled",
-  //   });
-  // }
-
   const session = await getUserSession(event);
 
   if ("user" in session) {
