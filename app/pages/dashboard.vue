@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { faker } from "@faker-js/faker";
 import dayjs from "dayjs";
 
 definePageMeta({
@@ -27,25 +26,6 @@ const { data, error } = await useFetch("/api/poster");
 
 if (data.value) {
   posters.value = data.value as unknown as Poster[];
-
-  posters.value = Array.from({ length: 10 }, () => {
-    const randomStatus = faker.helpers.arrayElement(["draft", "published"]);
-
-    return {
-      id: faker.number.int(),
-      title: faker.lorem.sentence(),
-      description: faker.lorem.paragraph(),
-      imageUrl: faker.image.urlPicsumPhotos({
-        width: 400,
-        height: 300,
-        blur: 0,
-      }),
-      status: randomStatus,
-      publishedAt: randomStatus === "published" ? faker.date.recent() : null,
-      created: new Date(),
-      updated: new Date(),
-    };
-  });
 }
 
 if (error.value) {

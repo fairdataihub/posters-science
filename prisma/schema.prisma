@@ -64,4 +64,66 @@ model Poster {
 
     created DateTime @default(now())
     updated DateTime @updatedAt
+
+    posterMetadata PosterMetadata?
+}
+
+model PosterMetadata {
+    poster   Poster @relation(fields: [posterId], references: [id], onDelete: Cascade)
+    posterId Int    @id
+
+    doi String?
+
+    identifiers          Json @default("[]") // [{ identifier: string, identifierType: string }]
+    alternateIdentifiers Json @default("[]") // [{ identifier: string, identifierType: string }]
+
+    creators Json @default("[]") // [{ name: string, nameType: string, nameIdentifiers: [{ nameIdentifier: string, nameIdentifierScheme: string, schemeURI: string }], affiliation: [{ name: string, affiliationIdentifier: string, affiliationIdentifierScheme: string, schemeURI: string }] }]
+
+    titles       Json @default("[]") // [{ title: string, titleType: string }]
+    descriptions Json @default("[]") // [{ description: string, descriptionType: string }]
+
+    publisher       Json @default("[]") // [{ name: string, publisherIdentifier: string, publisherIdentifierScheme: string, schemeURI: string }]
+    publicationYear Int?
+
+    subjects Json @default("[]") // [{ subject: string, schemeUri: string, valueUri: string, subjectScheme: string, classificationCode: string }]
+
+    dates Json @default("[]") // [{ date: string, dateType: string, dateInformation: string }]
+
+    language String?
+
+    types Json @default("[]") // [{ type: string, typeGeneral: string }]
+
+    relatedIdentifiers Json @default("[]") // [{ relatedIdentifier: string, relatedIdentifierType: string, relationType: string, relatedMetadataScheme: string, schemeURI: string, schemeType: string, resourceTypeGeneral: string }]
+
+    sizes String[] @default([])
+
+    formats String[] @default([])
+
+    version String?
+
+    rightsList Json @default("[]") // [{ rights: string, rightsUri: string, rightsIdentifier: string, rightsIdentifierScheme: string, schemeUri: string }]
+
+    fundingReferences Json @default("[]") // [{ funderName: string, funderIdentifier: string, funderIdentifierType: string, schemeUri: string, awardNumber: string, awardUri: string, awardTitle: string }]
+
+    ethicsApproval Json @default("[]") // [{ ethicsApprovalID: string, ethicsApprovalBody: string, ethicsApprovalStatus: string, ethicsApprovalLink: string }]
+
+    conferenceName           String?
+    conferenceLocation       String?
+    conferenceUri            String?
+    conferenceIdentifier     String?
+    conferenceIdentifierType String?
+    conferenceSchemaUri      String?
+    conferenceStartDate      String?
+    conferenceEndDate        String?
+    conferenceAcronym        String?
+    conferenceSeries         String?
+
+    posterContent Json @default("[]") // { sections: [{ sectionTitle: string, sectionContent: string }], unstructuredContent }
+    tableCaption  Json @default("[]") // [{ caption1: string, caption2: string, ... }]
+    imageCaption  Json @default("[]") // [{ caption1: string, caption2: string, ... }]
+
+    domain String?
+
+    created DateTime @default(now())
+    updated DateTime @updatedAt
 }
