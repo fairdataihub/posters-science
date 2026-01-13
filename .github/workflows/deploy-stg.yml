@@ -31,6 +31,7 @@ jobs:
       KAMAL_APP_DOMAIN: ${{ secrets.KAMAL_APP_DOMAIN }}
       KAMAL_APP_NAME: ${{ secrets.KAMAL_APP_NAME }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      POSTER_EXTRACTION_API: ${{ secrets.POSTER_EXTRACTION_API }}
       NUXT_SESSION_PASSWORD: ${{ secrets.NUXT_SESSION_PASSWORD }}
 
     steps:
