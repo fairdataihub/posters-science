@@ -14,7 +14,7 @@ export default defineEventHandler(async (event) => {
     dataVolume: rawBody.dataVolume || "Not specified"
   }
 
-  const flaskUrl = process.env.WARNING_DMP_API;
+  const flaskUrl = 'http://100.81.132.45:40925/query';
   if (!flaskUrl) {
     throw createError({
       statusCode: 500,
