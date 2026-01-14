@@ -69,6 +69,7 @@ env:
     - DATABASE_URL # Database connection string
     - NUXT_SESSION_PASSWORD
     - POSTER_EXTRACTION_API # API URL for poster extraction
+    - WARNING_DMP_API # API URL for warning DMP
 
 # Aliases are triggered with "bin/kamal <alias>". You can overwrite arguments on invocation:
 # "bin/kamal app logs -r job" will tail logs from the first server in the job section.
