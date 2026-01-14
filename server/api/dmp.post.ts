@@ -1,8 +1,20 @@
-import { readBody, createError } from "h3";
+import { readBody, createError, defineEventHandler } from "h3";
 
 export default defineEventHandler(async (event) => {
-  const rawBody = await readBody(event)
+  // 1️⃣ Read the incoming request body
+  let rawBody;
+  try {
+    rawBody = await readBody(event);
+  } catch (err) {
+    console.error('[H3 Error] Failed to read request body:', err);
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Invalid request body',
+      data: err
+    });
+  }
 
+  // 2️⃣ Build the payload to send to Flask
   const body = {
     title: rawBody.title || "Untitled Project",
     agency: rawBody.agency || "Not specified",
@@ -12,37 +24,45 @@ export default defineEventHandler(async (event) => {
     humanSubjects: rawBody.humanSubjects || "No",
     dataSharing: rawBody.dataSharing || "Not specified",
     dataVolume: rawBody.dataVolume || "Not specified"
-  }
+  };
 
+  console.log('[H3] Sending to Flask:', JSON.stringify(body));
+
+  // 3️⃣ Flask endpoint
   const flaskUrl = 'http://100.81.132.45:40925/query';
   if (!flaskUrl) {
     throw createError({
       statusCode: 500,
-      statusMessage: "WARNING_DMP_API is not set",
+      statusMessage: "Flask URL is not set"
     });
   }
 
+  // 4️⃣ Send POST request using native fetch
   try {
-    // 2. Use a direct fetch. 
-    // We pass 'body' directly. Nuxt will auto-stringify it.
-    const response = await $fetch(flaskUrl, {
+    const response = await fetch(flaskUrl, {
       method: 'POST',
-      body: body, 
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      timeout: 300000 
-    })
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      // Note: fetch timeout is not built-in. Can wrap in AbortController if needed
+    });
 
-    return response
-  } catch (err: any) {
-    // If Flask fails, we print the reason here
-    console.error('[Flask Error]:', err.data)
+    console.log('[H3] Flask responded with status:', response.status);
 
+    // Check if response is JSON
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      const data = await response.json();
+      return data;
+    } else {
+      const text = await response.text();
+      return { raw: text };
+    }
+  } catch (err) {
+    console.error('[H3 Fetch Error]:', err);
     throw createError({
-      statusCode: err?.response?.status ?? 500,
-      statusMessage: 'Flask Validation Error',
-      data: err?.data 
-    })
+      statusCode: 500,
+      statusMessage: 'Failed to reach Flask',
+      data: err
+    });
   }
 });
