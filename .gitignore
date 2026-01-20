@@ -18,6 +18,8 @@ logs
 .DS_Store
 .fleet
 .idea
+.vscode/
+example_posters/
 
 # Local env files
 .env

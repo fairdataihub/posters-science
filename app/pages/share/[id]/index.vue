@@ -1,14 +1,15 @@
 <!-- eslint-disable @typescript-eslint/no-explicit-any -->
 <script setup lang="ts">
-import type * as z from "zod";
 import type { FormSubmitEvent } from "@nuxt/ui";
 import { faker } from "@faker-js/faker";
-import type { DateSchema } from "@/utils/poster_schema";
 import {
-  schema,
+  strictFormSchema,
   ISO_LANGUAGE_OPTIONS,
   TITLE_TYPE_OPTIONS,
   DATE_TYPE_OPTIONS,
+  RESOURCE_TYPE_OPTIONS,
+  type PosterResponse,
+  type StrictFormSchema,
 } from "@/utils/poster_schema";
 import type { CalendarDate } from "@internationalized/date";
 import {
@@ -36,7 +37,7 @@ const df = new DateFormatter("en-US", {
   timeZone: getLocalTimeZone(),
 });
 
-type Schema = z.output<typeof schema>;
+type Schema = StrictFormSchema;
 
 const loading = ref(false);
 
@@ -164,8 +165,240 @@ const state = reactive<Schema>({
 const { data, error } = await useFetch(`/api/poster/${id}`);
 
 if (data.value) {
-  // Assume the API returns an object compatible with Schema (or a subset)
-  Object.assign(state, data.value);
+  const poster = data.value as PosterResponse;
+
+  // Basic poster fields
+  if (poster.title) state.title = poster.title;
+  if (poster.description) state.description = poster.description;
+
+  const meta = poster.posterMetadata;
+  if (meta) {
+    // DOI and identifiers
+    if (meta.doi) state.doi = meta.doi;
+    if (meta.identifiers?.length)
+      state.identifiers = meta.identifiers.map((i: any) => ({
+        identifier: i.identifier || "",
+        identifierType: i.identifierType || "",
+      }));
+    if (meta.alternateIdentifiers?.length)
+      state.alternateIdentifiers = meta.alternateIdentifiers;
+
+    // Creators - split name into givenName/familyName
+    if (meta.creators?.length) {
+      state.creators = meta.creators.map((creator) => {
+        let givenName = creator.givenName || "";
+        let familyName = creator.familyName || "";
+
+        // If we have a name field but no givenName/familyName, split it
+        if (creator.name && !givenName && !familyName) {
+          const nameParts = creator.name.trim().split(/\s+/);
+          if (nameParts.length === 1) {
+            familyName = nameParts[0] ?? "";
+          } else {
+            familyName = nameParts.pop() || "";
+            givenName = nameParts.join(" ");
+          }
+        }
+
+        return {
+          givenName,
+          familyName,
+          nameType: (creator.nameType || "Personal") as
+            | "Personal"
+            | "Organizational",
+          nameIdentifiers: (creator.nameIdentifiers || []).map((ni: any) => ({
+            nameIdentifier: ni?.nameIdentifier || "",
+            nameIdentifierScheme: ni?.nameIdentifierScheme || "",
+            schemeURI: ni?.schemeURI || "",
+          })),
+          affiliation: (creator.affiliation || []).map((a: any) => ({
+            name: a?.name || "",
+            affiliationIdentifier: a?.affiliationIdentifier || "",
+            affiliationIdentifierScheme: a?.affiliationIdentifierScheme || "",
+            schemeURI: a?.schemeURI || "",
+          })),
+        };
+      });
+      console.log("Transformed creators", state.creators);
+    }
+
+    // Titles - cast titleType to enum
+    if (meta.titles?.length) {
+      state.titles = meta.titles.map((t) => ({
+        title: t.title ?? "",
+        titleType: (t.titleType || undefined) as
+          | "AlternativeTitle"
+          | "Subtitle"
+          | "TranslatedTitle"
+          | "Other"
+          | undefined,
+      }));
+    }
+
+    // Descriptions - cast descriptionType to enum
+    if (meta.descriptions?.length) {
+      state.descriptions = meta.descriptions.map((d) => ({
+        description: d.description ?? "",
+        descriptionType: (d.descriptionType || "Abstract") as
+          | "Abstract"
+          | "Methods"
+          | "SeriesInformation"
+          | "TableOfContents"
+          | "TechnicalInfo"
+          | "Other",
+      }));
+    }
+
+    // Publisher - convert from possible array/object to single object
+    if (meta.publisher) {
+      const pub = Array.isArray(meta.publisher)
+        ? meta.publisher[0]
+        : meta.publisher;
+      if (pub) {
+        state.publisher = {
+          name: pub.name || "",
+          publisherIdentifier: pub.publisherIdentifier || "",
+          publisherIdentifierScheme: pub.publisherIdentifierScheme || "",
+          schemeURI: pub.schemeURI || "",
+        };
+      }
+    }
+
+    // Publication year
+    if (meta.publicationYear) state.publicationYear = meta.publicationYear;
+
+    // Subjects
+    if (meta.subjects?.length)
+      state.subjects = meta.subjects.map((s: any) => ({
+        subject: s?.subject || "",
+        schemeUri: s?.schemeUri || "",
+        valueUri: s?.valueUri || "",
+        subjectScheme: s?.subjectScheme || "",
+        classificationCode: s?.classificationCode || "",
+      }));
+
+    // Dates - transform from range format to separate start/end
+    if (meta.dates?.length) {
+      state.dates = meta.dates.map((d) => {
+        let start = "";
+        let end = "";
+
+        if (d.date) {
+          if (d.date.includes("/")) {
+            // Range format: "2025-01-01/2025-01-05"
+            const [startDate, endDate] = d.date.split("/");
+            start = startDate || "";
+            end = endDate || "";
+          } else {
+            // Single date
+            start = d.date;
+          }
+        }
+
+        return {
+          start,
+          end,
+          dateType: (d.dateType || "Other") as
+            | "Accepted"
+            | "Available"
+            | "Copyrighted"
+            | "Collected"
+            | "Coverage"
+            | "Created"
+            | "Issued"
+            | "Submitted"
+            | "Updated"
+            | "Valid"
+            | "Withdrawn"
+            | "Presented"
+            | "Other",
+          dateInformation: d.dateInformation || "",
+        };
+      });
+    }
+
+    // Language
+    if (meta.language) state.language = meta.language;
+
+    // Types - convert from possible array/object to single object
+    if (meta.types) {
+      const types = Array.isArray(meta.types) ? meta.types[0] : meta.types;
+      if (types) {
+        state.types = {
+          resourceType: types.resourceType || "Poster",
+          resourceTypeGeneral: types.resourceTypeGeneral || "Other",
+        };
+      }
+    }
+
+    // Related identifiers
+    if (meta.relatedIdentifiers?.length)
+      state.relatedIdentifiers = meta.relatedIdentifiers as any[];
+
+    // Sizes and formats
+    if (meta.sizes?.length) state.sizes = meta.sizes;
+    if (meta.formats?.length) state.formats = meta.formats;
+
+    // Version
+    if (meta.version) state.version = meta.version;
+
+    // Rights list
+    if (meta.rightsList?.length)
+      state.rightsList = meta.rightsList.map((r: any) => ({
+        rights: r.rights ?? "",
+        rightsUri: r.rightsUri ?? "",
+        rightsIdentifier: r.rightsIdentifier ?? "",
+        rightsIdentifierScheme: r.rightsIdentifierScheme ?? "",
+        schemeUri: r.schemeUri ?? "",
+      }));
+
+    // Funding references - cast funderIdentifierType to enum
+    if (meta.fundingReferences?.length) {
+      state.fundingReferences = meta.fundingReferences.map((f: any) => ({
+        funderName: f.funderName || "",
+        funderIdentifier: f.funderIdentifier || "",
+        funderIdentifierType: f.funderIdentifierType as
+          | "Crossref Funder ID"
+          | "GRID"
+          | "ISNI"
+          | "ROR"
+          | "Other"
+          | undefined,
+        schemeUri: f.schemeUri || "",
+        awardNumber: f.awardNumber || "",
+        awardUri: f.awardUri || "",
+        awardTitle: f.awardTitle || "",
+      }));
+    }
+
+    // Ethics approvals
+    if (meta.ethicsApprovals?.length)
+      state.ethicsApprovals = meta.ethicsApprovals;
+
+    // Conference
+    if (meta.conference) {
+      state.conference = {
+        conferenceName: meta.conference.conferenceName || "",
+        conferenceLocation: meta.conference.conferenceLocation || "",
+        conferenceUri: meta.conference.conferenceUri || "",
+        conferenceIdentifier: meta.conference.conferenceIdentifier || "",
+        conferenceIdentifierType:
+          meta.conference.conferenceIdentifierType || "",
+        conferenceSchemaUri: meta.conference.conferenceSchemaUri || "",
+        conferenceStartDate: meta.conference.conferenceStartDate || "",
+        conferenceEndDate: meta.conference.conferenceEndDate || "",
+        conferenceAcronym: meta.conference.conferenceAcronym || "",
+        conferenceSeries: meta.conference.conferenceSeries || "",
+      };
+    }
+
+    // Table and image captions
+    if (meta.tableCaption?.length) state.tableCaption = meta.tableCaption;
+    if (meta.imageCaption?.length) state.imageCaption = meta.imageCaption;
+
+    // Domain
+    if (meta.domain) state.domain = meta.domain;
+  }
 }
 
 if (error.value) {
@@ -200,16 +433,16 @@ function useCalendarStringField(
 // Used to handle conference start/end dates in calendar components
 // as they are single string fields in the schema
 const conferenceStartDateCalendar = useCalendarStringField(
-  () => state.conference.conferenceStartDate,
+  () => state.conference?.conferenceStartDate ?? "",
   (value) => {
-    state.conference.conferenceStartDate = value;
+    if (state.conference) state.conference.conferenceStartDate = value;
   },
 );
 
 const conferenceEndDateCalendar = useCalendarStringField(
-  () => state.conference.conferenceEndDate,
+  () => state.conference?.conferenceEndDate ?? "",
   (value) => {
-    state.conference.conferenceEndDate = value;
+    if (state.conference) state.conference.conferenceEndDate = value;
   },
 );
 
@@ -246,9 +479,15 @@ const getDateCalendar = (index: number): DateCalendar => {
   );
 };
 
-type UiDate = z.infer<typeof DateSchema>; // { start, end, dateType, dateInformation }
+// Form date type with optional fields
+type FormDate = {
+  start?: string;
+  end?: string;
+  dateType?: string;
+  dateInformation?: string | null;
+};
 
-const buildApiDates = (uiDates: UiDate[]) => {
+const buildApiDates = (uiDates: FormDate[]) => {
   return uiDates.map((d) => {
     const startStr = d.start;
     const endStr = d.end || null;
@@ -285,13 +524,10 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
 
     console.log("Submitting poster metadata (API payload)", payload);
     // 4) Submit to API
-    // TODO: call your API to persist the metadata
-    // await $fetch(`/api/poster/${id}`, {
-    //   method: "PUT",
-    //   body: payload,
-    // });
-
-    console.log("Submitting poster metadata (API payload)", payload);
+    await $fetch(`/api/poster/${id}`, {
+      method: "PUT",
+      body: payload,
+    });
 
     toast.add({
       title: "Success",
@@ -304,6 +540,7 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
       title: "Error",
       description: "There was a problem saving your poster metadata.",
       color: "error",
+      icon: "material-symbols:error",
     });
   } finally {
     loading.value = false;
@@ -401,7 +638,7 @@ function removeRow<T>(arr: T[], index: number) {
     </UPageHeader>
 
     <UForm
-      :schema="schema"
+      :schema="strictFormSchema"
       :state="state"
       class="space-y-6"
       :disabled="loading"
