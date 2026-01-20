@@ -44,7 +44,7 @@ if (error.value) {
       <NuxtLink
         v-for="(poster, index) in posters"
         :key="index + 1"
-        :to="`/share/${index + 1}`"
+        :to="`/share/${poster.id}`"
       >
         <UCard
           class="group cursor-pointer overflow-hidden transition-all duration-300 hover:shadow-lg"
