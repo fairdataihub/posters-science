@@ -118,7 +118,7 @@ async function uploadPoster(
         Cookie: sessionCookie,
       },
       body: formData,
-      signal: AbortSignal.timeout(600000), // 10 minute timeout
+      signal: AbortSignal.timeout(900000), // 15 minute timeout
     });
 
     const duration = ((Date.now() - startTime) / 1000).toFixed(1);

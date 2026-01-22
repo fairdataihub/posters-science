@@ -20,7 +20,8 @@
     "postinstall": "nuxt prepare && prisma generate",
     "reset": "rm -rf node_modules && rm -rf .nuxt && rm -rf .output && rm -rf dist && yarn install",
     "prune-branches": "git removed-branches --prune --force",
-    "test:upload": "npx tsx scripts/upload-test-posters.ts"
+    "test:upload": "npx tsx scripts/upload-test-posters.ts",
+    "test:dummy": "npx tsx scripts/create-dummy-posters.ts"
   },
   "dependencies": {
     "@internationalized/date": "^3.10.0",
@@ -38,6 +39,11 @@
   "devDependencies": {
     "@antfu/eslint-config": "^3.14.0",
     "@faker-js/faker": "^9.4.0",
+    "@iconify-json/heroicons": "^1.2.3",
+    "@iconify-json/iconoir": "^1.2.10",
+    "@iconify-json/lucide": "^1.2.86",
+    "@iconify-json/material-symbols": "^1.2.52",
+    "@iconify-json/solar": "^1.2.5",
     "@nuxt/devtools": "2.5.0",
     "@nuxt/eslint": "^1.9.0",
     "@nuxt/ui": "^4.2.1",
