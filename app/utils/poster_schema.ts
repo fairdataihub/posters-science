@@ -434,8 +434,7 @@ const StrictConferenceSchema = z.object({
 });
 
 const StrictDateSchema = z.object({
-  start: z.string().min(1, { message: "Start date is required" }),
-  end: z.string().optional(),
+  date: z.string().min(1, { message: "A date is required" }),
   dateType: z.enum(DATE_TYPE_VALUES, { message: "Date type is required" }),
   dateInformation: z.string().optional().nullable(),
 });

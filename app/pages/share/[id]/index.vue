@@ -37,12 +37,21 @@ const df = new DateFormatter("en-US", {
   timeZone: getLocalTimeZone(),
 });
 
-type Schema = StrictFormSchema;
+// Extend the schema type with UI helper fields for date picking
+type FormDateEntry = StrictFormSchema["dates"][number] & {
+  start?: string;
+  end?: string;
+};
+
+// Remove dates from the schema and replace with UI date type
+type FormState = Omit<StrictFormSchema, "dates"> & {
+  dates: FormDateEntry[];
+};
 
 const loading = ref(false);
 
 // Initial state
-const state = reactive<Schema>({
+const state = reactive<FormState>({
   title: faker.lorem.sentence(),
   description: faker.lorem.paragraph(),
   doi: "",
@@ -93,8 +102,7 @@ const state = reactive<Schema>({
 
   dates: [
     {
-      start: "",
-      end: "",
+      date: "",
       dateType: "Presented",
       dateInformation: "",
     },
@@ -296,6 +304,7 @@ if (data.value) {
         }
 
         return {
+          date: d.date || "",
           start,
           end,
           dateType: (d.dateType || "Other") as
@@ -446,6 +455,16 @@ const conferenceEndDateCalendar = useCalendarStringField(
   },
 );
 
+// Helper to compute W3C date string from start/end
+const computeDateString = (start: string, end: string): string => {
+  if (!start) return "";
+  if (end && end !== start) {
+    return `${start}/${end}`; // range: 2025-10-15/2025-10-17
+  }
+
+  return start; // single: 2025-10-15
+};
+
 const dateCalendars = computed(() =>
   state.dates.map((row: any) => ({
     get startCalendar(): CalendarDate | null {
@@ -453,6 +472,8 @@ const dateCalendars = computed(() =>
     },
     set startCalendar(val: CalendarDate | null) {
       row.start = val ? toW3CDate(val) : "";
+      // Sync the date field for schema validation
+      row.date = computeDateString(row.start, row.end || "");
     },
 
     get endCalendar(): CalendarDate | null {
@@ -460,6 +481,8 @@ const dateCalendars = computed(() =>
     },
     set endCalendar(val: CalendarDate | null) {
       row.end = val ? toW3CDate(val) : "";
+      // Sync the date field for schema validation
+      row.date = computeDateString(row.start || "", row.end);
     },
   })),
 );
@@ -481,31 +504,24 @@ const getDateCalendar = (index: number): DateCalendar => {
 
 // Form date type with optional fields
 type FormDate = {
+  date?: string;
   start?: string;
   end?: string;
   dateType?: string;
   dateInformation?: string | null;
 };
 
+// Strip out start/end fields, keep only what the API expects
 const buildApiDates = (uiDates: FormDate[]) => {
-  return uiDates.map((d) => {
-    const startStr = d.start;
-    const endStr = d.end || null;
-
-    const date =
-      endStr && endStr !== startStr
-        ? `${startStr}/${endStr}` // range: 2025-10-15/2025-10-17
-        : startStr; // single: 2025-10-15
-
-    return {
-      date,
-      dateType: d.dateType,
-      dateInformation: d.dateInformation || undefined,
-    };
-  });
+  return uiDates.map((d) => ({
+    date: d.date,
+    dateType: d.dateType,
+    dateInformation: d.dateInformation || undefined,
+  }));
 };
 
-async function onSubmit(event: FormSubmitEvent<Schema>) {
+async function onSubmit(event: FormSubmitEvent<StrictFormSchema>) {
+  console.log("Submitting poster metadata");
   loading.value = true;
 
   try {
@@ -514,7 +530,7 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
     console.log("Raw form data from UForm (Schema)", formData);
 
     // 2) Transform dates to match JSON schema
-    const apiDates = buildApiDates(formData.dates);
+    const apiDates = buildApiDates(formData.dates ?? []);
 
     // 3) Create payload
     const payload = {
@@ -534,6 +550,11 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
       description: "Poster metadata has been submitted.",
       color: "success",
     });
+
+    // Navigate to review page
+    await navigateTo(`/share/${id}/review`);
+    // Login to Zenodo
+    // await handleZenodoSignIn();
   } catch (err) {
     console.error(err);
     toast.add({
@@ -544,6 +565,29 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
     });
   } finally {
     loading.value = false;
+  }
+}
+
+function onError(event: {
+  errors: { id?: string; path?: string; message?: string }[];
+}) {
+  const errorCount = event.errors.length;
+  const firstError = event.errors[0];
+
+  toast.add({
+    title: "Validation Error",
+    description:
+      errorCount === 1
+        ? firstError?.message || "Please fix the highlighted field."
+        : `Please fix ${errorCount} validation errors before submitting.`,
+    color: "error",
+    icon: "material-symbols:error",
+  });
+
+  // Scroll to first error field if it has an id
+  if (firstError?.id) {
+    const el = document.getElementById(firstError.id);
+    el?.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 }
 
@@ -644,6 +688,7 @@ function removeRow<T>(arr: T[], index: number) {
       :disabled="loading"
       size="xl"
       @submit="onSubmit"
+      @error="onError"
     >
       <!-- GENERAL INFORMATION -->
       <CardCollapsibleContent title="General Information" :collapse="false">
@@ -1375,6 +1420,7 @@ function removeRow<T>(arr: T[], index: number) {
                 pushRow(
                   state.dates,
                   {
+                    date: '',
                     start: '',
                     end: '',
                     dateType: 'Other',
@@ -2128,6 +2174,7 @@ function removeRow<T>(arr: T[], index: number) {
         label="Continue"
         type="submit"
         size="lg"
+        to="review"
       />
     </UForm>
   </div>
