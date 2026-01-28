@@ -27,6 +27,7 @@ export default defineNuxtConfig({
     zenodoClientSecret: process.env.ZENODO_CLIENT_SECRET || "",
     zenodoRedirectUri: process.env.ZENODO_REDIRECT_URI || "",
     zenodoApiEndpoint: process.env.ZENODO_API_ENDPOINT || "",
+    zenodoEndpoint: process.env.ZENODO_ENDPOINT || "",
     extractionApiUrl: process.env.EXTRACTION_API_URL || "",
     public: {
       ENABLE_EMAIL_VERIFICATION: process.env.ENABLE_EMAIL_VERIFICATION

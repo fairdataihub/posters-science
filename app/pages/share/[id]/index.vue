@@ -540,10 +540,18 @@ async function onSubmit(event: FormSubmitEvent<StrictFormSchema>) {
 
     console.log("Submitting poster metadata (API payload)", payload);
     // 4) Submit to API
-    await $fetch(`/api/poster/${id}`, {
+    const response = await $fetch(`/api/poster/${id}`, {
       method: "PUT",
       body: payload,
     });
+
+    if (!response || (response as any).error) {
+      console.log("Error response from API:", response);
+      throw new Error(
+        (response as any)?.message ||
+          "Unknown error occurred while saving poster metadata.",
+      );
+    }
 
     toast.add({
       title: "Success",
@@ -553,8 +561,6 @@ async function onSubmit(event: FormSubmitEvent<StrictFormSchema>) {
 
     // Navigate to review page
     await navigateTo(`/share/${id}/review`);
-    // Login to Zenodo
-    // await handleZenodoSignIn();
   } catch (err) {
     console.error(err);
     toast.add({
@@ -2174,7 +2180,6 @@ function removeRow<T>(arr: T[], index: number) {
         label="Continue"
         type="submit"
         size="lg"
-        to="review"
       />
     </UForm>
   </div>
