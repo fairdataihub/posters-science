@@ -1,6 +1,7 @@
 import { faker } from "@faker-js/faker";
 import { Agent } from "undici";
 import { schema } from "~~/app/utils/poster_schema";
+const config = useRuntimeConfig();
 
 const extractionAgent = new Agent({
   headersTimeout: 900000, // 15 minutes
@@ -12,7 +13,7 @@ export default defineEventHandler(async (event) => {
   const { user } = session;
   const userId = user.id;
 
-  const extractionApiUrl = process.env.POSTER_EXTRACTION_API;
+  const extractionApiUrl = config.extractionApiUrl;
 
   // Read multipart form data
   const formData = await readMultipartFormData(event);

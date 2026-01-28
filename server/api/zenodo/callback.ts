@@ -1,3 +1,5 @@
+const config = useRuntimeConfig();
+
 export default defineEventHandler(async (event) => {
   const session = await requireUserSession(event);
   const { user } = session;
@@ -21,10 +23,10 @@ export default defineEventHandler(async (event) => {
   }
 
   const posterId = state;
-  const clientId = process.env.ZENODO_CLIENT_ID;
-  const clientSecret = process.env.ZENODO_CLIENT_SECRET;
-  const redirectUri = process.env.ZENODO_REDIRECT_URI;
-  const zenodoEndpoint = process.env.ZENODO_ENDPOINT;
+  const clientId = config.zenodoClientId;
+  const clientSecret = config.zenodoClientSecret;
+  const redirectUri = config.zenodoRedirectUri;
+  const zenodoEndpoint = config.zenodoApiEndpoint;
 
   if (!clientId || !clientSecret || !redirectUri || !zenodoEndpoint) {
     throw createError({

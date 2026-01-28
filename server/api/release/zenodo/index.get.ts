@@ -1,20 +1,6 @@
 import { z } from "zod";
 
-const {
-  ZENODO_ENDPOINT,
-  ZENODO_CLIENT_ID,
-  ZENODO_CLIENT_SECRET,
-  ZENODO_REDIRECT_URI,
-} = process.env;
-
-if (
-  !ZENODO_ENDPOINT ||
-  !ZENODO_CLIENT_ID ||
-  !ZENODO_CLIENT_SECRET ||
-  !ZENODO_REDIRECT_URI
-) {
-  throw new Error("Zenodo OAuth configuration is missing");
-}
+const config = useRuntimeConfig();
 
 const payloadSchema = z.object({
   posterId: z.string(),
@@ -31,13 +17,13 @@ export default defineEventHandler(async (event) => {
   // Provide URL to initiate OAuth flow
   const params = new URLSearchParams({
     response_type: "code",
-    client_id: ZENODO_CLIENT_ID,
-    redirect_uri: ZENODO_REDIRECT_URI,
+    client_id: config.zenodoClientId,
+    redirect_uri: config.zenodoRedirectUri,
     state: posterId,
     scope: "deposit:write deposit:actions",
   });
 
-  const zenodoLoginURL = `${ZENODO_ENDPOINT}/oauth/authorize?${params.toString()}`;
+  const zenodoLoginURL = `${config.zenodoApiEndpoint}/oauth/authorize?${params.toString()}`;
   const { zenodoToken, message, existingDepositions } =
     await validateZenodoToken(userId);
 
