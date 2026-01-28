@@ -23,10 +23,12 @@ export default defineEventHandler(async (event) => {
   }
 
   const posterId = state;
-  const clientId = config.zenodoClientId;
-  const clientSecret = config.zenodoClientSecret;
-  const redirectUri = config.zenodoRedirectUri;
-  const zenodoEndpoint = config.zenodoApiEndpoint;
+  const {
+    zenodoClientId: clientId,
+    zenodoClientSecret: clientSecret,
+    zenodoRedirectUri: redirectUri,
+    zenodoEndpoint,
+  } = config;
 
   if (!clientId || !clientSecret || !redirectUri || !zenodoEndpoint) {
     throw createError({
@@ -58,6 +60,8 @@ export default defineEventHandler(async (event) => {
       statusMessage: "Failed to obtain Zenodo access token",
     });
   }
+
+  console.log("Zenodo OAuth token obtained successfully");
 
   const { access_token, refresh_token, expires_in } =
     await oauthTokenResponse.json();

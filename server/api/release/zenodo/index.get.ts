@@ -23,7 +23,7 @@ export default defineEventHandler(async (event) => {
     scope: "deposit:write deposit:actions",
   });
 
-  const zenodoLoginURL = `${config.zenodoApiEndpoint}/oauth/authorize?${params.toString()}`;
+  const zenodoLoginURL = `${config.zenodoEndpoint}/oauth/authorize?${params.toString()}`;
   const { zenodoToken, message, existingDepositions } =
     await validateZenodoToken(userId);
 
