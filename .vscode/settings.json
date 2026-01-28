@@ -10,7 +10,7 @@
   },
   "eslint.useFlatConfig": true,
   "vue.codeActions.enabled": false,
-  "editor.hover.enabled": true,
+  "editor.hover.enabled": "on",
   "editor.quickSuggestions": {
     "strings": "on"
   },

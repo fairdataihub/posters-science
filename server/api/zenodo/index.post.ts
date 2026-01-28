@@ -17,15 +17,20 @@ export default defineEventHandler(async (event) => {
   const query = getQuery(event);
   const { posterId, mode, existingDepositionId } = payloadSchema.parse(query);
 
-  const { zenodoToken, message, existingDepositions } =
-    await validateZenodoToken(userId);
+  const { zenodoToken } = await validateZenodoToken(userId);
 
-  const status = await publishToZenodo(
+  if (!zenodoToken) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: "Invalid Zenodo token, please sign in again",
+    });
+  }
+
+  const status = await beginZenodoPublication(
     posterId,
     mode,
     existingDepositionId,
     userId,
-    zenodoToken,
   );
 
   if (!status.success) {
