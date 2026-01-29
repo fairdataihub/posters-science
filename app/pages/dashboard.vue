@@ -38,6 +38,14 @@ if (error.value) {
     <UPageHeader
       title="Dashboard"
       description="Keep track of all your submitted posters. Edit or delete them as needed."
+      :links="[
+        {
+          label: 'Add Poster',
+          to: '/share/new',
+          icon: 'heroicons:plus',
+          color: 'primary' as const,
+        },
+      ]"
     />
 
     <UPageGrid>
@@ -111,12 +119,12 @@ if (error.value) {
         Get started by creating your first poster.
       </p>
 
-      <NuxtLink to="/share/new">
+      <!-- <NuxtLink to="/share/new">
         <UButton color="primary" size="lg">
           <Icon name="heroicons:plus" class="mr-2 h-5 w-5" />
           Create Poster
         </UButton>
-      </NuxtLink>
+      </NuxtLink> -->
     </div>
   </div>
 </template>
