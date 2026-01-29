@@ -64,13 +64,16 @@ builder:
 # Environment variables are available to your application at runtime
 env:
   clear:
-    NODE_ENV: test # Set to 'production' for production deployments
+    NODE_ENV: staging # Set to 'production' for production deployments
+    ZENODO_ENDPOINT: <%= ENV["ZENODO_ENDPOINT"] %>
+    ZENODO_API_ENDPOINT: <%= ENV["ZENODO_API_ENDPOINT"] %>
   secret:
     - DATABASE_URL # Database connection string
     - NUXT_SESSION_PASSWORD
     - POSTER_EXTRACTION_API # API URL for poster extraction
     - WARNING_DMP_API # API URL for warning DMP
-
+    - ZENODO_CLIENT_ID
+    - ZENODO_CLIENT_SECRET
 # Aliases are triggered with "bin/kamal <alias>". You can overwrite arguments on invocation:
 # "bin/kamal app logs -r job" will tail logs from the first server in the job section.
 # These are convenient shortcuts for common operations
