@@ -53,14 +53,14 @@ const loading = ref(false);
 // Initial state
 const state = reactive<FormState>({
   title: faker.lorem.sentence(),
-  description: faker.lorem.paragraph(),
+  description: "DEMO",
   doi: "",
   prefix: "",
   suffix: "",
   identifiers: [
     {
-      identifier: "",
-      identifierType: "",
+      identifier: "DEMO",
+      identifierType: "DEMO",
     },
   ],
   alternateIdentifiers: [],
@@ -82,7 +82,7 @@ const state = reactive<FormState>({
   ],
 
   publisher: {
-    name: "",
+    name: "DEMO",
     publisherIdentifier: "",
     publisherIdentifierScheme: "",
     schemeURI: "",
@@ -92,7 +92,7 @@ const state = reactive<FormState>({
 
   subjects: [
     {
-      subject: "",
+      subject: "DEMO",
       schemeUri: "",
       valueUri: "",
       subjectScheme: "",
@@ -102,9 +102,11 @@ const state = reactive<FormState>({
 
   dates: [
     {
-      date: "",
+      date: "2023-01-01",
       dateType: "Presented",
       dateInformation: "",
+      start: "2023-01-01",
+      end: "",
     },
   ],
 
@@ -139,7 +141,7 @@ const state = reactive<FormState>({
 
   fundingReferences: [
     {
-      funderName: "",
+      funderName: "DEMO",
       funderIdentifier: "",
       funderIdentifierType: undefined,
       schemeUri: "",
@@ -152,14 +154,14 @@ const state = reactive<FormState>({
   ethicsApprovals: [],
 
   conference: {
-    conferenceName: "",
+    conferenceName: "DEMO",
     conferenceLocation: "",
     conferenceUri: "",
     conferenceIdentifier: "",
     conferenceIdentifierType: "",
     conferenceSchemaUri: "",
-    conferenceStartDate: "",
-    conferenceEndDate: "",
+    conferenceStartDate: "2023-01-01",
+    conferenceEndDate: "2023-01-02",
     conferenceAcronym: "",
     conferenceSeries: "",
   },
@@ -167,7 +169,7 @@ const state = reactive<FormState>({
   tableCaption: [],
   imageCaption: [],
 
-  domain: "",
+  domain: "DEMO",
 });
 
 const { data, error } = await useFetch(`/api/poster/${id}`);
@@ -185,7 +187,7 @@ if (data.value) {
     if (meta.doi) state.doi = meta.doi;
     if (meta.identifiers?.length) {
       state.identifiers = meta.identifiers.map((i: any) => ({
-        identifier: i.identifier || "",
+        identifier: i.identifier || "DEMO",
         identifierType: i.identifierType || "",
       }));
     }
@@ -288,7 +290,7 @@ if (data.value) {
         : meta.publisher;
       if (pub) {
         state.publisher = {
-          name: pub.name || "",
+          name: pub.name || "DEMO",
           publisherIdentifier: pub.publisherIdentifier || "",
           publisherIdentifierScheme: pub.publisherIdentifierScheme || "",
           schemeURI: pub.schemeURI || "",
@@ -312,23 +314,24 @@ if (data.value) {
     // Dates - transform from range format to separate start/end
     if (meta.dates?.length) {
       state.dates = meta.dates.map((d) => {
-        let start = "";
-        let end = "";
+        // TODO: REMOVE VALUES AFTER TESTING
+        const start = "2023-01-01";
+        const end = "";
 
-        if (d.date) {
-          if (d.date.includes("/")) {
-            // Range format: "2025-01-01/2025-01-05"
-            const [startDate, endDate] = d.date.split("/");
-            start = startDate || "";
-            end = endDate || "";
-          } else {
-            // Single date
-            start = d.date;
-          }
-        }
+        // if (d.date) {
+        //   if (d.date.includes("/")) {
+        //     // Range format: "2025-01-01/2025-01-05"
+        //     const [startDate, endDate] = d.date.split("/");
+        //     start = "2023-01-01";
+        //     end = endDate || "";
+        //   } else {
+        //     // Single date
+        //     start = d.date;
+        //   }
+        // }
 
         return {
-          date: d.date || "",
+          date: d.date || "2023-01-01",
           start,
           end,
           dateType: (d.dateType || "Other") as
@@ -411,15 +414,16 @@ if (data.value) {
     // Conference
     if (meta.conference) {
       state.conference = {
-        conferenceName: meta.conference.conferenceName || "",
+        conferenceName: meta.conference.conferenceName || "DEMO",
         conferenceLocation: meta.conference.conferenceLocation || "",
         conferenceUri: meta.conference.conferenceUri || "",
         conferenceIdentifier: meta.conference.conferenceIdentifier || "",
         conferenceIdentifierType:
           meta.conference.conferenceIdentifierType || "",
         conferenceSchemaUri: meta.conference.conferenceSchemaUri || "",
-        conferenceStartDate: meta.conference.conferenceStartDate || "",
-        conferenceEndDate: meta.conference.conferenceEndDate || "",
+        conferenceStartDate:
+          meta.conference.conferenceStartDate || "2023-01-01",
+        conferenceEndDate: meta.conference.conferenceEndDate || "2023-01-01",
         conferenceAcronym: meta.conference.conferenceAcronym || "",
         conferenceSeries: meta.conference.conferenceSeries || "",
       };
@@ -446,7 +450,7 @@ if (data.value) {
     }
 
     // Domain
-    if (meta.domain) state.domain = meta.domain;
+    state.domain = meta.domain || "DEMO";
   }
 }
 
