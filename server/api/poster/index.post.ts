@@ -15,6 +15,14 @@ export default defineEventHandler(async (event) => {
 
   const extractionApiUrl = config.extractionApiUrl;
 
+  if (!extractionApiUrl) {
+    throw createError({
+      statusCode: 503,
+      statusMessage: "Extraction API not configured",
+      message: "POSTER_EXTRACTION_API environment variable is not set",
+    });
+  }
+
   // Read multipart form data
   const formData = await readMultipartFormData(event);
 
