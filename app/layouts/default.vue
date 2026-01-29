@@ -25,11 +25,11 @@ const headerItems = computed<NavigationMenuItem[]>(() => [
     to: "/share/new",
     active: route.path.startsWith("/share"),
   },
-  {
-    label: "Learn More",
-    to: "/about",
-    active: route.path.startsWith("/about"),
-  },
+  // {
+  //   label: "Learn More",
+  //   to: "/about",
+  //   active: route.path.startsWith("/about"),
+  // },
   {
     label: "Metrics",
     to: "/metrics",
@@ -58,7 +58,7 @@ const footerItems: NavigationMenuItem[] = [
     <UHeader>
       <template #title>
         <NuxtLink to="/" class="flex text-2xl font-bold">
-          Posters.Science
+          Posters.science
         </NuxtLink>
       </template>
 
