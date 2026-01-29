@@ -72,8 +72,8 @@ const smartSearch = () => {
 <template>
   <div class="mx-auto flex w-full max-w-screen-xl flex-col gap-6 px-6">
     <UPageCTA
-      title="Find posters faster with AI-powered natural language search"
-      description="Experience lightning-fast poster discovery. Our advanced AI uses natural language understanding to instantly find the most relevant posters for your query. Just type your search and let the magic happen."
+      title="Find answers to your research questions!"
+      description="Our smart search feature uses natural language understanding to instantly generate an answer to your research question, leveraging content from the most relevant posters for your query. Just type your question and let the magic happen!"
       variant="naked"
     >
       <template #body>

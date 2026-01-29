@@ -24,7 +24,7 @@ const links = ref([
   <section>
     <UPageHero
       title="The best way to discover and share posters"
-      description="Posters.science is a platform for discovering and sharing posters on a variety of topics."
+      description="Posters.science is a platform for discovering and sharing scientific posters."
       headline="Releasing in Summer 2026"
       orientation="horizontal"
       :links="links"
