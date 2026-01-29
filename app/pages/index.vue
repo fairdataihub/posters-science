@@ -29,11 +29,25 @@ const links = ref([
       orientation="horizontal"
       :links="links"
     >
-      <img
-        src="https://picsum.photos/1000/1000"
-        alt="App screenshot"
-        class="ring-default rounded-lg shadow-2xl ring"
-      />
+      <div class="relative">
+        <img src="/assets/images/poster-logo.png" alt="Logo" />
+        <!-- Glow effect behind the image -->
+        <div
+          class="bg-primary/20 absolute inset-0 -z-10 animate-pulse rounded-xl blur-3xl"
+        />
+      </div>
     </UPageHero>
   </section>
 </template>
+
+<style scoped>
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+</style>
