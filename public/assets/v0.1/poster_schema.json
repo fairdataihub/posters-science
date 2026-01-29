@@ -1,5 +1,5 @@
 {
-  "$id": "https://schema.aireadi.org/v0.1.0/dataset_description.json",
+  "$id": "https://schema.aireadi.org/v0.1/dataset_description.json",
   "$schema": "http://json-schema.org/draft-07/schema",
   "title": "Dataset Description",
   "description": "This is the schema for the dataset_description.json metadata file from the Clinical Dataset Structure (CDS). The keys, descriptions, requirements, examples, etc. are from the DataCite Metadata Schema v4.5 unless specified otherwise in $comment. Note that the 'GeoLocation' and 'RelatedItem' properties from Datacite are not included as they were not deemed relevant for the use case in the CDS. Some keys are from the the ECRIN Metadata Schema for data object v6.0 and we have introduced some modifications as necessary for tailoring the schema to clinical research datasets. All keys are camelCase.",
