@@ -15,7 +15,6 @@ COPY prisma ./prisma/
 
 RUN yarn install --frozen-lockfile \
   && yarn prisma:generate \
-  && yarn prisma:db:push \
   && yarn cache clean
 
 # Copy source files and build
@@ -38,7 +37,9 @@ WORKDIR /app
 COPY --from=builder /app/.output ./
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
-# Copy the Prisma schema & migrations, so `prisma migrate deploy` can see them
+# Copy prisma CLI for db push at runtime
+COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
+# Copy the Prisma schema so `prisma db push` can read it
 COPY --from=builder /app/prisma ./prisma
 
 # Copy our startup script and make it executable
