@@ -66,10 +66,10 @@ export function buildPosterJson(meta: PosterMetadata) {
     fundingReferences: meta.fundingReferences,
     ...(hasItems(ethicsApprovals) && { ethicsApprovals }),
     ...(conference && { conference }),
-    ...(posterContent && { posterContent }),
-    ...(hasItems(meta.tableCaption) && { tableCaption: meta.tableCaption }),
-    ...(hasItems(meta.imageCaption) && { imageCaption: meta.imageCaption }),
-    ...(meta.domain && { domain: meta.domain }),
+    ...(posterContent && { content: posterContent }),
+    ...(hasItems(meta.tableCaption) && { tableCaptions: meta.tableCaption }),
+    ...(hasItems(meta.imageCaption) && { imageCaptions: meta.imageCaption }),
+    ...(meta.domain && { researchField: meta.domain }),
   };
 
   return stripEmptyStrings(posterJson) as Record<string, unknown>;

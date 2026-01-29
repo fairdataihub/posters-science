@@ -211,19 +211,24 @@ const FundingSchema = z.object({
 });
 
 const CaptionSchema = z.object({
-  caption1: z.string().optional(),
-  caption2: z.string().optional(),
+  captions: z.array(z.string()).optional(),
 });
 
 // Schema for validating extraction API response (reuses existing schemas with looser requirements)
 // Includes both `name` (from extraction) and `givenName`/`familyName` (from saved form data)
+// Affiliation can be plain strings (from extraction API) or objects (from saved form data)
+const ExtractionAffiliationItem = z.union([
+  z.string(),
+  AffiliationSchema.partial(),
+]);
+
 const ExtractionCreatorSchema = z.object({
   name: z.string().optional(),
   givenName: z.string().optional(),
   familyName: z.string().optional(),
   nameType: z.enum(NAME_TYPE_VALUES).optional(),
   nameIdentifiers: z.array(NameIdentifierSchema.partial()).optional(),
-  affiliation: z.array(AffiliationSchema.partial()).optional(),
+  affiliation: z.array(ExtractionAffiliationItem).optional(),
 });
 
 // Extraction API returns dates with different structure currently
@@ -262,6 +267,10 @@ const PosterContentSchema = z.object({
 // Used to validate data from the external extraction API
 
 export const schema = z.object({
+  // Extraction API metadata fields (ignored but accepted)
+  $schema: z.string().optional(),
+  _validation: z.unknown().optional(),
+
   doi: z.string().optional(),
   prefix: z.string().optional(),
   suffix: z.string().optional(),
@@ -284,10 +293,18 @@ export const schema = z.object({
   rightsList: z.array(RightsSchema.partial()).optional(),
   fundingReferences: z.array(FundingSchema.partial()).optional(),
   ethicsApprovals: z.array(z.string()).optional(),
-  imageCaption: z.array(CaptionSchema).optional(),
-  posterContent: PosterContentSchema.optional(),
-  tableCaption: z.array(CaptionSchema).optional(),
   conference: ConferenceSchema.optional(),
+
+  // JSON schema canonical names (new)
+  imageCaptions: z.array(CaptionSchema).optional(),
+  tableCaptions: z.array(CaptionSchema).optional(),
+  content: PosterContentSchema.optional(),
+  researchField: z.string().optional(),
+
+  // Internal/legacy names (backward compat with stored data)
+  imageCaption: z.array(CaptionSchema).optional(),
+  tableCaption: z.array(CaptionSchema).optional(),
+  posterContent: PosterContentSchema.optional(),
   domain: z.string().optional(),
 });
 

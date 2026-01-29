@@ -60,7 +60,7 @@ const state = reactive<FormState>({
   identifiers: [
     {
       identifier: "",
-      identifierType: "DOI",
+      identifierType: "",
     },
   ],
   alternateIdentifiers: [],
@@ -183,11 +183,12 @@ if (data.value) {
   if (meta) {
     // DOI and identifiers
     if (meta.doi) state.doi = meta.doi;
-    if (meta.identifiers?.length)
+    if (meta.identifiers?.length) {
       state.identifiers = meta.identifiers.map((i: any) => ({
         identifier: i.identifier || "",
         identifierType: i.identifierType || "",
       }));
+    }
     if (meta.alternateIdentifiers?.length)
       state.alternateIdentifiers = meta.alternateIdentifiers;
 
@@ -198,13 +199,25 @@ if (data.value) {
         let familyName = creator.familyName || "";
 
         // If we have a name field but no givenName/familyName, split it
+        // Handles "Family, Given" (DataCite) and "Given Family" formats
         if (creator.name && !givenName && !familyName) {
-          const nameParts = creator.name.trim().split(/\s+/);
-          if (nameParts.length === 1) {
-            familyName = nameParts[0] ?? "";
+          const trimmed = creator.name.trim();
+
+          if (trimmed.includes(",")) {
+            // "Family, Given" format
+            const [family, ...rest] = trimmed.split(",");
+            familyName = (family ?? "").trim();
+            givenName = rest.join(",").trim();
           } else {
-            familyName = nameParts.pop() || "";
-            givenName = nameParts.join(" ");
+            // "Given Family" format
+            const nameParts = trimmed.split(/\s+/);
+
+            if (nameParts.length === 1) {
+              familyName = nameParts[0] ?? "";
+            } else {
+              familyName = nameParts.pop() || "";
+              givenName = nameParts.join(" ");
+            }
           }
         }
 
@@ -219,12 +232,23 @@ if (data.value) {
             nameIdentifierScheme: ni?.nameIdentifierScheme || "",
             schemeURI: ni?.schemeURI || "",
           })),
-          affiliation: (creator.affiliation || []).map((a: any) => ({
-            name: a?.name || "",
-            affiliationIdentifier: a?.affiliationIdentifier || "",
-            affiliationIdentifierScheme: a?.affiliationIdentifierScheme || "",
-            schemeURI: a?.schemeURI || "",
-          })),
+          affiliation: (creator.affiliation || []).map((a: any) => {
+            if (typeof a === "string") {
+              return {
+                name: a,
+                affiliationIdentifier: "",
+                affiliationIdentifierScheme: "",
+                schemeURI: "",
+              };
+            }
+
+            return {
+              name: a?.name || "",
+              affiliationIdentifier: a?.affiliationIdentifier || "",
+              affiliationIdentifierScheme: a?.affiliationIdentifierScheme || "",
+              schemeURI: a?.schemeURI || "",
+            };
+          }),
         };
       });
       console.log("Transformed creators", state.creators);
@@ -401,9 +425,25 @@ if (data.value) {
       };
     }
 
-    // Table and image captions
-    if (meta.tableCaption?.length) state.tableCaption = meta.tableCaption;
-    if (meta.imageCaption?.length) state.imageCaption = meta.imageCaption;
+    // Table and image captions (migrate old {caption1, caption2} format)
+    if (meta.tableCaption?.length) {
+      state.tableCaption = meta.tableCaption.map((cap: any) => {
+        if (cap.captions) return cap;
+
+        return {
+          captions: [cap.caption1, cap.caption2].filter(Boolean),
+        };
+      });
+    }
+    if (meta.imageCaption?.length) {
+      state.imageCaption = meta.imageCaption.map((cap: any) => {
+        if (cap.captions) return cap;
+
+        return {
+          captions: [cap.caption1, cap.caption2].filter(Boolean),
+        };
+      });
+    }
 
     // Domain
     if (meta.domain) state.domain = meta.domain;
@@ -2076,8 +2116,7 @@ function removeRow<T>(arr: T[], index: number) {
                 variant="ghost"
                 @click="
                   pushRow((state.tableCaption ||= []), {
-                    caption1: '',
-                    caption2: '',
+                    captions: [''],
                   })
                 "
               >
@@ -2089,23 +2128,13 @@ function removeRow<T>(arr: T[], index: number) {
               <div
                 v-for="(cap, tIndex) in state.tableCaption"
                 :key="tIndex"
-                class="grid gap-3 rounded-lg border border-gray-200 p-3 md:grid-cols-[1fr,1fr,auto]"
+                class="rounded-lg border border-gray-200 p-3"
               >
-                <UFormField
-                  :name="`tableCaption.${tIndex}.caption1`"
-                  label="Caption line 1"
-                >
-                  <UInput v-model="cap.caption1" />
-                </UFormField>
+                <div class="mb-2 flex items-center justify-between">
+                  <span class="text-xs font-medium text-gray-500">
+                    Table {{ tIndex + 1 }}
+                  </span>
 
-                <UFormField
-                  :name="`tableCaption.${tIndex}.caption2`"
-                  label="Caption line 2"
-                >
-                  <UInput v-model="cap.caption2" />
-                </UFormField>
-
-                <div class="flex items-end justify-end">
                   <UButton
                     size="xs"
                     icon="i-lucide-trash-2"
@@ -2113,6 +2142,41 @@ function removeRow<T>(arr: T[], index: number) {
                     variant="ghost"
                     @click="removeRow(state.tableCaption!, tIndex)"
                   />
+                </div>
+
+                <div class="space-y-2">
+                  <div
+                    v-for="(_, cIndex) in cap.captions"
+                    :key="cIndex"
+                    class="flex items-center gap-2"
+                  >
+                    <UFormField
+                      :name="`tableCaption.${tIndex}.captions.${cIndex}`"
+                      :label="`Caption line ${cIndex + 1}`"
+                      class="flex-1"
+                    >
+                      <UInput v-model="cap.captions![cIndex]" />
+                    </UFormField>
+
+                    <UButton
+                      v-if="cap.captions!.length > 1"
+                      size="xs"
+                      icon="i-lucide-minus"
+                      color="error"
+                      variant="ghost"
+                      class="mt-5"
+                      @click="cap.captions!.splice(cIndex, 1)"
+                    />
+                  </div>
+
+                  <UButton
+                    size="xs"
+                    icon="i-lucide-plus"
+                    variant="ghost"
+                    @click="cap.captions!.push('')"
+                  >
+                    Add caption line
+                  </UButton>
                 </div>
               </div>
             </div>
@@ -2128,8 +2192,7 @@ function removeRow<T>(arr: T[], index: number) {
                 variant="ghost"
                 @click="
                   pushRow((state.imageCaption ||= []), {
-                    caption1: '',
-                    caption2: '',
+                    captions: [''],
                   })
                 "
               >
@@ -2141,23 +2204,13 @@ function removeRow<T>(arr: T[], index: number) {
               <div
                 v-for="(cap, iIndex) in state.imageCaption"
                 :key="iIndex"
-                class="grid gap-3 rounded-lg border border-gray-200 p-3 md:grid-cols-[1fr,1fr,auto]"
+                class="rounded-lg border border-gray-200 p-3"
               >
-                <UFormField
-                  :name="`imageCaption.${iIndex}.caption1`"
-                  label="Caption line 1"
-                >
-                  <UInput v-model="cap.caption1" />
-                </UFormField>
+                <div class="mb-2 flex items-center justify-between">
+                  <span class="text-xs font-medium text-gray-500">
+                    Image {{ iIndex + 1 }}
+                  </span>
 
-                <UFormField
-                  :name="`imageCaption.${iIndex}.caption2`"
-                  label="Caption line 2"
-                >
-                  <UInput v-model="cap.caption2" />
-                </UFormField>
-
-                <div class="flex items-end justify-end">
                   <UButton
                     size="xs"
                     icon="i-lucide-trash-2"
@@ -2165,6 +2218,41 @@ function removeRow<T>(arr: T[], index: number) {
                     variant="ghost"
                     @click="removeRow(state.imageCaption!, iIndex)"
                   />
+                </div>
+
+                <div class="space-y-2">
+                  <div
+                    v-for="(_, cIndex) in cap.captions"
+                    :key="cIndex"
+                    class="flex items-center gap-2"
+                  >
+                    <UFormField
+                      :name="`imageCaption.${iIndex}.captions.${cIndex}`"
+                      :label="`Caption line ${cIndex + 1}`"
+                      class="flex-1"
+                    >
+                      <UInput v-model="cap.captions![cIndex]" />
+                    </UFormField>
+
+                    <UButton
+                      v-if="cap.captions!.length > 1"
+                      size="xs"
+                      icon="i-lucide-minus"
+                      color="error"
+                      variant="ghost"
+                      class="mt-5"
+                      @click="cap.captions!.splice(cIndex, 1)"
+                    />
+                  </div>
+
+                  <UButton
+                    size="xs"
+                    icon="i-lucide-plus"
+                    variant="ghost"
+                    @click="cap.captions!.push('')"
+                  >
+                    Add caption line
+                  </UButton>
                 </div>
               </div>
             </div>
@@ -2182,5 +2270,6 @@ function removeRow<T>(arr: T[], index: number) {
         size="lg"
       />
     </UForm>
+    <!-- <pre>{{ state }}</pre> -->
   </div>
 </template>
