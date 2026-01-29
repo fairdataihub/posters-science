@@ -37,12 +37,21 @@ const df = new DateFormatter("en-US", {
   timeZone: getLocalTimeZone(),
 });
 
-type Schema = StrictFormSchema;
+// Extend the schema type with UI helper fields for date picking
+type FormDateEntry = StrictFormSchema["dates"][number] & {
+  start?: string;
+  end?: string;
+};
+
+// Remove dates from the schema and replace with UI date type
+type FormState = Omit<StrictFormSchema, "dates"> & {
+  dates: FormDateEntry[];
+};
 
 const loading = ref(false);
 
 // Initial state
-const state = reactive<Schema>({
+const state = reactive<FormState>({
   title: faker.lorem.sentence(),
   description: faker.lorem.paragraph(),
   doi: "",
@@ -51,7 +60,7 @@ const state = reactive<Schema>({
   identifiers: [
     {
       identifier: "",
-      identifierType: "DOI",
+      identifierType: "",
     },
   ],
   alternateIdentifiers: [],
@@ -93,8 +102,7 @@ const state = reactive<Schema>({
 
   dates: [
     {
-      start: "",
-      end: "",
+      date: "",
       dateType: "Presented",
       dateInformation: "",
     },
@@ -175,11 +183,12 @@ if (data.value) {
   if (meta) {
     // DOI and identifiers
     if (meta.doi) state.doi = meta.doi;
-    if (meta.identifiers?.length)
+    if (meta.identifiers?.length) {
       state.identifiers = meta.identifiers.map((i: any) => ({
         identifier: i.identifier || "",
         identifierType: i.identifierType || "",
       }));
+    }
     if (meta.alternateIdentifiers?.length)
       state.alternateIdentifiers = meta.alternateIdentifiers;
 
@@ -190,13 +199,25 @@ if (data.value) {
         let familyName = creator.familyName || "";
 
         // If we have a name field but no givenName/familyName, split it
+        // Handles "Family, Given" (DataCite) and "Given Family" formats
         if (creator.name && !givenName && !familyName) {
-          const nameParts = creator.name.trim().split(/\s+/);
-          if (nameParts.length === 1) {
-            familyName = nameParts[0] ?? "";
+          const trimmed = creator.name.trim();
+
+          if (trimmed.includes(",")) {
+            // "Family, Given" format
+            const [family, ...rest] = trimmed.split(",");
+            familyName = (family ?? "").trim();
+            givenName = rest.join(",").trim();
           } else {
-            familyName = nameParts.pop() || "";
-            givenName = nameParts.join(" ");
+            // "Given Family" format
+            const nameParts = trimmed.split(/\s+/);
+
+            if (nameParts.length === 1) {
+              familyName = nameParts[0] ?? "";
+            } else {
+              familyName = nameParts.pop() || "";
+              givenName = nameParts.join(" ");
+            }
           }
         }
 
@@ -211,12 +232,23 @@ if (data.value) {
             nameIdentifierScheme: ni?.nameIdentifierScheme || "",
             schemeURI: ni?.schemeURI || "",
           })),
-          affiliation: (creator.affiliation || []).map((a: any) => ({
-            name: a?.name || "",
-            affiliationIdentifier: a?.affiliationIdentifier || "",
-            affiliationIdentifierScheme: a?.affiliationIdentifierScheme || "",
-            schemeURI: a?.schemeURI || "",
-          })),
+          affiliation: (creator.affiliation || []).map((a: any) => {
+            if (typeof a === "string") {
+              return {
+                name: a,
+                affiliationIdentifier: "",
+                affiliationIdentifierScheme: "",
+                schemeURI: "",
+              };
+            }
+
+            return {
+              name: a?.name || "",
+              affiliationIdentifier: a?.affiliationIdentifier || "",
+              affiliationIdentifierScheme: a?.affiliationIdentifierScheme || "",
+              schemeURI: a?.schemeURI || "",
+            };
+          }),
         };
       });
       console.log("Transformed creators", state.creators);
@@ -296,6 +328,7 @@ if (data.value) {
         }
 
         return {
+          date: d.date || "",
           start,
           end,
           dateType: (d.dateType || "Other") as
@@ -392,9 +425,25 @@ if (data.value) {
       };
     }
 
-    // Table and image captions
-    if (meta.tableCaption?.length) state.tableCaption = meta.tableCaption;
-    if (meta.imageCaption?.length) state.imageCaption = meta.imageCaption;
+    // Table and image captions (migrate old {caption1, caption2} format)
+    if (meta.tableCaption?.length) {
+      state.tableCaption = meta.tableCaption.map((cap: any) => {
+        if (cap.captions) return cap;
+
+        return {
+          captions: [cap.caption1, cap.caption2].filter(Boolean),
+        };
+      });
+    }
+    if (meta.imageCaption?.length) {
+      state.imageCaption = meta.imageCaption.map((cap: any) => {
+        if (cap.captions) return cap;
+
+        return {
+          captions: [cap.caption1, cap.caption2].filter(Boolean),
+        };
+      });
+    }
 
     // Domain
     if (meta.domain) state.domain = meta.domain;
@@ -446,6 +495,16 @@ const conferenceEndDateCalendar = useCalendarStringField(
   },
 );
 
+// Helper to compute W3C date string from start/end
+const computeDateString = (start: string, end: string): string => {
+  if (!start) return "";
+  if (end && end !== start) {
+    return `${start}/${end}`; // range: 2025-10-15/2025-10-17
+  }
+
+  return start; // single: 2025-10-15
+};
+
 const dateCalendars = computed(() =>
   state.dates.map((row: any) => ({
     get startCalendar(): CalendarDate | null {
@@ -453,6 +512,8 @@ const dateCalendars = computed(() =>
     },
     set startCalendar(val: CalendarDate | null) {
       row.start = val ? toW3CDate(val) : "";
+      // Sync the date field for schema validation
+      row.date = computeDateString(row.start, row.end || "");
     },
 
     get endCalendar(): CalendarDate | null {
@@ -460,6 +521,8 @@ const dateCalendars = computed(() =>
     },
     set endCalendar(val: CalendarDate | null) {
       row.end = val ? toW3CDate(val) : "";
+      // Sync the date field for schema validation
+      row.date = computeDateString(row.start || "", row.end);
     },
   })),
 );
@@ -481,31 +544,24 @@ const getDateCalendar = (index: number): DateCalendar => {
 
 // Form date type with optional fields
 type FormDate = {
+  date?: string;
   start?: string;
   end?: string;
   dateType?: string;
   dateInformation?: string | null;
 };
 
+// Strip out start/end fields, keep only what the API expects
 const buildApiDates = (uiDates: FormDate[]) => {
-  return uiDates.map((d) => {
-    const startStr = d.start;
-    const endStr = d.end || null;
-
-    const date =
-      endStr && endStr !== startStr
-        ? `${startStr}/${endStr}` // range: 2025-10-15/2025-10-17
-        : startStr; // single: 2025-10-15
-
-    return {
-      date,
-      dateType: d.dateType,
-      dateInformation: d.dateInformation || undefined,
-    };
-  });
+  return uiDates.map((d) => ({
+    date: d.date,
+    dateType: d.dateType,
+    dateInformation: d.dateInformation || undefined,
+  }));
 };
 
-async function onSubmit(event: FormSubmitEvent<Schema>) {
+async function onSubmit(event: FormSubmitEvent<StrictFormSchema>) {
+  console.log("Submitting poster metadata");
   loading.value = true;
 
   try {
@@ -514,7 +570,7 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
     console.log("Raw form data from UForm (Schema)", formData);
 
     // 2) Transform dates to match JSON schema
-    const apiDates = buildApiDates(formData.dates);
+    const apiDates = buildApiDates(formData.dates ?? []);
 
     // 3) Create payload
     const payload = {
@@ -524,16 +580,27 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
 
     console.log("Submitting poster metadata (API payload)", payload);
     // 4) Submit to API
-    await $fetch(`/api/poster/${id}`, {
+    const response = await $fetch(`/api/poster/${id}`, {
       method: "PUT",
       body: payload,
     });
+
+    if (!response || (response as any).error) {
+      console.log("Error response from API:", response);
+      throw new Error(
+        (response as any)?.message ||
+          "Unknown error occurred while saving poster metadata.",
+      );
+    }
 
     toast.add({
       title: "Success",
       description: "Poster metadata has been submitted.",
       color: "success",
     });
+
+    // Navigate to review page
+    await navigateTo(`/share/${id}/review`);
   } catch (err) {
     console.error(err);
     toast.add({
@@ -544,6 +611,29 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
     });
   } finally {
     loading.value = false;
+  }
+}
+
+function onError(event: {
+  errors: { id?: string; path?: string; message?: string }[];
+}) {
+  const errorCount = event.errors.length;
+  const firstError = event.errors[0];
+
+  toast.add({
+    title: "Validation Error",
+    description:
+      errorCount === 1
+        ? firstError?.message || "Please fix the highlighted field."
+        : `Please fix ${errorCount} validation errors before submitting.`,
+    color: "error",
+    icon: "material-symbols:error",
+  });
+
+  // Scroll to first error field if it has an id
+  if (firstError?.id) {
+    const el = document.getElementById(firstError.id);
+    el?.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 }
 
@@ -644,6 +734,7 @@ function removeRow<T>(arr: T[], index: number) {
       :disabled="loading"
       size="xl"
       @submit="onSubmit"
+      @error="onError"
     >
       <!-- GENERAL INFORMATION -->
       <CardCollapsibleContent title="General Information" :collapse="false">
@@ -1375,6 +1466,7 @@ function removeRow<T>(arr: T[], index: number) {
                 pushRow(
                   state.dates,
                   {
+                    date: '',
                     start: '',
                     end: '',
                     dateType: 'Other',
@@ -2024,8 +2116,7 @@ function removeRow<T>(arr: T[], index: number) {
                 variant="ghost"
                 @click="
                   pushRow((state.tableCaption ||= []), {
-                    caption1: '',
-                    caption2: '',
+                    captions: [''],
                   })
                 "
               >
@@ -2037,23 +2128,13 @@ function removeRow<T>(arr: T[], index: number) {
               <div
                 v-for="(cap, tIndex) in state.tableCaption"
                 :key="tIndex"
-                class="grid gap-3 rounded-lg border border-gray-200 p-3 md:grid-cols-[1fr,1fr,auto]"
+                class="rounded-lg border border-gray-200 p-3"
               >
-                <UFormField
-                  :name="`tableCaption.${tIndex}.caption1`"
-                  label="Caption line 1"
-                >
-                  <UInput v-model="cap.caption1" />
-                </UFormField>
+                <div class="mb-2 flex items-center justify-between">
+                  <span class="text-xs font-medium text-gray-500">
+                    Table {{ tIndex + 1 }}
+                  </span>
 
-                <UFormField
-                  :name="`tableCaption.${tIndex}.caption2`"
-                  label="Caption line 2"
-                >
-                  <UInput v-model="cap.caption2" />
-                </UFormField>
-
-                <div class="flex items-end justify-end">
                   <UButton
                     size="xs"
                     icon="i-lucide-trash-2"
@@ -2061,6 +2142,41 @@ function removeRow<T>(arr: T[], index: number) {
                     variant="ghost"
                     @click="removeRow(state.tableCaption!, tIndex)"
                   />
+                </div>
+
+                <div class="space-y-2">
+                  <div
+                    v-for="(_, cIndex) in cap.captions"
+                    :key="cIndex"
+                    class="flex items-center gap-2"
+                  >
+                    <UFormField
+                      :name="`tableCaption.${tIndex}.captions.${cIndex}`"
+                      :label="`Caption line ${cIndex + 1}`"
+                      class="flex-1"
+                    >
+                      <UInput v-model="cap.captions![cIndex]" />
+                    </UFormField>
+
+                    <UButton
+                      v-if="cap.captions!.length > 1"
+                      size="xs"
+                      icon="i-lucide-minus"
+                      color="error"
+                      variant="ghost"
+                      class="mt-5"
+                      @click="cap.captions!.splice(cIndex, 1)"
+                    />
+                  </div>
+
+                  <UButton
+                    size="xs"
+                    icon="i-lucide-plus"
+                    variant="ghost"
+                    @click="cap.captions!.push('')"
+                  >
+                    Add caption line
+                  </UButton>
                 </div>
               </div>
             </div>
@@ -2076,8 +2192,7 @@ function removeRow<T>(arr: T[], index: number) {
                 variant="ghost"
                 @click="
                   pushRow((state.imageCaption ||= []), {
-                    caption1: '',
-                    caption2: '',
+                    captions: [''],
                   })
                 "
               >
@@ -2089,23 +2204,13 @@ function removeRow<T>(arr: T[], index: number) {
               <div
                 v-for="(cap, iIndex) in state.imageCaption"
                 :key="iIndex"
-                class="grid gap-3 rounded-lg border border-gray-200 p-3 md:grid-cols-[1fr,1fr,auto]"
+                class="rounded-lg border border-gray-200 p-3"
               >
-                <UFormField
-                  :name="`imageCaption.${iIndex}.caption1`"
-                  label="Caption line 1"
-                >
-                  <UInput v-model="cap.caption1" />
-                </UFormField>
+                <div class="mb-2 flex items-center justify-between">
+                  <span class="text-xs font-medium text-gray-500">
+                    Image {{ iIndex + 1 }}
+                  </span>
 
-                <UFormField
-                  :name="`imageCaption.${iIndex}.caption2`"
-                  label="Caption line 2"
-                >
-                  <UInput v-model="cap.caption2" />
-                </UFormField>
-
-                <div class="flex items-end justify-end">
                   <UButton
                     size="xs"
                     icon="i-lucide-trash-2"
@@ -2113,6 +2218,41 @@ function removeRow<T>(arr: T[], index: number) {
                     variant="ghost"
                     @click="removeRow(state.imageCaption!, iIndex)"
                   />
+                </div>
+
+                <div class="space-y-2">
+                  <div
+                    v-for="(_, cIndex) in cap.captions"
+                    :key="cIndex"
+                    class="flex items-center gap-2"
+                  >
+                    <UFormField
+                      :name="`imageCaption.${iIndex}.captions.${cIndex}`"
+                      :label="`Caption line ${cIndex + 1}`"
+                      class="flex-1"
+                    >
+                      <UInput v-model="cap.captions![cIndex]" />
+                    </UFormField>
+
+                    <UButton
+                      v-if="cap.captions!.length > 1"
+                      size="xs"
+                      icon="i-lucide-minus"
+                      color="error"
+                      variant="ghost"
+                      class="mt-5"
+                      @click="cap.captions!.splice(cIndex, 1)"
+                    />
+                  </div>
+
+                  <UButton
+                    size="xs"
+                    icon="i-lucide-plus"
+                    variant="ghost"
+                    @click="cap.captions!.push('')"
+                  >
+                    Add caption line
+                  </UButton>
                 </div>
               </div>
             </div>
@@ -2130,5 +2270,6 @@ function removeRow<T>(arr: T[], index: number) {
         size="lg"
       />
     </UForm>
+    <!-- <pre>{{ state }}</pre> -->
   </div>
 </template>

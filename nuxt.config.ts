@@ -23,6 +23,12 @@ export default defineNuxtConfig({
     mailPass: process.env.MAIL_PASS || "password",
     mailPort: process.env.MAIL_PORT || "587",
     mailUser: process.env.MAIL_USER || "user",
+    zenodoClientId: process.env.ZENODO_CLIENT_ID || "",
+    zenodoClientSecret: process.env.ZENODO_CLIENT_SECRET || "",
+    zenodoRedirectUri: process.env.ZENODO_REDIRECT_URI || "",
+    zenodoApiEndpoint: process.env.ZENODO_API_ENDPOINT || "",
+    zenodoEndpoint: process.env.ZENODO_ENDPOINT || "",
+    extractionApiUrl: process.env.POSTER_EXTRACTION_API || "",
     public: {
       ENABLE_EMAIL_VERIFICATION: process.env.ENABLE_EMAIL_VERIFICATION
         ? process.env.ENABLE_EMAIL_VERIFICATION === "true"

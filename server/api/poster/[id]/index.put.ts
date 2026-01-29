@@ -84,9 +84,9 @@ export default defineEventHandler(async (event) => {
   // Transform dates from form format (start/end) to DB format
   // Filter out dates without a valid start date and convert undefined to null
   const dates = (data.dates ?? [])
-    .filter((d) => d.start)
+    .filter((d) => d.date)
     .map((d) => ({
-      date: d.start,
+      date: d.date,
       dateType: d.dateType ?? null,
       dateInformation: d.dateInformation ?? null,
     }));

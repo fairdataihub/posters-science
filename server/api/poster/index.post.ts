@@ -1,6 +1,7 @@
 import { faker } from "@faker-js/faker";
 import { Agent } from "undici";
 import { schema } from "~~/app/utils/poster_schema";
+const config = useRuntimeConfig();
 
 const extractionAgent = new Agent({
   headersTimeout: 900000, // 15 minutes
@@ -12,7 +13,7 @@ export default defineEventHandler(async (event) => {
   const { user } = session;
   const userId = user.id;
 
-  const extractionApiUrl = process.env.POSTER_EXTRACTION_API;
+  const extractionApiUrl = config.extractionApiUrl;
 
   // Read multipart form data
   const formData = await readMultipartFormData(event);
@@ -83,7 +84,7 @@ export default defineEventHandler(async (event) => {
       throw createError({
         statusCode: 422,
         statusMessage: "Invalid data received from extraction API",
-        data: parseResult.error.flatten(),
+        data: { ...parseResult.error.flatten(), rawData },
       });
     }
 
@@ -91,6 +92,8 @@ export default defineEventHandler(async (event) => {
 
     const creators = (extractedData.creators ?? []).map((creator) => ({
       name: creator.name ?? "Unknown Creator",
+      ...(creator.givenName && { givenName: creator.givenName }),
+      ...(creator.familyName && { familyName: creator.familyName }),
       ...(creator.nameType && { nameType: creator.nameType }),
       ...(creator.nameIdentifiers && {
         nameIdentifiers: creator.nameIdentifiers.map((ni) => ({
@@ -100,18 +103,28 @@ export default defineEventHandler(async (event) => {
         })),
       }),
       ...(creator.affiliation && {
-        affiliation: creator.affiliation.map((aff) => ({
-          name: aff.name,
-          affiliationIdentifier: aff.affiliationIdentifier || null,
-          affiliationIdentifierScheme: aff.affiliationIdentifierScheme || null,
-        })),
+        affiliation: creator.affiliation.map((aff) => {
+          if (typeof aff === "string") {
+            return { name: aff };
+          }
+
+          return {
+            name: aff.name,
+            affiliationIdentifier: aff.affiliationIdentifier || null,
+            affiliationIdentifierScheme:
+              aff.affiliationIdentifierScheme || null,
+          };
+        }),
       }),
     }));
 
-    const imageCaption = extractedData.imageCaption ?? [];
+    const imageCaption =
+      extractedData.imageCaptions ?? extractedData.imageCaption ?? [];
 
-    const posterContent = extractedData.posterContent?.sections ?? [];
-    const tableCaption = extractedData.tableCaption ?? [];
+    const posterContent =
+      (extractedData.content ?? extractedData.posterContent)?.sections ?? [];
+    const tableCaption =
+      extractedData.tableCaptions ?? extractedData.tableCaption ?? [];
     const titles = extractedData.titles ?? [];
     const descriptions = extractedData.descriptions ?? [];
 
@@ -151,7 +164,8 @@ export default defineEventHandler(async (event) => {
     const conferenceAcronym = conference?.conferenceAcronym ?? null;
     const conferenceSeries = conference?.conferenceSeries ?? null;
 
-    const domain = extractedData.domain ?? "Other";
+    const domain =
+      extractedData.researchField ?? extractedData.domain ?? "Other";
 
     // Save the poster to the database
     const poster = await prisma.poster.create({

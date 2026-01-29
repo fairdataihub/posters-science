@@ -29,9 +29,11 @@ model User {
     emailVerificationToken        String?   @unique
     emailVerificationTokenExpires DateTime?
 
-    created DateTime @default(now())
-    updated DateTime @updatedAt
-    Poster  Poster[]
+    created          DateTime           @default(now())
+    updated          DateTime           @updatedAt
+    Poster           Poster[]
+    ZenodoToken      ZenodoToken?
+    ZenodoDeposition ZenodoDeposition[]
 
     @@index([emailAddress])
 }
@@ -65,7 +67,8 @@ model Poster {
     created DateTime @default(now())
     updated DateTime @updatedAt
 
-    posterMetadata PosterMetadata?
+    posterMetadata    PosterMetadata?
+    zenodoDepositions ZenodoDeposition[]
 }
 
 model PosterMetadata {
@@ -126,4 +129,33 @@ model PosterMetadata {
 
     created DateTime @default(now())
     updated DateTime @updatedAt
+}
+
+model ZenodoToken {
+    id String @id @default(cuid())
+
+    user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+    userId String @unique
+
+    accessToken  String
+    refreshToken String
+    expiresAt    DateTime
+
+    created DateTime @default(now())
+    updated DateTime @updatedAt
+
+    @@index([userId])
+}
+
+model ZenodoDeposition {
+    user                   User?    @relation(fields: [userId], references: [id])
+    userId                 String?
+    id                     Int      @id @default(autoincrement())
+    depositionId           Int      @unique // Last published Zenodo deposition ID
+    status                 String   @default("unpublished") // draft, submitted, done, error
+    created                DateTime @default(now())
+    updated                DateTime @updatedAt
+    lastPublishedZenodoDoi String? // Last published Zenodo DOI
+    posterId               Int
+    poster                 Poster   @relation(fields: [posterId], references: [id], onDelete: Cascade)
 }
