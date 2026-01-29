@@ -37,9 +37,7 @@ WORKDIR /app
 COPY --from=builder /app/.output ./
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
-# Copy prisma CLI for db push at runtime
-COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
-# Copy the Prisma schema so `prisma db push` can read it
+# Copy the Prisma schema & migrations, so `prisma migrate deploy` can see them
 COPY --from=builder /app/prisma ./prisma
 
 # Copy our startup script and make it executable
