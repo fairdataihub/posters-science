@@ -15,8 +15,61 @@ const isUploading = ref(false);
 const selectedFiles = ref<any>(null);
 const apiResponse = ref<unknown>(null);
 const error = ref<string | null>(null);
+const currentJobId = ref<string | null>(null);
 
-// Computed property to handle v-model type compatibility
+// Poll interval in milliseconds
+const POLL_INTERVAL = 3000;
+
+interface JobStatusResponse {
+  jobId: string;
+  status: "pending" | "processing" | "completed" | "failed";
+  posterId: number | null;
+  error: string | null;
+}
+
+const pollJobStatus = async (jobId: string): Promise<void> => {
+  try {
+    const response = await $fetch<JobStatusResponse>(
+      `/api/poster/job/${jobId}`,
+    );
+
+    if (response.status === "completed" && response.posterId) {
+      status.value = 4; // Complete
+      navigateTo(`/share/${response.posterId}`);
+
+      return;
+    }
+
+    if (response.status === "failed") {
+      error.value = response.error || "Extraction failed";
+      status.value = 0;
+      isUploading.value = false;
+      currentJobId.value = null;
+
+      return;
+    }
+
+    // Update status based on job status
+    if (response.status === "processing") {
+      status.value = 2; // Processing
+    }
+
+    // Continue polling if still pending or processing
+    if (response.status === "pending" || response.status === "processing") {
+      setTimeout(() => {
+        if (currentJobId.value === jobId) {
+          pollJobStatus(jobId);
+        }
+      }, POLL_INTERVAL);
+    }
+  } catch (err: unknown) {
+    console.error("Error polling job status:", err);
+    error.value = "Failed to check extraction status";
+    status.value = 0;
+    isUploading.value = false;
+    currentJobId.value = null;
+  }
+};
 
 const uploadFile = async () => {
   if (!selectedFiles.value) {
@@ -47,6 +100,7 @@ const uploadFile = async () => {
   status.value = 0;
   error.value = null;
   apiResponse.value = null;
+  currentJobId.value = null;
 
   try {
     status.value = 1; // Uploading
@@ -55,20 +109,21 @@ const uploadFile = async () => {
     const formData = new FormData();
     formData.append("file", file);
 
-    // Send to API
+    // Send to API - now returns immediately with jobId
+    const response = await $fetch<{ jobId: string; status: string }>(
+      "/api/poster",
+      {
+        method: "POST",
+        body: formData,
+      },
+    );
+
     status.value = 2; // Processing
-    const response = await $fetch("/api/poster", {
-      method: "POST",
-      body: formData,
-    });
-
-    status.value = 3; // Generating thumbnail
     apiResponse.value = response;
-    status.value = 4; // Complete
+    currentJobId.value = response.jobId;
 
-    if (response.posterId) {
-      navigateTo(`/share/${response.posterId}`);
-    }
+    // Start polling for job completion
+    pollJobStatus(response.jobId);
   } catch (err: unknown) {
     const errorObj =
       err &&
@@ -93,11 +148,16 @@ const uploadFile = async () => {
         ? errorObj.statusMessage
         : null) || message;
     status.value = 0;
-    console.error("Upload error:", err);
-  } finally {
     isUploading.value = false;
+    currentJobId.value = null;
+    console.error("Upload error:", err);
   }
 };
+
+// Cleanup on unmount
+onUnmounted(() => {
+  currentJobId.value = null;
+});
 </script>
 
 <template>
@@ -138,7 +198,7 @@ const uploadFile = async () => {
                 :max="[
                   'Waiting...',
                   'Uploading...',
-                  'Processing...',
+                  'Processing (this may take a few minutes)...',
                   'Generating thumbnail...',
                   'Please wait while we redirect you to your poster...',
                 ]"
@@ -149,7 +209,7 @@ const uploadFile = async () => {
                       [
                         "Waiting...",
                         "Uploading...",
-                        "Processing...",
+                        "Processing (this may take a few minutes)...",
                         "Generating thumbnail...",
                         "Processing Complete!",
                       ][status]
@@ -157,6 +217,11 @@ const uploadFile = async () => {
                   </div>
                 </template>
               </UProgress>
+
+              <p v-if="status === 2" class="text-muted text-sm">
+                Extracting metadata from your poster. This can take 1-5 minutes
+                depending on the file size.
+              </p>
             </div>
 
             <!-- Error Message -->
@@ -168,8 +233,8 @@ const uploadFile = async () => {
               :description="error"
             />
 
-            <!-- API Response -->
-            <div v-if="apiResponse" class="space-y-2">
+            <!-- API Response (for debugging) -->
+            <div v-if="apiResponse && !isUploading" class="space-y-2">
               <h3 class="text-lg font-semibold">API Response:</h3>
 
               <pre

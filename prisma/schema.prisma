@@ -34,6 +34,7 @@ model User {
     Poster           Poster[]
     ZenodoToken      ZenodoToken?
     ZenodoDeposition ZenodoDeposition[]
+    ExtractionJob    ExtractionJob[]
 
     @@index([emailAddress])
 }
@@ -69,6 +70,7 @@ model Poster {
 
     posterMetadata    PosterMetadata?
     zenodoDepositions ZenodoDeposition[]
+    extractionJobs    ExtractionJob[]
 }
 
 model PosterMetadata {
@@ -158,4 +160,28 @@ model ZenodoDeposition {
     lastPublishedZenodoDoi String? // Last published Zenodo DOI
     posterId               Int
     poster                 Poster   @relation(fields: [posterId], references: [id], onDelete: Cascade)
+}
+
+// Tracks background poster extraction jobs
+// Status flow: pending -> processing -> completed/failed
+model ExtractionJob {
+    id String @id @default(cuid())
+
+    user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+    userId String
+
+    status String @default("pending") // pending, processing, completed, failed
+
+    // Filled when job completes successfully
+    posterId Int?
+    poster   Poster? @relation(fields: [posterId], references: [id], onDelete: SetNull)
+
+    // Filled when job fails
+    error String?
+
+    created DateTime @default(now())
+    updated DateTime @updatedAt
+
+    @@index([userId])
+    @@index([status])
 }
