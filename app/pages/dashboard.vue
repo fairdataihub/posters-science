@@ -37,7 +37,7 @@ if (error.value) {
   <div class="mx-auto flex w-full max-w-screen-xl flex-col gap-6 px-6">
     <UPageHeader
       title="Dashboard"
-      description="Keep track of all your submitted posters. Edit or delete them as needed."
+      description="Keep track of all your submitted posters."
       :links="[
         {
           label: 'Add Poster',
@@ -116,7 +116,7 @@ if (error.value) {
       <h3 class="mb-2 text-lg font-medium text-gray-900">No posters yet</h3>
 
       <p class="mb-6 text-gray-500">
-        Get started by creating your first poster.
+        Get started by sharing your first poster.
       </p>
 
       <!-- <NuxtLink to="/share/new">

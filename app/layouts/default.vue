@@ -6,7 +6,7 @@ const route = useRoute();
 
 const logout = async () => {
   clear();
-  await navigateTo("/login");
+  await navigateTo("/");
 };
 
 const headerItems = computed<NavigationMenuItem[]>(() => [
