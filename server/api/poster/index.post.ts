@@ -13,13 +13,13 @@ export default defineEventHandler(async (event) => {
   const { user } = session;
   const userId = user.id;
 
-  const extractionApiUrl = config.extractionApiUrl;
+  const posterExtractionApi = config.posterExtractionApi;
 
-  if (!extractionApiUrl) {
+  if (!posterExtractionApi) {
     throw createError({
       statusCode: 503,
       statusMessage: "Extraction API not configured",
-      message: "POSTER_EXTRACTION_API environment variable is not set",
+      message: "NUXT_POSTER_EXTRACTION_API environment variable is not set",
     });
   }
 
@@ -56,7 +56,7 @@ export default defineEventHandler(async (event) => {
 
   try {
     // Forward the file to the extraction API (dispatcher extends timeout for slow responses)
-    const response = await fetch(`${extractionApiUrl}/extract`, {
+    const response = await fetch(`${posterExtractionApi}/extract`, {
       method: "POST",
       body: forwardFormData,
       signal: AbortSignal.timeout(900000), // 15 minutes

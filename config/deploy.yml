@@ -65,16 +65,17 @@ builder:
 env:
   clear:
     NODE_ENV: staging # Set to 'production' for production deployments
-    ZENODO_ENDPOINT: <%= ENV["ZENODO_ENDPOINT"] %>
-    ZENODO_API_ENDPOINT: <%= ENV["ZENODO_API_ENDPOINT"] %>
   secret:
     - DATABASE_URL # Database connection string
     - NUXT_SESSION_PASSWORD
-    - POSTER_EXTRACTION_API # API URL for poster extraction
-    - WARNING_DMP_API # API URL for warning DMP
-    - ZENODO_CLIENT_ID
-    - ZENODO_CLIENT_SECRET
-    - ZENODO_REDIRECT_URI
+    # Nuxt runtime config overrides (NUXT_ prefix)
+    - NUXT_POSTER_EXTRACTION_API
+    - NUXT_WARNING_DMP_API
+    - NUXT_ZENODO_CLIENT_ID
+    - NUXT_ZENODO_CLIENT_SECRET
+    - NUXT_ZENODO_ENDPOINT
+    - NUXT_ZENODO_API_ENDPOINT
+    - NUXT_ZENODO_REDIRECT_URI
 # Aliases are triggered with "bin/kamal <alias>". You can overwrite arguments on invocation:
 # "bin/kamal app logs -r job" will tail logs from the first server in the job section.
 # These are convenient shortcuts for common operations

@@ -31,14 +31,15 @@ jobs:
       KAMAL_APP_DOMAIN: ${{ secrets.KAMAL_APP_DOMAIN }}
       KAMAL_APP_NAME: ${{ secrets.KAMAL_APP_NAME }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      POSTER_EXTRACTION_API: ${{ secrets.POSTER_EXTRACTION_API }}
-      WARNING_DMP_API: ${{ secrets.WARNING_DMP_API }}
       NUXT_SESSION_PASSWORD: ${{ secrets.NUXT_SESSION_PASSWORD }}
-      ZENODO_ENDPOINT: ${{ secrets.ZENODO_ENDPOINT }}
-      ZENODO_API_ENDPOINT: ${{ secrets.ZENODO_API_ENDPOINT }}
-      ZENODO_CLIENT_ID: ${{ secrets.ZENODO_CLIENT_ID }}
-      ZENODO_CLIENT_SECRET: ${{ secrets.ZENODO_CLIENT_SECRET }}
-      ZENODO_REDIRECT_URI: ${{ secrets.ZENODO_REDIRECT_URI }}
+      # Nuxt runtime config overrides (NUXT_ prefix)
+      NUXT_POSTER_EXTRACTION_API: ${{ secrets.NUXT_POSTER_EXTRACTION_API }}
+      NUXT_WARNING_DMP_API: ${{ secrets.NUXT_WARNING_DMP_API }}
+      NUXT_ZENODO_CLIENT_ID: ${{ secrets.NUXT_ZENODO_CLIENT_ID }}
+      NUXT_ZENODO_CLIENT_SECRET: ${{ secrets.NUXT_ZENODO_CLIENT_SECRET }}
+      NUXT_ZENODO_ENDPOINT: ${{ secrets.NUXT_ZENODO_ENDPOINT }}
+      NUXT_ZENODO_API_ENDPOINT: ${{ secrets.NUXT_ZENODO_API_ENDPOINT }}
+      NUXT_ZENODO_REDIRECT_URI: ${{ secrets.NUXT_ZENODO_REDIRECT_URI }}
 
     steps:
       # Step 1: Checkout the repository code

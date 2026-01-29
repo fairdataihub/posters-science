@@ -16,25 +16,30 @@ export default defineNuxtConfig({
     "@nuxt/image",
     "nuxt-echarts",
   ],
+  // Runtime config values can be overridden at container startup using NUXT_ prefixed env vars.
+  // This works because Nuxt scans for NUXT_* env vars when the app starts (not at build time)
+  // and automatically maps them to runtimeConfig keys:
+  //   - NUXT_POSTER_EXTRACTION_API -> runtimeConfig.posterExtractionApi
+  //   - NUXT_ZENODO_CLIENT_ID -> runtimeConfig.zenodoClientId
+  // Using process.env.XXX here would bake values at build time, making them unchangeable at runtime.
   runtimeConfig: {
-    emailVerificationDomain: process.env.EMAIL_VERIFICATION_DOMAIN || "",
-    mailFrom: process.env.MAIL_FROM || "noreply@example.com",
-    mailHost: process.env.MAIL_HOST || "smtp.example.com",
-    mailPass: process.env.MAIL_PASS || "password",
-    mailPort: process.env.MAIL_PORT || "587",
-    mailUser: process.env.MAIL_USER || "user",
-    zenodoClientId: process.env.ZENODO_CLIENT_ID || "",
-    zenodoClientSecret: process.env.ZENODO_CLIENT_SECRET || "",
-    zenodoRedirectUri: process.env.ZENODO_REDIRECT_URI || "",
-    zenodoApiEndpoint: process.env.ZENODO_API_ENDPOINT || "",
-    zenodoEndpoint: process.env.ZENODO_ENDPOINT || "",
-    extractionApiUrl: process.env.POSTER_EXTRACTION_API || "",
+    emailVerificationDomain: "",
+    mailFrom: "noreply@example.com",
+    mailHost: "smtp.example.com",
+    mailPass: "",
+    mailPort: "587",
+    mailUser: "",
+    zenodoClientId: "",
+    zenodoClientSecret: "",
+    zenodoRedirectUri: "",
+    zenodoApiEndpoint: "",
+    zenodoEndpoint: "",
+    posterExtractionApi: "",
+    warningDmpApi: "",
     public: {
-      ENABLE_EMAIL_VERIFICATION: process.env.ENABLE_EMAIL_VERIFICATION
-        ? process.env.ENABLE_EMAIL_VERIFICATION === "true"
-        : false,
-      baseUrl: process.env.NUXT_SITE_URL,
-      environment: process.env.NUXT_SITE_ENV,
+      enableEmailVerification: false,
+      baseUrl: "",
+      environment: "",
     },
   },
   eslint: {},
