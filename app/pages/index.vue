@@ -6,13 +6,13 @@ useSeoMeta({
 const links = ref([
   {
     label: "Find Posters",
-    to: "/docs/getting-started",
+    to: "/discover",
     size: "xl" as const,
     trailingIcon: "ic:outline-saved-search",
   },
   {
     label: "Share a Poster",
-    to: "/login",
+    to: "/share/new",
     size: "xl" as const,
     trailingIcon: "line-md:file-upload",
     variant: "outline" as const,
