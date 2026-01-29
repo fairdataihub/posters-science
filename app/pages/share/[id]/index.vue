@@ -560,6 +560,49 @@ const buildApiDates = (uiDates: FormDate[]) => {
   }));
 };
 
+const savingDraft = ref(false);
+
+async function saveDraft() {
+  savingDraft.value = true;
+
+  try {
+    const apiDates = buildApiDates(state.dates ?? []);
+
+    const payload = {
+      ...state,
+      dates: apiDates,
+    };
+
+    const response = await $fetch(`/api/poster/${id}`, {
+      method: "PUT",
+      body: payload,
+    });
+
+    if (!response || (response as any).error) {
+      throw new Error(
+        (response as any)?.message ||
+          "Unknown error occurred while saving draft.",
+      );
+    }
+
+    toast.add({
+      title: "Draft Saved",
+      description: "Your progress has been saved.",
+      color: "success",
+    });
+  } catch (err) {
+    console.error(err);
+    toast.add({
+      title: "Error",
+      description: "There was a problem saving your draft.",
+      color: "error",
+      icon: "material-symbols:error",
+    });
+  } finally {
+    savingDraft.value = false;
+  }
+}
+
 async function onSubmit(event: FormSubmitEvent<StrictFormSchema>) {
   console.log("Submitting poster metadata");
   loading.value = true;
@@ -713,15 +756,15 @@ function removeRow<T>(arr: T[], index: number) {
 <template>
   <div class="mx-auto flex w-full max-w-screen-xl flex-col gap-6 px-6 pb-10">
     <UPageHeader
-      title="Edit Poster Metadata"
+      title="Review Metadata"
       description="Review and edit the extracted metadata for your poster submission"
     >
       <template #headline>
         <UBreadcrumb
           :items="[
             { label: 'Dashboard', to: '/dashboard' },
-            { label: 'Share a Poster', to: '/share/new' },
-            { label: 'Edit Poster Metadata' },
+            { label: 'Upload Poster', to: '/share/new' },
+            { label: 'Review Metadata' },
           ]"
         />
       </template>
@@ -2260,15 +2303,30 @@ function removeRow<T>(arr: T[], index: number) {
         </div>
       </CardCollapsibleContent>
 
-      <UButton
-        :disabled="loading"
-        class="flex w-full justify-center"
-        variant="solid"
-        icon="i-lucide-arrow-right"
-        label="Continue"
-        type="submit"
-        size="lg"
-      />
+      <div class="flex gap-3">
+        <UButton
+          :disabled="savingDraft || loading"
+          :loading="savingDraft"
+          class="flex-1"
+          variant="outline"
+          icon="i-lucide-save"
+          label="Save Draft"
+          type="button"
+          size="lg"
+          @click="saveDraft"
+        />
+
+        <UButton
+          :disabled="loading || savingDraft"
+          :loading="loading"
+          class="flex-1"
+          variant="solid"
+          icon="i-lucide-arrow-right"
+          label="Submit"
+          type="submit"
+          size="lg"
+        />
+      </div>
     </UForm>
     <!-- <pre>{{ state }}</pre> -->
   </div>
