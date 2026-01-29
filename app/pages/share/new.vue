@@ -42,6 +42,7 @@ const pollJobStatus = async (jobId: string): Promise<void> => {
 
     if (response.status === "failed") {
       error.value = response.error || "Extraction failed";
+      apiResponse.value = response; // Update to show failed status
       status.value = 0;
       isUploading.value = false;
       currentJobId.value = null;
@@ -49,7 +50,8 @@ const pollJobStatus = async (jobId: string): Promise<void> => {
       return;
     }
 
-    // Update status based on job status
+    // Update status and apiResponse based on job status
+    apiResponse.value = response;
     if (response.status === "processing") {
       status.value = 2; // Processing
     }
