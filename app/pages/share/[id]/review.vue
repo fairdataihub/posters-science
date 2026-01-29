@@ -16,6 +16,86 @@ useSeoMeta({
 const zenodoLoginUrl = ref("");
 const zenodoTokenExists = ref(false);
 
+// Repository selection state
+type Repository =
+  | "zenodo"
+  | "figshare"
+  | "software-heritage"
+  | "download"
+  | null;
+
+// Check for repository query param (e.g., after Zenodo OAuth redirect)
+const queryRepo = useRoute().query.repository as Repository | undefined;
+const selectedRepository = ref<Repository>(queryRepo ?? null);
+
+const repositories = [
+  {
+    id: "zenodo" as const,
+    name: "Zenodo",
+    icon: "i-simple-icons-zenodo",
+    description: "General-purpose open repository",
+    enabled: true,
+  },
+  {
+    id: "figshare" as const,
+    name: "Figshare",
+    icon: "i-simple-icons-figshare",
+    description: "Research data repository",
+    enabled: false,
+  },
+  {
+    id: "software-heritage" as const,
+    name: "Software Heritage",
+    icon: "i-lucide-archive",
+    description: "Software source code archive",
+    enabled: false,
+  },
+  {
+    id: "download" as const,
+    name: "Download Locally",
+    icon: "i-lucide-download",
+    description: "Download files to your computer",
+    enabled: true,
+  },
+];
+
+// Download state
+const isDownloading = ref(false);
+
+async function downloadMetadata() {
+  isDownloading.value = true;
+  try {
+    const response = await $fetch(`/api/poster/${id}/download`, {
+      method: "GET",
+      responseType: "blob",
+    });
+
+    const blob = response as unknown as Blob;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "poster.json";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    toast.add({
+      title: "Download Started",
+      description: "Your metadata file is downloading.",
+      color: "success",
+    });
+  } catch {
+    toast.add({
+      title: "Download Failed",
+      description: "Could not download the metadata file.",
+      color: "error",
+    });
+  } finally {
+    isDownloading.value = false;
+  }
+}
+
 // Deposition selection state
 const depositionMode = ref<"new" | "existing">("new");
 const selectedDeposition = ref<number | undefined>(undefined);
@@ -37,8 +117,14 @@ const selectableDepositions = computed(() =>
 );
 
 const depositionModeOptions = [
-  { label: "New Zenodo Deposition", value: "new" },
-  { label: "Existing Zenodo Deposition", value: "existing" },
+  {
+    label: "Create a new Zenodo deposition",
+    value: "new",
+  },
+  {
+    label: "Create a new version of an existing Zenodo deposition",
+    value: "existing",
+  },
 ];
 
 watch(depositionMode, () => {
@@ -232,22 +318,23 @@ async function handleArchive() {
 </script>
 
 <template>
-  <div
-    class="flex h-[calc(100vh-var(--ui-header-height))] items-center justify-center overflow-hidden px-6"
-  >
-    <div class="h-full w-full max-w-screen-xl px-8">
-      <!-- Header row -->
-      <div class="mb-6 flex items-center justify-between">
-        <div>
-          <h1 class="text-highlighted text-2xl font-bold">
-            Review Poster Submission
-          </h1>
+  <div class="mx-auto flex w-full max-w-screen-xl flex-col gap-6 px-6 pb-10">
+    <UPageHeader
+      title="Review Poster Submission"
+      description="Verify your information before archiving"
+    >
+      <template #headline>
+        <UBreadcrumb
+          :items="[
+            { label: 'Dashboard', to: '/dashboard' },
+            { label: 'Upload Poster', to: '/share/new' },
+            { label: 'Review Metadata', to: `/share/${id}` },
+            { label: 'Submit Poster' },
+          ]"
+        />
+      </template>
 
-          <p class="text-muted text-sm">
-            Verify your information before archiving
-          </p>
-        </div>
-
+      <template #actions>
         <UButton
           variant="outline"
           icon="i-lucide-arrow-left"
@@ -255,182 +342,209 @@ async function handleArchive() {
         >
           Back to Edit
         </UButton>
-      </div>
+      </template>
+    </UPageHeader>
 
-      <!-- File tree -->
-      <div class="border-default bg-elevated mb-6 rounded-xl border p-6">
-        <h3 class="mb-3 text-lg font-semibold">Submission Contents</h3>
+    <!-- File tree -->
+    <div class="border-default bg-elevated mb-6 rounded-xl border p-6">
+      <h3 class="mb-3 text-lg font-semibold">Submission Contents</h3>
 
-        <UTree
-          :items="[
-            {
-              label: 'poster.json',
-              icon: 'i-vscode-icons-file-type-vue',
-            },
-            {
-              label: 'poster.pdf',
-              icon: 'i-vscode-icons-file-type-nuxt',
-            },
+      <UTree
+        :items="[
+          {
+            label: 'poster.json',
+            icon: 'i-vscode-icons-file-type-json',
+          },
+          {
+            label: 'poster.pdf',
+            icon: 'i-vscode-icons-file-type-pdf2',
+          },
+        ]"
+      />
+    </div>
+
+    <!-- Repository selection -->
+    <div class="border-default bg-elevated mb-6 rounded-xl border p-6">
+      <h3 class="mb-2 text-lg font-semibold">Select a Repository</h3>
+
+      <p class="text-muted mb-6 text-sm">
+        Choose where you would like to archive your poster. Click one of the
+        following options:
+      </p>
+
+      <div class="grid grid-cols-2 gap-4 md:grid-cols-4">
+        <UButton
+          v-for="repo in repositories"
+          :key="repo.id"
+          :disabled="!repo.enabled"
+          class="border-default hover:border-primary flex flex-col items-center gap-3 rounded-xl border-2 p-6 transition-all"
+          :class="[
+            selectedRepository === repo.id
+              ? 'border-primary bg-primary/5'
+              : 'bg-elevated',
+            !repo.enabled && 'cursor-not-allowed opacity-50',
           ]"
-        />
+          color="primary"
+          variant="outline"
+          @click="repo.enabled && (selectedRepository = repo.id)"
+        >
+          <UIcon :name="repo.icon" class="size-12" />
+
+          <span class="font-medium">{{ repo.name }}</span>
+
+          <span class="text-muted text-xs">{{ repo.description }}</span>
+
+          <UBadge v-if="!repo.enabled" color="neutral" variant="subtle">
+            Coming Soon
+          </UBadge>
+        </UButton>
+      </div>
+    </div>
+
+    <!-- Zenodo section -->
+    <div
+      v-if="selectedRepository === 'zenodo'"
+      class="border-default bg-elevated rounded-xl border p-6"
+    >
+      <div class="mb-4 flex items-center gap-2">
+        <UIcon name="i-simple-icons-zenodo" class="size-6" />
+
+        <h3 class="text-lg font-semibold">Archive to Zenodo</h3>
       </div>
 
-      <!-- Zenodo section -->
-      <div class="border-default bg-elevated rounded-xl border p-6">
-        <!-- Not signed in -->
-        <template v-if="!zenodoTokenExists">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-3">
-              <UIcon name="i-simple-icons-zenodo" class="text-muted size-8" />
+      <!-- Not signed in -->
+      <template v-if="!zenodoTokenExists">
+        <div class="flex items-center justify-between">
+          <p class="text-muted text-sm">
+            Ready to archive on Zenodo? Sign in to get started.
+          </p>
 
-              <p class="text-muted text-sm">
-                Ready to archive on Zenodo? Sign in to get started.
-              </p>
+          <UButton color="primary" size="lg" @click="handleZenodoSignIn">
+            Sign in to Zenodo
+          </UButton>
+        </div>
+      </template>
+
+      <!-- Signed in -->
+      <template v-else>
+        <!-- Archive progress -->
+        <template v-if="isArchiving">
+          <p class="text-muted mb-4 text-sm">
+            <template v-if="archiveComplete">
+              Your poster has been published to Zenodo.
+            </template>
+
+            <template v-else-if="archiveError">
+              There was an error publishing to Zenodo.
+            </template>
+
+            <template v-else> Publishing your poster to Zenodo... </template>
+          </p>
+
+          <!-- Step list -->
+          <div class="space-y-3">
+            <div
+              v-for="step in archiveSteps"
+              :key="step.id"
+              class="flex items-center gap-3"
+            >
+              <UIcon
+                v-if="step.status === 'completed'"
+                name="i-lucide-circle-check"
+                class="text-success size-5 shrink-0"
+              />
+
+              <UIcon
+                v-else-if="step.status === 'in_progress'"
+                name="i-lucide-loader"
+                class="text-primary size-5 shrink-0 animate-spin"
+              />
+
+              <UIcon
+                v-else-if="step.status === 'error'"
+                name="i-lucide-circle-x"
+                class="text-error size-5 shrink-0"
+              />
+
+              <UIcon
+                v-else
+                name="i-lucide-circle-dashed"
+                class="text-muted size-5 shrink-0"
+              />
+
+              <span
+                :class="[
+                  step.status === 'completed' && 'text-success',
+                  step.status === 'in_progress' &&
+                    'text-highlighted font-medium',
+                  step.status === 'error' && 'text-error',
+                  step.status === 'pending' && 'text-muted',
+                ]"
+              >
+                {{ step.label }}
+              </span>
             </div>
+          </div>
 
-            <UButton color="primary" size="lg" @click="handleZenodoSignIn">
-              Sign in to Zenodo
+          <!-- Error state -->
+          <div v-if="archiveError" class="mt-5">
+            <p class="text-error mb-3 text-sm">{{ archiveError }}</p>
+
+            <UButton color="primary" @click="resetArchive"> Try Again </UButton>
+          </div>
+
+          <!-- Success state -->
+          <div v-if="archiveComplete" class="mt-5 flex items-center gap-3">
+            <UButton
+              v-if="zenodoRecordUrl"
+              color="primary"
+              icon="i-lucide-external-link"
+              :to="zenodoRecordUrl"
+              target="_blank"
+            >
+              View on Zenodo
+            </UButton>
+
+            <UButton variant="outline" :to="`/share/${id}`">
+              Back to Poster
             </UButton>
           </div>
         </template>
 
-        <!-- Signed in -->
+        <!-- Archive controls (shown when not archiving) -->
         <template v-else>
-          <!-- Archive progress -->
-          <template v-if="isArchiving">
-            <div class="mb-4 flex items-center gap-2">
-              <UIcon name="i-simple-icons-zenodo" class="text-muted size-5" />
+          <div class="mb-4 flex items-center justify-between">
+            <span class="text-success flex items-center gap-2 text-sm">
+              <UIcon name="i-lucide-check-circle" class="size-4" />
+              Connected to Zenodo
+            </span>
 
-              <h3 class="text-lg font-semibold">
-                <template v-if="archiveComplete">
-                  Published to Zenodo
-                </template>
-
-                <template v-else-if="archiveError">
-                  Publication Failed
-                </template>
-
-                <template v-else> Publishing to Zenodo... </template>
-              </h3>
-            </div>
-
-            <!-- Step list -->
-            <div class="space-y-3">
-              <div
-                v-for="step in archiveSteps"
-                :key="step.id"
-                class="flex items-center gap-3"
-              >
-                <UIcon
-                  v-if="step.status === 'completed'"
-                  name="i-lucide-circle-check"
-                  class="text-success size-5 shrink-0"
-                />
-
-                <UIcon
-                  v-else-if="step.status === 'in_progress'"
-                  name="i-lucide-loader"
-                  class="text-primary size-5 shrink-0 animate-spin"
-                />
-
-                <UIcon
-                  v-else-if="step.status === 'error'"
-                  name="i-lucide-circle-x"
-                  class="text-error size-5 shrink-0"
-                />
-
-                <UIcon
-                  v-else
-                  name="i-lucide-circle-dashed"
-                  class="text-muted size-5 shrink-0"
-                />
-
-                <span
-                  :class="[
-                    step.status === 'completed' && 'text-success',
-                    step.status === 'in_progress' &&
-                      'text-highlighted font-medium',
-                    step.status === 'error' && 'text-error',
-                    step.status === 'pending' && 'text-muted',
-                  ]"
-                >
-                  {{ step.label }}
-                </span>
-              </div>
-            </div>
-
-            <!-- Error state -->
-            <div v-if="archiveError" class="mt-5">
-              <p class="text-error mb-3 text-sm">{{ archiveError }}</p>
-
-              <UButton color="primary" @click="resetArchive">
-                Try Again
-              </UButton>
-            </div>
-
-            <!-- Success state -->
-            <div v-if="archiveComplete" class="mt-5 flex items-center gap-3">
-              <UButton
-                v-if="zenodoRecordUrl"
-                color="primary"
-                icon="i-lucide-external-link"
-                :to="zenodoRecordUrl"
-                target="_blank"
-              >
-                View on Zenodo
-              </UButton>
-
-              <UButton variant="outline" :to="`/share/${id}`">
-                Back to Poster
-              </UButton>
-            </div>
-          </template>
-
-          <!-- Archive controls (shown when not archiving) -->
-          <template v-else>
-            <div class="mb-4 flex items-center justify-between">
-              <div class="flex items-center gap-2">
-                <UIcon name="i-simple-icons-zenodo" class="text-muted size-5" />
-
-                <span class="text-muted text-sm">Connected to Zenodo</span>
-              </div>
-
-              <div class="flex items-center gap-3">
-                <UButton
-                  variant="outline"
-                  color="error"
-                  size="sm"
-                  @click="handleZenodoDisconnect"
-                >
-                  Sign out
-                </UButton>
-              </div>
-            </div>
-
-            <div
-              class="flex gap-8"
-              :class="depositionMode === 'new' ? 'items-center' : 'items-start'"
+            <UButton
+              variant="outline"
+              color="error"
+              size="sm"
+              @click="handleZenodoDisconnect"
             >
+              Sign out
+            </UButton>
+          </div>
+
+          <div>
+            <p class="text-muted mb-4 text-sm">
+              Is your dataset already published on Zenodo or would you like to
+              create a new Zenodo publication?
+            </p>
+
+            <div class="flex items-start gap-8">
               <!-- Deposition mode selection -->
               <div class="flex-1">
-                <h3 class="mb-1 text-lg font-semibold">Archive to Zenodo</h3>
-
-                <p class="text-muted mb-4 text-sm">
-                  Publish to a new deposition or select an existing one?
-                </p>
-
                 <URadioGroup
                   v-model="depositionMode"
                   :items="depositionModeOptions"
                 />
-              </div>
 
-              <!-- Existing deposition selector -->
-              <div
-                class="flex flex-1 flex-col gap-4"
-                :class="depositionMode === 'new' ? 'justify-center' : ''"
-              >
-                <div v-if="depositionMode === 'existing'">
+                <!-- Existing deposition selector -->
+                <div v-if="depositionMode === 'existing'" class="mt-4">
                   <p class="text-muted mb-2 text-sm">
                     Select your Zenodo record
                   </p>
@@ -439,27 +553,55 @@ async function handleArchive() {
                     v-model="selectedDeposition"
                     :items="selectableDepositions"
                     placeholder="Choose a deposition..."
-                    class="w-full"
+                    class="w-full max-w-md"
                   />
                 </div>
-
-                <UButton
-                  color="primary"
-                  size="lg"
-                  :disabled="!readyToArchive"
-                  @click="handleArchive"
-                >
-                  {{
-                    depositionMode === "new"
-                      ? "Create New Deposition"
-                      : "Archive to Selected Deposition"
-                  }}
-                </UButton>
               </div>
+
+              <!-- Archive button -->
+              <UButton
+                color="primary"
+                size="lg"
+                :disabled="!readyToArchive"
+                @click="handleArchive"
+              >
+                {{
+                  depositionMode === "new"
+                    ? "Create New Deposition"
+                    : "Archive to Selected Deposition"
+                }}
+              </UButton>
             </div>
-          </template>
+          </div>
         </template>
+      </template>
+    </div>
+
+    <!-- Download section -->
+    <div
+      v-if="selectedRepository === 'download'"
+      class="border-default bg-elevated rounded-xl border p-6"
+    >
+      <div class="mb-4 flex items-center gap-2">
+        <UIcon name="i-lucide-download" class="size-6" />
+
+        <h3 class="text-lg font-semibold">Download Files</h3>
       </div>
+
+      <p class="text-muted mb-6 text-sm">
+        Download your poster metadata to your computer. You can then upload
+        these files to any repository of your choice.
+      </p>
+
+      <UButton
+        color="primary"
+        size="lg"
+        icon="i-lucide-download"
+        :loading="isDownloading"
+        @click="downloadMetadata"
+      >
+        Download Metadata
+      </UButton>
     </div>
   </div>
 </template>
