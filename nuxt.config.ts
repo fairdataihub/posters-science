@@ -28,14 +28,13 @@ export default defineNuxtConfig({
     zenodoRedirectUri: process.env.ZENODO_REDIRECT_URI || "",
     zenodoApiEndpoint: process.env.ZENODO_API_ENDPOINT || "",
     zenodoEndpoint: process.env.ZENODO_ENDPOINT || "",
-    extractionApiUrl: process.env.EXTRACTION_API_URL || "",
+    extractionApiUrl: process.env.POSTER_EXTRACTION_API || "",
     public: {
       ENABLE_EMAIL_VERIFICATION: process.env.ENABLE_EMAIL_VERIFICATION
         ? process.env.ENABLE_EMAIL_VERIFICATION === "true"
         : false,
       baseUrl: process.env.NUXT_SITE_URL,
       environment: process.env.NUXT_SITE_ENV,
-      zenodoEndpoint: process.env.ZENODO_ENDPOINT || "",
     },
   },
   eslint: {},

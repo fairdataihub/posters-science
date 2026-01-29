@@ -43,7 +43,6 @@ export default defineEventHandler(async (event) => {
     redirect_uri: redirectUri,
     client_id: clientId,
     client_secret: clientSecret,
-    scope: "deposit:write deposit:actions",
   });
 
   const oauthTokenResponse = await fetch(`${zenodoEndpoint}/oauth/token`, {
@@ -55,9 +54,16 @@ export default defineEventHandler(async (event) => {
   });
 
   if (!oauthTokenResponse.ok) {
+    const errorBody = await oauthTokenResponse.text();
+    console.error(
+      `[Zenodo] Token exchange failed (${oauthTokenResponse.status}):`,
+      errorBody,
+    );
+
     throw createError({
       statusCode: 500,
-      statusMessage: "Failed to obtain Zenodo access token",
+      statusMessage: `Failed to obtain Zenodo access token: ${oauthTokenResponse.status}`,
+      data: { zenodoError: errorBody },
     });
   }
 

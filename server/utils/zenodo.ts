@@ -116,7 +116,7 @@ async function refreshZenodoToken(userId: string, refreshToken: string) {
     client_secret: config.zenodoClientSecret,
   });
 
-  const refresh = await fetch(`${config.zenodoApiEndpoint}/oauth/token`, {
+  const refresh = await fetch(`${config.zenodoEndpoint}/oauth/token`, {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
