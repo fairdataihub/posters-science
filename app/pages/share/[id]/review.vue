@@ -95,7 +95,7 @@ const { data: zenodoData, error: zenodoError } = await useFetch(
 
 if (zenodoData.value) {
   console.log("Zenodo fetch data:", zenodoData.value);
-  zenodoLoginUrl.value = zenodoData.value.zenodoLoginURL;
+  zenodoLoginUrl.value = zenodoData.value.zenodoLoginURL || "";
   zenodoTokenExists.value = zenodoData.value.zenodoToken || false;
   existingDepositions.value = (zenodoData.value.existingDepositions ||
     []) as typeof existingDepositions.value;
