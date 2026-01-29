@@ -90,6 +90,6 @@ export default defineEventHandler(async (event) => {
     },
   });
 
-  // Redirect back to the review page
-  return sendRedirect(event, `/share/${posterId}/review`);
+  // Redirect back to the review page with zenodo pre-selected
+  return sendRedirect(event, `/share/${posterId}/review?repository=zenodo`);
 });
