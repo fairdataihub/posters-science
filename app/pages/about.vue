@@ -24,7 +24,7 @@ const links = ref([
   <section>
     <UPageHero
       title="About the Project"
-      description="Posters.Science is a platform for discovering and sharing posters on a variety of topics. It is a project of the FAIR Data Innovations Hub."
+      description="Posters.science is a platform for discovering and sharing posters on a variety of topics. It is a project of the FAIR Data Innovations Hub."
       :links="links"
     />
   </section>
