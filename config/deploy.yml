@@ -74,6 +74,7 @@ env:
     - WARNING_DMP_API # API URL for warning DMP
     - ZENODO_CLIENT_ID
     - ZENODO_CLIENT_SECRET
+    - ZENODO_REDIRECT_URI
 # Aliases are triggered with "bin/kamal <alias>". You can overwrite arguments on invocation:
 # "bin/kamal app logs -r job" will tail logs from the first server in the job section.
 # These are convenient shortcuts for common operations

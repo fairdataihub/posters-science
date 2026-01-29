@@ -34,6 +34,11 @@ jobs:
       POSTER_EXTRACTION_API: ${{ secrets.POSTER_EXTRACTION_API }}
       WARNING_DMP_API: ${{ secrets.WARNING_DMP_API }}
       NUXT_SESSION_PASSWORD: ${{ secrets.NUXT_SESSION_PASSWORD }}
+      ZENODO_ENDPOINT: ${{ secrets.ZENODO_ENDPOINT }}
+      ZENODO_API_ENDPOINT: ${{ secrets.ZENODO_API_ENDPOINT }}
+      ZENODO_CLIENT_ID: ${{ secrets.ZENODO_CLIENT_ID }}
+      ZENODO_CLIENT_SECRET: ${{ secrets.ZENODO_CLIENT_SECRET }}
+      ZENODO_REDIRECT_URI: ${{ secrets.ZENODO_REDIRECT_URI }}
 
     steps:
       # Step 1: Checkout the repository code
