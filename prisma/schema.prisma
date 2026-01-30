@@ -154,7 +154,7 @@ model ZenodoDeposition {
     userId                 String?
     id                     Int      @id @default(autoincrement())
     depositionId           Int      @unique // Last published Zenodo deposition ID
-    status                 String   @default("unpublished") // draft, submitted, done, error
+    status                 String   @default("unpublished") // draft, published, unpublished
     created                DateTime @default(now())
     updated                DateTime @updatedAt
     lastPublishedZenodoDoi String? // Last published Zenodo DOI

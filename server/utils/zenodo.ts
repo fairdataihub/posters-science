@@ -207,7 +207,7 @@ export async function beginZenodoPublication(
   const deposition = status.data;
 
   // Set the bucket url and doi (using record_id over id because it is the id of the current deposition)
-  const addUploadType = !!deposition?.metadata?.upload_type;
+  // const addUploadType = !!deposition?.metadata?.upload_type;
   const newDepositionId = deposition.record_id;
   const bucketUrl = deposition.links.bucket;
   const doi = deposition.metadata.prereserve_doi.doi;
@@ -215,6 +215,36 @@ export async function beginZenodoPublication(
   console.log(
     `[Zenodo] Working deposition ready - id: ${newDepositionId}, doi: ${doi}, bucket: ${bucketUrl}`,
   );
+
+  // Update zenodoDeposition information
+  const posterInt = parseInt(posterId);
+  const zenResponse = await prisma.zenodoDeposition.findFirst({
+    where: {
+      posterId: posterInt,
+    },
+  });
+
+  if (zenResponse) {
+    await prisma.zenodoDeposition.update({
+      where: { id: zenResponse.id },
+      data: {
+        lastPublishedZenodoDoi: zenResponse.lastPublishedZenodoDoi || "",
+        status: "draft",
+        posterId: posterInt,
+        userId,
+        depositionId: newDepositionId,
+      },
+    });
+  } else {
+    await prisma.zenodoDeposition.create({
+      data: {
+        status: "draft",
+        posterId: posterInt,
+        userId,
+        depositionId: newDepositionId,
+      },
+    });
+  }
 
   await onProgress?.({
     step: "deposition",
@@ -355,6 +385,34 @@ export async function beginZenodoPublication(
     );
 
     return { success: false, error: publishResult.error };
+  }
+
+  // Ensure we update the record for this poster if one exists, otherwise create a new one
+  const existing = await prisma.zenodoDeposition.findFirst({
+    where: { posterId: posterInt },
+  });
+
+  if (existing) {
+    await prisma.zenodoDeposition.update({
+      where: { id: existing.id },
+      data: {
+        lastPublishedZenodoDoi: publishResult.data.doi,
+        status: "published",
+        posterId: posterInt,
+        userId,
+        depositionId: publishResult.data.id,
+      },
+    });
+  } else {
+    await prisma.zenodoDeposition.create({
+      data: {
+        lastPublishedZenodoDoi: publishResult.data.doi,
+        status: "published",
+        posterId: posterInt,
+        userId,
+        depositionId: publishResult.data.id,
+      },
+    });
   }
 
   await onProgress?.({
