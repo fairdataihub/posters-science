@@ -324,7 +324,7 @@ const conferencePieChartOption = ref({
     <div class="mb-6 grid grid-cols-1 gap-6 md:grid-cols-3">
       <UCard>
         <template #header>
-          <h3 class="text-lg font-semibold">Total Registrations</h3>
+          <h3 class="text-lg font-semibold">Total Posters Shared</h3>
         </template>
 
         <div class="text-3xl font-bold text-pink-600">
@@ -340,7 +340,7 @@ const conferencePieChartOption = ref({
 
       <UCard>
         <template #header>
-          <h3 class="text-lg font-semibold">Average Monthly</h3>
+          <h3 class="text-lg font-semibold">Total Posters Auto Registered</h3>
         </template>
 
         <div class="text-3xl font-bold text-pink-600">
@@ -372,7 +372,7 @@ const conferencePieChartOption = ref({
     <ClientOnly>
       <UCard>
         <template #header>
-          <h3 class="text-lg font-semibold">Monthly Registration Trends</h3>
+          <h3 class="text-lg font-semibold">Monthly Poster Sharing Trends</h3>
         </template>
 
         <div style="height: 500px">

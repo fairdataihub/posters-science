@@ -29,8 +29,8 @@ const links = ref([
       orientation="horizontal"
       :links="links"
     >
-      <div class="relative">
-        <img src="/assets/images/poster-logo.png" alt="Logo" />
+      <div class="relative inline-block">
+        <img src="/assets/images/fairy.png" alt="Logo" class="block pl-16" />
         <!-- Glow effect behind the image -->
         <div
           class="bg-primary/20 absolute inset-0 -z-10 animate-pulse rounded-xl blur-3xl"
