@@ -2326,7 +2326,7 @@ function removeRow<T>(arr: T[], index: number) {
           class="flex-1"
           variant="solid"
           icon="i-lucide-arrow-right"
-          label="Submit"
+          label="Continue"
           type="submit"
           size="lg"
         />

@@ -43,13 +43,13 @@ const repositories = [
     description: "Research data repository",
     enabled: false,
   },
-  {
-    id: "software-heritage" as const,
-    name: "Software Heritage",
-    icon: "i-lucide-archive",
-    description: "Software source code archive",
-    enabled: false,
-  },
+  // {
+  //   id: "software-heritage" as const,
+  //   name: "Software Heritage",
+  //   icon: "i-lucide-archive",
+  //   description: "Software source code archive",
+  //   enabled: false,
+  // },
   {
     id: "download" as const,
     name: "Download Locally",
@@ -372,7 +372,7 @@ async function handleArchive() {
         following options:
       </p>
 
-      <div class="grid grid-cols-2 gap-4 md:grid-cols-4">
+      <div class="grid grid-cols-3 gap-4 md:grid-cols-3">
         <UButton
           v-for="repo in repositories"
           :key="repo.id"
@@ -531,7 +531,7 @@ async function handleArchive() {
 
           <div>
             <p class="text-muted mb-4 text-sm">
-              Is your dataset already published on Zenodo or would you like to
+              Is your poster already published on Zenodo or would you like to
               create a new Zenodo publication?
             </p>
 
