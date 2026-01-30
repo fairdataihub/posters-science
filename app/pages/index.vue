@@ -37,6 +37,23 @@ const links = ref([
         />
       </div>
     </UPageHero>
+
+    <p class="text-muted mx-auto mt-8 max-w-2xl text-center text-sm">
+      The development of posters.science is supported by a grant from
+      <a
+        href="https://www.navigation.org/"
+        target="_blank"
+        class="text-primary hover:underline"
+        >The Navigation Fund</a
+      >
+      (additional details about the grant can be found in the
+      <a
+        href="https://commons.datacite.org/doi.org/10.71707/rk36-9x79"
+        target="_blank"
+        class="text-primary hover:underline"
+        >DataCite Commons grant record</a
+      >).
+    </p>
   </section>
 </template>
 
