@@ -6,12 +6,12 @@ const verifySchema = z.object({
 
 export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig();
-  const { environment } = config.public;
+  const { siteEnv } = config.public;
 
-  if (environment !== "development") {
+  if (siteEnv !== "development") {
     throw createError({
       statusCode: 404,
-      statusMessage: "Not enabled",
+      statusMessage: "Email verification is not enabled for this environment",
     });
   }
 

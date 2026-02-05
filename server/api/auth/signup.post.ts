@@ -14,12 +14,13 @@ const signupSchema = z.object({
 export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig();
 
-  const { environment } = config.public;
+  console.log(config);
+  const { siteEnv } = config.public;
 
-  if (environment !== "development") {
+  if (siteEnv !== "dev") {
     throw createError({
       statusCode: 404,
-      statusMessage: "Not enabled",
+      statusMessage: "Signup is not enabled for this environment",
     });
   }
 

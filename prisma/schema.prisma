@@ -29,18 +29,18 @@ model User {
     emailVerificationToken        String?   @unique
     emailVerificationTokenExpires DateTime?
 
-    created          DateTime           @default(now())
-    updated          DateTime           @updatedAt
-    Poster           Poster[]
-    ZenodoToken      ZenodoToken?
-    ZenodoDeposition ZenodoDeposition[]
-    ExtractionJob    ExtractionJob[]
+    created DateTime @default(now())
+    updated DateTime @updatedAt
+    Poster  Poster[]
+
+    ZenodoToken       ZenodoToken?
+    ZenodoDepositions ZenodoDeposition[]
 
     @@index([emailAddress])
 }
 
 model UserInterest {
-    id String @id @default(cuid())
+    id String @id @default(cuid(2))
 
     emailAddress String @unique
 
@@ -69,8 +69,9 @@ model Poster {
     updated DateTime @updatedAt
 
     posterMetadata    PosterMetadata?
-    zenodoDepositions ZenodoDeposition[]
-    extractionJobs    ExtractionJob[]
+    zenodoDepositions ZenodoDeposition?
+
+    extractionJob ExtractionJob?
 }
 
 model PosterMetadata {
@@ -134,7 +135,7 @@ model PosterMetadata {
 }
 
 model ZenodoToken {
-    id String @id @default(cuid())
+    id String @id @default(cuid(2))
 
     user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
     userId String @unique
@@ -150,38 +151,39 @@ model ZenodoToken {
 }
 
 model ZenodoDeposition {
-    user                   User?    @relation(fields: [userId], references: [id])
-    userId                 String?
-    id                     Int      @id @default(autoincrement())
-    depositionId           Int      @unique // Last published Zenodo deposition ID
-    status                 String   @default("unpublished") // draft, published, unpublished
-    created                DateTime @default(now())
-    updated                DateTime @updatedAt
+    id String @id @default(cuid(2))
+
+    depositionId           Int     @unique // Last published Zenodo deposition ID
+    status                 String  @default("unpublished") // draft, published, unpublished
     lastPublishedZenodoDoi String? // Last published Zenodo DOI
-    posterId               Int
-    poster                 Poster   @relation(fields: [posterId], references: [id], onDelete: Cascade)
+
+    user   User   @relation(fields: [userId], references: [id])
+    userId String
+
+    poster   Poster @relation(fields: [posterId], references: [id], onDelete: Cascade)
+    posterId Int    @unique
+
+    created DateTime @default(now())
+    updated DateTime @updatedAt
 }
 
 // Tracks background poster extraction jobs
 // Status flow: pending -> processing -> completed/failed
 model ExtractionJob {
-    id String @id @default(cuid())
-
-    user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-    userId String
-
-    status String @default("pending") // pending, processing, completed, failed
+    id String @id @default(cuid(2))
 
     // Filled when job completes successfully
-    posterId Int?
-    poster   Poster? @relation(fields: [posterId], references: [id], onDelete: SetNull)
+    poster   Poster @relation(fields: [posterId], references: [id], onDelete: Cascade)
+    posterId Int    @unique
 
-    // Filled when job fails
-    error String?
+    fileName String
+    filePath String
+
+    status String  @default("pending") // pending, processing, completed, failed
+    error  String? // Filled when job fails
 
     created DateTime @default(now())
     updated DateTime @updatedAt
 
-    @@index([userId])
     @@index([status])
 }
