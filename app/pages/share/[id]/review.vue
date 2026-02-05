@@ -17,12 +17,7 @@ const zenodoLoginUrl = ref("");
 const zenodoTokenExists = ref(false);
 
 // Repository selection state
-type Repository =
-  | "zenodo"
-  | "figshare"
-  | "software-heritage"
-  | "download"
-  | null;
+type Repository = "zenodo" | "figshare" | "download" | null;
 
 // Check for repository query param (e.g., after Zenodo OAuth redirect)
 const queryRepo = useRoute().query.repository as Repository | undefined;
@@ -43,13 +38,6 @@ const repositories = [
     description: "Research data repository",
     enabled: false,
   },
-  // {
-  //   id: "software-heritage" as const,
-  //   name: "Software Heritage",
-  //   icon: "i-lucide-archive",
-  //   description: "Software source code archive",
-  //   enabled: false,
-  // },
   {
     id: "download" as const,
     name: "Download Locally",
@@ -167,6 +155,23 @@ const zenodoRecordUrl = computed(() => {
 
   return links?.latest_html ?? "";
 });
+
+const { data: posterData, error: posterError } = await useFetch(
+  `/api/poster/${id}`,
+  {
+    headers: useRequestHeaders(["cookie"]),
+    method: "GET",
+  },
+);
+
+if (posterError.value) {
+  console.error("Poster fetch error:", posterError.value);
+  toast.add({
+    title: "Error fetching poster",
+    description: posterError.value.message,
+    color: "error",
+  });
+}
 
 const { data: zenodoData, error: zenodoError } = await useFetch(
   "/api/release/zenodo",
@@ -356,7 +361,7 @@ async function handleArchive() {
             icon: 'i-vscode-icons-file-type-json',
           },
           {
-            label: 'poster.pdf',
+            label: posterData?.extractionJob?.fileName || 'poster.pdf',
             icon: 'i-vscode-icons-file-type-pdf2',
           },
         ]"
