@@ -22,7 +22,8 @@ const POLL_INTERVAL = 3000;
 
 interface JobStatusResponse {
   jobId: string;
-  status: "pending" | "processing" | "completed" | "failed";
+  status: "pending-extraction" | "processing" | "completed" | "failed";
+  completed: boolean;
   posterId: number;
   error: string | null;
 }
@@ -33,7 +34,11 @@ const pollJobStatus = async (jobId: string): Promise<void> => {
       `/api/poster/job/${jobId}`,
     );
 
-    if (response.status === "completed" && response.posterId) {
+    if (
+      response.completed &&
+      response.status === "completed" &&
+      response.posterId
+    ) {
       status.value = 4; // Complete
       navigateTo(`/share/${response.posterId}`);
 
@@ -57,11 +62,12 @@ const pollJobStatus = async (jobId: string): Promise<void> => {
     }
 
     // Continue polling if still pending or processing
-    if (response.status === "pending" || response.status === "processing") {
+    if (
+      response.status === "pending-extraction" ||
+      response.status === "processing"
+    ) {
       setTimeout(() => {
-        if (currentJobId.value === jobId) {
-          pollJobStatus(jobId);
-        }
+        pollJobStatus(jobId);
       }, POLL_INTERVAL);
     }
   } catch (err: unknown) {

@@ -15,7 +15,8 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  const { bunnyPrivateStorage, bunnyPrivateStorageKey } = config;
+  const { bunnyPrivateStorage, bunnyPrivateStorageKey, posterExtractionApi } =
+    config;
   const { siteEnv } = config.public;
 
   if (!bunnyPrivateStorage || !bunnyPrivateStorageKey) {
@@ -80,7 +81,7 @@ export default defineEventHandler(async (event) => {
       title: safeName,
       description: "",
       imageUrl: "",
-      status: "pre-extraction",
+      status: "draft",
       extractionJob: {
         create: {
           fileName: safeName,
@@ -97,6 +98,17 @@ export default defineEventHandler(async (event) => {
       },
     },
   });
+
+  // Trigger extraction API to process the new job immediately (don't wait for its poll interval)
+  if (posterExtractionApi) {
+    setImmediate(() => {
+      fetch(`${posterExtractionApi}/jobs/check`, { method: "POST" }).catch(
+        (err) => {
+          console.error("[upload/bunny] Failed to trigger jobs/check:", err);
+        },
+      );
+    });
+  }
 
   return {
     posterId: poster.id,

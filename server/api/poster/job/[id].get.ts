@@ -25,6 +25,7 @@ export default defineEventHandler(async (event) => {
   return {
     jobId: job.id,
     status: job.status,
+    completed: job.completed,
     posterId: job.posterId,
     error: job.error,
   };
