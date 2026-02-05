@@ -167,12 +167,10 @@ model ZenodoDeposition {
     updated DateTime @updatedAt
 }
 
-// Tracks background poster extraction jobs
-// Status flow: pending -> processing -> completed/failed
 model ExtractionJob {
+    // This record and the files will only be removed after the poster is published or a doi is submitted
     id String @id @default(cuid(2))
 
-    // Filled when job completes successfully
     poster   Poster @relation(fields: [posterId], references: [id], onDelete: Cascade)
     posterId Int    @unique
 
