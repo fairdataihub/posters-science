@@ -10,7 +10,6 @@ export default defineEventHandler(async (event) => {
 
   const posterId = parseInt(id);
   if (isNaN(posterId)) {
-    console.warn("[download] Invalid poster ID:", id);
     throw createError({
       statusCode: 400,
       statusMessage: "Invalid poster ID",
@@ -19,7 +18,6 @@ export default defineEventHandler(async (event) => {
 
   const { user } = session;
   const userId = user.id;
-  console.log("[download] Request for poster", posterId, "by user", userId);
 
   const poster = await prisma.poster.findUnique({
     where: {
@@ -38,7 +36,6 @@ export default defineEventHandler(async (event) => {
   });
 
   if (!poster) {
-    console.warn("[download] Poster not found:", posterId, "user:", userId);
     throw createError({
       statusCode: 404,
       statusMessage: "Poster not found",
@@ -49,9 +46,6 @@ export default defineEventHandler(async (event) => {
   const { bunnyPrivateStorage, bunnyPrivateStorageKey } = config;
 
   if (!bunnyPrivateStorage || !bunnyPrivateStorageKey) {
-    console.error(
-      "[download] Storage not configured (bunnyPrivateStorage/bunnyPrivateStorageKey)",
-    );
     throw createError({
       statusCode: 503,
       statusMessage: "Storage not configured",
@@ -59,7 +53,6 @@ export default defineEventHandler(async (event) => {
   }
 
   const archive = archiver("zip", { zlib: { level: 9 } });
-  console.log("[download] Building zip for poster", posterId);
 
   // Add poster.json (metadata) to the zip
   const meta = poster.posterMetadata;
@@ -71,15 +64,10 @@ export default defineEventHandler(async (event) => {
     "utf-8",
   );
   archive.append(posterJsonBuffer, { name: "poster.json" });
-  console.log("[download] Added poster.json to archive");
 
   // If we have a file in Bunny, fetch it and add to the zip
   const { extractionJob } = poster;
   if (extractionJob?.filePath) {
-    console.log(
-      "[download] Fetching file from storage:",
-      extractionJob.fileName ?? extractionJob.filePath,
-    );
     const fileUrl = `${bunnyPrivateStorage}/${extractionJob.filePath}`;
     const fileResponse = await fetch(fileUrl, {
       headers: {
@@ -92,15 +80,17 @@ export default defineEventHandler(async (event) => {
       const fileBuffer = Buffer.from(await fileResponse.arrayBuffer());
       const zipEntryName = extractionJob.fileName || "poster.pdf";
       archive.append(fileBuffer, { name: zipEntryName });
-      console.log("[download] Added file to archive:", zipEntryName);
     } else {
-      console.warn(
-        "[download] Failed to fetch file from storage, status:",
-        fileResponse.status,
-      );
+      throw createError({
+        statusCode: 500,
+        statusMessage: "Failed to fetch file from storage",
+      });
     }
   } else {
-    console.log("[download] No extraction file, zip contains poster.json only");
+    throw createError({
+      statusCode: 500,
+      statusMessage: "No extraction file found",
+    });
   }
 
   await archive.finalize();
@@ -114,7 +104,6 @@ export default defineEventHandler(async (event) => {
     `attachment; filename="${zipFilename}"`,
   );
 
-  console.log("[download] Streaming zip:", zipFilename);
   const webStream = Readable.toWeb(
     archive as unknown as Readable,
   ) as ReadableStream;
