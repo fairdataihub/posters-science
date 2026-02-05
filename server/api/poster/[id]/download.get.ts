@@ -77,9 +77,11 @@ export default defineEventHandler(async (event) => {
     });
 
     if (fileResponse.ok && fileResponse.body) {
-      const fileBuffer = Buffer.from(await fileResponse.arrayBuffer());
+      const nodeStream = Readable.fromWeb(
+        fileResponse.body as Parameters<typeof Readable.fromWeb>[0],
+      );
       const zipEntryName = extractionJob.fileName || "poster.pdf";
-      archive.append(fileBuffer, { name: zipEntryName });
+      archive.append(nodeStream, { name: zipEntryName });
     } else {
       throw createError({
         statusCode: 500,

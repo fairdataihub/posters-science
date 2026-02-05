@@ -11,7 +11,7 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  const job = await prisma.extractionJob.findUnique({
+  const job = await prisma.extractionJob.findFirst({
     where: { id: jobId, poster: { userId: user.id } },
   });
 
