@@ -53,16 +53,41 @@ const isDownloading = ref(false);
 async function downloadMetadata() {
   isDownloading.value = true;
   try {
-    const response = await $fetch(`/api/poster/${id}/download`, {
+    const response = await fetch(`/api/poster/${id}/download`, {
       method: "GET",
-      responseType: "blob",
+      credentials: "include",
     });
 
-    const blob = response as unknown as Blob;
+    if (!response.ok) {
+      const text = await response.text();
+      let message = `Request failed (${response.status})`;
+      try {
+        const json = JSON.parse(text) as {
+          message?: string;
+          statusMessage?: string;
+        };
+        message = json.statusMessage ?? json.message ?? message;
+      } catch {
+        if (text) message = text.slice(0, 120);
+      }
+      toast.add({
+        title: "Download Failed",
+        description: message,
+        color: "error",
+      });
+
+      return;
+    }
+
+    const blob = await response.blob();
+    const disposition = response.headers.get("Content-Disposition");
+    const filenameMatch = disposition?.match(/filename="?([^";\n]+)"?/);
+    const filename = filenameMatch?.[1] ?? `poster-${id}.zip`;
+
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "poster.json";
+    a.download = filename;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -70,13 +95,17 @@ async function downloadMetadata() {
 
     toast.add({
       title: "Download Started",
-      description: "Your metadata file is downloading.",
+      description: "Your poster package (zip) is downloading.",
       color: "success",
     });
-  } catch {
+  } catch (err) {
+    console.error("[download]", err);
     toast.add({
       title: "Download Failed",
-      description: "Could not download the metadata file.",
+      description:
+        err instanceof Error
+          ? err.message
+          : "Could not download the poster package.",
       color: "error",
     });
   } finally {
