@@ -8,7 +8,7 @@ export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig();
   const { siteEnv } = config.public;
 
-  if (siteEnv !== "development") {
+  if (siteEnv !== "dev") {
     throw createError({
       statusCode: 404,
       statusMessage: "Email verification is not enabled for this environment",

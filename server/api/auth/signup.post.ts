@@ -14,7 +14,6 @@ const signupSchema = z.object({
 export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig();
 
-  console.log(config);
   const { siteEnv } = config.public;
 
   if (siteEnv !== "dev") {
