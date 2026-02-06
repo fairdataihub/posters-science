@@ -177,6 +177,44 @@ const { data, error } = await useFetch(`/api/poster/${id}`);
 if (data.value) {
   const poster = data.value as PosterResponse;
 
+  // Check if the poster is already published
+  if (poster.status === "published" || poster.publishedAt) {
+    toast.add({
+      title: "Poster already published",
+      description: "This poster has already been published! It is no",
+      color: "warning",
+    });
+
+    await navigateTo("/dashboard");
+
+    throw createError({
+      statusCode: 400,
+      statusMessage: "Poster already published",
+    });
+  }
+
+  if (poster.extractionJob) {
+    if (
+      !poster.extractionJob.completed &&
+      (poster.extractionJob.status === "processing" ||
+        poster.extractionJob.status === "pending-extraction")
+    ) {
+      toast.add({
+        title: "Extraction in progress",
+        description:
+          "The poster extraction is in progress. Please wait until this process is completed.",
+        color: "warning",
+      });
+
+      await navigateTo("/dashboard");
+
+      throw createError({
+        statusCode: 400,
+        statusMessage: "Extraction in progress",
+      });
+    }
+  }
+
   // Basic poster fields
   if (poster.title) state.title = poster.title;
   if (poster.description) state.description = poster.description;

@@ -333,7 +333,19 @@ export const posterResponseSchema = z.object({
   id: z.number(),
   title: z.string().optional(),
   description: z.string().optional(),
+  status: z.enum(["draft", "published"]).optional(),
+  publishedAt: z.string().optional(),
   posterMetadata: schema.optional(),
+  extractionJob: z
+    .object({
+      completed: z.boolean().optional(),
+      status: z
+        .enum(["pending-extraction", "processing", "completed", "failed"])
+        .optional(),
+      fileName: z.string().optional(),
+      filePath: z.string().optional(),
+    })
+    .optional(),
 });
 
 export type PosterResponse = z.infer<typeof posterResponseSchema>;
