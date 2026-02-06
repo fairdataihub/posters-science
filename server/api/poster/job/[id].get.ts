@@ -2,7 +2,7 @@ export default defineEventHandler(async (event) => {
   const session = await requireUserSession(event);
   const { user } = session;
 
-  const jobId = getRouterParam(event, "id");
+  const { id: jobId } = event.context.params as { id: string };
 
   if (!jobId) {
     throw createError({
@@ -11,8 +11,8 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  const job = await prisma.extractionJob.findUnique({
-    where: { id: jobId },
+  const job = await prisma.extractionJob.findFirst({
+    where: { id: jobId, poster: { userId: user.id } },
   });
 
   if (!job) {
@@ -22,20 +22,11 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  // Ensure the job belongs to the current user
-  if (job.userId !== user.id) {
-    throw createError({
-      statusCode: 403,
-      statusMessage: "Access denied",
-    });
-  }
-
   return {
     jobId: job.id,
     status: job.status,
+    completed: job.completed,
     posterId: job.posterId,
     error: job.error,
-    created: job.created,
-    updated: job.updated,
   };
 });

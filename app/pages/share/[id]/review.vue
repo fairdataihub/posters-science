@@ -17,12 +17,7 @@ const zenodoLoginUrl = ref("");
 const zenodoTokenExists = ref(false);
 
 // Repository selection state
-type Repository =
-  | "zenodo"
-  | "figshare"
-  | "software-heritage"
-  | "download"
-  | null;
+type Repository = "zenodo" | "figshare" | "download" | null;
 
 // Check for repository query param (e.g., after Zenodo OAuth redirect)
 const queryRepo = useRoute().query.repository as Repository | undefined;
@@ -43,13 +38,6 @@ const repositories = [
     description: "Research data repository",
     enabled: false,
   },
-  // {
-  //   id: "software-heritage" as const,
-  //   name: "Software Heritage",
-  //   icon: "i-lucide-archive",
-  //   description: "Software source code archive",
-  //   enabled: false,
-  // },
   {
     id: "download" as const,
     name: "Download Locally",
@@ -65,16 +53,41 @@ const isDownloading = ref(false);
 async function downloadMetadata() {
   isDownloading.value = true;
   try {
-    const response = await $fetch(`/api/poster/${id}/download`, {
+    const response = await fetch(`/api/poster/${id}/download`, {
       method: "GET",
-      responseType: "blob",
+      credentials: "include",
     });
 
-    const blob = response as unknown as Blob;
+    if (!response.ok) {
+      const text = await response.text();
+      let message = `Request failed (${response.status})`;
+      try {
+        const json = JSON.parse(text) as {
+          message?: string;
+          statusMessage?: string;
+        };
+        message = json.statusMessage ?? json.message ?? message;
+      } catch {
+        if (text) message = text.slice(0, 120);
+      }
+      toast.add({
+        title: "Download Failed",
+        description: message,
+        color: "error",
+      });
+
+      return;
+    }
+
+    const blob = await response.blob();
+    const disposition = response.headers.get("Content-Disposition");
+    const filenameMatch = disposition?.match(/filename="?([^";\n]+)"?/);
+    const filename = filenameMatch?.[1] ?? `poster-${id}.zip`;
+
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "poster.json";
+    a.download = filename;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -82,13 +95,17 @@ async function downloadMetadata() {
 
     toast.add({
       title: "Download Started",
-      description: "Your metadata file is downloading.",
+      description: "Your poster package (zip) is downloading.",
       color: "success",
     });
-  } catch {
+  } catch (err) {
+    console.error("[download]", err);
     toast.add({
       title: "Download Failed",
-      description: "Could not download the metadata file.",
+      description:
+        err instanceof Error
+          ? err.message
+          : "Could not download the poster package.",
       color: "error",
     });
   } finally {
@@ -167,6 +184,23 @@ const zenodoRecordUrl = computed(() => {
 
   return links?.latest_html ?? "";
 });
+
+const { data: posterData, error: posterError } = await useFetch(
+  `/api/poster/${id}`,
+  {
+    headers: useRequestHeaders(["cookie"]),
+    method: "GET",
+  },
+);
+
+if (posterError.value) {
+  console.error("Poster fetch error:", posterError.value);
+  toast.add({
+    title: "Error fetching poster",
+    description: posterError.value.message,
+    color: "error",
+  });
+}
 
 const { data: zenodoData, error: zenodoError } = await useFetch(
   "/api/release/zenodo",
@@ -356,7 +390,7 @@ async function handleArchive() {
             icon: 'i-vscode-icons-file-type-json',
           },
           {
-            label: 'poster.pdf',
+            label: posterData?.extractionJob?.fileName || 'poster.pdf',
             icon: 'i-vscode-icons-file-type-pdf2',
           },
         ]"

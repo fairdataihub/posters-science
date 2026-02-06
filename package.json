@@ -26,7 +26,9 @@
   "dependencies": {
     "@internationalized/date": "^3.10.0",
     "@nuxt/image": "^1.11.0",
+    "@paralleldrive/cuid2": "^3.3.0",
     "@vueuse/core": "13.4.0",
+    "archiver": "^7.0.1",
     "bcrypt": "^5.1.1",
     "date-fns": "^4.1.0",
     "marked": "^15.0.7",
@@ -51,6 +53,7 @@
     "@prisma/client": "^6.16.3",
     "@stylistic/eslint-plugin": "^5.4.0",
     "@tailwindcss/typography": "^0.5.16",
+    "@types/archiver": "^7.0.0",
     "@types/bcrypt": "^5.0.2",
     "@types/nodemailer": "^6.4.17",
     "@types/sanitize-html": "^2.13.0",

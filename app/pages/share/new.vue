@@ -22,8 +22,9 @@ const POLL_INTERVAL = 3000;
 
 interface JobStatusResponse {
   jobId: string;
-  status: "pending" | "processing" | "completed" | "failed";
-  posterId: number | null;
+  status: "pending-extraction" | "processing" | "completed" | "failed";
+  completed: boolean;
+  posterId: number;
   error: string | null;
 }
 
@@ -33,7 +34,11 @@ const pollJobStatus = async (jobId: string): Promise<void> => {
       `/api/poster/job/${jobId}`,
     );
 
-    if (response.status === "completed" && response.posterId) {
+    if (
+      response.completed &&
+      response.status === "completed" &&
+      response.posterId
+    ) {
       status.value = 4; // Complete
       navigateTo(`/share/${response.posterId}`);
 
@@ -57,11 +62,12 @@ const pollJobStatus = async (jobId: string): Promise<void> => {
     }
 
     // Continue polling if still pending or processing
-    if (response.status === "pending" || response.status === "processing") {
+    if (
+      response.status === "pending-extraction" ||
+      response.status === "processing"
+    ) {
       setTimeout(() => {
-        if (currentJobId.value === jobId) {
-          pollJobStatus(jobId);
-        }
+        pollJobStatus(jobId);
       }, POLL_INTERVAL);
     }
   } catch (err: unknown) {
@@ -107,26 +113,35 @@ const uploadFile = async () => {
   try {
     status.value = 1; // Uploading
 
-    // Create FormData with the file
+    // 1. Upload file to Bunny first
     const formData = new FormData();
     formData.append("file", file);
 
-    // Send to API - now returns immediately with jobId
-    const response = await $fetch<{ jobId: string; status: string }>(
-      "/api/poster",
-      {
-        method: "POST",
-        body: formData,
-      },
-    );
+    const uploadResponse = await $fetch("/api/upload/bunny", {
+      method: "POST",
+      body: formData,
+    });
 
-    status.value = 2; // Processing
-    apiResponse.value = response;
-    currentJobId.value = response.jobId;
+    if (!uploadResponse.posterId) {
+      error.value =
+        "Upload failed. Please try again. If the problem persists, please contact support.";
+      status.value = 0;
+      isUploading.value = false;
+
+      return;
+    }
 
     // Start polling for job completion
-    pollJobStatus(response.jobId);
+    if (uploadResponse.extractionJobId) {
+      pollJobStatus(uploadResponse.extractionJobId);
+    } else {
+      error.value =
+        "Upload failed. Please try again. If the problem persists, please contact support.";
+      status.value = 0;
+      isUploading.value = false;
+    }
   } catch (err: unknown) {
+    // TODO: Fix this error handling to be more simple
     const errorObj =
       err &&
       typeof err === "object" &&

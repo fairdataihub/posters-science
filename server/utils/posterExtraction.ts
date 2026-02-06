@@ -136,7 +136,7 @@ export async function processExtraction(
     const fundingReferences = extractedData.fundingReferences ?? [];
     const ethicsApproval = extractedData.ethicsApprovals ?? [];
 
-    const conference = extractedData.conference;
+    const { conference } = extractedData;
     const conferenceName = conference?.conferenceName ?? null;
     const conferenceLocation = conference?.conferenceLocation ?? null;
     const conferenceUri = conference?.conferenceUri ?? null;

@@ -21,6 +21,12 @@ export default defineEventHandler(async (event) => {
     },
     include: {
       posterMetadata: true,
+      extractionJob: {
+        select: {
+          fileName: true,
+          filePath: true,
+        },
+      },
     },
   });
 

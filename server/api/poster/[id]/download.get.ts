@@ -1,3 +1,8 @@
+import archiver from "archiver";
+import { Readable } from "node:stream";
+import { sendStream, setHeader } from "h3";
+import { buildPosterJson } from "../../../utils/buildPosterJson";
+
 export default defineEventHandler(async (event) => {
   const session = await requireUserSession(event);
 
@@ -21,6 +26,12 @@ export default defineEventHandler(async (event) => {
     },
     include: {
       posterMetadata: true,
+      extractionJob: {
+        select: {
+          fileName: true,
+          filePath: true,
+        },
+      },
     },
   });
 
@@ -31,60 +42,73 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  // Build the metadata JSON
+  const config = useRuntimeConfig();
+  const { bunnyPrivateStorage, bunnyPrivateStorageKey } = config;
+
+  if (!bunnyPrivateStorage || !bunnyPrivateStorageKey) {
+    throw createError({
+      statusCode: 503,
+      statusMessage: "Storage not configured",
+    });
+  }
+
+  const archive = archiver("zip", { zlib: { level: 9 } });
+
+  // Add poster.json (metadata) to the zip
   const meta = poster.posterMetadata;
+  const posterJson = meta
+    ? buildPosterJson(meta)
+    : { title: poster.title, description: poster.description };
+  const posterJsonBuffer = Buffer.from(
+    JSON.stringify(posterJson, null, 2),
+    "utf-8",
+  );
+  archive.append(posterJsonBuffer, { name: "poster.json" });
 
-  // Transform to DataCite-compatible format
-  const metadata = {
-    title: poster.title,
-    description: poster.description,
-    ...(meta && {
-      doi: meta.doi,
-      identifiers: meta.identifiers,
-      alternateIdentifiers: meta.alternateIdentifiers,
-      creators: meta.creators,
-      titles: meta.titles,
-      descriptions: meta.descriptions,
-      publisher: meta.publisher,
-      publicationYear: meta.publicationYear,
-      subjects: meta.subjects,
-      dates: meta.dates,
-      language: meta.language,
-      types: meta.types,
-      relatedIdentifiers: meta.relatedIdentifiers,
-      sizes: meta.sizes,
-      formats: meta.formats,
-      version: meta.version,
-      rightsList: meta.rightsList,
-      fundingReferences: meta.fundingReferences,
-      ethicsApprovals: meta.ethicsApproval,
-      conference: {
-        conferenceName: meta.conferenceName,
-        conferenceLocation: meta.conferenceLocation,
-        conferenceUri: meta.conferenceUri,
-        conferenceIdentifier: meta.conferenceIdentifier,
-        conferenceIdentifierType: meta.conferenceIdentifierType,
-        conferenceSchemaUri: meta.conferenceSchemaUri,
-        conferenceStartDate: meta.conferenceStartDate,
-        conferenceEndDate: meta.conferenceEndDate,
-        conferenceAcronym: meta.conferenceAcronym,
-        conferenceSeries: meta.conferenceSeries,
+  // If we have a file in Bunny, fetch it and add to the zip
+  const { extractionJob } = poster;
+  if (extractionJob?.filePath) {
+    const fileUrl = `${bunnyPrivateStorage}/${extractionJob.filePath}`;
+    const fileResponse = await fetch(fileUrl, {
+      headers: {
+        AccessKey: bunnyPrivateStorageKey,
+        "Content-Type": "application/octet-stream",
       },
-      posterContent: meta.posterContent,
-      tableCaption: meta.tableCaption,
-      imageCaption: meta.imageCaption,
-      domain: meta.domain,
-    }),
-  };
+    });
 
-  const jsonContent = JSON.stringify(metadata, null, 2);
+    if (fileResponse.ok && fileResponse.body) {
+      const nodeStream = Readable.fromWeb(
+        fileResponse.body as Parameters<typeof Readable.fromWeb>[0],
+      );
+      const zipEntryName = extractionJob.fileName || "poster.pdf";
+      archive.append(nodeStream, { name: zipEntryName });
+    } else {
+      throw createError({
+        statusCode: 500,
+        statusMessage: "Failed to fetch file from storage",
+      });
+    }
+  } else {
+    throw createError({
+      statusCode: 500,
+      statusMessage: "No extraction file found",
+    });
+  }
 
-  setHeader(event, "Content-Type", "application/json");
+  await archive.finalize();
+
+  const zipFilename = "poster-package.zip";
+
+  setHeader(event, "Content-Type", "application/zip");
   setHeader(
     event,
     "Content-Disposition",
-    `attachment; filename="poster-${posterId}.json"`,
+    `attachment; filename="${zipFilename}"`,
   );
 
-  return jsonContent;
+  const webStream = Readable.toWeb(
+    archive as unknown as Readable,
+  ) as ReadableStream;
+
+  return sendStream(event, webStream);
 });
