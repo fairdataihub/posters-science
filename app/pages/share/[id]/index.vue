@@ -896,16 +896,12 @@ function removeRow<T>(arr: T[], index: number) {
 
             <div class="flex justify-end">
               <UButton
-                v-if="
-                  state.posterContent?.sections &&
-                  state.posterContent?.sections.length > 1
-                "
                 class="mt-7"
                 size="xs"
                 trailing-icon="i-lucide-trash-2"
                 color="error"
                 variant="solid"
-                @click="removeRow(state.posterContent?.sections, sIndex)"
+                @click="removeRow(state.posterContent?.sections || [], sIndex)"
               >
                 Delete Section
               </UButton>
@@ -962,13 +958,12 @@ function removeRow<T>(arr: T[], index: number) {
 
             <div class="flex justify-end">
               <UButton
-                v-if="state.tableCaptions && state.tableCaptions.length > 1"
                 class="mt-7"
                 size="xs"
                 trailing-icon="i-lucide-trash-2"
                 color="error"
                 variant="solid"
-                @click="removeRow(state.tableCaptions, cIndex)"
+                @click="removeRow(state.tableCaptions || [], cIndex)"
               >
                 Delete Caption
               </UButton>
@@ -1025,13 +1020,12 @@ function removeRow<T>(arr: T[], index: number) {
 
             <div class="flex justify-end">
               <UButton
-                v-if="state.imageCaptions && state.imageCaptions.length > 1"
                 class="mt-7"
                 size="xs"
                 trailing-icon="i-lucide-trash-2"
                 color="error"
                 variant="solid"
-                @click="removeRow(state.imageCaptions, cIndex)"
+                @click="removeRow(state.imageCaptions || [], cIndex)"
               >
                 Delete Image Caption
               </UButton>
