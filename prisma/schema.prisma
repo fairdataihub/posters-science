@@ -89,16 +89,14 @@ model PosterMetadata {
 
     subjects String[] @default([])
 
+    domain   String?
     language String?
-
-    relatedIdentifiers Json @default("[]") // [{ relatedIdentifier: string, relatedIdentifierType: string, relationType: string }]
+    version  String?
 
     size   String?
     format String?
 
-    version String?
-
-    rightsIdentifier String? // SPDX identifier
+    license String? // SPDX identifier
 
     fundingReferences Json @default("[]") // [{ funderName: string, funderIdentifier: string, funderIdentifierType: string, awardNumber: string, awardUri: string, awardTitle: string }]
 
@@ -113,11 +111,11 @@ model PosterMetadata {
     conferenceAcronym        String?
     conferenceSeries         String?
 
+    relatedIdentifiers Json @default("[]") // [{ relatedIdentifier: string, relatedIdentifierType: string, relationType: string }]
+
     posterContent Json @default("[]") // { sections: [{ sectionTitle: string, sectionContent: string }], unstructuredContent: string }
     tableCaptions Json @default("[]") // [{ id: string, caption: string }]
     imageCaptions Json @default("[]") // [{ id: string, caption: string }]
-
-    domain String?
 
     created DateTime @default(now())
     updated DateTime @updatedAt

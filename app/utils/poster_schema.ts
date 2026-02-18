@@ -1,6 +1,8 @@
 import * as z from "zod";
 import isoLanguages from "@/assets/data/iso-639-1.json";
 import licenses from "@/assets/data/licenses.json";
+import identifierTypes from "@/assets/data/identifier-types.json";
+import relationTypes from "@/assets/data/relation-types.json";
 // Constants and options for select fields
 const DATE_TYPE_VALUES = [
   "Accepted",
@@ -57,6 +59,24 @@ export const ISO_LANGUAGE_OPTIONS = isoLanguages.map((lang) => ({
 export const LICENSE_OPTIONS = licenses.map((lic) => ({
   label: lic.name,
   value: lic.licenseId,
+}));
+
+export const IDENTIFIER_TYPE_OPTIONS = identifierTypes.map((id) => ({
+  label: id.label,
+  value: id.value,
+}));
+
+export const IDENTIFIER_TYPE_PLACEHOLDER_OPTIONS = identifierTypes.map(
+  (id) => ({
+    label: id.placeholder,
+    value: id.value,
+  }),
+);
+
+export const RELATION_TYPE_OPTIONS = relationTypes.map((rt) => ({
+  label: rt.const,
+  value: rt.const,
+  description: rt.description,
 }));
 
 const RESOURCE_TYPE_VALUES = [
@@ -211,7 +231,8 @@ const FundingSchema = z.object({
 });
 
 const CaptionSchema = z.object({
-  captions: z.array(z.string()).optional(),
+  id: z.string().min(1, { message: "ID is required" }),
+  caption: z.string().min(1, { message: "Caption is required" }),
 });
 
 // Schema for validating extraction API response (reuses existing schemas with looser requirements)
@@ -238,14 +259,14 @@ const ExtractionDateSchema = z.object({
   dateInformation: z.string().optional(),
 });
 
-// Conference schema
+// Conference schema (matches PosterMetadata flat fields)
 const ConferenceSchema = z.object({
   conferenceName: z.string().optional(),
   conferenceLocation: z.string().optional(),
   conferenceUri: z.string().optional(),
   conferenceIdentifier: z.string().optional(),
   conferenceIdentifierType: z.string().optional(),
-  conferenceSchemaUri: z.string().optional(),
+  conferenceYear: z.number().optional(),
   conferenceStartDate: z.string().optional(),
   conferenceEndDate: z.string().optional(),
   conferenceAcronym: z.string().optional(),
@@ -266,46 +287,47 @@ const PosterContentSchema = z.object({
 // EXTRACTION API SCHEMA
 // Used to validate data from the external extraction API
 
+// Extraction API schema: accepts all extraction API fields; only PosterMetadata fields are stored
 export const schema = z.object({
-  // Extraction API metadata fields (ignored but accepted)
   $schema: z.string().optional(),
   _validation: z.unknown().optional(),
 
   doi: z.string().optional(),
-  prefix: z.string().optional(),
-  suffix: z.string().optional(),
-
   creators: z.array(ExtractionCreatorSchema).optional(),
-  titles: z.array(TitleEntrySchema.partial()).optional(),
-  descriptions: z.array(DescriptionEntrySchema.partial()).optional(),
   identifiers: z.array(IdentifierSchema.partial()).optional(),
-  alternateIdentifiers: z.array(AlternateIdentifierSchema.partial()).optional(),
   publisher: PublisherSchema.partial().optional(),
   publicationYear: z.number().nullable().optional(),
   subjects: z.array(SubjectSchema.partial()).optional(),
-  dates: z.array(ExtractionDateSchema).optional(),
   language: z.string().nullable().optional(),
-  types: TypesSchema.partial().optional(), // Single object, not array
   relatedIdentifiers: z.array(RelatedIdentifierSchema.partial()).optional(),
-  sizes: z.array(z.string()).optional(),
-  formats: z.array(z.string()).optional(),
+  size: z.string().nullable().optional(),
+  format: z.string().nullable().optional(),
   version: z.string().nullable().optional(),
-  rightsList: z.array(RightsSchema.partial()).optional(),
+  license: z.string().nullable().optional(),
   fundingReferences: z.array(FundingSchema.partial()).optional(),
-  ethicsApprovals: z.array(z.string()).optional(),
   conference: ConferenceSchema.optional(),
 
-  // JSON schema canonical names (new)
   imageCaptions: z.array(CaptionSchema).optional(),
   tableCaptions: z.array(CaptionSchema).optional(),
-  content: PosterContentSchema.optional(),
-  researchField: z.string().optional(),
-
-  // Internal/legacy names (backward compat with stored data)
-  imageCaption: z.array(CaptionSchema).optional(),
-  tableCaption: z.array(CaptionSchema).optional(),
   posterContent: PosterContentSchema.optional(),
   domain: z.string().optional(),
+
+  // Extraction API may still send these; accepted but not stored in PosterMetadata
+  prefix: z.string().optional(),
+  suffix: z.string().optional(),
+  titles: z.array(TitleEntrySchema.partial()).optional(),
+  descriptions: z.array(DescriptionEntrySchema.partial()).optional(),
+  alternateIdentifiers: z.array(AlternateIdentifierSchema.partial()).optional(),
+  dates: z.array(ExtractionDateSchema).optional(),
+  types: TypesSchema.partial().optional(),
+  sizes: z.array(z.string()).optional(),
+  formats: z.array(z.string()).optional(),
+  rightsList: z.array(RightsSchema.partial()).optional(),
+  ethicsApprovals: z.array(z.string()).optional(),
+  content: PosterContentSchema.optional(),
+  researchField: z.string().optional(),
+  imageCaption: z.array(CaptionSchema).optional(),
+  tableCaption: z.array(CaptionSchema).optional(),
 });
 
 export type Schema = z.infer<typeof schema>;
@@ -318,13 +340,6 @@ const FormCreatorSchema = z.object({
   nameType: z.enum(NAME_TYPE_VALUES).optional(),
   nameIdentifiers: z.array(NameIdentifierSchema.partial()).optional(),
   affiliation: z.array(AffiliationSchema.partial()).optional(),
-});
-
-const FormDateSchema = z.object({
-  start: z.string().optional(),
-  end: z.string().optional(),
-  dateType: z.enum(DATE_TYPE_VALUES).optional(),
-  dateInformation: z.string().optional().nullable(),
 });
 
 // API RESPONSE SCHEMA
@@ -355,31 +370,21 @@ export const formSchema = z.object({
   description: z.string().default(""),
 
   doi: z.string().default(""),
-  prefix: z.string().default(""),
-  suffix: z.string().default(""),
-
   creators: z.array(FormCreatorSchema).default([]),
-  titles: z.array(TitleEntrySchema.partial()).default([]),
-  descriptions: z.array(DescriptionEntrySchema.partial()).default([]),
   identifiers: z.array(IdentifierSchema.partial()).default([]),
-  alternateIdentifiers: z
-    .array(AlternateIdentifierSchema.partial())
-    .default([]),
   publisher: PublisherSchema.partial().default({}),
   publicationYear: z.number().optional(),
   subjects: z.array(SubjectSchema.partial()).default([]),
-  dates: z.array(FormDateSchema).default([]),
   language: z.string().default("en"),
-  types: TypesSchema.partial().default({}),
   relatedIdentifiers: z.array(RelatedIdentifierSchema.partial()).default([]),
-  sizes: z.array(z.string()).default([]),
-  formats: z.array(z.string()).default([]),
+  size: z.string().default(""),
+  format: z.string().default(""),
   version: z.string().default(""),
-  rightsList: z.array(RightsSchema.partial()).default([]),
+  rightsIdentifier: z.string().default(""),
   fundingReferences: z.array(FundingSchema.partial()).default([]),
-  ethicsApprovals: z.array(z.string()).default([]),
-  imageCaption: z.array(CaptionSchema).default([]),
-  tableCaption: z.array(CaptionSchema).default([]),
+  posterContent: PosterContentSchema.optional(),
+  tableCaptions: z.array(CaptionSchema).default([]),
+  imageCaptions: z.array(CaptionSchema).default([]),
   conference: ConferenceSchema.default({}),
 
   domain: z.string().default(""),
@@ -451,7 +456,10 @@ const StrictConferenceSchema = z.object({
   conferenceUri: z.string().optional(),
   conferenceIdentifier: z.string().optional(),
   conferenceIdentifierType: z.string().optional(),
-  conferenceSchemaUri: z.string().optional(),
+  conferenceYear: z
+    .number()
+    .min(1000)
+    .max(9999, { message: "Conference year is required" }),
   conferenceStartDate: z
     .string()
     .min(1, { message: "Conference start date is required" }),
@@ -462,70 +470,38 @@ const StrictConferenceSchema = z.object({
   conferenceSeries: z.string().optional(),
 });
 
-const StrictDateSchema = z.object({
-  date: z.string().min(1, { message: "A date is required" }),
-  dateType: z.enum(DATE_TYPE_VALUES, { message: "Date type is required" }),
-  dateInformation: z.string().optional().nullable(),
-});
-
-const StrictTypesSchema = z.object({
-  resourceType: z.string().min(1, { message: "Resource type is required" }),
-  resourceTypeGeneral: z.enum(RESOURCE_TYPE_VALUES).default("Other"),
-});
-
 export const strictFormSchema = z.object({
   title: z.string().min(1, { message: "Title is required" }),
   description: z.string().min(1, { message: "Description is required" }),
-  language: z.string().min(2, { message: "Language is required" }),
-  domain: z.string().min(1, { message: "Domain is required" }),
-
-  doi: z.string().optional(),
-  prefix: z.string().optional(),
-  suffix: z.string().optional(),
-
-  identifiers: z
-    .array(IdentifierSchema)
-    .min(1, { message: "At least one identifier is required" }),
+  language: z.string(),
+  domain: z.string(),
+  doi: z.string(),
+  identifiers: z.array(IdentifierSchema),
   creators: z
     .array(StrictCreatorSchema)
     .min(1, { message: "At least one creator is required" }),
-  titles: z
-    .array(TitleEntrySchema)
-    .min(1, { message: "At least one title entry is required" }),
   subjects: z
-    .array(SubjectSchema)
+    .array(z.string())
     .min(1, { message: "At least one subject is required" }),
-  dates: z
-    .array(StrictDateSchema)
-    .min(1, { message: "At least one date is required" }),
-  formats: z
-    .array(z.string().min(1))
-    .min(1, { message: "At least one format is required" }),
-  rightsList: z
-    .array(RightsSchema)
-    .min(1, { message: "At least one rights entry is required" }),
-  descriptions: z
-    .array(DescriptionEntrySchema)
-    .min(1, { message: "At least one description is required" }),
+  format: z.string().min(1, { message: "Format is required" }),
+  license: z.string().min(1, { message: "License is required" }),
   fundingReferences: z
     .array(StrictFundingSchema)
     .min(1, { message: "At least one funding reference is required" }),
-
-  publisher: StrictPublisherSchema,
+  publisher: z.string(),
   publicationYear: z
     .number()
     .int()
     .min(1000)
-    .max(9999, { message: "Publication year is required" }),
-  types: StrictTypesSchema,
-  version: z.string().min(1, { message: "Version is required" }),
+    .max(9999, { message: "Publication year is required" })
+    .optional(),
+  version: z.string(),
   conference: StrictConferenceSchema,
-  alternateIdentifiers: z.array(AlternateIdentifierSchema.partial()).optional(),
-  relatedIdentifiers: z.array(RelatedIdentifierSchema.partial()).optional(),
-  sizes: z.array(z.string()).optional(),
-  ethicsApprovals: z.array(z.string()).optional(),
-  imageCaption: z.array(CaptionSchema).optional(),
-  tableCaption: z.array(CaptionSchema).optional(),
+  relatedIdentifiers: z.array(RelatedIdentifierSchema.partial()),
+  size: z.string().optional(),
+  posterContent: PosterContentSchema.optional(),
+  tableCaptions: z.array(CaptionSchema).optional(),
+  imageCaptions: z.array(CaptionSchema).optional(),
 });
 
 export type StrictFormSchema = z.infer<typeof strictFormSchema>;

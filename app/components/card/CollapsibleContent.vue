@@ -3,6 +3,7 @@ import { computed, ref } from "vue";
 
 const props = defineProps({
   title: { default: "Card Title", type: String },
+  description: { default: "Card Description", type: String },
   collapse: { default: false, type: Boolean },
 });
 
@@ -31,11 +32,17 @@ const uiClasses = computed(() => ({
         class="flex items-center justify-between p-4"
         @click="toggleCollapse"
       >
-        <h3
-          class="text-primary-600 dark:text-primary-400 text-lg font-semibold"
-        >
-          {{ title }}
-        </h3>
+        <div class="flex flex-col">
+          <h3
+            class="text-primary-600 dark:text-primary-400 text-lg font-semibold"
+          >
+            {{ title }}
+          </h3>
+
+          <p class="text-sm text-gray-500">
+            {{ description }}
+          </p>
+        </div>
 
         <UButton
           color="primary"
