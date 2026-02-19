@@ -415,6 +415,14 @@ export async function beginZenodoPublication(
     });
   }
 
+  await prisma.poster.update({
+    where: { id: posterInt },
+    data: {
+      status: "published",
+      publishedAt: new Date(),
+    },
+  });
+
   await onProgress?.({
     step: "publish",
     status: "completed",
