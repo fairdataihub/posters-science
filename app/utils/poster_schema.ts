@@ -231,7 +231,7 @@ const FundingSchema = z.object({
 });
 
 const CaptionSchema = z.object({
-  id: z.string().min(1, { message: "ID is required" }),
+  id: z.string().optional(),
   caption: z.string().min(1, { message: "Caption is required" }),
 });
 
@@ -380,7 +380,7 @@ export const formSchema = z.object({
   size: z.string().default(""),
   format: z.string().default(""),
   version: z.string().default(""),
-  rightsIdentifier: z.string().default(""),
+  license: z.string().default(""),
   fundingReferences: z.array(FundingSchema.partial()).default([]),
   posterContent: PosterContentSchema.optional(),
   tableCaptions: z.array(CaptionSchema).default([]),
