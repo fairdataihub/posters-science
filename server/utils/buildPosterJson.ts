@@ -1,4 +1,5 @@
 import type { PosterMetadata } from "@prisma/client";
+import licenses from "../../app/assets/data/licenses.json";
 
 /**
  * Transforms PosterMetadata from the database into
@@ -25,6 +26,10 @@ export function buildPosterJson(meta: PosterMetadata) {
 
   const conference = buildConference(meta);
 
+  const licenseEntry = meta.license
+    ? (licenses.find((l) => l.licenseId === meta.license) ?? null)
+    : null;
+
   const posterContentRaw = meta.posterContent;
   const posterContent = Array.isArray(posterContentRaw)
     ? { sections: posterContentRaw }
@@ -38,15 +43,25 @@ export function buildPosterJson(meta: PosterMetadata) {
     creators: meta.creators,
     ...(publisher && { publisher }),
     ...(meta.publicationYear && { publicationYear: meta.publicationYear }),
-    subjects: meta.subjects,
+    subjects: (meta.subjects ?? []).map((s) => ({ subject: s })),
     ...(meta.language && { language: meta.language }),
     ...(hasItems(meta.relatedIdentifiers) && {
       relatedIdentifiers: meta.relatedIdentifiers,
     }),
-    ...(meta.size && { size: meta.size }),
-    ...(meta.format && { format: meta.format }),
+    ...(meta.size && { sizes: [meta.size] }),
+    ...(meta.format && { formats: [meta.format] }),
     ...(meta.version && { version: meta.version }),
-    ...(meta.rightsIdentifier && { rightsIdentifier: meta.rightsIdentifier }),
+    ...(meta.license && {
+      rightsList: [
+        {
+          rights: licenseEntry?.name ?? meta.license,
+          rightsUri: licenseEntry?.seeAlso?.[0] ?? licenseEntry?.reference,
+          rightsIdentifier: meta.license,
+          rightsIdentifierScheme: "SPDX",
+          schemeUri: "https://spdx.org/licenses/",
+        },
+      ],
+    }),
     fundingReferences: meta.fundingReferences,
     ...(conference && { conference }),
     ...(posterContent && { content: posterContent }),

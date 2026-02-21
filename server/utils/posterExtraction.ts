@@ -145,11 +145,10 @@ export async function processExtraction(
       (extractedData.formats as string[] | undefined)?.[0] ??
       null;
     const version = extractedData.version ?? null;
-    const rightsIdentifier =
-      extractedData.rightsIdentifier ??
-      (
-        extractedData.rightsList as { rightsIdentifier?: string }[] | undefined
-      )?.[0]?.rightsIdentifier ??
+    const license =
+      extractedData.license ??
+      extractedData.rightsList?.[0]?.rightsIdentifier ??
+      extractedData.rightsList?.[0]?.rights ??
       null;
     const fundingReferences = extractedData.fundingReferences ?? [];
 
@@ -195,7 +194,7 @@ export async function processExtraction(
             size,
             format,
             version,
-            rightsIdentifier,
+            license,
             fundingReferences,
             conferenceName,
             conferenceLocation,
