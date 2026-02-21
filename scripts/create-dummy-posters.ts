@@ -165,7 +165,7 @@ function makeExtractedData(): ExtractedData {
       sections: Array.from({
         length: faker.number.int({ min: 3, max: 7 }),
       }).map(() => ({
-        heading: pick([
+        sectionTitle: pick([
           "Background",
           "Methods",
           "Results",
@@ -173,7 +173,7 @@ function makeExtractedData(): ExtractedData {
           "Conclusion",
           "Future Work",
         ]),
-        content: faker.lorem.paragraphs({ min: 1, max: 3 }),
+        sectionContent: faker.lorem.paragraphs({ min: 1, max: 3 }),
       })),
     },
     identifiers: faker.datatype.boolean({ probability: 0.75 })
@@ -282,9 +282,10 @@ function mapToDbFields(extractedData: ExtractedData) {
 
   const imageCaptions = extractedData.imageCaption ?? [];
   const posterContent = extractedData.posterContent ?? {};
-  const tableCaptions = (extractedData.tableCaption ?? []).map((c: any) =>
-    c.captions ? c : { captions: [c.caption ?? ""] },
-  );
+  const tableCaptions = (extractedData.tableCaption ?? []).map((c: any) => ({
+    ...(c.id ? { id: c.id } : {}),
+    caption: c.caption ?? "",
+  }));
   const titles = extractedData.titles ?? [];
   const descriptions = extractedData.descriptions ?? [];
 
@@ -314,7 +315,7 @@ function mapToDbFields(extractedData: ExtractedData) {
   const format = formatsArr[0] ?? null;
   const version = extractedData.version ?? null;
   const rightsList = extractedData.rightsList ?? [];
-  const rightsIdentifier =
+  const license =
     rightsList[0]?.rightsIdentifier ?? rightsList[0]?.rights ?? null;
   const fundingReferences = extractedData.fundingReferences ?? [];
 
@@ -353,7 +354,7 @@ function mapToDbFields(extractedData: ExtractedData) {
     size,
     format,
     version,
-    rightsIdentifier,
+    license,
     fundingReferences,
     conferenceName,
     conferenceLocation,
@@ -440,7 +441,7 @@ async function main() {
           size: mapped.size,
           format: mapped.format,
           version: mapped.version,
-          rightsIdentifier: mapped.rightsIdentifier,
+          license: mapped.license,
           fundingReferences: mapped.fundingReferences,
           conferenceName: mapped.conferenceName,
           conferenceLocation: mapped.conferenceLocation,
