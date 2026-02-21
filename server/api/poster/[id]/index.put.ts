@@ -81,7 +81,7 @@ export default defineEventHandler(async (event) => {
   const size = data.size || null;
   const format = data.format || null;
   const version = data.version || null;
-  const rightsIdentifier = data.rightsIdentifier || null;
+  const license = data.license || null;
   const fundingReferences = data.fundingReferences ?? [];
 
   const { conference } = data;
@@ -124,7 +124,7 @@ export default defineEventHandler(async (event) => {
           size,
           format,
           version,
-          rightsIdentifier,
+          license,
           fundingReferences,
           conferenceName,
           conferenceLocation,

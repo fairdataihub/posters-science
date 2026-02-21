@@ -49,33 +49,59 @@ const availableTags = ref<string[]>([]);
 const { data, error } = await useFetch("/api/discover");
 
 if (data.value) {
-  posters.value = data.value.posters as unknown as Poster[];
-  total.value = data.value.total;
+  const apiPosters = (data.value.posters || []) as Partial<Poster>[];
 
-  posters.value = Array.from({ length: 31 }, (_, index) => {
-    return {
-      id: index + 1,
-      title: faker.lorem.sentence(),
-      description: faker.lorem.paragraph(),
-      imageUrl: faker.image.urlPicsumPhotos({
-        width: 400,
-        height: 300,
-        blur: 0,
-      }),
+  if (apiPosters.length > 0) {
+    posters.value = apiPosters.map((poster) => ({
+      id: poster.id ?? faker.number.int({ max: 999999, min: 1 }),
+      title: poster.title ?? "Untitled poster",
+      description: poster.description ?? "",
+      imageUrl:
+        poster.imageUrl ||
+        faker.image.urlPicsumPhotos({
+          width: 400,
+          height: 300,
+          blur: 0,
+        }),
       user: {
-        givenName: faker.person.firstName(),
-        familyName: faker.person.lastName(),
+        givenName: poster.user?.givenName ?? "Unknown",
+        familyName: poster.user?.familyName ?? "Author",
       },
-      keywords: Array.from({ length: faker.number.int(10) }, () =>
-        faker.lorem.word(),
-      ),
-      publishedAt: faker.date.past(),
-      created: faker.date.past(),
-      updated: faker.date.past(),
-      views: faker.number.int(100),
-      likes: faker.number.int(100),
-    };
-  });
+      keywords: Array.isArray(poster.keywords) ? poster.keywords : [],
+      publishedAt: poster.publishedAt ? new Date(poster.publishedAt) : null,
+      created: poster.created ? new Date(poster.created) : new Date(),
+      updated: poster.updated ? new Date(poster.updated) : new Date(),
+      views: typeof poster.views === "number" ? poster.views : 0,
+      likes: typeof poster.likes === "number" ? poster.likes : 0,
+    }));
+    total.value = data.value.total ?? posters.value.length;
+  } else {
+    posters.value = Array.from({ length: 31 }, (_, index) => {
+      return {
+        id: index + 1,
+        title: faker.lorem.sentence(),
+        description: faker.lorem.paragraph(),
+        imageUrl: faker.image.urlPicsumPhotos({
+          width: 400,
+          height: 300,
+          blur: 0,
+        }),
+        user: {
+          givenName: faker.person.firstName(),
+          familyName: faker.person.lastName(),
+        },
+        keywords: Array.from({ length: faker.number.int(10) }, () =>
+          faker.lorem.word(),
+        ),
+        publishedAt: faker.date.past(),
+        created: faker.date.past(),
+        updated: faker.date.past(),
+        views: faker.number.int(100),
+        likes: faker.number.int(100),
+      };
+    });
+    total.value = posters.value.length;
+  }
 
   posters.value = posters.value.sort((a, b) => {
     return a.publishedAt && b.publishedAt
@@ -84,8 +110,6 @@ if (data.value) {
         ? new Date(b.created).getTime() - new Date(a.created).getTime()
         : 0;
   });
-
-  total.value = 100;
 }
 
 if (error.value) {
