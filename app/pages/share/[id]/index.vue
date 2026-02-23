@@ -293,22 +293,27 @@ if (data.value) {
     }
 
     // Table and image captions (support legacy tableCaption/imageCaption)
+    // Filter out blank captions produced by the extraction model
     const tableCaps = meta.tableCaptions ?? (meta as any).tableCaption ?? [];
 
     if (tableCaps.length) {
-      state.tableCaptions = tableCaps.map((cap: any) => ({
-        ...(cap.id ? { id: cap.id } : {}),
-        caption: cap.caption ?? "",
-      }));
+      state.tableCaptions = tableCaps
+        .filter((cap: any) => (cap.caption ?? "").trim() !== "")
+        .map((cap: any) => ({
+          ...(cap.id ? { id: cap.id } : {}),
+          caption: cap.caption,
+        }));
     }
 
     const imgCaps = meta.imageCaptions ?? (meta as any).imageCaption ?? [];
 
     if (imgCaps.length) {
-      state.imageCaptions = imgCaps.map((cap: any) => ({
-        ...(cap.id ? { id: cap.id } : {}),
-        caption: cap.caption ?? "",
-      }));
+      state.imageCaptions = imgCaps
+        .filter((cap: any) => (cap.caption ?? "").trim() !== "")
+        .map((cap: any) => ({
+          ...(cap.id ? { id: cap.id } : {}),
+          caption: cap.caption,
+        }));
     }
 
     state.domain = meta.domain || "DEMO";
@@ -453,6 +458,13 @@ function onError(event: {
     icon: "material-symbols:error",
   });
 
+  toast.add({
+    title: "Issue",
+    description: JSON.stringify(firstError, null, 2),
+    color: "error",
+    icon: "material-symbols:error",
+  });
+
   // Scroll to first error field if it has an id
   if (firstError?.id) {
     const el = document.getElementById(firstError.id);
@@ -540,7 +552,7 @@ function removeRow<T>(arr: T[], index: number) {
               <UTextarea v-model="state.description" class="w-full" />
             </UFormField>
 
-            <UFormField label="Keywords" name="subjects">
+            <UFormField label="Keywords" name="subjects" required>
               <div v-if="state.subjects && state.subjects?.length > 0">
                 <div
                   v-for="(_subject, sIndex) in state.subjects"

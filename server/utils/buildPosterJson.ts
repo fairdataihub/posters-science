@@ -67,7 +67,7 @@ export function buildPosterJson(
     ...(suffix && { suffix }),
     ...(titles && { titles }),
     ...(descriptions && { descriptions }),
-    identifiers: meta.identifiers,
+    ...(hasItems(meta.identifiers) && { identifiers: meta.identifiers }),
     creators: meta.creators,
     ...(publisher && { publisher }),
     ...(meta.publicationYear && { publicationYear: meta.publicationYear }),
