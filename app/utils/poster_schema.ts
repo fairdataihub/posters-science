@@ -395,20 +395,19 @@ export type FormSchema = z.infer<typeof formSchema>;
 // STRICT FORM SCHEMA
 // Used for PUT endpoint validation
 // enforces all required fields from poster_schema.json
-const StrictAffiliationSchema = z
-  .object({
-    name: z.string().min(1, { message: "Affiliation name is required" }),
-    affiliationIdentifier: z.string().optional(),
-    affiliationIdentifierScheme: z.string().optional(),
-    schemeURI: z.string().optional(),
-  })
-  .refine(
-    (data) => !data.affiliationIdentifier || data.affiliationIdentifierScheme,
-    {
-      message: "Scheme is required when identifier is provided",
-      path: ["affiliationIdentifierScheme"],
-    },
-  );
+const StrictAffiliationSchema = z.object({
+  name: z.string().min(1, { message: "Affiliation name is required" }),
+  affiliationIdentifier: z.string().optional(),
+  affiliationIdentifierScheme: z.string().optional(),
+  schemeURI: z.string().optional(),
+});
+// .refine(
+//   (data) => !data.affiliationIdentifier || data.affiliationIdentifierScheme,
+//   {
+//     message: "Scheme is required when identifier is provided",
+//     path: ["affiliationIdentifierScheme"],
+//   },
+// );
 
 const StrictCreatorSchema = z.object({
   givenName: z.string().min(1, { message: "Given name is required" }),
@@ -418,20 +417,19 @@ const StrictCreatorSchema = z.object({
   affiliation: z.array(StrictAffiliationSchema).optional(),
 });
 
-const StrictPublisherSchema = z
-  .object({
-    name: z.string().min(1, { message: "Publisher name is required" }),
-    publisherIdentifier: z.string().optional(),
-    publisherIdentifierScheme: z.string().optional(),
-    schemeURI: z.string().optional(),
-  })
-  .refine(
-    (data) => !data.publisherIdentifier || data.publisherIdentifierScheme,
-    {
-      message: "Scheme is required when identifier is provided",
-      path: ["publisherIdentifierScheme"],
-    },
-  );
+const StrictPublisherSchema = z.object({
+  name: z.string().min(1, { message: "Publisher name is required" }),
+  publisherIdentifier: z.string().optional(),
+  publisherIdentifierScheme: z.string().optional(),
+  schemeURI: z.string().optional(),
+});
+// .refine(
+//   (data) => !data.publisherIdentifier || data.publisherIdentifierScheme,
+//   {
+//     message: "Scheme is required when identifier is provided",
+//     path: ["publisherIdentifierScheme"],
+//   },
+// );
 
 const StrictFundingSchema = z
   .object({
