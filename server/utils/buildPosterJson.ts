@@ -5,7 +5,10 @@ import licenses from "../../app/assets/data/licenses.json";
  * Transforms PosterMetadata from the database into
  * the poster_schema.json structure for Zenodo upload.
  */
-export function buildPosterJson(meta: PosterMetadata) {
+export function buildPosterJson(
+  meta: PosterMetadata,
+  options?: { title?: string; description?: string },
+) {
   const doi = meta.doi ?? undefined;
   let prefix: string | undefined;
   let suffix: string | undefined;
@@ -31,14 +34,39 @@ export function buildPosterJson(meta: PosterMetadata) {
     : null;
 
   const posterContentRaw = meta.posterContent;
-  const posterContent = Array.isArray(posterContentRaw)
+  const posterContentObj = Array.isArray(posterContentRaw)
     ? { sections: posterContentRaw }
-    : posterContentRaw;
+    : (posterContentRaw as {
+        sections?: unknown[];
+        unstructuredContent?: string;
+      } | null);
+
+  const contentSections =
+    Array.isArray(posterContentObj?.sections) &&
+    posterContentObj.sections.length > 0
+      ? posterContentObj.sections
+      : undefined;
+  const unstructuredContent =
+    posterContentObj?.unstructuredContent || undefined;
+  const content =
+    contentSections || unstructuredContent
+      ? {
+          ...(contentSections && { sections: contentSections }),
+          ...(unstructuredContent && { unstructuredContent }),
+        }
+      : undefined;
+
+  const titles = options?.title ? [{ title: options.title }] : undefined;
+  const descriptions = options?.description
+    ? [{ description: options.description, descriptionType: "Abstract" }]
+    : undefined;
 
   const posterJson: Record<string, unknown> = {
     ...(doi && { doi }),
     ...(prefix && { prefix }),
     ...(suffix && { suffix }),
+    ...(titles && { titles }),
+    ...(descriptions && { descriptions }),
     identifiers: meta.identifiers,
     creators: meta.creators,
     ...(publisher && { publisher }),
@@ -64,7 +92,7 @@ export function buildPosterJson(meta: PosterMetadata) {
     }),
     fundingReferences: meta.fundingReferences,
     ...(conference && { conference }),
-    ...(posterContent && { content: posterContent }),
+    ...(content && { content }),
     ...(hasItems(meta.tableCaptions) && { tableCaptions: meta.tableCaptions }),
     ...(hasItems(meta.imageCaptions) && { imageCaptions: meta.imageCaptions }),
     ...(meta.domain && { researchField: meta.domain }),
