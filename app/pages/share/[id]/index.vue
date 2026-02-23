@@ -491,12 +491,16 @@ function removeRow<T>(arr: T[], index: number) {
       @error="onError"
     >
       <div
-        class="cursor-pointer select-none"
+        class="group cursor-pointer select-none"
         @click="mandatoryCollapsed = !mandatoryCollapsed"
       >
         <div class="flex items-center justify-between">
           <div>
-            <h2 class="text-2xl font-semibold">Mandatory Information</h2>
+            <h2
+              class="dark:group-hover:text-primary-300 group-hover:text-primary-600 text-2xl font-semibold transition-colors"
+            >
+              Mandatory Information
+            </h2>
 
             <p class="text-gray-500">
               These are the minimum fields that are required to submit your
@@ -505,8 +509,8 @@ function removeRow<T>(arr: T[], index: number) {
           </div>
 
           <UIcon
-            name="i-lucide-chevron-down"
-            class="size-5 shrink-0 transition-transform duration-200"
+            name="i-lucide-chevron-up"
+            class="group-hover:text-primary-600 dark:group-hover:text-primary-300 size-5 shrink-0 text-gray-400 transition-all duration-200 group-hover:scale-110"
             :class="{ 'rotate-180': mandatoryCollapsed }"
           />
         </div>
@@ -877,12 +881,16 @@ function removeRow<T>(arr: T[], index: number) {
       </div>
 
       <div
-        class="cursor-pointer select-none"
+        class="group cursor-pointer select-none"
         @click="additionalInfoCollapsed = !additionalInfoCollapsed"
       >
         <div class="flex items-center justify-between">
           <div>
-            <h2 class="text-2xl font-semibold">Additional Information</h2>
+            <h2
+              class="dark:group-hover:text-primary-300 group-hover:text-primary-600 text-2xl font-semibold transition-colors"
+            >
+              Additional Information
+            </h2>
 
             <p class="text-gray-500">
               Optional metadata, identifiers, and related identifiers for your
@@ -892,7 +900,7 @@ function removeRow<T>(arr: T[], index: number) {
 
           <UIcon
             name="i-lucide-chevron-down"
-            class="size-5 shrink-0 transition-transform duration-200"
+            class="group-hover:text-primary-600 dark:group-hover:text-primary-300 size-5 shrink-0 text-gray-400 transition-all duration-200 group-hover:scale-110"
             :class="{ 'rotate-180': !additionalInfoCollapsed }"
           />
         </div>
