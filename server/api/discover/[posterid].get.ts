@@ -6,7 +6,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: "Invalid poster ID" });
   }
 
-  const poster = await prisma.poster.findUnique({
+  const poster = await prisma.poster.findFirst({
     where: { id: posterId, status: "published" },
     include: {
       user: { select: { givenName: true, familyName: true } },
