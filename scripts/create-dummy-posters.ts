@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
 import { faker } from "@faker-js/faker";
@@ -50,7 +51,7 @@ type ExtractedData = {
     conferenceUri?: string | null;
     conferenceIdentifier?: string | null;
     conferenceIdentifierType?: string | null;
-    conferenceSchemaUri?: string | null;
+    conferenceYear?: number | null;
     conferenceStartDate?: string | null;
     conferenceEndDate?: string | null;
     conferenceAcronym?: string | null;
@@ -164,7 +165,7 @@ function makeExtractedData(): ExtractedData {
       sections: Array.from({
         length: faker.number.int({ min: 3, max: 7 }),
       }).map(() => ({
-        heading: pick([
+        sectionTitle: pick([
           "Background",
           "Methods",
           "Results",
@@ -172,7 +173,7 @@ function makeExtractedData(): ExtractedData {
           "Conclusion",
           "Future Work",
         ]),
-        content: faker.lorem.paragraphs({ min: 1, max: 3 }),
+        sectionContent: faker.lorem.paragraphs({ min: 1, max: 3 }),
       })),
     },
     identifiers: faker.datatype.boolean({ probability: 0.75 })
@@ -221,6 +222,7 @@ function makeExtractedData(): ExtractedData {
           {
             rights: "CC-BY-4.0",
             rightsUri: "https://creativecommons.org/licenses/by/4.0/",
+            rightsIdentifier: "CC-BY-4.0",
           },
         ]
       : [],
@@ -246,7 +248,7 @@ function makeExtractedData(): ExtractedData {
       conferenceUri: faker.internet.url(),
       conferenceIdentifier: faker.string.alphanumeric(8),
       conferenceIdentifierType: "URL",
-      conferenceSchemaUri: faker.internet.url(),
+      conferenceYear: year,
       conferenceStartDate: start.toISOString().slice(0, 10),
       conferenceEndDate: end.toISOString().slice(0, 10),
       conferenceAcronym,
@@ -278,9 +280,15 @@ function mapToDbFields(extractedData: ExtractedData) {
     }),
   }));
 
-  const imageCaption = extractedData.imageCaption ?? [];
-  const posterContent = extractedData.posterContent ?? {}; // IMPORTANT: keep object, not sections array
-  const tableCaption = extractedData.tableCaption ?? [];
+  const imageCaptions = (extractedData.imageCaption ?? []).map((c: any) => ({
+    ...(c.id ? { id: c.id } : {}),
+    caption: c.caption ?? "",
+  }));
+  const posterContent = extractedData.posterContent ?? {};
+  const tableCaptions = (extractedData.tableCaption ?? []).map((c: any) => ({
+    ...(c.id ? { id: c.id } : {}),
+    caption: c.caption ?? "",
+  }));
   const titles = extractedData.titles ?? [];
   const descriptions = extractedData.descriptions ?? [];
 
@@ -289,34 +297,38 @@ function mapToDbFields(extractedData: ExtractedData) {
     descriptions[0]?.description ?? "No description provided for this poster";
 
   const identifiers = extractedData.identifiers ?? [];
-  const alternateIdentifiers = extractedData.alternateIdentifiers ?? [];
-
-  const publisher = extractedData.publisher ? [extractedData.publisher] : [];
+  const publisher =
+    typeof extractedData.publisher === "string"
+      ? extractedData.publisher
+      : (extractedData.publisher?.name ?? null);
   const publicationYear = extractedData.publicationYear ?? null;
-  const subjects = extractedData.subjects ?? [];
-  const dates = extractedData.dates ?? [];
+  const subjectsRaw = extractedData.subjects ?? [];
+  const subjects = subjectsRaw.map((s: any) =>
+    typeof s === "string" ? s : (s?.subject ?? ""),
+  );
   const language = extractedData.language ?? null;
-
-  const types = extractedData.types ? [extractedData.types] : [];
   const relatedIdentifiers = extractedData.relatedIdentifiers ?? [];
-  const sizes = (extractedData.sizes ?? []).filter(
-    (s) => typeof s === "string",
+  const sizesArr = (extractedData.sizes ?? []).filter(
+    (s: any) => typeof s === "string",
   );
-  const formats = (extractedData.formats ?? []).filter(
-    (f) => typeof f === "string",
+  const formatsArr = (extractedData.formats ?? []).filter(
+    (f: any) => typeof f === "string",
   );
+  const size = sizesArr[0] ?? null;
+  const format = formatsArr[0] ?? null;
   const version = extractedData.version ?? null;
   const rightsList = extractedData.rightsList ?? [];
+  const license =
+    rightsList[0]?.rightsIdentifier ?? rightsList[0]?.rights ?? null;
   const fundingReferences = extractedData.fundingReferences ?? [];
-  const ethicsApproval = extractedData.ethicsApprovals ?? [];
 
-  const conference = extractedData.conference;
+  const { conference } = extractedData;
   const conferenceName = conference?.conferenceName ?? null;
   const conferenceLocation = conference?.conferenceLocation ?? null;
   const conferenceUri = conference?.conferenceUri ?? null;
   const conferenceIdentifier = conference?.conferenceIdentifier ?? null;
   const conferenceIdentifierType = conference?.conferenceIdentifierType ?? null;
-  const conferenceSchemaUri = conference?.conferenceSchemaUri ?? null;
+  const conferenceYear = conference?.conferenceYear ?? null;
   const conferenceStartDate = conference?.conferenceStartDate ?? null;
   const conferenceEndDate = conference?.conferenceEndDate ?? null;
   const conferenceAcronym = conference?.conferenceAcronym ?? null;
@@ -324,42 +336,35 @@ function mapToDbFields(extractedData: ExtractedData) {
 
   const domain = extractedData.domain ?? "Other";
 
-  // Optional convenience: set doi from identifiers if present
   const doi =
     identifiers.find((x: any) => x?.identifierType === "DOI")?.identifier ??
     null;
 
   return {
     creators,
-    imageCaption,
+    imageCaptions,
     posterContent,
-    tableCaption,
-    titles,
-    descriptions,
+    tableCaptions,
     posterTitle,
     posterDescription,
     doi,
     identifiers,
-    alternateIdentifiers,
     publisher,
     publicationYear,
     subjects,
-    dates,
     language,
-    types,
     relatedIdentifiers,
-    sizes,
-    formats,
+    size,
+    format,
     version,
-    rightsList,
+    license,
     fundingReferences,
-    ethicsApproval,
     conferenceName,
     conferenceLocation,
     conferenceUri,
     conferenceIdentifier,
     conferenceIdentifierType,
-    conferenceSchemaUri,
+    conferenceYear,
     conferenceStartDate,
     conferenceEndDate,
     conferenceAcronym,
@@ -427,46 +432,34 @@ async function main() {
 
       await tx.posterMetadata.create({
         data: {
-          posterId: poster.id, // <-- critical
+          posterId: poster.id,
           doi: mapped.doi,
-
+          identifiers: mapped.identifiers,
           creators: mapped.creators,
-          titles: mapped.titles,
-          descriptions: mapped.descriptions,
-          imageCaption: mapped.imageCaption,
-          posterContent: mapped.posterContent,
-          tableCaption: mapped.tableCaption,
-
+          publisher: mapped.publisher,
+          publicationYear: mapped.publicationYear,
+          subjects: mapped.subjects,
+          language: mapped.language,
+          relatedIdentifiers: mapped.relatedIdentifiers,
+          size: mapped.size,
+          format: mapped.format,
+          version: mapped.version,
+          license: mapped.license,
+          fundingReferences: mapped.fundingReferences,
           conferenceName: mapped.conferenceName,
           conferenceLocation: mapped.conferenceLocation,
           conferenceUri: mapped.conferenceUri,
           conferenceIdentifier: mapped.conferenceIdentifier,
           conferenceIdentifierType: mapped.conferenceIdentifierType,
-          conferenceSchemaUri: mapped.conferenceSchemaUri,
+          conferenceYear: mapped.conferenceYear,
           conferenceStartDate: mapped.conferenceStartDate,
           conferenceEndDate: mapped.conferenceEndDate,
           conferenceAcronym: mapped.conferenceAcronym,
           conferenceSeries: mapped.conferenceSeries,
-
+          posterContent: mapped.posterContent,
+          tableCaptions: mapped.tableCaptions,
+          imageCaptions: mapped.imageCaptions,
           domain: mapped.domain,
-
-          identifiers: mapped.identifiers,
-          alternateIdentifiers: mapped.alternateIdentifiers,
-          publisher: mapped.publisher,
-          publicationYear: mapped.publicationYear,
-          subjects: mapped.subjects,
-          dates: mapped.dates,
-          language: mapped.language,
-          types: mapped.types,
-          relatedIdentifiers: mapped.relatedIdentifiers,
-
-          sizes: mapped.sizes,
-          formats: mapped.formats,
-          version: mapped.version,
-
-          rightsList: mapped.rightsList,
-          fundingReferences: mapped.fundingReferences,
-          ethicsApproval: mapped.ethicsApproval,
         },
         select: { posterId: true },
       });

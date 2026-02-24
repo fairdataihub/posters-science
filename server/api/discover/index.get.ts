@@ -1,5 +1,5 @@
-export default defineEventHandler(async (event) => {
-  const posters =
+export default defineEventHandler(async (_event) => {
+  const rawPosters =
     (await prisma.poster.findMany({
       where: {
         status: "published",
@@ -14,6 +14,11 @@ export default defineEventHandler(async (event) => {
             familyName: true,
           },
         },
+        posterMetadata: {
+          select: {
+            subjects: true,
+          },
+        },
       },
     })) || [];
 
@@ -22,6 +27,11 @@ export default defineEventHandler(async (event) => {
       status: "published",
     },
   });
+
+  const posters = rawPosters.map(({ posterMetadata, ...poster }) => ({
+    ...poster,
+    keywords: posterMetadata?.subjects ?? [],
+  }));
 
   return {
     posters,

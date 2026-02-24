@@ -57,7 +57,10 @@ export default defineEventHandler(async (event) => {
   // Add poster.json (metadata) to the zip
   const meta = poster.posterMetadata;
   const posterJson = meta
-    ? buildPosterJson(meta)
+    ? buildPosterJson(meta, {
+        title: poster.title,
+        description: poster.description,
+      })
     : { title: poster.title, description: poster.description };
   const posterJsonBuffer = Buffer.from(
     JSON.stringify(posterJson, null, 2),
@@ -89,10 +92,10 @@ export default defineEventHandler(async (event) => {
       });
     }
   } else {
-    throw createError({
-      statusCode: 500,
-      statusMessage: "No extraction file found",
-    });
+    // throw createError({
+    //   statusCode: 500,
+    //   statusMessage: "No extraction file found",
+    // });
   }
 
   await archive.finalize();

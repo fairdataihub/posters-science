@@ -107,12 +107,16 @@ export async function processExtraction(
       }),
     }));
 
-    const imageCaption =
+    const imageCaptions =
       extractedData.imageCaptions ?? extractedData.imageCaption ?? [];
-    const posterContent =
-      (extractedData.content ?? extractedData.posterContent)?.sections ?? [];
-    const tableCaption =
+    const tableCaptions =
       extractedData.tableCaptions ?? extractedData.tableCaption ?? [];
+    const content = extractedData.content ?? extractedData.posterContent;
+    const sections = Array.isArray(content?.sections) ? content.sections : [];
+    const posterContent = {
+      sections,
+      unstructuredContent: content?.unstructuredContent ?? "",
+    };
     const titles = extractedData.titles ?? [];
     const descriptions = extractedData.descriptions ?? [];
 
@@ -121,20 +125,32 @@ export async function processExtraction(
       descriptions[0]?.description ?? "No description provided for this poster";
 
     const identifiers = extractedData.identifiers ?? [];
-    const alternateIdentifiers = extractedData.alternateIdentifiers ?? [];
-    const publisher = extractedData.publisher ? [extractedData.publisher] : [];
+    const publisher =
+      typeof extractedData.publisher === "string"
+        ? extractedData.publisher
+        : (extractedData.publisher?.name ?? null);
     const publicationYear = extractedData.publicationYear ?? null;
-    const subjects = extractedData.subjects ?? [];
-    const dates = extractedData.dates ?? [];
+    const subjectsRaw = extractedData.subjects ?? [];
+    const subjects = subjectsRaw.map((s: { subject?: string } | string) =>
+      typeof s === "string" ? s : (s?.subject ?? ""),
+    );
     const language = extractedData.language ?? null;
-    const types = extractedData.types ? [extractedData.types] : [];
     const relatedIdentifiers = extractedData.relatedIdentifiers ?? [];
-    const sizes = extractedData.sizes ?? [];
-    const formats = extractedData.formats ?? [];
+    const size =
+      extractedData.size ??
+      (extractedData.sizes as string[] | undefined)?.[0] ??
+      null;
+    const format =
+      extractedData.format ??
+      (extractedData.formats as string[] | undefined)?.[0] ??
+      null;
     const version = extractedData.version ?? null;
-    const rightsList = extractedData.rightsList ?? [];
+    const license =
+      extractedData.license ??
+      extractedData.rightsList?.[0]?.rightsIdentifier ??
+      extractedData.rightsList?.[0]?.rights ??
+      null;
     const fundingReferences = extractedData.fundingReferences ?? [];
-    const ethicsApproval = extractedData.ethicsApprovals ?? [];
 
     const { conference } = extractedData;
     const conferenceName = conference?.conferenceName ?? null;
@@ -143,7 +159,7 @@ export async function processExtraction(
     const conferenceIdentifier = conference?.conferenceIdentifier ?? null;
     const conferenceIdentifierType =
       conference?.conferenceIdentifierType ?? null;
-    const conferenceSchemaUri = conference?.conferenceSchemaUri ?? null;
+    const conferenceYear = conference?.conferenceYear ?? null;
     const conferenceStartDate = conference?.conferenceStartDate ?? null;
     const conferenceEndDate = conference?.conferenceEndDate ?? null;
     const conferenceAcronym = conference?.conferenceAcronym ?? null;
@@ -152,7 +168,7 @@ export async function processExtraction(
     const domain =
       extractedData.researchField ?? extractedData.domain ?? "Other";
 
-    // Create the poster in the database
+    // Create the poster in the database (PosterMetadata fields only)
     const poster = await prisma.poster.create({
       data: {
         userId,
@@ -167,38 +183,33 @@ export async function processExtraction(
         randomInt: faker.number.int(1000000),
         posterMetadata: {
           create: {
+            doi: extractedData.doi ?? null,
+            identifiers,
             creators,
-            titles,
-            descriptions,
-            imageCaption,
-            posterContent,
-            tableCaption,
+            publisher,
+            publicationYear,
+            subjects,
+            language,
+            relatedIdentifiers,
+            size,
+            format,
+            version,
+            license,
+            fundingReferences,
             conferenceName,
             conferenceLocation,
             conferenceUri,
             conferenceIdentifier,
             conferenceIdentifierType,
-            conferenceSchemaUri,
+            conferenceYear,
             conferenceStartDate,
             conferenceEndDate,
             conferenceAcronym,
             conferenceSeries,
+            posterContent,
+            tableCaptions,
+            imageCaptions,
             domain,
-            identifiers,
-            alternateIdentifiers,
-            publisher,
-            publicationYear,
-            subjects,
-            dates,
-            language,
-            types,
-            relatedIdentifiers,
-            sizes,
-            formats,
-            version,
-            rightsList,
-            fundingReferences,
-            ethicsApproval,
           },
         },
       },

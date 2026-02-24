@@ -1,3 +1,4 @@
+<!-- eslint-disable @typescript-eslint/no-explicit-any -->
 <script setup lang="ts">
 import { faker } from "@faker-js/faker";
 import dayjs from "dayjs";
@@ -11,116 +12,93 @@ useSeoMeta({
   description: "View detailed information about this research poster.",
 });
 
+const { data: apiData, error } = await useFetch(`/api/discover/${posterId}`);
+
+if (error.value) {
+  console.error(error.value);
+}
+
+const api = apiData.value as any;
+const conf = api?.conference;
+const fallbackDate = new Date(api?.created ?? Date.now());
+
 const poster = ref({
-  id: posterId,
-  title: faker.lorem.sentence(8),
-  description: faker.lorem.paragraphs(4, "\n\n"),
-  imageUrl: faker.image.urlPicsumPhotos({
-    width: 800,
-    height: 600,
-    blur: 0,
+  id: api?.id ?? posterId,
+  title: api?.title ?? "Untitled Poster",
+  description: api?.description ?? "",
+  imageUrl:
+    api?.imageUrl ||
+    faker.image.urlPicsumPhotos({ width: 800, height: 600, blur: 0 }),
+  authors: (api?.creators ?? []).map((creator: any) => {
+    const rawName: string = creator.name ?? "";
+    const givenName =
+      creator.givenName ??
+      (rawName.includes(",")
+        ? rawName.split(",")[1]?.trim()
+        : rawName.split(" ")[0]) ??
+      "";
+    const familyName =
+      creator.familyName ??
+      (rawName.includes(",")
+        ? rawName.split(",")[0]?.trim()
+        : rawName.split(" ").slice(1).join(" ")) ??
+      "";
+    const affiliation =
+      (typeof creator.affiliation?.[0] === "string"
+        ? creator.affiliation[0]
+        : creator.affiliation?.[0]?.name) ?? "";
+    const orcid =
+      creator.nameIdentifiers?.find(
+        (ni: any) => ni.nameIdentifierScheme === "ORCID",
+      )?.nameIdentifier ?? null;
+
+    return { givenName, familyName, affiliation, orcid };
   }),
-  authors: Array.from({ length: faker.number.int({ min: 1, max: 5 }) }, () => ({
-    givenName: faker.person.firstName(),
-    familyName: faker.person.lastName(),
-    affiliation: faker.company.name(),
-    orcid: `${faker.string.numeric(4)}-${faker.string.numeric(4)}-${faker.string.numeric(4)}-${faker.string.numeric(4)}`,
-    email: faker.internet.email(),
+  publishedAt: api?.publishedAt ? new Date(api.publishedAt) : fallbackDate,
+  created: fallbackDate,
+  version: api?.version ?? null,
+  doi: api?.doi ?? null,
+  license: api?.license ?? null,
+  keywords: api?.keywords ?? [],
+  views: 0,
+  citations: 0,
+  shares: 0,
+  likes: 0,
+  relatedItems: [] as any[],
+  references: (api?.relatedIdentifiers ?? []).map((ri: any, index: number) => ({
+    id: `ref-${index}`,
+    title: ri.relatedIdentifier ?? `Related Resource ${index + 1}`,
+    relationType: ri.relationType ?? "References",
+    authors: "",
+    journal: "",
+    year: null as number | null,
+    doi: ri.relatedIdentifier ?? "",
+    url: ri.relatedIdentifier?.startsWith("http")
+      ? ri.relatedIdentifier
+      : ri.relatedIdentifier
+        ? `https://doi.org/${ri.relatedIdentifier}`
+        : "",
   })),
-  publishedAt: faker.date.past(),
-  created: faker.date.past(),
-  version: faker.number.int({ min: 1, max: 5 }),
-  doi: `10.5281/zenodo.${faker.string.numeric(8)}`,
-  license: faker.helpers.arrayElement([
-    "CC BY 4.0",
-    "CC BY-SA 4.0",
-    "CC0 1.0",
-    "CC BY-NC 4.0",
-  ]),
-  keywords: Array.from({ length: faker.number.int({ min: 3, max: 8 }) }, () =>
-    faker.lorem.word(),
-  ),
-  views: faker.number.int({ min: 100, max: 10000 }),
-  citations: faker.number.int({ min: 0, max: 100 }),
-  shares: faker.number.int({ min: 10, max: 500 }),
-  likes: faker.number.int({ min: 5, max: 200 }),
-  relatedItems: Array.from(
-    { length: faker.number.int({ min: 3, max: 8 }) },
-    (_, index) => ({
-      id: index + 1,
-      title: faker.lorem.sentence(6),
-      authors: faker.person.fullName(),
-      publishedAt: faker.date.past(),
-      views: faker.number.int({ min: 10, max: 1000 }),
-      imageUrl: faker.image.urlPicsumPhotos({ width: 200, height: 150 }),
-    }),
-  ),
-  references: Array.from(
-    { length: faker.number.int({ min: 5, max: 15 }) },
-    () => ({
-      id: faker.string.alphanumeric(8),
-      title: faker.lorem.sentence(8),
-      relationType: faker.helpers.arrayElement([
-        "Cited by",
-        "Cites",
-        "Is cited by",
-        "Is cited",
-      ]),
-      authors: Array.from(
-        { length: faker.number.int({ min: 1, max: 4 }) },
-        () => faker.person.fullName(),
-      ).join(", "),
-      journal: faker.company.name() + " Journal",
-      year: faker.date.past().getFullYear(),
-      doi: `10.1000/${faker.string.alphanumeric(8)}`,
-      url: faker.internet.url(),
-    }),
-  ),
-  funding: Array.from({ length: faker.number.int({ min: 0, max: 3 }) }, () => ({
-    agency: faker.company.name(),
-    grantNumber: faker.string.alphanumeric(10),
+  funding: (api?.fundingReferences ?? []).map((f: any) => ({
+    agency: f.funderName ?? "Unknown Funder",
+    grantNumber: f.awardNumber ?? f.funderIdentifier ?? "",
   })),
-  acknowledgments: faker.lorem.paragraph(),
+  acknowledgments: "",
   conference: {
-    name: faker.helpers.arrayElement([
-      "International Conference on Machine Learning (ICML)",
-      "Conference on Neural Information Processing Systems (NeurIPS)",
-      "International Conference on Learning Representations (ICLR)",
-      "Association for Computational Linguistics (ACL)",
-      "IEEE Conference on Computer Vision and Pattern Recognition (CVPR)",
-      "International Conference on Computer Vision (ICCV)",
-      "European Conference on Computer Vision (ECCV)",
-      "SIGGRAPH Conference",
-      "International Conference on Data Mining (ICDM)",
-      "World Wide Web Conference (WWW)",
-    ]),
-    acronym: faker.helpers.arrayElement([
-      "ICML",
-      "NeurIPS",
-      "ICLR",
-      "ACL",
-      "CVPR",
-      "ICCV",
-      "ECCV",
-      "SIGGRAPH",
-      "ICDM",
-      "WWW",
-    ]),
-    year: faker.date.past().getFullYear(),
-    location: faker.location.city() + ", " + faker.location.country(),
-    venue: faker.company.name() + " Convention Center",
+    name: conf?.conferenceName ?? "",
+    acronym: conf?.conferenceAcronym ?? "",
+    year: conf?.conferenceYear ?? null,
+    location: conf?.conferenceLocation ?? "",
+    venue: "",
     dates: {
-      start: faker.date.past(),
-      end: faker.date.past(),
+      start: conf?.conferenceStartDate
+        ? new Date(conf.conferenceStartDate)
+        : fallbackDate,
+      end: conf?.conferenceEndDate
+        ? new Date(conf.conferenceEndDate)
+        : fallbackDate,
     },
-    session: faker.helpers.arrayElement([
-      "Oral Presentation",
-      "Poster Session A",
-      "Poster Session B",
-      "Workshop: " + faker.lorem.words(3),
-      "Tutorial: " + faker.lorem.words(2),
-      "Demo Session",
-    ]),
+    session: "",
   },
 });
 

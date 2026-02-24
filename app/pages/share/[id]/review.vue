@@ -17,11 +17,23 @@ const zenodoLoginUrl = ref("");
 const zenodoTokenExists = ref(false);
 
 // Repository selection state
-type Repository = "zenodo" | "figshare" | "download" | null;
+type Repository =
+  | "zenodo"
+  | "zenodo-simulated"
+  | "figshare"
+  | "download"
+  | null;
 
 // Check for repository query param (e.g., after Zenodo OAuth redirect)
-const queryRepo = useRoute().query.repository as Repository | undefined;
-const selectedRepository = ref<Repository>(queryRepo ?? null);
+const queryRepo = useRoute().query.repository;
+const selectedRepository = ref<Repository>(
+  queryRepo === "zenodo" ||
+    queryRepo === "zenodo-simulated" ||
+    queryRepo === "figshare" ||
+    queryRepo === "download"
+    ? queryRepo
+    : null,
+);
 
 const repositories = [
   {
@@ -29,6 +41,14 @@ const repositories = [
     name: "Zenodo",
     icon: "i-simple-icons-zenodo",
     description: "General-purpose open repository",
+    enabled: true,
+    hidden: true,
+  },
+  {
+    id: "zenodo-simulated" as const,
+    name: "Zenodo (Simulated)",
+    icon: "i-simple-icons-zenodo",
+    description: "Preview-only flow for beta testing",
     enabled: true,
   },
   {
@@ -47,8 +67,14 @@ const repositories = [
   },
 ];
 
+const visibleRepositories = computed(() =>
+  repositories.filter((repo) => !repo.hidden),
+);
+
 // Download state
 const isDownloading = ref(false);
+const isSimulatedPublishing = ref(false);
+const simulatedPublished = ref(false);
 
 async function downloadMetadata() {
   isDownloading.value = true;
@@ -110,6 +136,41 @@ async function downloadMetadata() {
     });
   } finally {
     isDownloading.value = false;
+  }
+}
+
+async function handleSimulatedArchive() {
+  isSimulatedPublishing.value = true;
+
+  try {
+    const response = await $fetch("/api/release/zenodo/simulated", {
+      method: "POST",
+      body: {
+        posterId: id,
+      },
+    });
+
+    if (!response?.success) {
+      throw new Error("Failed to simulate publication");
+    }
+
+    simulatedPublished.value = true;
+    toast.add({
+      title: "Poster Published",
+      description: "Simulated Zenodo flow marked this poster as published.",
+      color: "success",
+    });
+  } catch (error) {
+    toast.add({
+      title: "Simulation Failed",
+      description:
+        error instanceof Error
+          ? error.message
+          : "Could not complete simulated publication.",
+      color: "error",
+    });
+  } finally {
+    isSimulatedPublishing.value = false;
   }
 }
 
@@ -408,7 +469,7 @@ async function handleArchive() {
 
       <div class="grid grid-cols-3 gap-4 md:grid-cols-3">
         <UButton
-          v-for="repo in repositories"
+          v-for="repo in visibleRepositories"
           :key="repo.id"
           :disabled="!repo.enabled"
           class="border-default hover:border-primary flex flex-col items-center gap-3 rounded-xl border-2 p-6 transition-all"
@@ -427,6 +488,14 @@ async function handleArchive() {
           <span class="font-medium">{{ repo.name }}</span>
 
           <span class="text-muted text-xs">{{ repo.description }}</span>
+
+          <UBadge
+            v-if="repo.id === 'zenodo-simulated'"
+            color="warning"
+            variant="subtle"
+          >
+            Beta
+          </UBadge>
 
           <UBadge v-if="!repo.enabled" color="neutral" variant="subtle">
             Coming Soon
@@ -609,6 +678,41 @@ async function handleArchive() {
           </div>
         </template>
       </template>
+    </div>
+
+    <!-- Simulated Zenodo section -->
+    <div
+      v-if="selectedRepository === 'zenodo-simulated'"
+      class="border-default bg-elevated rounded-xl border p-6"
+    >
+      <div class="mb-4 flex items-center gap-2">
+        <UIcon name="i-simple-icons-zenodo" class="size-6" />
+
+        <h3 class="text-lg font-semibold">Zenodo (Simulated)</h3>
+      </div>
+
+      <p class="text-muted text-sm">
+        This is a temporary beta placeholder. The live Zenodo workflow remains
+        implemented but hidden from the repository card list.
+      </p>
+
+      <div class="mt-5 flex items-center gap-3">
+        <UButton
+          color="primary"
+          size="lg"
+          :loading="isSimulatedPublishing"
+          @click="handleSimulatedArchive"
+        >
+          Mark as Published (Simulated)
+        </UButton>
+
+        <UBadge
+          v-if="simulatedPublished"
+          color="success"
+          variant="soft"
+          label="Published"
+        />
+      </div>
     </div>
 
     <!-- Download section -->

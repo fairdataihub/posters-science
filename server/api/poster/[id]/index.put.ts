@@ -46,9 +46,9 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  const data = parseResult.data;
+  const { data } = parseResult;
 
-  // Transform form data to DB format
+  // Transform form data to DB format (PosterMetadata fields only)
   const creators = (data.creators ?? []).map((creator) => ({
     name:
       [creator.givenName, creator.familyName].filter(Boolean).join(" ") ||
@@ -64,60 +64,46 @@ export default defineEventHandler(async (event) => {
     }),
   }));
 
-  const imageCaption = data.imageCaption ?? [];
-  const tableCaption = data.tableCaption ?? [];
-  const titles = data.titles ?? [];
-  const descriptions = data.descriptions ?? [];
-
-  const posterTitle = data.title || titles[0]?.title || "Untitled Poster";
-  const posterDescription =
-    data.description ||
-    descriptions[0]?.description ||
-    "No description provided for this poster";
+  const posterTitle = data.title || "Untitled Poster";
+  const posterDescription = data.description || "No description provided";
 
   const identifiers = data.identifiers ?? [];
-  const alternateIdentifiers = data.alternateIdentifiers ?? [];
-  // Transform publisher from single object to array for DB
-  const publisher = data.publisher?.name ? [data.publisher] : [];
+  const publisher =
+    typeof data.publisher === "string"
+      ? data.publisher
+      : (data.publisher?.name ?? null);
   const publicationYear = data.publicationYear ?? null;
-  const subjects = data.subjects ?? [];
-  // Transform dates from form format (start/end) to DB format
-  // Filter out dates without a valid start date and convert undefined to null
-  const dates = (data.dates ?? [])
-    .filter((d) => d.date)
-    .map((d) => ({
-      date: d.date,
-      dateType: d.dateType ?? null,
-      dateInformation: d.dateInformation ?? null,
-    }));
+  const subjects = (data.subjects ?? []).map((s) =>
+    typeof s === "string" ? s : (s.subject ?? ""),
+  );
   const language = data.language || null;
-  // Transform types from single object to array for DB
-  const types = data.types?.resourceType ? [data.types] : [];
   const relatedIdentifiers = data.relatedIdentifiers ?? [];
-  const sizes = data.sizes ?? [];
-  const formats = data.formats ?? [];
+  const size = data.size || null;
+  const format = data.format || null;
   const version = data.version || null;
-  const rightsList = data.rightsList ?? [];
+  const license = data.license || null;
   const fundingReferences = data.fundingReferences ?? [];
-  // Use ethicsApprovals (plural) from form, store as ethicsApproval in DB
-  const ethicsApproval = data.ethicsApprovals ?? [];
 
-  // Extract flat conference fields from nested conference object
-  const conference = data.conference;
-  const conferenceName = conference?.conferenceName || null;
-  const conferenceLocation = conference?.conferenceLocation || null;
-  const conferenceUri = conference?.conferenceUri || null;
-  const conferenceIdentifier = conference?.conferenceIdentifier || null;
-  const conferenceIdentifierType = conference?.conferenceIdentifierType || null;
-  const conferenceSchemaUri = conference?.conferenceSchemaUri || null;
-  const conferenceStartDate = conference?.conferenceStartDate || null;
-  const conferenceEndDate = conference?.conferenceEndDate || null;
-  const conferenceAcronym = conference?.conferenceAcronym || null;
-  const conferenceSeries = conference?.conferenceSeries || null;
+  const { conference } = data;
+  const conferenceName = conference?.conferenceName ?? null;
+  const conferenceLocation = conference?.conferenceLocation ?? null;
+  const conferenceUri = conference?.conferenceUri ?? null;
+  const conferenceIdentifier = conference?.conferenceIdentifier ?? null;
+  const conferenceIdentifierType = conference?.conferenceIdentifierType ?? null;
+  const conferenceYear = conference?.conferenceYear ?? null;
+  const conferenceStartDate = conference?.conferenceStartDate ?? null;
+  const conferenceEndDate = conference?.conferenceEndDate ?? null;
+  const conferenceAcronym = conference?.conferenceAcronym ?? null;
+  const conferenceSeries = conference?.conferenceSeries ?? null;
 
-  const domain = data.domain || "Other";
+  const posterContent = data.posterContent ?? {
+    sections: [],
+    unstructuredContent: "",
+  };
+  const tableCaptions = data.tableCaptions ?? [];
+  const imageCaptions = data.imageCaptions ?? [];
+  const domain = data.domain ?? "Other";
 
-  // Update the poster and its metadata
   const updatedPoster = await prisma.poster.update({
     where: {
       id: posterId,
@@ -127,37 +113,33 @@ export default defineEventHandler(async (event) => {
       description: posterDescription,
       posterMetadata: {
         update: {
+          doi: data.doi ?? null,
+          identifiers,
           creators,
-          titles,
-          descriptions,
-          imageCaption,
-          tableCaption,
+          publisher,
+          publicationYear,
+          subjects,
+          language,
+          relatedIdentifiers,
+          size,
+          format,
+          version,
+          license,
+          fundingReferences,
           conferenceName,
           conferenceLocation,
           conferenceUri,
           conferenceIdentifier,
           conferenceIdentifierType,
-          conferenceSchemaUri,
+          conferenceYear,
           conferenceStartDate,
           conferenceEndDate,
           conferenceAcronym,
           conferenceSeries,
+          posterContent,
+          tableCaptions,
+          imageCaptions,
           domain,
-          identifiers,
-          alternateIdentifiers,
-          publisher,
-          publicationYear,
-          subjects,
-          dates,
-          language,
-          types,
-          relatedIdentifiers,
-          sizes,
-          formats,
-          version,
-          rightsList,
-          fundingReferences,
-          ethicsApproval,
         },
       },
     },
