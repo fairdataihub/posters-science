@@ -483,9 +483,7 @@ export const strictFormSchema = z.object({
     .min(1, { message: "At least one subject is required" }),
   format: z.string().min(1, { message: "Format is required" }),
   license: z.string().min(1, { message: "License is required" }),
-  fundingReferences: z
-    .array(StrictFundingSchema)
-    .min(1, { message: "At least one funding reference is required" }),
+  fundingReferences: z.array(StrictFundingSchema).default([]),
   publisher: z.string().min(1, { message: "Publisher is required" }),
   publicationYear: z
     .number()
