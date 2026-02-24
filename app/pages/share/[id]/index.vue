@@ -365,6 +365,12 @@ const conferenceEndDateCalendar = useCalendarStringField(
   },
 );
 
+const currentYear = new Date().getFullYear();
+const conferenceYearOptions = Array.from(
+  { length: currentYear + 1 - 1800 + 1 },
+  (_, i) => currentYear + 1 - i,
+).map((y) => ({ label: String(y), value: y }));
+
 const savingDraft = ref(false);
 
 async function saveDraft() {
@@ -458,12 +464,7 @@ function onError(event: {
     icon: "material-symbols:error",
   });
 
-  toast.add({
-    title: "Issue",
-    description: JSON.stringify(firstError, null, 2),
-    color: "error",
-    icon: "material-symbols:error",
-  });
+  console.log("Validation errors:", event.errors);
 
   // Scroll to first error field if it has an id
   if (firstError?.id) {
@@ -792,10 +793,11 @@ function removeRow<T>(arr: T[], index: number) {
                 label="Conference year"
                 required
               >
-                <UInput
-                  v-model.number="state.conference.conferenceYear"
-                  type="number"
-                  placeholder="e.g., 2025"
+                <USelect
+                  v-model="state.conference.conferenceYear"
+                  class="w-full"
+                  :items="conferenceYearOptions"
+                  placeholder="Select a year"
                 />
               </UFormField>
             </div>
@@ -828,6 +830,7 @@ function removeRow<T>(arr: T[], index: number) {
 
               <div class="flex items-end gap-3">
                 <UFormField
+                  required
                   name="conference.conferenceStartDate"
                   label="Start date"
                 >
@@ -861,6 +864,7 @@ function removeRow<T>(arr: T[], index: number) {
                 <UFormField
                   name="conference.conferenceEndDate"
                   label="End date"
+                  required
                 >
                   <UPopover>
                     <UButton

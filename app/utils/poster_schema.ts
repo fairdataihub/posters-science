@@ -484,12 +484,8 @@ export const strictFormSchema = z.object({
   format: z.string().min(1, { message: "Format is required" }),
   license: z.string().min(1, { message: "License is required" }),
   fundingReferences: z.array(StrictFundingSchema).default([]),
-  publisher: z.string().min(1, { message: "Publisher is required" }),
-  publicationYear: z
-    .number()
-    .int()
-    .min(1000)
-    .max(9999, { message: "Publication year must be between 1000 and 9999" }),
+  publisher: z.string().optional(),
+  publicationYear: z.number().int().min(1000).max(9999).optional(),
   version: z.string(),
   conference: StrictConferenceSchema,
   relatedIdentifiers: z.array(RelatedIdentifierSchema.partial()),

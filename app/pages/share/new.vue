@@ -34,6 +34,8 @@ const pollJobStatus = async (jobId: string): Promise<void> => {
       `/api/poster/job/${jobId}`,
     );
 
+    console.log("[pollJobStatus] response:", response);
+
     if (
       response.completed &&
       response.status === "completed" &&

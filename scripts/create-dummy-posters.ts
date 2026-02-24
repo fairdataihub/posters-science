@@ -280,7 +280,10 @@ function mapToDbFields(extractedData: ExtractedData) {
     }),
   }));
 
-  const imageCaptions = extractedData.imageCaption ?? [];
+  const imageCaptions = (extractedData.imageCaption ?? []).map((c: any) => ({
+    ...(c.id ? { id: c.id } : {}),
+    caption: c.caption ?? "",
+  }));
   const posterContent = extractedData.posterContent ?? {};
   const tableCaptions = (extractedData.tableCaption ?? []).map((c: any) => ({
     ...(c.id ? { id: c.id } : {}),
