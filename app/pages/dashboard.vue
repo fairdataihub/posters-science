@@ -63,7 +63,7 @@ if (error.value) {
             class="w-[150px] object-cover transition-transform duration-300 group-hover:scale-105"
           />
 
-          <div class="">
+          <div class="w-full min-w-0">
             <div class="flex flex-col gap-2">
               <h3 class="line-clamp-2 text-lg font-semibold">
                 {{ poster.title || "No title available" }}
