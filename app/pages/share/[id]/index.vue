@@ -38,6 +38,7 @@ useSeoMeta({
 
 const loading = ref(false);
 const additionalInfoCollapsed = ref(true);
+const posterContentCollapsed = ref(true);
 const mandatoryCollapsed = ref(false);
 const subjectInputRefs = ref<{ $el?: HTMLElement; focus?: () => void }[]>([]);
 
@@ -281,6 +282,17 @@ if (data.value) {
         conferenceEndDate: meta.conference.conferenceEndDate ?? "",
         conferenceAcronym: meta.conference.conferenceAcronym || "",
         conferenceSeries: meta.conference.conferenceSeries || "",
+      };
+    }
+
+    if (meta.posterContent) {
+      state.posterContent = {
+        sections:
+          meta.posterContent.sections?.map((section: any) => ({
+            sectionTitle: section.sectionTitle || "",
+            sectionContent: section.sectionContent || "",
+          })) || [],
+        unstructuredContent: meta.posterContent.unstructuredContent || "",
       };
     }
 
@@ -1157,6 +1169,237 @@ async function addSubjectAndFocus() {
                     relatedIdentifier: '',
                     relatedIdentifierType: '',
                     relationType: '',
+                  })
+                "
+              />
+            </div>
+          </CardCollapsibleContent>
+        </div>
+      </div>
+
+      <div
+        class="group cursor-pointer select-none"
+        @click="posterContentCollapsed = !posterContentCollapsed"
+      >
+        <div class="flex items-center justify-between">
+          <div>
+            <h2
+              class="dark:group-hover:text-primary-300 group-hover:text-primary-600 text-2xl font-semibold transition-colors"
+            >
+              Poster Content
+            </h2>
+
+            <p class="text-gray-500">
+              These are the sections that are included in the poster.
+            </p>
+          </div>
+
+          <UIcon
+            name="i-lucide-chevron-down"
+            class="group-hover:text-primary-600 dark:group-hover:text-primary-300 size-8 text-gray-400 transition-all"
+            :class="{ 'rotate-180': !posterContentCollapsed }"
+          />
+        </div>
+
+        <USeparator class="my-4" type="dashed" />
+      </div>
+
+      <div
+        class="overflow-hidden transition-all duration-200 ease-in-out"
+        :class="
+          posterContentCollapsed
+            ? 'max-h-0 opacity-0'
+            : 'max-h-[5000px] opacity-100'
+        "
+      >
+        <div class="space-y-6">
+          <CardCollapsibleContent
+            title="Poster Content"
+            :collapse="false"
+            description="These are the sections that are included in the poster."
+          >
+            <div class="space-y-4">
+              <div
+                v-for="(section, sIndex) in state.posterContent?.sections || []"
+                :key="sIndex"
+                class="space-y-2 rounded-xl border border-gray-200 p-4"
+              >
+                <UFormField
+                  :name="`posterContent.sections.${sIndex}.sectionTitle`"
+                  label="Section Title"
+                  required
+                  class="flex-1"
+                >
+                  <UInput
+                    v-model="section.sectionTitle"
+                    placeholder="e.g., Introduction"
+                  />
+                </UFormField>
+
+                <UFormField
+                  :name="`posterContent.sections.${sIndex}.sectionContent`"
+                  label="Section Content"
+                  required
+                  class="flex-1"
+                >
+                  <!-- TODO: Add a rich text editor here. -->
+                  <UTextarea
+                    v-model="section.sectionContent"
+                    placeholder="e.g., Machine learning algorithms were applied to analyze retinal images from 4,000 participants..."
+                    class="w-full"
+                  />
+                </UFormField>
+
+                <div class="flex justify-end">
+                  <UButton
+                    class="mt-7"
+                    size="xs"
+                    trailing-icon="i-lucide-trash-2"
+                    color="error"
+                    variant="solid"
+                    @click="
+                      removeRow(state.posterContent?.sections || [], sIndex)
+                    "
+                  >
+                    Delete Section
+                  </UButton>
+                </div>
+              </div>
+
+              <UButton
+                icon="i-lucide-plus"
+                variant="outline"
+                color="primary"
+                class="w-full"
+                label="Add Section"
+                @click="
+                  state.posterContent?.sections?.push({
+                    sectionTitle: '',
+                    sectionContent: '',
+                  })
+                "
+              />
+            </div>
+          </CardCollapsibleContent>
+
+          <CardCollapsibleContent
+            title="Table Captions"
+            :collapse="false"
+            description="These are the table captions that are associated with the poster."
+          >
+            <div class="space-y-4">
+              <div
+                v-for="(caption, cIndex) in state.tableCaptions || []"
+                :key="cIndex"
+                class="space-y-2 rounded-xl border border-gray-200 p-4"
+              >
+                <UFormField
+                  :name="`tableCaptions.${cIndex}.id`"
+                  label="Table Identifier"
+                  required
+                  class="flex-1"
+                >
+                  <UInput v-model="caption.id" placeholder="e.g., Table 1" />
+                </UFormField>
+
+                <UFormField
+                  :name="`tableCaptions.${cIndex}.caption`"
+                  label="Table Caption"
+                  required
+                  class="flex-1"
+                >
+                  <UInput
+                    v-model="caption.caption"
+                    placeholder="e.g., Summary of Results"
+                  />
+                </UFormField>
+
+                <div class="flex justify-end">
+                  <UButton
+                    class="mt-7"
+                    size="xs"
+                    trailing-icon="i-lucide-trash-2"
+                    color="error"
+                    variant="solid"
+                    @click="removeRow(state.tableCaptions || [], cIndex)"
+                  >
+                    Delete Caption
+                  </UButton>
+                </div>
+              </div>
+
+              <UButton
+                icon="i-lucide-plus"
+                variant="outline"
+                color="primary"
+                class="w-full"
+                label="Add Caption"
+                @click="
+                  state.tableCaptions?.push({
+                    id: '',
+                    caption: '',
+                  })
+                "
+              />
+            </div>
+          </CardCollapsibleContent>
+
+          <CardCollapsibleContent
+            title="Image Captions"
+            :collapse="false"
+            description="These are the image captions that are associated with the poster."
+          >
+            <div class="space-y-4">
+              <div
+                v-for="(caption, cIndex) in state.imageCaptions || []"
+                :key="cIndex"
+                class="space-y-2 rounded-xl border border-gray-200 p-4"
+              >
+                <UFormField
+                  :name="`imageCaptions.${cIndex}.id`"
+                  label="Image Identifier"
+                  required
+                  class="flex-1"
+                >
+                  <UInput v-model="caption.id" placeholder="e.g., Image 1" />
+                </UFormField>
+
+                <UFormField
+                  :name="`imageCaptions.${cIndex}.caption`"
+                  label="Image Caption"
+                  required
+                  class="flex-1"
+                >
+                  <UInput
+                    v-model="caption.caption"
+                    placeholder="e.g., Summary of Results"
+                  />
+                </UFormField>
+
+                <div class="flex justify-end">
+                  <UButton
+                    class="mt-7"
+                    size="xs"
+                    trailing-icon="i-lucide-trash-2"
+                    color="error"
+                    variant="solid"
+                    @click="removeRow(state.imageCaptions || [], cIndex)"
+                  >
+                    Delete Image Caption
+                  </UButton>
+                </div>
+              </div>
+
+              <UButton
+                icon="i-lucide-plus"
+                variant="outline"
+                color="primary"
+                class="w-full"
+                label="Add Image Caption"
+                @click="
+                  state.imageCaptions?.push({
+                    id: '',
+                    caption: '',
                   })
                 "
               />

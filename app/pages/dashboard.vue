@@ -57,13 +57,11 @@ if (error.value) {
         :to="`/share/${poster.id}`"
       >
         <div class="flex gap-8">
-          <div class="relative overflow-hidden">
-            <NuxtImg
-              :src="poster.imageUrl || 'https://placehold.co/200x200'"
-              :alt="poster.title"
-              class="w-[200px] object-cover transition-transform duration-300 group-hover:scale-105"
-            />
-          </div>
+          <NuxtImg
+            :src="poster.imageUrl || 'https://placehold.co/150x150'"
+            :alt="poster.title"
+            class="w-[150px] object-cover transition-transform duration-300 group-hover:scale-105"
+          />
 
           <div class="">
             <div class="flex flex-col gap-2">
