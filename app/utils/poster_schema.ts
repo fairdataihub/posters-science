@@ -458,12 +458,8 @@ const StrictConferenceSchema = z.object({
     .number()
     .min(1000)
     .max(9999, { message: "Conference year is required" }),
-  conferenceStartDate: z
-    .string()
-    .min(1, { message: "Conference start date is required" }),
-  conferenceEndDate: z
-    .string()
-    .min(1, { message: "Conference end date is required" }),
+  conferenceStartDate: z.string(),
+  conferenceEndDate: z.string(),
   conferenceAcronym: z.string().optional(),
   conferenceSeries: z.string().optional(),
 });
@@ -482,7 +478,7 @@ export const strictFormSchema = z.object({
     .array(z.string())
     .min(1, { message: "At least one subject is required" }),
   format: z.string().min(1, { message: "Format is required" }),
-  license: z.string().min(1, { message: "License is required" }),
+  license: z.string(),
   fundingReferences: z.array(StrictFundingSchema).default([]),
   publisher: z.string().optional(),
   publicationYear: z.number().int().min(1000).max(9999).optional(),

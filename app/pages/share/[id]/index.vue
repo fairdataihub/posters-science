@@ -39,6 +39,7 @@ useSeoMeta({
 const loading = ref(false);
 const additionalInfoCollapsed = ref(true);
 const mandatoryCollapsed = ref(false);
+const subjectInputRefs = ref<{ $el?: HTMLElement; focus?: () => void }[]>([]);
 
 // Initial state (matches PosterMetadata / StrictFormSchema)
 const state = reactive<StrictFormSchema>({
@@ -62,19 +63,9 @@ const state = reactive<StrictFormSchema>({
   relatedIdentifiers: [],
   size: "",
   format: "PDF",
-  version: "1.0",
-  license: "CC-BY-4.0",
-  fundingReferences: [
-    {
-      funderName: "DEMO",
-      funderIdentifier: "",
-      funderIdentifierType: undefined,
-      schemeUri: "",
-      awardNumber: "",
-      awardUri: "",
-      awardTitle: "",
-    },
-  ],
+  version: "",
+  license: "",
+  fundingReferences: [],
   conference: {
     conferenceName: "",
     conferenceLocation: "",
@@ -105,7 +96,8 @@ if (data.value) {
   if (poster.status === "published" || poster.publishedAt) {
     toast.add({
       title: "Poster already published",
-      description: "This poster has already been published! It is no",
+      description:
+        "This poster has already been published! It is now viewable on the Discover page.",
       color: "warning",
     });
 
@@ -316,7 +308,7 @@ if (data.value) {
         }));
     }
 
-    state.domain = meta.domain || "DEMO";
+    state.domain = meta.domain ?? "";
   }
 }
 
@@ -367,9 +359,44 @@ const conferenceEndDateCalendar = useCalendarStringField(
 
 const currentYear = new Date().getFullYear();
 const conferenceYearOptions = Array.from(
-  { length: currentYear + 1 - 1800 + 1 },
+  { length: currentYear + 1 - 2000 + 1 },
   (_, i) => currentYear + 1 - i,
 ).map((y) => ({ label: String(y), value: y }));
+
+/** Extract a year from text (e.g. "ARVO 2025" or "Conference 25") for auto-fill. */
+function yearFromText(text: string): number | undefined {
+  if (!text || typeof text !== "string") return undefined;
+
+  const s = text.trim();
+  const fourDigit = s.match(/\b(19\d{2}|20\d{2})\b/);
+
+  if (fourDigit) return Number(fourDigit[1]);
+
+  const twoDigit = s.match(/\b(\d{2})\b/);
+
+  if (twoDigit) {
+    const n = Number(twoDigit[1]);
+    // Skip 19/20 so we don't autofill while they're typing a full year (e.g. "2025")
+    if (n === 19 || n === 20) return undefined;
+    const yy = currentYear % 100;
+    const century = n <= yy ? 2000 : 1900;
+
+    return century + n;
+  }
+
+  return undefined;
+}
+
+watch(
+  () => state.conference?.conferenceName,
+  (name) => {
+    if (!state.conference || state.conference.conferenceYear != null) return;
+
+    const year = yearFromText(name ?? "");
+
+    if (year != null) state.conference.conferenceYear = year;
+  },
+);
 
 const savingDraft = ref(false);
 
@@ -476,6 +503,15 @@ function onError(event: {
 function removeRow<T>(arr: T[], index: number) {
   arr.splice(index, 1);
 }
+
+async function addSubjectAndFocus() {
+  state.subjects.push("");
+  await nextTick();
+  const last = subjectInputRefs.value[subjectInputRefs.value.length - 1];
+  const input =
+    last?.$el?.querySelector?.("input") ?? (last?.$el as HTMLInputElement);
+  input?.focus?.();
+}
 </script>
 
 <template>
@@ -523,7 +559,7 @@ function removeRow<T>(arr: T[], index: number) {
 
           <UIcon
             name="i-lucide-chevron-up"
-            class="group-hover:text-primary-600 dark:group-hover:text-primary-300 size-5 shrink-0 text-gray-400 transition-all duration-200 group-hover:scale-110"
+            class="group-hover:text-primary-600 dark:group-hover:text-primary-300 size-8 text-gray-400 transition-all"
             :class="{ 'rotate-180': mandatoryCollapsed }"
           />
         </div>
@@ -567,8 +603,10 @@ function removeRow<T>(arr: T[], index: number) {
                     required
                   >
                     <UInput
+                      ref="subjectInputRefs"
                       v-model="state.subjects[sIndex]"
                       placeholder="e.g., Machine Learning, Type 2 Diabetes"
+                      @keydown.enter.prevent="addSubjectAndFocus"
                     />
                   </UFormField>
 
@@ -601,15 +639,6 @@ function removeRow<T>(arr: T[], index: number) {
                   @click="state.subjects.push('')"
                 />
               </div>
-            </UFormField>
-
-            <UFormField name="license" label="License" required>
-              <USelect
-                v-model="state.license"
-                class="w-full"
-                :items="LICENSE_OPTIONS"
-                placeholder="Select a license"
-              />
             </UFormField>
           </div>
         </CardCollapsibleContent>
@@ -830,7 +859,6 @@ function removeRow<T>(arr: T[], index: number) {
 
               <div class="flex items-end gap-3">
                 <UFormField
-                  required
                   name="conference.conferenceStartDate"
                   label="Start date"
                 >
@@ -864,7 +892,6 @@ function removeRow<T>(arr: T[], index: number) {
                 <UFormField
                   name="conference.conferenceEndDate"
                   label="End date"
-                  required
                 >
                   <UPopover>
                     <UButton
@@ -916,7 +943,7 @@ function removeRow<T>(arr: T[], index: number) {
 
           <UIcon
             name="i-lucide-chevron-down"
-            class="group-hover:text-primary-600 dark:group-hover:text-primary-300 size-5 shrink-0 text-gray-400 transition-all duration-200 group-hover:scale-110"
+            class="group-hover:text-primary-600 dark:group-hover:text-primary-300 size-8 text-gray-400 transition-all"
             :class="{ 'rotate-180': !additionalInfoCollapsed }"
           />
         </div>
@@ -957,6 +984,15 @@ function removeRow<T>(arr: T[], index: number) {
 
               <UFormField label="Version" name="version">
                 <UInput v-model="state.version" placeholder="e.g., 1.0" />
+              </UFormField>
+
+              <UFormField name="license" label="License">
+                <USelect
+                  v-model="state.license"
+                  class="w-full"
+                  :items="LICENSE_OPTIONS"
+                  placeholder="Select a license"
+                />
               </UFormField>
             </div>
           </CardCollapsibleContent>
@@ -1154,7 +1190,5 @@ function removeRow<T>(arr: T[], index: number) {
         />
       </div>
     </UForm>
-
-    <pre>{{ state }}</pre>
   </div>
 </template>

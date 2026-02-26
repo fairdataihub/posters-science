@@ -263,6 +263,7 @@ if (posterError.value) {
   });
 }
 
+// TODO: This should not be awaited. It's slowing down navigation massively.
 const { data: zenodoData, error: zenodoError } = await useFetch(
   "/api/release/zenodo",
   {
@@ -718,7 +719,7 @@ async function handleArchive() {
     <!-- Download section -->
     <div
       v-if="selectedRepository === 'download'"
-      class="border-default bg-elevated rounded-xl border p-6"
+      class="border-default bg-elevated flex flex-col gap-6 rounded-xl border p-6"
     >
       <div class="mb-4 flex items-center gap-2">
         <UIcon name="i-lucide-download" class="size-6" />
@@ -726,10 +727,13 @@ async function handleArchive() {
         <h3 class="text-lg font-semibold">Download Files</h3>
       </div>
 
-      <p class="text-muted mb-6 text-sm">
-        Download your poster metadata to your computer. You can then upload
-        these files to any repository of your choice.
-      </p>
+      <UAlert
+        color="warning"
+        variant="subtle"
+        icon="i-lucide-info"
+        title="Download Files"
+        description="Download your poster metadata to your computer. You can then upload these files to any repository of your choice. This will also automatically mark your poster as published on our platform."
+      />
 
       <UButton
         color="primary"
@@ -738,7 +742,7 @@ async function handleArchive() {
         :loading="isDownloading"
         @click="downloadMetadata"
       >
-        Download Metadata
+        I'm ready to download my files and archive my poster on posters.science
       </UButton>
     </div>
   </div>

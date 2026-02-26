@@ -48,11 +48,14 @@ export default defineEventHandler(async (event) => {
     });
   }
 
+  const folderExtension =
+    siteEnv === "production" ? "p" : siteEnv === "staging" ? "s" : "d";
+
   const fileName = fileEntry.filename || "poster.pdf";
   const fileType = fileEntry.type || "application/pdf";
   const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
   const fileId = createId();
-  const filePath = `${siteEnv}/posters/${fileId}/${safeName}`;
+  const filePath = `posters/${folderExtension}/${fileId}/${safeName}`;
   const uploadUrl = `${bunnyPrivateStorage}/${filePath}`;
 
   const uploadResponse = await fetch(uploadUrl, {

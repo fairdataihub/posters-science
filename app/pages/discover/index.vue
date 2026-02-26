@@ -53,16 +53,10 @@ if (data.value) {
 
   if (apiPosters.length > 0) {
     posters.value = apiPosters.map((poster) => ({
-      id: poster.id ?? faker.number.int({ max: 999999, min: 1 }),
+      id: poster.id,
       title: poster.title ?? "Untitled poster",
       description: poster.description ?? "",
-      imageUrl:
-        poster.imageUrl ||
-        faker.image.urlPicsumPhotos({
-          width: 400,
-          height: 300,
-          blur: 0,
-        }),
+      imageUrl: poster.imageUrl || "https://placehold.co/600x400",
       user: {
         givenName: poster.user?.givenName ?? "Unknown",
         familyName: poster.user?.familyName ?? "Author",

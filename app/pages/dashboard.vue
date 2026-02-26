@@ -40,7 +40,7 @@ if (error.value) {
       description="Keep track of all your submitted posters."
       :links="[
         {
-          label: 'Add Poster',
+          label: 'Share a Poster',
           to: '/share/new',
           icon: 'heroicons:plus',
           color: 'primary' as const,
@@ -48,63 +48,82 @@ if (error.value) {
       ]"
     />
 
-    <UPageGrid>
-      <NuxtLink
+    <UPageList>
+      <UPageCard
         v-for="(poster, index) in posters"
         :key="index + 1"
+        variant="ghost"
+        class="group cursor-pointer overflow-hidden rounded-none border-t border-b border-gray-100 transition-all duration-300"
         :to="`/share/${poster.id}`"
       >
-        <UCard
-          class="group cursor-pointer overflow-hidden transition-all duration-300 hover:shadow-lg"
-        >
+        <div class="flex gap-8">
           <div class="relative overflow-hidden">
             <NuxtImg
-              :src="poster.imageUrl"
+              :src="poster.imageUrl || 'https://placehold.co/200x200'"
               :alt="poster.title"
-              class="h-48 w-full object-cover transition-transform duration-300 group-hover:scale-105"
+              class="w-[200px] object-cover transition-transform duration-300 group-hover:scale-105"
             />
-
-            <div class="absolute top-3 right-3">
-              <UBadge
-                :color="poster.status === 'published' ? 'success' : 'warning'"
-                variant="solid"
-                size="sm"
-              >
-                {{ poster.status === "published" ? "Published" : "Draft" }}
-              </UBadge>
-            </div>
           </div>
 
-          <div class="p-4">
-            <div class="flex flex-col gap-3">
+          <div class="">
+            <div class="flex flex-col gap-2">
               <h3 class="line-clamp-2 text-lg font-semibold">
-                {{ poster.title }}
+                {{ poster.title || "No title available" }}
               </h3>
 
-              <p class="line-clamp-3 text-sm leading-relaxed">
-                {{ poster.description }}
+              <p class="line-clamp-3 text-sm">
+                {{ poster.description || "No description available" }}
               </p>
 
               <div
-                class="flex flex-col justify-between gap-2 border-t border-gray-100 pt-2 text-xs"
+                class="flex items-center justify-between border-t border-gray-100 pt-2 text-xs"
               >
-                <span v-if="poster.publishedAt" class="flex items-center gap-1">
-                  <Icon name="heroicons:eye" class="h-3 w-3" />
-                  Published
-                  {{ dayjs(poster.publishedAt).format("MMMM D, YYYY") }}
-                </span>
+                <div class="flex items-center gap-2">
+                  <span class="flex items-center gap-1">
+                    <Icon name="heroicons:calendar-days" class="h-3 w-3" />
 
-                <span class="flex items-center gap-1">
-                  <Icon name="heroicons:calendar-days" class="h-3 w-3" />
+                    Created
+                    {{ dayjs(poster.created).format("MMMM D, YYYY") }}
+                  </span>
 
-                  Created {{ dayjs(poster.created).format("MMMM D, YYYY") }}
-                </span>
+                  <span
+                    v-if="poster.publishedAt"
+                    class="flex items-center gap-1 border-l border-gray-100 pl-2"
+                  >
+                    <Icon
+                      name="heroicons:presentation-chart-bar"
+                      class="h-3 w-3"
+                    />
+                    Published
+                    {{ dayjs(poster.publishedAt).format("MMMM D, YYYY") }}
+                  </span>
+                </div>
+
+                <div class="flex items-center gap-2">
+                  <UButton
+                    color="secondary"
+                    variant="subtle"
+                    label="Add additional publication information"
+                    icon="heroicons:plus"
+                    size="xs"
+                  />
+
+                  <UBadge
+                    :color="
+                      poster.status === 'published' ? 'success' : 'warning'
+                    "
+                    variant="solid"
+                    size="sm"
+                  >
+                    {{ poster.status === "published" ? "Published" : "Draft" }}
+                  </UBadge>
+                </div>
               </div>
             </div>
           </div>
-        </UCard>
-      </NuxtLink>
-    </UPageGrid>
+        </div>
+      </UPageCard>
+    </UPageList>
 
     <div v-if="posters.length === 0" class="py-12 text-center">
       <div

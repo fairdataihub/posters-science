@@ -1,6 +1,5 @@
 <!-- eslint-disable @typescript-eslint/no-explicit-any -->
 <script setup lang="ts">
-import { faker } from "@faker-js/faker";
 import dayjs from "dayjs";
 
 // Get the poster ID from the route
@@ -20,15 +19,12 @@ if (error.value) {
 
 const api = apiData.value as any;
 const conf = api?.conference;
-const fallbackDate = new Date(api?.created ?? Date.now());
 
 const poster = ref({
   id: api?.id ?? posterId,
   title: api?.title ?? "Untitled Poster",
   description: api?.description ?? "",
-  imageUrl:
-    api?.imageUrl ||
-    faker.image.urlPicsumPhotos({ width: 800, height: 600, blur: 0 }),
+  imageUrl: api?.imageUrl || "https://placehold.co/600x400",
   authors: (api?.creators ?? []).map((creator: any) => {
     const rawName: string = creator.name ?? "";
     const givenName =
@@ -54,8 +50,8 @@ const poster = ref({
 
     return { givenName, familyName, affiliation, orcid };
   }),
-  publishedAt: api?.publishedAt ? new Date(api.publishedAt) : fallbackDate,
-  created: fallbackDate,
+  publishedAt: api?.publishedAt ? new Date(api.publishedAt) : undefined,
+  created: api?.created ? new Date(api.created) : undefined,
   version: api?.version ?? null,
   doi: api?.doi ?? null,
   license: api?.license ?? null,
@@ -93,10 +89,10 @@ const poster = ref({
     dates: {
       start: conf?.conferenceStartDate
         ? new Date(conf.conferenceStartDate)
-        : fallbackDate,
+        : undefined,
       end: conf?.conferenceEndDate
         ? new Date(conf.conferenceEndDate)
-        : fallbackDate,
+        : undefined,
     },
     session: "",
   },
@@ -187,17 +183,17 @@ const tabItems = [
           </div>
 
           <div class="mb-4 flex items-center gap-2 text-sm">
-            <span> DOI: {{ poster.doi }} </span>
+            <span v-if="poster.doi"> DOI: {{ poster.doi }} </span>
 
-            <span>•</span>
+            <span v-if="poster.doi">•</span>
 
-            <span>
+            <span v-if="poster.publishedAt">
               Published {{ dayjs(poster.publishedAt).format("MMM D, YYYY") }}
             </span>
 
-            <span>•</span>
+            <span v-if="poster.version">•</span>
 
-            <span> Version {{ poster.version }} </span>
+            <span v-if="poster.version"> Version {{ poster.version }} </span>
           </div>
 
           <div class="flex items-center gap-2">
@@ -206,6 +202,7 @@ const tabItems = [
               variant="solid"
               icon="heroicons:arrow-down-tray"
               size="lg"
+              disabled
             >
               Download
             </UButton>
@@ -215,6 +212,7 @@ const tabItems = [
               variant="outline"
               icon="heroicons:heart"
               size="lg"
+              disabled
             >
               Like
             </UButton>
@@ -224,6 +222,7 @@ const tabItems = [
               variant="outline"
               icon="heroicons:share"
               size="lg"
+              disabled
             >
               Share
             </UButton>
@@ -256,7 +255,10 @@ const tabItems = [
                       </h3>
 
                       <div class="space-y-2 text-sm">
-                        <div class="flex items-center gap-2">
+                        <div
+                          v-if="poster.conference.acronym"
+                          class="flex items-center gap-2"
+                        >
                           <Icon name="heroicons:academic-cap" class="h-4 w-4" />
 
                           <span class="">Acronym:</span>
@@ -267,7 +269,23 @@ const tabItems = [
                         </div>
 
                         <div class="space-y-2 text-sm">
-                          <div class="flex items-center gap-2">
+                          <div
+                            v-if="poster.conference.year != null"
+                            class="flex items-center gap-2"
+                          >
+                            <Icon name="heroicons:calendar" class="h-4 w-4" />
+
+                            <span class="">Year:</span>
+
+                            <span class="font-medium">{{
+                              poster.conference.year
+                            }}</span>
+                          </div>
+
+                          <div
+                            v-if="poster.conference.venue"
+                            class="flex items-center gap-2"
+                          >
                             <Icon
                               name="heroicons:building-office"
                               class="h-4 w-4"
@@ -280,7 +298,10 @@ const tabItems = [
                             }}</span>
                           </div>
 
-                          <div class="flex items-center gap-2">
+                          <div
+                            v-if="poster.conference.location"
+                            class="flex items-center gap-2"
+                          >
                             <Icon name="heroicons:map-pin" class="h-4 w-4" />
 
                             <span class="">Location:</span>
@@ -290,7 +311,13 @@ const tabItems = [
                             }}</span>
                           </div>
 
-                          <div class="flex items-center gap-2">
+                          <div
+                            v-if="
+                              poster.conference.dates.start ||
+                              poster.conference.dates.end
+                            "
+                            class="flex items-center gap-2"
+                          >
                             <Icon name="heroicons:calendar" class="h-4 w-4" />
 
                             <span class="">Dates:</span>
@@ -310,7 +337,10 @@ const tabItems = [
                             </span>
                           </div>
 
-                          <div class="flex items-center gap-2">
+                          <div
+                            v-if="poster.conference.session"
+                            class="flex items-center gap-2"
+                          >
                             <Icon
                               name="heroicons:presentation-chart-bar"
                               class="h-4 w-4"
@@ -481,95 +511,24 @@ const tabItems = [
                   {{ author.givenName }} {{ author.familyName }}
                 </p>
 
-                <p class="text-sm">{{ author.affiliation }}</p>
+                <p v-if="author.affiliation" class="text-sm">
+                  {{ author.affiliation }}
+                </p>
 
-                <p class="text-xs">ORCID: {{ author.orcid }}</p>
+                <p v-if="author.orcid" class="text-xs">
+                  ORCID: {{ author.orcid }}
+                </p>
               </div>
             </div>
           </UCard>
 
           <UCard>
             <template #header>
-              <div class="flex items-center gap-2">
-                <Icon
-                  name="heroicons:academic-cap"
-                  class="h-5 w-5 text-blue-600"
-                />
-
-                <h3 class="text-lg font-semibold">Conference Details</h3>
-              </div>
-            </template>
-
-            <div class="space-y-4">
-              <div>
-                <h4 class="mb-1 font-semibold">
-                  {{ poster.conference.name }}
-                </h4>
-              </div>
-
-              <div class="space-y-3 text-sm">
-                <div class="flex items-start gap-2">
-                  <Icon
-                    name="heroicons:building-office"
-                    class="mt-0.5 h-4 w-4"
-                  />
-
-                  <div>
-                    <span class="">Venue:</span>
-
-                    <p class="font-medium">{{ poster.conference.venue }}</p>
-                  </div>
-                </div>
-
-                <div class="flex items-start gap-2">
-                  <Icon name="heroicons:map-pin" class="mt-0.5 h-4 w-4" />
-
-                  <div>
-                    <span class="">Location:</span>
-
-                    <p class="font-medium">{{ poster.conference.location }}</p>
-                  </div>
-                </div>
-
-                <div class="flex items-start gap-2">
-                  <Icon name="heroicons:calendar" class="mt-0.5 h-4 w-4" />
-
-                  <div>
-                    <span class="">Dates:</span>
-
-                    <p class="font-medium">
-                      {{ dayjs(poster.conference.dates.start).format("MMM D") }}
-                      -
-                      {{
-                        dayjs(poster.conference.dates.end).format("MMM D, YYYY")
-                      }}
-                    </p>
-                  </div>
-                </div>
-
-                <div class="flex items-start gap-2">
-                  <Icon
-                    name="heroicons:presentation-chart-bar"
-                    class="mt-0.5 h-4 w-4"
-                  />
-
-                  <div>
-                    <span class="">Session:</span>
-
-                    <p class="font-medium">{{ poster.conference.session }}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </UCard>
-
-          <UCard>
-            <template #header>
-              <h3 class="text-lg font-semibold">Details</h3>
+              <h3 class="text-lg font-semibold">Additional Information</h3>
             </template>
 
             <div class="space-y-3 text-sm">
-              <div class="flex justify-between">
+              <div v-if="poster.license" class="flex justify-between">
                 <span class="">License:</span>
 
                 <span class="font-medium">{{ poster.license }}</span>
@@ -583,13 +542,13 @@ const tabItems = [
                 }}</span>
               </div>
 
-              <div class="flex justify-between">
+              <div v-if="poster.version" class="flex justify-between">
                 <span class="">Version:</span>
 
                 <span class="font-medium">{{ poster.version }}</span>
               </div>
 
-              <div class="flex justify-between">
+              <div v-if="poster.doi" class="flex justify-between">
                 <span class="">DOI:</span>
 
                 <span class="font-medium text-blue-600">{{ poster.doi }}</span>
