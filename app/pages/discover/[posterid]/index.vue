@@ -6,6 +6,9 @@ import dayjs from "dayjs";
 const route = useRoute();
 const posterId = route.params.posterid as string;
 
+const { loggedIn } = useUserSession();
+const toast = useToast();
+
 useSeoMeta({
   title: "Poster Details",
   description: "View detailed information about this research poster.",
@@ -19,6 +22,9 @@ if (error.value) {
 
 const api = apiData.value as any;
 const conf = api?.conference;
+
+const liked = ref(false);
+const liking = ref(false);
 
 const poster = ref({
   id: api?.id ?? posterId,
@@ -98,6 +104,52 @@ const poster = ref({
   },
 });
 
+const { data: likesData } = await useFetch<{ likes: number; liked: boolean }>(
+  `/api/discover/${posterId}/like`,
+);
+
+if (likesData.value) {
+  liked.value = likesData.value.liked;
+  poster.value.likes = likesData.value.likes;
+}
+
+const handleLike = async () => {
+  if (!loggedIn.value) {
+    toast.add({
+      title: "Sign in required",
+      description: "You need to be signed in to like posters.",
+      color: "warning",
+    });
+
+    return;
+  }
+
+  if (liking.value) return;
+
+  liking.value = true;
+
+  try {
+    const result = await $fetch<{
+      likes: number;
+      liked: boolean;
+    }>(`/api/poster/${poster.value.id}/like`, {
+      method: "POST",
+    });
+
+    poster.value.likes = result.likes ?? poster.value.likes;
+    liked.value = result.liked;
+  } catch (err) {
+    console.error(err);
+    toast.add({
+      title: "Error",
+      description: "There was a problem updating your like.",
+      color: "error",
+    });
+  } finally {
+    liking.value = false;
+  }
+};
+
 const tabItems = [
   {
     label: "Overview",
@@ -153,7 +205,7 @@ const tabItems = [
                   poster.likes || 0,
                 )
               }}
-              likes
+              like{{ poster.likes === 1 ? "" : "s" }}
             </UBadge>
 
             <UBadge color="info" variant="soft" size="lg" icon="heroicons:eye">
@@ -208,13 +260,15 @@ const tabItems = [
             </UButton>
 
             <UButton
-              color="neutral"
-              variant="outline"
+              :color="liked ? 'error' : 'neutral'"
+              :variant="liked ? 'solid' : 'outline'"
               icon="heroicons:heart"
               size="lg"
-              disabled
+              :disabled="!loggedIn"
+              :loading="liking"
+              @click="handleLike"
             >
-              Like
+              {{ liked ? "Liked" : "Like" }}
             </UButton>
 
             <UButton

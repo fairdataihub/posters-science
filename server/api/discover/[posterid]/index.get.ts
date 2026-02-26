@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 export default defineEventHandler(async (event) => {
   const { posterid } = event.context.params as { posterid: string };
   const posterId = parseInt(posterid);

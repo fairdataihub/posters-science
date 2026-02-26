@@ -36,6 +36,8 @@ model User {
     ZenodoToken       ZenodoToken?
     ZenodoDepositions ZenodoDeposition[]
 
+    likes Like[] @relation("UserLikes")
+
     @@index([emailAddress])
 }
 
@@ -72,6 +74,8 @@ model Poster {
     zenodoDepositions ZenodoDeposition?
 
     extractionJob ExtractionJob?
+
+    likes Like[] @relation("PosterLikes")
 }
 
 model PosterMetadata {
@@ -119,6 +123,19 @@ model PosterMetadata {
 
     created DateTime @default(now())
     updated DateTime @updatedAt
+}
+
+model Like {
+    user   User   @relation("UserLikes", fields: [userId], references: [id], onDelete: Cascade)
+    userId String
+
+    poster   Poster @relation("PosterLikes", fields: [posterId], references: [id], onDelete: Cascade)
+    posterId Int
+
+    created DateTime @default(now())
+    updated DateTime @updatedAt
+
+    @@id([userId, posterId])
 }
 
 model ZenodoToken {
