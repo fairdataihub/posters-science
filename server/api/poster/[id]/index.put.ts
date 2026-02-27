@@ -71,11 +71,12 @@ export default defineEventHandler(async (event) => {
   const publisher = data.publisher ?? null;
   const publicationYear = data.publicationYear ?? null;
   const subjects = Array.from(
-    new Set(
+    new Map(
       (data.subjects ?? [])
         .map((subject) => subject.trim())
-        .filter((subject) => subject.length > 0),
-    ),
+        .filter((subject) => subject.length > 0)
+        .map((subject) => [subject.toLowerCase(), subject]),
+    ).values(),
   );
   const language = data.language || null;
   const relatedIdentifiers = data.relatedIdentifiers ?? [];
