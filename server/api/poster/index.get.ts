@@ -19,6 +19,13 @@ export default defineEventHandler(async (event) => {
     orderBy: {
       created: "desc",
     },
+    include: {
+      extractionJob: {
+        select: {
+          status: true,
+        },
+      },
+    },
   });
 
   return posters || [];
