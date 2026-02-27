@@ -22,6 +22,8 @@ interface UploadResult {
   filename: string;
   success: boolean;
   posterId?: number;
+  extractionJobId?: string;
+  jobStatus?: string;
   error?: string;
   duration?: number;
 }
@@ -111,8 +113,8 @@ async function uploadPoster(
   const startTime = Date.now();
 
   try {
-    console.log(`   ⏳ Sending to ${BASE_URL}/api/poster...`);
-    const response = await fetch(`${BASE_URL}/api/poster`, {
+    console.log(`   ⏳ Uploading to ${BASE_URL}/api/upload/bunny...`);
+    const uploadResponse = await fetch(`${BASE_URL}/api/upload/bunny`, {
       method: "POST",
       headers: {
         Cookie: sessionCookie,
@@ -121,29 +123,61 @@ async function uploadPoster(
       signal: AbortSignal.timeout(900000), // 15 minute timeout
     });
 
-    const duration = ((Date.now() - startTime) / 1000).toFixed(1);
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.log(`   ❌ Failed (${duration}s): HTTP ${response.status}`);
+    if (!uploadResponse.ok) {
+      const errorText = await uploadResponse.text();
+      const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+      console.log(
+        `   ❌ Upload failed (${duration}s): HTTP ${uploadResponse.status}`,
+      );
       console.log(`      Response: ${errorText.substring(0, 1000)}`);
 
       return {
         filename,
         success: false,
-        error: `HTTP ${response.status}: ${errorText.substring(0, 100)}`,
+        error: `HTTP ${uploadResponse.status}: ${errorText.substring(0, 100)}`,
         duration: parseFloat(duration),
       };
     }
 
-    const data = (await response.json()) as { posterId: number };
-    console.log(`   ✅ Success (${duration}s) -> posterId: ${data.posterId}`);
+    const uploadData = (await uploadResponse.json()) as {
+      posterId: number;
+      status: string;
+      extractionJobId?: string;
+    };
+
+    console.log(
+      `   📬 Uploaded -> posterId: ${uploadData.posterId}, jobId: ${uploadData.extractionJobId ?? "none"}`,
+    );
+
+    // Poll job status until completed or failed
+    let jobStatus = uploadData.status;
+    if (uploadData.extractionJobId) {
+      console.log("   🔄 Polling extraction job...");
+      jobStatus = await pollJobStatus(
+        uploadData.extractionJobId,
+        sessionCookie,
+      );
+    }
+
+    const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+    const success = jobStatus === "completed";
+
+    if (success) {
+      console.log(
+        `   ✅ Done (${duration}s) -> posterId: ${uploadData.posterId}, job: ${jobStatus}`,
+      );
+    } else {
+      console.log(`   ❌ Job ended with status "${jobStatus}" (${duration}s)`);
+    }
 
     return {
       filename,
-      success: true,
-      posterId: data.posterId,
+      success,
+      posterId: uploadData.posterId,
+      extractionJobId: uploadData.extractionJobId,
+      jobStatus,
       duration: parseFloat(duration),
+      error: success ? undefined : `Job status: ${jobStatus}`,
     };
   } catch (error) {
     const duration = ((Date.now() - startTime) / 1000).toFixed(1);
@@ -157,6 +191,49 @@ async function uploadPoster(
       duration: parseFloat(duration),
     };
   }
+}
+
+async function pollJobStatus(
+  jobId: string,
+  sessionCookie: string,
+  intervalMs = 3000,
+  maxAttempts = 200,
+): Promise<string> {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+
+    const response = await fetch(`${BASE_URL}/api/poster/job/${jobId}`, {
+      headers: { Cookie: sessionCookie },
+      signal: AbortSignal.timeout(30000),
+    });
+
+    if (!response.ok) {
+      console.log(
+        `      ⚠️  Job poll HTTP ${response.status} (attempt ${attempt})`,
+      );
+      continue;
+    }
+
+    const data = (await response.json()) as {
+      jobId: string;
+      status: string;
+      completed: boolean;
+      posterId: number;
+      error?: string;
+    };
+
+    console.log(`      🔎 attempt ${attempt}: ${data.status}`);
+
+    if (
+      data.completed ||
+      data.status === "completed" ||
+      data.status === "failed"
+    ) {
+      return data.status;
+    }
+  }
+
+  return "timeout";
 }
 
 async function main() {
