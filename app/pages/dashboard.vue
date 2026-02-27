@@ -18,6 +18,10 @@ type Poster = {
   publishedAt: Date | null;
   created: Date;
   updated: Date;
+  posterMetadata: {
+    publisher: string | null;
+    publicationYear: number | null;
+  };
   extractionJob?: {
     status: string;
   } | null;
@@ -95,14 +99,23 @@ if (error.value) {
                       name="heroicons:presentation-chart-bar"
                       class="h-3 w-3"
                     />
-                    Published
+                    Published at
                     {{ dayjs(poster.publishedAt).format("MMMM D, YYYY") }}
+                    {{
+                      poster.posterMetadata.publisher
+                        ? `on ${poster.posterMetadata.publisher}`
+                        : ""
+                    }}
                   </span>
                 </div>
 
                 <div class="flex items-center gap-2">
                   <UButton
-                    v-if="poster.publishedAt"
+                    v-if="
+                      poster.publishedAt &&
+                      !poster.posterMetadata.publisher &&
+                      !poster.posterMetadata.publicationYear
+                    "
                     color="secondary"
                     variant="subtle"
                     label="Add additional publication information"

@@ -5,18 +5,24 @@ export default defineEventHandler(async (event) => {
   const userId = user.id;
 
   const posters = await prisma.poster.findMany({
-    where: {
-      userId,
-    },
-    orderBy: {
-      created: "desc",
-    },
     include: {
+      posterMetadata: {
+        select: {
+          publisher: true,
+          publicationYear: true,
+        },
+      },
       extractionJob: {
         select: {
           status: true,
         },
       },
+    },
+    where: {
+      userId,
+    },
+    orderBy: {
+      created: "desc",
     },
   });
 
