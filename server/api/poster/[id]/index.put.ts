@@ -68,13 +68,14 @@ export default defineEventHandler(async (event) => {
   const posterDescription = data.description || "No description provided";
 
   const identifiers = data.identifiers ?? [];
-  const publisher =
-    typeof data.publisher === "string"
-      ? data.publisher
-      : (data.publisher?.name ?? null);
+  const publisher = data.publisher ?? null;
   const publicationYear = data.publicationYear ?? null;
-  const subjects = (data.subjects ?? []).map((s) =>
-    typeof s === "string" ? s : (s.subject ?? ""),
+  const subjects = Array.from(
+    new Set(
+      (data.subjects ?? [])
+        .map((subject) => subject.trim())
+        .filter((subject) => subject.length > 0),
+    ),
   );
   const language = data.language || null;
   const relatedIdentifiers = data.relatedIdentifiers ?? [];
