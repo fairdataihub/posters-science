@@ -12,19 +12,17 @@ export default defineEventHandler(async (event) => {
           publicationYear: true,
         },
       },
+      extractionJob: {
+        select: {
+          status: true,
+        },
+      },
     },
     where: {
       userId,
     },
     orderBy: {
       created: "desc",
-    },
-    include: {
-      extractionJob: {
-        select: {
-          status: true,
-        },
-      },
     },
   });
 
