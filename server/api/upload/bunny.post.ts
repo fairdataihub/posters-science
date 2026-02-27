@@ -63,6 +63,7 @@ export default defineEventHandler(async (event) => {
     headers: {
       AccessKey: bunnyPrivateStorageKey,
       "Content-Type": fileType,
+      "Content-Length": String(fileEntry.data.length),
     },
     body: fileEntry.data as BodyInit,
   });
