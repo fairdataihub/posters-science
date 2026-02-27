@@ -347,8 +347,12 @@ function useCalendarStringField(
   return computed<CalendarDate | null>({
     get() {
       const raw = getter();
-
-      return raw ? parseDate(raw) : null; // null if empty
+      if (!raw) return null;
+      try {
+        return parseDate(raw);
+      } catch {
+        return null;
+      }
     },
     set(newValue) {
       setter(newValue ? toW3CDate(newValue) : "");
