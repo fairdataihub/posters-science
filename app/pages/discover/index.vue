@@ -249,7 +249,7 @@ extractAvailableTags();
 
                     <label
                       :for="`tag-${tag}`"
-                      class="flex-1 cursor-pointer text-sm"
+                      class="flex-1 cursor-pointer text-sm capitalize"
                     >
                       {{ tag }}
                     </label>
@@ -330,6 +330,7 @@ extractAvailableTags();
                         :key="tag"
                         color="neutral"
                         variant="soft"
+                        class="capitalize"
                       >
                         {{ tag }}
                       </UBadge>

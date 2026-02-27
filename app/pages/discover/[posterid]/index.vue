@@ -434,6 +434,7 @@ const tabItems = [
                       color="primary"
                       variant="soft"
                       size="lg"
+                      class="capitalize"
                     >
                       {{ keyword }}
                     </UBadge>
