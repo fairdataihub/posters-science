@@ -345,33 +345,25 @@ extractAvailableTags();
                     </div>
                   </div>
 
-                  <div class="flex flex-col">
-                    <p
-                      class="truncate border-t border-gray-100 py-2 text-sm font-medium"
-                    >
-                      {{ poster.user.givenName }} {{ poster.user.familyName }}
-                    </p>
-
-                    <div
-                      class="flex items-center justify-between border-t border-gray-100 pt-2 text-sm"
-                    >
-                      <div class="flex items-center gap-4">
-                        <span class="flex items-center gap-1">
-                          <Icon name="heroicons:eye" />
-                          {{ poster.views }}
-                        </span>
-
-                        <span class="flex items-center gap-1">
-                          <Icon name="heroicons:heart" />
-                          {{ poster.likes }}
-                        </span>
-                      </div>
+                  <div
+                    class="flex items-center justify-between border-t border-gray-100 pt-2 text-sm"
+                  >
+                    <div class="flex items-center gap-4">
+                      <span class="flex items-center gap-1">
+                        <Icon name="heroicons:eye" />
+                        {{ poster.views }}
+                      </span>
 
                       <span class="flex items-center gap-1">
-                        <Icon name="heroicons:calendar-days" />
-                        {{ dayjs(poster.created).format("MMM D, YYYY") }}
+                        <Icon name="heroicons:heart" />
+                        {{ poster.likes }}
                       </span>
                     </div>
+
+                    <span class="flex items-center gap-1">
+                      <Icon name="heroicons:calendar-days" />
+                      {{ dayjs(poster.created).format("MMM D, YYYY") }}
+                    </span>
                   </div>
                 </div>
               </div>

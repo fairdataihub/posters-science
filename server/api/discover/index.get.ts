@@ -8,12 +8,6 @@ export default defineEventHandler(async (_event) => {
         publishedAt: "desc",
       },
       include: {
-        user: {
-          select: {
-            givenName: true,
-            familyName: true,
-          },
-        },
         posterMetadata: {
           select: {
             subjects: true,
