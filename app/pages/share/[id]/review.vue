@@ -263,8 +263,7 @@ if (posterError.value) {
   });
 }
 
-// TODO: This should not be awaited. It's slowing down navigation massively.
-const { data: zenodoData, error: zenodoError } = await useFetch(
+const { data: zenodoData, error: zenodoError } = useFetch(
   "/api/release/zenodo",
   {
     headers: useRequestHeaders(["cookie"]),
