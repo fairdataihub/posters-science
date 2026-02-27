@@ -263,28 +263,25 @@ if (posterError.value) {
   });
 }
 
-const { data: zenodoData, error: zenodoError } = useFetch(
-  "/api/release/zenodo",
-  {
-    headers: useRequestHeaders(["cookie"]),
-    method: "GET",
-    params: {
-      posterId: id,
-    },
+useFetch("/api/release/zenodo", {
+  headers: useRequestHeaders(["cookie"]),
+  method: "GET",
+  params: {
+    posterId: id,
   },
-);
-
-if (zenodoData.value) {
-  console.log("Zenodo fetch data:", zenodoData.value);
-  zenodoLoginUrl.value = zenodoData.value.zenodoLoginURL || "";
-  zenodoTokenExists.value = zenodoData.value.zenodoToken || false;
-  existingDepositions.value = (zenodoData.value.existingDepositions ||
-    []) as typeof existingDepositions.value;
-}
-
-if (zenodoError.value) {
-  console.error("Zenodo fetch error:", zenodoError.value);
-}
+  server: false,
+})
+  .then((response) => {
+    const data = response.data?.value;
+    console.log("Zenodo fetch data:", data);
+    zenodoLoginUrl.value = data?.zenodoLoginURL ?? "";
+    zenodoTokenExists.value = data?.zenodoToken ?? false;
+    existingDepositions.value = (data?.existingDepositions ??
+      []) as typeof existingDepositions.value;
+  })
+  .catch((error) => {
+    console.error("Zenodo fetch error:", error);
+  });
 
 // Zenodo sign-in handler
 function handleZenodoSignIn() {
