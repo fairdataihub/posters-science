@@ -580,12 +580,8 @@ async function addSubjectAndFocus() {
       </div>
 
       <div
-        class="space-y-6 overflow-hidden transition-all duration-200 ease-in-out"
-        :class="
-          mandatoryCollapsed
-            ? 'max-h-0 opacity-0'
-            : 'max-h-[5000px] opacity-100'
-        "
+        class="space-y-6 transition-all duration-200 ease-in-out"
+        :class="mandatoryCollapsed ? 'hidden opacity-0' : 'opacity-100'"
       >
         <CardCollapsibleContent
           title="About the poster"
@@ -964,12 +960,8 @@ async function addSubjectAndFocus() {
       </div>
 
       <div
-        class="overflow-hidden transition-all duration-200 ease-in-out"
-        :class="
-          additionalInfoCollapsed
-            ? 'max-h-0 opacity-0'
-            : 'max-h-[5000px] opacity-100'
-        "
+        class="transition-all duration-200 ease-in-out"
+        :class="additionalInfoCollapsed ? 'hidden opacity-0' : 'opacity-100'"
       >
         <div class="space-y-6">
           <CardCollapsibleContent
@@ -1205,12 +1197,8 @@ async function addSubjectAndFocus() {
       </div>
 
       <div
-        class="overflow-hidden transition-all duration-200 ease-in-out"
-        :class="
-          posterContentCollapsed
-            ? 'max-h-0 opacity-0'
-            : 'max-h-[5000px] opacity-100'
-        "
+        class="transition-all duration-200 ease-in-out"
+        :class="posterContentCollapsed ? 'hidden opacity-0' : 'opacity-100'"
       >
         <div class="space-y-6">
           <CardCollapsibleContent
