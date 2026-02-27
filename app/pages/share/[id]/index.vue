@@ -102,6 +102,9 @@ if (data.value) {
       color: "warning",
     });
 
+    // open the discover page for this poster in a new tab
+    window.open(`/discover/${id}`, "_blank");
+
     await navigateTo("/dashboard");
 
     throw createError({

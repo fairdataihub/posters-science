@@ -37,10 +37,18 @@ export default defineEventHandler(async (event) => {
   }
 
   await prisma.poster.update({
-    where: { id: poster.id },
+    where: {
+      id: poster.id,
+    },
     data: {
       status: "published",
       publishedAt: new Date(),
+      posterMetadata: {
+        update: {
+          publisher: "Zenodo",
+          publicationYear: new Date().getFullYear(),
+        },
+      },
     },
   });
 

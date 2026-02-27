@@ -18,6 +18,10 @@ type Poster = {
   publishedAt: Date | null;
   created: Date;
   updated: Date;
+  posterMetadata: {
+    publisher: string | null;
+    publicationYear: number | null;
+  };
 };
 
 const posters = ref<Poster[]>([]);
@@ -99,6 +103,10 @@ if (error.value) {
 
                 <div class="flex items-center gap-2">
                   <UButton
+                    v-if="
+                      !poster.posterMetadata.publisher &&
+                      !poster.posterMetadata.publicationYear
+                    "
                     color="secondary"
                     variant="subtle"
                     label="Add additional publication information"

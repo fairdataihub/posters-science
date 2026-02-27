@@ -5,6 +5,14 @@ export default defineEventHandler(async (event) => {
   const userId = user.id;
 
   const posters = await prisma.poster.findMany({
+    include: {
+      posterMetadata: {
+        select: {
+          publisher: true,
+          publicationYear: true,
+        },
+      },
+    },
     where: {
       userId,
     },
