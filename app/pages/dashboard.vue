@@ -18,6 +18,9 @@ type Poster = {
   publishedAt: Date | null;
   created: Date;
   updated: Date;
+  extractionJob?: {
+    status: string;
+  } | null;
 };
 
 const posters = ref<Poster[]>([]);
@@ -63,8 +66,8 @@ if (error.value) {
             class="w-[150px] object-cover transition-transform duration-300 group-hover:scale-105"
           />
 
-          <div class="w-full min-w-0">
-            <div class="flex flex-col gap-2">
+          <div class="flex w-full min-w-0 flex-col">
+            <div class="flex flex-1 flex-col gap-2">
               <h3 class="line-clamp-2 text-lg font-semibold">
                 {{ poster.title || "No title available" }}
               </h3>
@@ -99,6 +102,7 @@ if (error.value) {
 
                 <div class="flex items-center gap-2">
                   <UButton
+                    v-if="poster.publishedAt"
                     color="secondary"
                     variant="subtle"
                     label="Add additional publication information"
@@ -108,12 +112,26 @@ if (error.value) {
 
                   <UBadge
                     :color="
-                      poster.status === 'published' ? 'success' : 'warning'
+                      poster.status === 'published'
+                        ? 'success'
+                        : poster.extractionJob?.status ===
+                              'pending-extraction' ||
+                            poster.extractionJob?.status === 'processing'
+                          ? 'secondary'
+                          : 'warning'
                     "
                     variant="solid"
                     size="sm"
                   >
-                    {{ poster.status === "published" ? "Published" : "Draft" }}
+                    {{
+                      poster.status === "published"
+                        ? "Published"
+                        : poster.extractionJob?.status ===
+                              "pending-extraction" ||
+                            poster.extractionJob?.status === "processing"
+                          ? "Pending"
+                          : "Draft"
+                    }}
                   </UBadge>
                 </div>
               </div>
