@@ -470,77 +470,97 @@ const tabItems = [
             </template>
 
             <template #references>
-              <UCard class="mt-4">
-                <div
-                  v-for="ref in poster.references"
-                  :key="ref.id"
-                  class="mb-3 border-l-4 border-gray-200 pl-4"
-                >
-                  <UBadge color="primary" variant="soft">
-                    {{ ref.relationType }}
-                  </UBadge>
+              <div>
+                <UCard v-if="poster.references.length > 0" class="mt-4">
+                  <div
+                    v-for="ref in poster.references"
+                    :key="ref.id"
+                    class="mb-3 border-l-4 border-gray-200 pl-4"
+                  >
+                    <UBadge color="primary" variant="soft">
+                      {{ ref.relationType }}
+                    </UBadge>
 
-                  <p class="font-medium">{{ ref.title }}</p>
+                    <p class="font-medium">{{ ref.title }}</p>
 
-                  <p class="text-sm">{{ ref.authors }}</p>
+                    <p class="text-sm">{{ ref.authors }}</p>
 
-                  <p class="text-sm">{{ ref.journal }}, {{ ref.year }}</p>
+                    <p class="text-sm">{{ ref.journal }}, {{ ref.year }}</p>
 
-                  <p class="text-sm">
-                    <a
-                      :href="ref.url"
-                      class="text-blue-600 hover:underline"
-                      target="_blank"
-                    >
-                      DOI: {{ ref.doi }}
-                    </a>
-                  </p>
-                </div>
-              </UCard>
+                    <p class="text-sm">
+                      <a
+                        :href="ref.url"
+                        class="text-blue-600 hover:underline"
+                        target="_blank"
+                      >
+                        DOI: {{ ref.doi }}
+                      </a>
+                    </p>
+                  </div>
+                </UCard>
+
+                <UEmpty
+                  v-else
+                  class="mt-4"
+                  icon="i-lucide-file"
+                  title="No references found"
+                  description="This poster has no related resources."
+                />
+              </div>
             </template>
 
             <template #related>
-              <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-                <NuxtLink
-                  v-for="item in poster.relatedItems"
-                  :key="item.id"
-                  :to="`/discover/${item.id}`"
-                >
-                  <UCard
-                    class="cursor-pointer transition-shadow hover:shadow-lg"
+              <div v-if="poster.relatedItems.length > 0">
+                <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <NuxtLink
+                    v-for="item in poster.relatedItems"
+                    :key="item.id"
+                    :to="`/discover/${item.id}`"
                   >
-                    <div class="mb-3 aspect-video overflow-hidden rounded-lg">
-                      <NuxtImg
-                        :src="item.imageUrl"
-                        :alt="item.title"
-                        class="h-full w-full object-cover"
-                      />
-                    </div>
+                    <UCard
+                      class="cursor-pointer transition-shadow hover:shadow-lg"
+                    >
+                      <div class="mb-3 aspect-video overflow-hidden rounded-lg">
+                        <NuxtImg
+                          :src="item.imageUrl"
+                          :alt="item.title"
+                          class="h-full w-full object-cover"
+                        />
+                      </div>
 
-                    <h3 class="mb-2 line-clamp-2 font-medium">
-                      {{ item.title }}
-                    </h3>
+                      <h3 class="mb-2 line-clamp-2 font-medium">
+                        {{ item.title }}
+                      </h3>
 
-                    <p class="mb-2 text-sm">{{ item.authors }}</p>
+                      <p class="mb-2 text-sm">{{ item.authors }}</p>
 
-                    <div class="flex items-center justify-between text-xs">
-                      <span>{{
-                        dayjs(item.publishedAt).format("MMM YYYY")
-                      }}</span>
+                      <div class="flex items-center justify-between text-xs">
+                        <span>{{
+                          dayjs(item.publishedAt).format("MMM YYYY")
+                        }}</span>
 
-                      <span class="flex items-center gap-1">
-                        <Icon name="heroicons:eye" class="h-3 w-3" />
-                        {{ item.views }}
-                      </span>
-                    </div>
-                  </UCard>
-                </NuxtLink>
+                        <span class="flex items-center gap-1">
+                          <Icon name="heroicons:eye" class="h-3 w-3" />
+                          {{ item.views }}
+                        </span>
+                      </div>
+                    </UCard>
+                  </NuxtLink>
+                </div>
               </div>
+
+              <UEmpty
+                v-else
+                class="mt-4"
+                icon="i-lucide-file"
+                title="No related items found"
+                description="This poster has no related resources."
+              />
             </template>
           </UTabs>
         </div>
 
-        <div class="mt-[64px] flex flex-col gap-4">
+        <div class="flex flex-col gap-4">
           <UCard>
             <div class="aspect-video overflow-hidden rounded-lg">
               <NuxtImg
