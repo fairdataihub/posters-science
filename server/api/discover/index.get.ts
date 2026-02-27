@@ -13,6 +13,9 @@ export default defineEventHandler(async (_event) => {
             subjects: true,
           },
         },
+        _count: {
+          select: { likes: true },
+        },
       },
     })) || [];
 
@@ -22,9 +25,10 @@ export default defineEventHandler(async (_event) => {
     },
   });
 
-  const posters = rawPosters.map(({ posterMetadata, ...poster }) => ({
+  const posters = rawPosters.map(({ posterMetadata, _count, ...poster }) => ({
     ...poster,
     keywords: posterMetadata?.subjects ?? [],
+    likes: _count?.likes ?? 0,
   }));
 
   return {
