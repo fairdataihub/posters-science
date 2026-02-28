@@ -537,7 +537,7 @@ async function addSubjectAndFocus() {
   <div class="mx-auto flex w-full max-w-screen-xl flex-col gap-6 px-6 pb-10">
     <UPageHeader
       title="Review Metadata"
-      description="Review and edit the extracted metadata for your poster submission"
+      description="Review and edit the metadata we extracted for your poster submission. This metadata will be included in a poster.json file that will be shared along with your poster to make it more reusable and machine actionable. The metadata will also be registered in the Posters.science database to make your poster discoverable."
     >
       <template #headline>
         <UBreadcrumb

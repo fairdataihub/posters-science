@@ -34,6 +34,7 @@ jobs:
       NUXT_SESSION_PASSWORD: ${{ secrets.NUXT_SESSION_PASSWORD }}
       # Nuxt runtime config overrides (NUXT_ prefix)
       NUXT_POSTER_EXTRACTION_API: ${{ secrets.NUXT_POSTER_EXTRACTION_API }}
+      NUXT_PUBLIC_SITE_ENV: ${{ secrets.NUXT_PUBLIC_SITE_ENV }}
       NUXT_ZENODO_CLIENT_ID: ${{ secrets.NUXT_ZENODO_CLIENT_ID }}
       NUXT_ZENODO_CLIENT_SECRET: ${{ secrets.NUXT_ZENODO_CLIENT_SECRET }}
       NUXT_ZENODO_ENDPOINT: ${{ secrets.NUXT_ZENODO_ENDPOINT }}
