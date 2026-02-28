@@ -10,8 +10,8 @@ import {
   IDENTIFIER_TYPE_PLACEHOLDER_OPTIONS,
   RELATION_TYPE_OPTIONS,
 } from "@/utils/poster_schema";
-import type { CalendarDate } from "@internationalized/date";
 import {
+  CalendarDate,
   DateFormatter,
   getLocalTimeZone,
   parseDate,
@@ -339,42 +339,41 @@ const toW3CDate = (cd: CalendarDate) => {
   return jsDate.toISOString().slice(0, 10);
 };
 
-// Used to convert string date fields to CalendarDate for Nuxt Calendar component
-function useCalendarStringField(
-  getter: () => string,
-  setter: (value: string) => void,
-) {
-  return computed<CalendarDate | null>({
-    get() {
-      const raw = getter();
-      if (!raw) return null;
-      try {
-        return parseDate(raw);
-      } catch {
-        return null;
-      }
-    },
-    set(newValue) {
-      setter(newValue ? toW3CDate(newValue) : "");
-    },
-  });
+// Conference dates as a range for UCalendar (range); state keeps conferenceStartDate/conferenceEndDate strings
+type DateRange = { start: CalendarDate; end: CalendarDate };
+
+function todayCalendarDate(): CalendarDate {
+  const now = new Date();
+
+  return new CalendarDate(now.getFullYear(), now.getMonth() + 1, now.getDate());
 }
 
-// Used to handle conference start/end dates in calendar components
-// as they are single string fields in the schema
-const conferenceStartDateCalendar = useCalendarStringField(
-  () => state.conference?.conferenceStartDate ?? "",
-  (value) => {
-    if (state.conference) state.conference.conferenceStartDate = value;
-  },
-);
+const conferenceDateRange = computed<DateRange>({
+  get() {
+    const startStr = state.conference?.conferenceStartDate ?? "";
+    const endStr = state.conference?.conferenceEndDate ?? "";
 
-const conferenceEndDateCalendar = useCalendarStringField(
-  () => state.conference?.conferenceEndDate ?? "",
-  (value) => {
-    if (state.conference) state.conference.conferenceEndDate = value;
+    const today = todayCalendarDate();
+    let start: CalendarDate;
+    let end: CalendarDate;
+    try {
+      start = startStr ? parseDate(startStr) : today;
+      end = endStr ? parseDate(endStr) : today;
+    } catch {
+      start = today;
+      end = today;
+    }
+    if (start.compare(end) > 0) end = start;
+
+    return { start, end };
   },
-);
+  set(value: DateRange) {
+    if (state.conference) {
+      state.conference.conferenceStartDate = toW3CDate(value.start);
+      state.conference.conferenceEndDate = toW3CDate(value.end);
+    }
+  },
+});
 
 const currentYear = new Date().getFullYear();
 const conferenceYearOptions = Array.from(
@@ -565,12 +564,12 @@ async function addSubjectAndFocus() {
         <div class="flex items-center justify-between">
           <div>
             <h2
-              class="dark:group-hover:text-primary-300 group-hover:text-primary-600 text-2xl font-semibold transition-colors"
+              class="dark:group-hover:text-primary-300 group-hover:text-primary-600 text-3xl font-semibold transition-colors"
             >
               Mandatory Information
             </h2>
 
-            <p class="text-gray-500">
+            <p class="text-lg text-gray-500">
               These are the minimum fields that are required to submit your
               poster.
             </p>
@@ -872,87 +871,64 @@ async function addSubjectAndFocus() {
                 />
               </UFormField>
 
-              <div class="flex items-end gap-3">
-                <UFormField
-                  name="conference.conferenceStartDate"
-                  label="Start date"
-                >
-                  <UPopover>
-                    <UButton
-                      color="neutral"
-                      variant="subtle"
-                      icon="i-lucide-calendar"
+              <UFormField
+                name="conference.conferenceStartDate"
+                label="Conference dates"
+              >
+                <UPopover>
+                  <UButton
+                    color="neutral"
+                    variant="subtle"
+                    icon="i-lucide-calendar"
+                    class="w-full"
+                  >
+                    <template
+                      v-if="
+                        state.conference?.conferenceStartDate &&
+                        state.conference?.conferenceEndDate
+                      "
                     >
-                      <template v-if="conferenceStartDateCalendar">
-                        {{
-                          df.format(
-                            conferenceStartDateCalendar.toDate(
-                              getLocalTimeZone(),
-                            ),
-                          )
-                        }}
-                      </template>
-
-                      <template v-else>Pick a date</template>
-                    </UButton>
-
-                    <template #content>
-                      <UCalendar v-model="conferenceStartDateCalendar" />
+                      {{
+                        df.format(
+                          conferenceDateRange.start.toDate(getLocalTimeZone()),
+                        )
+                      }}
+                      –
+                      {{
+                        df.format(
+                          conferenceDateRange.end.toDate(getLocalTimeZone()),
+                        )
+                      }}
                     </template>
-                  </UPopover>
-                </UFormField>
 
-                <span class="mb-2 text-gray-500">to</span>
+                    <template v-else>Pick a date range</template>
+                  </UButton>
 
-                <UFormField
-                  name="conference.conferenceEndDate"
-                  label="End date"
-                >
-                  <UPopover>
-                    <UButton
-                      color="neutral"
-                      variant="subtle"
-                      icon="i-lucide-calendar"
-                    >
-                      <template v-if="conferenceEndDateCalendar">
-                        {{
-                          df.format(
-                            conferenceEndDateCalendar.toDate(
-                              getLocalTimeZone(),
-                            ),
-                          )
-                        }}
-                      </template>
-
-                      <template v-else>Pick a date</template>
-                    </UButton>
-
-                    <template #content>
-                      <UCalendar v-model="conferenceEndDateCalendar" />
-                    </template>
-                  </UPopover>
-                </UFormField>
-              </div>
+                  <template #content>
+                    <UCalendar v-model="conferenceDateRange" range />
+                  </template>
+                </UPopover>
+              </UFormField>
             </div>
           </div>
         </CardCollapsibleContent>
       </div>
 
       <div
-        class="group cursor-pointer select-none"
+        class="group mt-20 cursor-pointer select-none"
         @click="additionalInfoCollapsed = !additionalInfoCollapsed"
       >
         <div class="flex items-center justify-between">
           <div>
             <h2
-              class="dark:group-hover:text-primary-300 group-hover:text-primary-600 text-2xl font-semibold transition-colors"
+              class="dark:group-hover:text-primary-300 group-hover:text-primary-600 text-3xl font-semibold transition-colors"
             >
               Additional Information
             </h2>
 
-            <p class="text-gray-500">
-              Optional metadata, identifiers, and related identifiers for your
-              poster.
+            <p class="text-lg text-gray-500">
+              Optional metadata. We recommend providing as much information as
+              possible to make your poster more FAIR.
             </p>
           </div>
 
@@ -1177,18 +1153,18 @@ async function addSubjectAndFocus() {
       </div>
 
       <div
-        class="group cursor-pointer select-none"
+        class="group mt-20 cursor-pointer select-none"
         @click="posterContentCollapsed = !posterContentCollapsed"
       >
         <div class="flex items-center justify-between">
           <div>
             <h2
-              class="dark:group-hover:text-primary-300 group-hover:text-primary-600 text-2xl font-semibold transition-colors"
+              class="dark:group-hover:text-primary-300 group-hover:text-primary-600 text-3xl font-semibold transition-colors"
             >
               Poster Content
             </h2>
 
-            <p class="text-gray-500">
+            <p class="text-lg text-gray-500">
               These are the sections that are included in the poster.
             </p>
           </div>
@@ -1211,7 +1187,7 @@ async function addSubjectAndFocus() {
           <CardCollapsibleContent
             title="Poster Content"
             :collapse="false"
-            description="These are the sections that are included in the poster."
+            description="This is content we extracted directly from your poster."
           >
             <div class="space-y-4">
               <div
