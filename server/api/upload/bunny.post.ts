@@ -48,6 +48,15 @@ export default defineEventHandler(async (event) => {
     });
   }
 
+  const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
+  if (fileEntry.data.length > MAX_FILE_SIZE_BYTES) {
+    throw createError({
+      statusCode: 413,
+      statusMessage: "File too large",
+      message: "File must be 10MB or smaller",
+    });
+  }
+
   const folderExtension =
     siteEnv === "production" ? "p" : siteEnv === "staging" ? "s" : "d";
 
