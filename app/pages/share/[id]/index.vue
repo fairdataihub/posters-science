@@ -863,11 +863,11 @@ async function addSubjectAndFocus() {
 
               <UFormField
                 name="conference.conferenceUri"
-                label="Conference URI"
+                label="Conference Website"
               >
                 <UInput
                   v-model="state.conference.conferenceUri"
-                  placeholder="https://arvo.org"
+                  placeholder="https://www.arvo.org/annual-meeting"
                   type="url"
                 />
               </UFormField>
