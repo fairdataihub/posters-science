@@ -69,6 +69,7 @@ env:
     - DATABASE_URL # Database connection string
     - NUXT_SESSION_PASSWORD
     # Nuxt runtime config overrides (NUXT_ prefix)
+    - NUXT_PUBLIC_SITE_ENV
     - NUXT_POSTER_EXTRACTION_API
     - NUXT_ZENODO_CLIENT_ID
     - NUXT_ZENODO_CLIENT_SECRET

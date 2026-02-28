@@ -22,14 +22,10 @@ const dateFilterValue = shallowRef({
 });
 
 type Poster = {
-  id: number;
+  id: number | undefined;
   title: string;
   description: string;
   imageUrl: string;
-  user: {
-    givenName: string;
-    familyName: string;
-  };
   keywords: string[];
   publishedAt: Date | null;
   created: Date;
@@ -49,7 +45,7 @@ const availableTags = ref<string[]>([]);
 const { data, error } = await useFetch("/api/discover");
 
 if (data.value) {
-  const apiPosters = (data.value.posters || []) as Partial<Poster>[];
+  const apiPosters = (data.value.posters || []) as unknown as Poster[];
 
   if (apiPosters.length > 0) {
     posters.value = apiPosters.map((poster) => ({
@@ -57,14 +53,10 @@ if (data.value) {
       title: poster.title ?? "Untitled poster",
       description: poster.description ?? "",
       imageUrl: poster.imageUrl || "https://placehold.co/600x400",
-      user: {
-        givenName: poster.user?.givenName ?? "Unknown",
-        familyName: poster.user?.familyName ?? "Author",
-      },
       keywords: Array.isArray(poster.keywords) ? poster.keywords : [],
       publishedAt: poster.publishedAt ? new Date(poster.publishedAt) : null,
-      created: poster.created ? new Date(poster.created) : new Date(),
-      updated: poster.updated ? new Date(poster.updated) : new Date(),
+      created: poster.created ? poster.created : new Date(),
+      updated: poster.updated ? poster.updated : new Date(),
       views: typeof poster.views === "number" ? poster.views : 0,
       likes: typeof poster.likes === "number" ? poster.likes : 0,
     }));
@@ -80,10 +72,6 @@ if (data.value) {
           height: 300,
           blur: 0,
         }),
-        user: {
-          givenName: faker.person.firstName(),
-          familyName: faker.person.lastName(),
-        },
         keywords: Array.from({ length: faker.number.int(10) }, () =>
           faker.lorem.word(),
         ),

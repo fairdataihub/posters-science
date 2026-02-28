@@ -8,9 +8,8 @@ const toast = useToast();
 const { id } = route.params as { id: string };
 
 useSeoMeta({
-  title: "Review Poster Submission",
-  description:
-    "Review the content that will be archived with your poster submission.",
+  title: "Submit Poster",
+  description: "Archive your poster on a trusted repository.",
 });
 
 const zenodoLoginUrl = ref("");
@@ -62,7 +61,7 @@ const repositories = [
     id: "download" as const,
     name: "Download Locally",
     icon: "i-lucide-download",
-    description: "Download files to your computer",
+    description: "Download files to your computer to share on another platform",
     enabled: true,
   },
 ];
@@ -439,7 +438,7 @@ async function handleArchive() {
 
     <!-- File tree -->
     <div class="border-default bg-elevated mb-6 rounded-xl border p-6">
-      <h3 class="mb-3 text-lg font-semibold">Submission Contents</h3>
+      <h3 class="mb-3 text-lg font-semibold">Submission Files</h3>
 
       <UTree
         :items="[
@@ -738,7 +737,7 @@ async function handleArchive() {
         :loading="isDownloading"
         @click="downloadMetadata"
       >
-        I'm ready to download my files and archive my poster on posters.science
+        I'm ready to download my files and register my poster on Posters.science
       </UButton>
     </div>
   </div>

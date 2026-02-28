@@ -20,6 +20,9 @@ const currentJobId = ref<string | null>(null);
 // Poll interval in milliseconds
 const POLL_INTERVAL = 3000;
 
+const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
+const MAX_FILE_SIZE_LABEL = "10MB";
+
 interface JobStatusResponse {
   jobId: string;
   status: "pending-extraction" | "processing" | "completed" | "failed";
@@ -102,6 +105,12 @@ const uploadFile = async () => {
 
   if (!file || !(file instanceof File)) {
     error.value = "No file selected";
+
+    return;
+  }
+
+  if (file.size > MAX_FILE_SIZE_BYTES) {
+    error.value = `File is too large. Maximum size is ${MAX_FILE_SIZE_LABEL}.`;
 
     return;
   }
@@ -202,7 +211,7 @@ onUnmounted(() => {
             <UFileUpload
               v-model="selectedFiles"
               label="Drop your poster here"
-              description="PDF, DOC, DOCX, PPT, PPTX, XLS, XLSX (max. 5MB)"
+              :description="`PDF, DOC, DOCX, PPT, PPTX, XLS, XLSX (max. ${MAX_FILE_SIZE_LABEL})`"
               class="min-h-48 w-full"
               color="primary"
               highlight
