@@ -2,6 +2,7 @@ import { z } from "zod";
 
 const payloadSchema = z.object({
   posterId: z.string(),
+  license: z.string().optional(),
 });
 
 export default defineEventHandler(async (event) => {
@@ -9,7 +10,7 @@ export default defineEventHandler(async (event) => {
   const { user } = session;
 
   const body = await readBody(event);
-  const { posterId } = payloadSchema.parse(body);
+  const { posterId, license } = payloadSchema.parse(body);
   const posterIdInt = Number.parseInt(posterId, 10);
 
   if (Number.isNaN(posterIdInt)) {
@@ -49,6 +50,7 @@ export default defineEventHandler(async (event) => {
         update: {
           publisher: "Zenodo",
           publicationYear: now.getFullYear(),
+          ...(license ? { license } : {}),
         },
       },
     },

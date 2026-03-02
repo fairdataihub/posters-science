@@ -6,6 +6,7 @@ const payloadSchema = z.object({
   posterId: z.string(),
   mode: z.enum(["new", "existing"]).default("new"),
   existingDepositionId: z.number().optional(),
+  license: z.string().optional(),
 });
 
 export default defineEventHandler(async (event) => {
@@ -16,7 +17,8 @@ export default defineEventHandler(async (event) => {
 
   const body = await readBody(event);
   console.log("Received Zenodo publication request:", JSON.stringify(body));
-  const { posterId, mode, existingDepositionId } = payloadSchema.parse(body);
+  const { posterId, mode, existingDepositionId, license } =
+    payloadSchema.parse(body);
 
   const { zenodoToken } = await validateZenodoToken(userId);
 
@@ -55,6 +57,7 @@ export default defineEventHandler(async (event) => {
       existingDepositionId,
       userId,
       (progress) => sendEvent(progress),
+      license,
     );
 
     if (!status.success) {

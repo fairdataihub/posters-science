@@ -158,6 +158,7 @@ export async function beginZenodoPublication(
   existingDepositionId: number | undefined,
   userId: string,
   onProgress?: ProgressCallback,
+  license?: string,
 ) {
   console.log(
     `[Zenodo] Beginning publication for poster: ${posterId}, mode: ${mode}, depositionId: ${existingDepositionId}`,
@@ -271,6 +272,18 @@ export async function beginZenodoPublication(
     console.log(`[Zenodo] Poster or metadata not found for: ${posterId}`);
 
     return { success: false, error: "Poster or metadata not found" };
+  }
+
+  // Persist license to DB if provided so poster.json and the record stay in sync
+  if (license) {
+    console.log(`[Zenodo] Saving license to posterMetadata: ${license}`);
+
+    await prisma.posterMetadata.update({
+      where: { posterId: parseInt(posterId) },
+      data: { license },
+    });
+
+    poster.posterMetadata.license = license;
   }
 
   await onProgress?.({

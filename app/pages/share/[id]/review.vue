@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { LICENSE_OPTIONS } from "~/utils/poster_schema";
+
 definePageMeta({
   middleware: ["auth"],
 });
@@ -6,6 +8,12 @@ definePageMeta({
 const route = useRoute();
 const toast = useToast();
 const { id } = route.params as { id: string };
+
+// Shared license selection (used by Zenodo and simulated flows)
+const selectedLicense = ref("");
+
+// Download completion state
+const downloadComplete = ref(false);
 
 useSeoMeta({
   title: "Submit Poster",
@@ -118,11 +126,7 @@ async function downloadMetadata() {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
 
-    toast.add({
-      title: "Download Started",
-      description: "Your poster package (zip) is downloading.",
-      color: "success",
-    });
+    downloadComplete.value = true;
   } catch (err) {
     console.error("[download]", err);
     toast.add({
@@ -146,6 +150,7 @@ async function handleSimulatedArchive() {
       method: "POST",
       body: {
         posterId: id,
+        license: selectedLicense.value || undefined,
       },
     });
 
@@ -154,11 +159,6 @@ async function handleSimulatedArchive() {
     }
 
     simulatedPublished.value = true;
-    toast.add({
-      title: "Poster Published",
-      description: "Simulated Zenodo flow marked this poster as published.",
-      color: "success",
-    });
   } catch (error) {
     toast.add({
       title: "Simulation Failed",
@@ -354,6 +354,7 @@ async function handleArchive() {
         posterId: id,
         mode: depositionMode.value,
         existingDepositionId: selectedDeposition.value,
+        license: selectedLicense.value || undefined,
       }),
     });
 
@@ -593,20 +594,39 @@ async function handleArchive() {
           </div>
 
           <!-- Success state -->
-          <div v-if="archiveComplete" class="mt-5 flex items-center gap-3">
-            <UButton
-              v-if="zenodoRecordUrl"
-              color="primary"
-              icon="i-lucide-external-link"
-              :to="zenodoRecordUrl"
-              target="_blank"
-            >
-              View on Zenodo
-            </UButton>
+          <div v-if="archiveComplete" class="mt-5 flex flex-col gap-4">
+            <UAlert
+              color="success"
+              variant="subtle"
+              icon="i-lucide-circle-check"
+              title="Your poster has been published to Zenodo!"
+            />
 
-            <UButton variant="outline" :to="`/share/${id}`">
-              Back to Poster
-            </UButton>
+            <p class="text-sm">
+              Your poster is also registered in Posters.science and is
+              discoverable under
+              <NuxtLink to="/discover" class="text-primary font-medium"
+                >Find Posters</NuxtLink
+              >.
+            </p>
+
+            <div class="flex items-center gap-3">
+              <UButton
+                v-if="zenodoRecordUrl"
+                color="primary"
+                icon="i-lucide-external-link"
+                :to="zenodoRecordUrl"
+                target="_blank"
+              >
+                View on Zenodo
+              </UButton>
+
+              <UButton variant="outline" to="/discover"> Find Posters </UButton>
+
+              <UButton variant="outline" :to="`/share/${id}`">
+                Back to Poster
+              </UButton>
+            </div>
           </div>
         </template>
 
@@ -655,6 +675,18 @@ async function handleArchive() {
                     class="w-full max-w-md"
                   />
                 </div>
+
+                <!-- License selection -->
+                <div class="mt-4">
+                  <p class="text-muted mb-2 text-sm">License</p>
+
+                  <USelect
+                    v-model="selectedLicense"
+                    :items="LICENSE_OPTIONS"
+                    placeholder="Select a license"
+                    class="w-full max-w-md"
+                  />
+                </div>
               </div>
 
               <!-- Archive button -->
@@ -692,23 +724,51 @@ async function handleArchive() {
         implemented but hidden from the repository card list.
       </p>
 
-      <div class="mt-5 flex items-center gap-3">
-        <UButton
-          color="primary"
-          size="lg"
-          :loading="isSimulatedPublishing"
-          @click="handleSimulatedArchive"
-        >
-          Mark as Published (Simulated)
-        </UButton>
+      <!-- Success state -->
+      <template v-if="simulatedPublished">
+        <div class="mt-5 flex flex-col gap-4">
+          <UAlert
+            color="success"
+            variant="subtle"
+            icon="i-lucide-circle-check"
+            title="Your poster has been registered in Posters.science!"
+            description="Your poster is now discoverable under Find Posters."
+          />
 
-        <UBadge
-          v-if="simulatedPublished"
-          color="success"
-          variant="soft"
-          label="Published"
-        />
-      </div>
+          <div class="flex gap-3">
+            <UButton color="primary" to="/dashboard"> Go to Dashboard </UButton>
+
+            <UButton variant="outline" to="/discover"> Find Posters </UButton>
+          </div>
+        </div>
+      </template>
+
+      <!-- Publish controls -->
+      <template v-else>
+        <div class="mt-5 flex flex-col gap-4">
+          <div>
+            <p class="text-muted mb-2 text-sm">License</p>
+
+            <USelect
+              v-model="selectedLicense"
+              :items="LICENSE_OPTIONS"
+              placeholder="Select a license"
+              class="w-full max-w-md"
+            />
+          </div>
+
+          <div>
+            <UButton
+              color="primary"
+              size="lg"
+              :loading="isSimulatedPublishing"
+              @click="handleSimulatedArchive"
+            >
+              Mark as Published (Simulated)
+            </UButton>
+          </div>
+        </div>
+      </template>
     </div>
 
     <!-- Download section -->
@@ -722,23 +782,59 @@ async function handleArchive() {
         <h3 class="text-lg font-semibold">Download Files</h3>
       </div>
 
-      <UAlert
-        color="warning"
-        variant="subtle"
-        icon="i-lucide-info"
-        title="Download Files"
-        description="Download your poster metadata to your computer. You can then upload these files to any repository of your choice. This will also automatically mark your poster as published on our platform."
-      />
+      <!-- Success state -->
+      <template v-if="downloadComplete">
+        <UAlert
+          color="success"
+          variant="subtle"
+          icon="i-lucide-circle-check"
+          title="Files Downloaded"
+          description="Your poster files have been downloaded successfully."
+        />
 
-      <UButton
-        color="primary"
-        size="lg"
-        icon="i-lucide-download"
-        :loading="isDownloading"
-        @click="downloadMetadata"
-      >
-        I'm ready to download my files and register my poster on Posters.science
-      </UButton>
+        <p class="text-sm">
+          Your poster is now registered in Posters.science and is discoverable
+          under
+          <NuxtLink to="/discover" class="text-primary font-medium"
+            >Find Posters</NuxtLink
+          >.
+        </p>
+
+        <UAlert
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-pencil"
+          title="Your poster.json is incomplete"
+          description="Before sharing your poster anywhere, open poster.json and manually add your identifier (e.g. DOI), license, and publishing platform. Then return to your dashboard to update this information on Posters.science."
+        />
+
+        <div class="flex gap-3">
+          <UButton color="primary" to="/dashboard"> Go to Dashboard </UButton>
+
+          <UButton variant="outline" to="/discover"> Find Posters </UButton>
+        </div>
+      </template>
+
+      <!-- Pre-download state -->
+      <template v-else>
+        <UAlert
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-info"
+          title="Heads up: poster.json will be incomplete"
+          description="The downloaded poster.json will have blank identifier, license, and publisher fields. You will need to edit the file manually before sharing, or return to your dashboard to update this information via Posters.science."
+        />
+
+        <UButton
+          color="primary"
+          size="lg"
+          icon="i-lucide-download"
+          :loading="isDownloading"
+          @click="downloadMetadata"
+        >
+          Download my files and register my poster on Posters.science
+        </UButton>
+      </template>
     </div>
   </div>
 </template>
