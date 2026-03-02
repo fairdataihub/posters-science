@@ -52,9 +52,30 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  const archive = archiver("zip", { zlib: { level: 9 } });
+  const { extractionJob } = poster;
+  if (!extractionJob?.filePath) {
+    throw createError({
+      statusCode: 500,
+      statusMessage: "No extraction file found",
+    });
+  }
 
-  // Add poster.json (metadata) to the zip
+  const fileUrl = `${bunnyPrivateStorage}/${extractionJob.filePath}`;
+  const fileResponse = await fetch(fileUrl, {
+    headers: {
+      AccessKey: bunnyPrivateStorageKey,
+      "Content-Type": "application/octet-stream",
+    },
+  });
+
+  if (!fileResponse.ok || !fileResponse.body) {
+    throw createError({
+      statusCode: 500,
+      statusMessage: "Failed to fetch file from storage",
+    });
+  }
+
+  // Build poster.json
   const meta = poster.posterMetadata;
   const posterJson = meta
     ? buildPosterJson(meta, {
@@ -66,39 +87,23 @@ export default defineEventHandler(async (event) => {
     JSON.stringify(posterJson, null, 2),
     "utf-8",
   );
+
+  // PDFs are already compressed - level 1 avoids wasting CPU for no size gain
+  const archive = archiver("zip", { zlib: { level: 1 } });
+
   archive.append(posterJsonBuffer, { name: "poster.json" });
 
-  // If we have a file in Bunny, fetch it and add to the zip
-  const { extractionJob } = poster;
-  if (extractionJob?.filePath) {
-    const fileUrl = `${bunnyPrivateStorage}/${extractionJob.filePath}`;
-    const fileResponse = await fetch(fileUrl, {
-      headers: {
-        AccessKey: bunnyPrivateStorageKey,
-        "Content-Type": "application/octet-stream",
-      },
-    });
+  const nodeStream = Readable.fromWeb(
+    fileResponse.body as Parameters<typeof Readable.fromWeb>[0],
+  );
+  const zipEntryName = extractionJob.fileName || "poster.pdf";
+  archive.append(nodeStream, { name: zipEntryName });
 
-    if (fileResponse.ok && fileResponse.body) {
-      const nodeStream = Readable.fromWeb(
-        fileResponse.body as Parameters<typeof Readable.fromWeb>[0],
-      );
-      const zipEntryName = extractionJob.fileName || "poster.pdf";
-      archive.append(nodeStream, { name: zipEntryName });
-    } else {
-      throw createError({
-        statusCode: 500,
-        statusMessage: "Failed to fetch file from storage",
-      });
-    }
-  } else {
-    // throw createError({
-    //   statusCode: 500,
-    //   statusMessage: "No extraction file found",
-    // });
-  }
-
-  await archive.finalize();
+  // Mark as published before streaming begins
+  await prisma.poster.update({
+    where: { id: posterId },
+    data: { status: "published", publishedAt: new Date() },
+  });
 
   const zipFilename = "poster-package.zip";
 
@@ -109,9 +114,13 @@ export default defineEventHandler(async (event) => {
     `attachment; filename="${zipFilename}"`,
   );
 
+  // Convert to web stream before finalize so bytes flow to the client as they
+  // arrive from Bunny - no waiting for the full zip to buffer in memory first
   const webStream = Readable.toWeb(
     archive as unknown as Readable,
   ) as ReadableStream;
+
+  archive.finalize();
 
   return sendStream(event, webStream);
 });
