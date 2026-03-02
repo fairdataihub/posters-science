@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import dayjs from "dayjs";
+import { LICENSE_OPTIONS } from "~/utils/poster_schema";
 
 definePageMeta({
   middleware: ["auth"],
@@ -21,6 +22,8 @@ type Poster = {
   posterMetadata: {
     publisher: string | null;
     publicationYear: number | null;
+    doi: string | null;
+    license: string | null;
   };
   extractionJob?: {
     status: string;
@@ -29,7 +32,7 @@ type Poster = {
 
 const posters = ref<Poster[]>([]);
 
-const { data, error } = await useFetch("/api/poster");
+const { data, error, refresh } = await useFetch("/api/poster");
 
 if (data.value) {
   posters.value = data.value as unknown as Poster[];
@@ -37,6 +40,59 @@ if (data.value) {
 
 if (error.value) {
   console.error(error.value);
+}
+
+// Publication info modal state
+const modalOpen = ref(false);
+const modalPoster = ref<Poster | null>(null);
+const modalDoi = ref("");
+const modalLicense = ref("");
+const modalPublisher = ref("");
+const isSaving = ref(false);
+const toast = useToast();
+
+function openPublicationModal(poster: Poster) {
+  modalPoster.value = poster;
+  modalDoi.value = poster.posterMetadata.doi ?? "";
+  modalLicense.value = poster.posterMetadata.license ?? "";
+  modalPublisher.value = poster.posterMetadata.publisher ?? "";
+  modalOpen.value = true;
+}
+
+async function savePublicationInfo() {
+  if (!modalPoster.value) return;
+
+  isSaving.value = true;
+
+  try {
+    await $fetch(`/api/poster/${modalPoster.value.id}/publication`, {
+      method: "PATCH",
+      body: {
+        doi: modalDoi.value || undefined,
+        license: modalLicense.value || undefined,
+        publisher: modalPublisher.value || undefined,
+      },
+    });
+
+    toast.add({
+      title: "Publication Info Saved",
+      description: "Your poster record has been updated.",
+      color: "success",
+    });
+
+    modalOpen.value = false;
+    await refresh();
+    posters.value = data.value as unknown as Poster[];
+  } catch (err) {
+    console.error(err);
+    toast.add({
+      title: "Error",
+      description: "There was a problem saving your publication info.",
+      color: "error",
+    });
+  } finally {
+    isSaving.value = false;
+  }
 }
 </script>
 
@@ -61,7 +117,7 @@ if (error.value) {
         :key="index + 1"
         variant="ghost"
         class="group cursor-pointer overflow-hidden rounded-none border-t border-b border-gray-100 transition-all duration-300"
-        :to="`/share/${poster.id}`"
+        @click="navigateTo(`/share/${poster.id}`)"
       >
         <div class="flex gap-8">
           <NuxtImg
@@ -111,16 +167,13 @@ if (error.value) {
 
                 <div class="flex items-center gap-2">
                   <UButton
-                    v-if="
-                      poster.publishedAt &&
-                      !poster.posterMetadata.publisher &&
-                      !poster.posterMetadata.publicationYear
-                    "
+                    v-if="poster.status === 'published'"
                     color="secondary"
                     variant="subtle"
-                    label="Add additional publication information"
+                    label="Add publication info"
                     icon="heroicons:plus"
                     size="xs"
+                    @click.stop="openPublicationModal(poster)"
                   />
 
                   <UBadge
@@ -166,13 +219,59 @@ if (error.value) {
       <p class="mb-6 text-gray-500">
         Get started by sharing your first poster.
       </p>
-
-      <!-- <NuxtLink to="/share/new">
-        <UButton color="primary" size="lg">
-          <Icon name="heroicons:plus" class="mr-2 h-5 w-5" />
-          Create Poster
-        </UButton>
-      </NuxtLink> -->
     </div>
+
+    <!-- Publication info modal -->
+    <UModal v-model:open="modalOpen" title="Update Publication Information">
+      <template #body>
+        <p class="text-muted mb-4 text-sm">
+          Now that your poster has been shared, add the details below to keep
+          your record up to date.
+        </p>
+
+        <div class="space-y-4">
+          <UFormField label="DOI / Identifier" name="doi">
+            <UInput
+              v-model="modalDoi"
+              placeholder="e.g. 10.5281/zenodo.1234567"
+              class="w-full"
+            />
+          </UFormField>
+
+          <UFormField label="License" name="license">
+            <USelect
+              v-model="modalLicense"
+              :items="LICENSE_OPTIONS"
+              placeholder="Select a license"
+              class="w-full"
+            />
+          </UFormField>
+
+          <UFormField label="Publisher" name="publisher">
+            <UInput
+              v-model="modalPublisher"
+              placeholder="e.g. Zenodo, Figshare"
+              class="w-full"
+            />
+          </UFormField>
+        </div>
+      </template>
+
+      <template #footer>
+        <div class="flex justify-end gap-3">
+          <UButton variant="outline" @click="modalOpen = false">
+            Cancel
+          </UButton>
+
+          <UButton
+            color="primary"
+            :loading="isSaving"
+            @click="savePublicationInfo"
+          >
+            Save
+          </UButton>
+        </div>
+      </template>
+    </UModal>
   </div>
 </template>
