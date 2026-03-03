@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import dayjs from "dayjs";
 import { LICENSE_OPTIONS } from "~/utils/poster_schema";
+import { normalizeDoi, validateDoi } from "~/utils/doi";
 
 definePageMeta({
   middleware: ["auth"],
@@ -49,6 +50,7 @@ const modalDoi = ref("");
 const modalLicense = ref("");
 const modalPublisher = ref("");
 const isSaving = ref(false);
+const doiError = ref("");
 const toast = useToast();
 
 // Delete draft state
@@ -97,11 +99,15 @@ function openPublicationModal(poster: Poster) {
   modalDoi.value = poster.posterMetadata.doi ?? "";
   modalLicense.value = poster.posterMetadata.license ?? "";
   modalPublisher.value = poster.posterMetadata.publisher ?? "";
+  doiError.value = "";
   modalOpen.value = true;
 }
 
 async function savePublicationInfo() {
   if (!modalPoster.value) return;
+
+  doiError.value = validateDoi(modalDoi.value);
+  if (doiError.value) return;
 
   isSaving.value = true;
 
@@ -109,7 +115,7 @@ async function savePublicationInfo() {
     await $fetch(`/api/poster/${modalPoster.value.id}/publication`, {
       method: "PATCH",
       body: {
-        doi: modalDoi.value || undefined,
+        doi: modalDoi.value ? normalizeDoi(modalDoi.value) : undefined,
         license: modalLicense.value || undefined,
         publisher: modalPublisher.value || undefined,
       },
@@ -306,11 +312,12 @@ async function savePublicationInfo() {
         </p>
 
         <div class="space-y-4">
-          <UFormField label="DOI / Identifier" name="doi">
+          <UFormField label="DOI" name="doi" :error="doiError">
             <UInput
               v-model="modalDoi"
-              placeholder="e.g. 10.5281/zenodo.1234567"
+              placeholder="e.g. 10.5281/zenodo.1234567 or https://doi.org/..."
               class="w-full"
+              @input="doiError = ''"
             />
           </UFormField>
 
