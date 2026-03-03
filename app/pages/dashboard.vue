@@ -51,6 +51,47 @@ const modalPublisher = ref("");
 const isSaving = ref(false);
 const toast = useToast();
 
+// Delete draft state
+const deleteModalOpen = ref(false);
+const posterToDelete = ref<Poster | null>(null);
+const isDeleting = ref(false);
+
+function openDeleteModal(poster: Poster) {
+  posterToDelete.value = poster;
+  deleteModalOpen.value = true;
+}
+
+async function deletePoster() {
+  if (!posterToDelete.value) return;
+
+  isDeleting.value = true;
+
+  try {
+    await $fetch(`/api/poster/${posterToDelete.value.id}`, {
+      method: "DELETE",
+    });
+
+    toast.add({
+      title: "Poster deleted",
+      description: "Your draft poster has been deleted.",
+      color: "success",
+    });
+
+    deleteModalOpen.value = false;
+    await refresh();
+    posters.value = data.value as unknown as Poster[];
+  } catch (err) {
+    console.error(err);
+    toast.add({
+      title: "Error",
+      description: "There was a problem deleting the poster.",
+      color: "error",
+    });
+  } finally {
+    isDeleting.value = false;
+  }
+}
+
 function openPublicationModal(poster: Poster) {
   modalPoster.value = poster;
   modalDoi.value = poster.posterMetadata.doi ?? "";
@@ -116,90 +157,100 @@ async function savePublicationInfo() {
         v-for="(poster, index) in posters"
         :key="index + 1"
         variant="ghost"
-        class="group cursor-pointer overflow-hidden rounded-none border-t border-b border-gray-100 transition-all duration-300"
+        class="group h-50 cursor-pointer overflow-hidden rounded-none border-t border-b border-gray-100 transition-all duration-300"
         @click="navigateTo(`/share/${poster.id}`)"
       >
-        <div class="flex gap-8">
-          <NuxtImg
-            :src="poster.imageUrl || 'https://placehold.co/150x150'"
-            :alt="poster.title"
-            class="w-[150px] object-cover transition-transform duration-300 group-hover:scale-105"
-          />
+        <div class="flex h-full gap-8">
+          <div class="w-[150px] shrink-0 overflow-hidden">
+            <NuxtImg
+              :src="poster.imageUrl || 'https://placehold.co/200x150'"
+              :alt="poster.title"
+              class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+            />
+          </div>
 
-          <div class="flex w-full min-w-0 flex-col">
-            <div class="flex flex-1 flex-col gap-2">
+          <div class="flex h-full w-full min-w-0 flex-col justify-between py-1">
+            <div class="flex flex-col gap-2">
               <h3 class="line-clamp-2 text-lg font-semibold">
                 {{ poster.title || "No title available" }}
               </h3>
 
-              <p class="line-clamp-3 text-sm">
+              <p class="line-clamp-2 text-sm">
                 {{ poster.description || "No description available" }}
               </p>
+            </div>
 
-              <div
-                class="flex items-center justify-between border-t border-gray-100 pt-2 text-xs"
-              >
-                <div class="flex items-center gap-2">
-                  <span class="flex items-center gap-1">
-                    <Icon name="heroicons:calendar-days" class="h-3 w-3" />
+            <div
+              class="flex items-center justify-between border-t border-gray-100 pt-2 text-xs"
+            >
+              <div class="flex items-center gap-2">
+                <span class="flex items-center gap-1">
+                  <Icon name="heroicons:calendar-days" class="h-3 w-3" />
 
-                    Created
-                    {{ dayjs(poster.created).format("MMMM D, YYYY") }}
-                  </span>
+                  Created
+                  {{ dayjs(poster.created).format("MMMM D, YYYY") }}
+                </span>
 
-                  <span
-                    v-if="poster.publishedAt"
-                    class="flex items-center gap-1 border-l border-gray-100 pl-2"
-                  >
-                    <Icon
-                      name="heroicons:presentation-chart-bar"
-                      class="h-3 w-3"
-                    />
-                    Published at
-                    {{ dayjs(poster.publishedAt).format("MMMM D, YYYY") }}
-                    {{
-                      poster.posterMetadata.publisher
-                        ? `on ${poster.posterMetadata.publisher}`
-                        : ""
-                    }}
-                  </span>
-                </div>
-
-                <div class="flex items-center gap-2">
-                  <UButton
-                    v-if="poster.status === 'published'"
-                    color="secondary"
-                    variant="subtle"
-                    label="Add publication info"
-                    icon="heroicons:plus"
-                    size="xs"
-                    @click.stop="openPublicationModal(poster)"
+                <span
+                  v-if="poster.publishedAt"
+                  class="flex items-center gap-1 border-l border-gray-100 pl-2"
+                >
+                  <Icon
+                    name="heroicons:presentation-chart-bar"
+                    class="h-3 w-3"
                   />
+                  Published at
+                  {{ dayjs(poster.publishedAt).format("MMMM D, YYYY") }}
+                </span>
+              </div>
 
-                  <UBadge
-                    :color="
-                      poster.status === 'published'
-                        ? 'success'
-                        : poster.extractionJob?.status ===
-                              'pending-extraction' ||
-                            poster.extractionJob?.status === 'processing'
-                          ? 'secondary'
-                          : 'warning'
-                    "
-                    variant="solid"
-                    size="sm"
-                  >
-                    {{
-                      poster.status === "published"
-                        ? "Published"
-                        : poster.extractionJob?.status ===
-                              "pending-extraction" ||
-                            poster.extractionJob?.status === "processing"
-                          ? "Pending"
-                          : "Draft"
-                    }}
-                  </UBadge>
-                </div>
+              <div class="flex items-center gap-2">
+                <UButton
+                  v-if="
+                    poster.status === 'published' &&
+                    (!poster.posterMetadata.publisher ||
+                      !poster.posterMetadata.doi ||
+                      !poster.posterMetadata.license)
+                  "
+                  color="secondary"
+                  variant="subtle"
+                  label="Add missing metadata"
+                  icon="heroicons:plus"
+                  size="xs"
+                  @click.stop="openPublicationModal(poster)"
+                />
+
+                <UButton
+                  v-if="poster.status === 'draft'"
+                  color="error"
+                  variant="ghost"
+                  label=""
+                  icon="heroicons:trash"
+                  size="xs"
+                  @click.stop="openDeleteModal(poster)"
+                />
+
+                <UBadge
+                  :color="
+                    poster.status === 'published'
+                      ? 'success'
+                      : poster.extractionJob?.status === 'pending-extraction' ||
+                          poster.extractionJob?.status === 'processing'
+                        ? 'secondary'
+                        : 'warning'
+                  "
+                  variant="solid"
+                  size="sm"
+                >
+                  {{
+                    poster.status === "published"
+                      ? "Published"
+                      : poster.extractionJob?.status === "pending-extraction" ||
+                          poster.extractionJob?.status === "processing"
+                        ? "Pending"
+                        : "Draft"
+                  }}
+                </UBadge>
               </div>
             </div>
           </div>
@@ -220,6 +271,31 @@ async function savePublicationInfo() {
         Get started by sharing your first poster.
       </p>
     </div>
+
+    <!-- Delete draft modal -->
+    <UModal v-model:open="deleteModalOpen" title="Delete Draft Poster">
+      <template #body>
+        <p class="text-sm">
+          Are you sure you want to delete
+          <span class="font-medium">{{
+            posterToDelete?.title || "this poster"
+          }}</span
+          >? This cannot be undone.
+        </p>
+      </template>
+
+      <template #footer>
+        <div class="flex justify-end gap-3">
+          <UButton variant="outline" @click="deleteModalOpen = false">
+            Cancel
+          </UButton>
+
+          <UButton color="error" :loading="isDeleting" @click="deletePoster">
+            Delete
+          </UButton>
+        </div>
+      </template>
+    </UModal>
 
     <!-- Publication info modal -->
     <UModal v-model:open="modalOpen" title="Update Publication Information">
