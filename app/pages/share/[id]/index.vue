@@ -473,8 +473,9 @@ async function onSubmit(event: FormSubmitEvent<StrictFormSchema>) {
     }
 
     toast.add({
-      title: "Success",
-      description: "Poster metadata has been submitted.",
+      title: "Metadata Saved",
+      description:
+        "Your metadata has been saved. Proceed to the next step to publish your poster.",
       color: "success",
     });
 
@@ -973,7 +974,8 @@ async function addSubjectAndFocus() {
                 <UInput v-model="state.version" placeholder="e.g., 1.0" />
               </UFormField>
 
-              <UFormField name="license" label="License">
+              <!-- License moved to review/submit step (Zenodo flow) -->
+              <UFormField v-if="false" name="license" label="License">
                 <USelect
                   v-model="state.license"
                   class="w-full"
@@ -984,7 +986,9 @@ async function addSubjectAndFocus() {
             </div>
           </CardCollapsibleContent>
 
+          <!-- Identifiers section hidden for now -->
           <CardCollapsibleContent
+            v-if="false"
             title="Identifiers"
             :collapse="false"
             description="Alternative identifiers assigned to this poster (e.g. arXiv, Handle)"
@@ -1057,9 +1061,9 @@ async function addSubjectAndFocus() {
           </CardCollapsibleContent>
 
           <CardCollapsibleContent
-            title="Related Identifiers"
+            title="Related Publications"
             :collapse="false"
-            description="Links to related works such as datasets, preprints, or supplementary materials"
+            description="Links to related publications, datasets, or supplementary materials"
           >
             <div class="space-y-4">
               <div

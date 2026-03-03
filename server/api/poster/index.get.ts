@@ -10,6 +10,8 @@ export default defineEventHandler(async (event) => {
         select: {
           publisher: true,
           publicationYear: true,
+          doi: true,
+          license: true,
         },
       },
       extractionJob: {
