@@ -80,6 +80,7 @@ const visibleRepositories = computed(() =>
 
 // Download state
 const isDownloading = ref(false);
+const downloadAcknowledged = ref(false);
 const isSimulatedPublishing = ref(false);
 const simulatedPublished = ref(false);
 
@@ -438,7 +439,7 @@ async function handleArchive() {
     </UPageHeader>
 
     <!-- File tree -->
-    <div class="border-default bg-elevated mb-6 rounded-xl border p-6">
+    <div class="border-default mb-6 rounded-xl border p-6">
       <h3 class="mb-3 text-lg font-semibold">Submission Files</h3>
 
       <UTree
@@ -456,7 +457,7 @@ async function handleArchive() {
     </div>
 
     <!-- Repository selection -->
-    <div class="border-default bg-elevated mb-6 rounded-xl border p-6">
+    <div class="border-default mb-6 rounded-xl border p-6">
       <h3 class="mb-2 text-lg font-semibold">Select a Repository</h3>
 
       <p class="text-muted mb-6 text-sm">
@@ -471,9 +472,7 @@ async function handleArchive() {
           :disabled="!repo.enabled"
           class="border-default hover:border-primary flex flex-col items-center gap-3 rounded-xl border-2 p-6 transition-all"
           :class="[
-            selectedRepository === repo.id
-              ? 'border-primary bg-primary/5'
-              : 'bg-elevated',
+            selectedRepository === repo.id ? 'border-primary bg-primary/5' : '',
             !repo.enabled && 'cursor-not-allowed opacity-50',
           ]"
           color="primary"
@@ -489,7 +488,7 @@ async function handleArchive() {
           <UBadge
             v-if="repo.id === 'zenodo-simulated'"
             color="warning"
-            variant="subtle"
+            variant="solid"
           >
             Beta
           </UBadge>
@@ -504,7 +503,7 @@ async function handleArchive() {
     <!-- Zenodo section -->
     <div
       v-if="selectedRepository === 'zenodo'"
-      class="border-default bg-elevated rounded-xl border p-6"
+      class="border-default rounded-xl border p-6"
     >
       <div class="mb-4 flex items-center gap-2">
         <UIcon name="i-simple-icons-zenodo" class="size-6" />
@@ -597,7 +596,7 @@ async function handleArchive() {
           <div v-if="archiveComplete" class="mt-5 flex flex-col gap-4">
             <UAlert
               color="success"
-              variant="subtle"
+              variant="solid"
               icon="i-lucide-circle-check"
               title="Your poster has been published to Zenodo!"
             />
@@ -711,7 +710,7 @@ async function handleArchive() {
     <!-- Simulated Zenodo section -->
     <div
       v-if="selectedRepository === 'zenodo-simulated'"
-      class="border-default bg-elevated rounded-xl border p-6"
+      class="border-default rounded-xl border p-6"
     >
       <div class="mb-4 flex items-center gap-2">
         <UIcon name="i-simple-icons-zenodo" class="size-6" />
@@ -732,7 +731,7 @@ async function handleArchive() {
             variant="subtle"
             icon="i-lucide-circle-check"
             title="Your poster has been registered in Posters.science!"
-            description="Your poster is now discoverable under Find Posters."
+            description="Other users can now search and find your poster via our discovery portal."
           />
 
           <div class="flex gap-3">
@@ -774,7 +773,7 @@ async function handleArchive() {
     <!-- Download section -->
     <div
       v-if="selectedRepository === 'download'"
-      class="border-default bg-elevated flex flex-col gap-6 rounded-xl border p-6"
+      class="border-default flex flex-col gap-6 rounded-xl border p-6"
     >
       <div class="mb-4 flex items-center gap-2">
         <UIcon name="i-lucide-download" class="size-6" />
@@ -825,11 +824,17 @@ async function handleArchive() {
           description="The downloaded poster.json will have blank identifier, license, and publisher fields. You will need to edit the file manually before sharing, or return to your dashboard to update this information via Posters.science."
         />
 
+        <UCheckbox
+          v-model="downloadAcknowledged"
+          label="I understand that my poster.json will be incomplete"
+        />
+
         <UButton
           color="primary"
           size="lg"
           icon="i-lucide-download"
           :loading="isDownloading"
+          :disabled="!downloadAcknowledged"
           @click="downloadMetadata"
         >
           Download my files and register my poster on Posters.science
