@@ -1,6 +1,12 @@
 <script setup lang="ts">
+const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Posters.science")}&description=${encodeURIComponent("The best way to discover and share scientific posters")}&app=posters-science&org=fairdataihub`;
+
 useSeoMeta({
-  title: "Coming Summer 2026",
+  title: "Posters.science",
+  description: "The best way to discover and share scientific posters.",
+  ogTitle: "Posters.science",
+  ogDescription: "The best way to discover and share scientific posters.",
+  ogImage,
 });
 
 const links = ref([
