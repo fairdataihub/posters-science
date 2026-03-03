@@ -15,7 +15,11 @@ export default defineEventHandler(async (event) => {
 
   const poster = await prisma.poster.findUnique({
     where: { id: posterId, userId: user.id },
-    select: { id: true, status: true },
+    select: {
+      id: true,
+      status: true,
+      extractionJob: { select: { filePath: true } },
+    },
   });
 
   if (!poster) {
@@ -32,7 +36,22 @@ export default defineEventHandler(async (event) => {
     });
   }
 
+  const filePath = poster.extractionJob?.filePath;
+
   await prisma.poster.delete({ where: { id: posterId } });
+
+  const config = useRuntimeConfig();
+  if (filePath && config.bunnyPrivateStorage && config.bunnyPrivateStorageKey) {
+    const res = await fetch(`${config.bunnyPrivateStorage}/${filePath}`, {
+      method: "DELETE",
+      headers: { AccessKey: config.bunnyPrivateStorageKey },
+    });
+    if (!res.ok) {
+      console.error(
+        `[poster/delete] Bunny delete failed for ${filePath}: ${res.status}`,
+      );
+    }
+  }
 
   return { success: true };
 });
