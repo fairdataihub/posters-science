@@ -49,7 +49,6 @@ const repositories = [
     icon: "i-simple-icons-zenodo",
     description: "General-purpose open repository",
     enabled: true,
-    hidden: true,
   },
   {
     id: "zenodo-simulated" as const,
@@ -57,6 +56,7 @@ const repositories = [
     icon: "i-simple-icons-zenodo",
     description: "Preview-only flow for beta testing",
     enabled: true,
+    hidden: true,
   },
   {
     id: "figshare" as const,
@@ -596,7 +596,7 @@ async function handleArchive() {
           <div v-if="archiveComplete" class="mt-5 flex flex-col gap-4">
             <UAlert
               color="success"
-              variant="solid"
+              variant="subtle"
               icon="i-lucide-circle-check"
               title="Your poster has been published to Zenodo!"
             />
@@ -623,7 +623,7 @@ async function handleArchive() {
               <UButton variant="outline" to="/discover"> Find Posters </UButton>
 
               <UButton variant="outline" :to="`/share/${id}`">
-                Back to Poster
+                View Poster Details
               </UButton>
             </div>
           </div>

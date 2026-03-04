@@ -306,6 +306,7 @@ export async function beginZenodoPublication(
   }[];
 
   // TODO: Add more metadata fields as needed
+  const posterLicense = poster.posterMetadata.license;
   const metadata = {
     metadata: {
       title: poster.title,
@@ -321,6 +322,7 @@ export async function beginZenodoPublication(
       prereserve_doi: {
         doi,
       },
+      ...(posterLicense && { license: posterLicense }),
     },
   };
 
@@ -436,6 +438,14 @@ export async function beginZenodoPublication(
     data: {
       status: "published",
       publishedAt: new Date(),
+    },
+  });
+
+  await prisma.posterMetadata.update({
+    where: { posterId: posterInt },
+    data: {
+      doi: publishResult.data.doi,
+      publisher: "Zenodo",
     },
   });
 
