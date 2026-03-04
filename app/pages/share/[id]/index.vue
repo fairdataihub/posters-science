@@ -1169,7 +1169,7 @@ async function addSubjectAndFocus() {
             </h2>
 
             <p class="text-lg text-gray-500">
-              These are the sections that are included in the poster.
+              This is content we extracted directly from your poster.
             </p>
           </div>
 
