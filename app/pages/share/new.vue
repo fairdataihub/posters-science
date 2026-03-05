@@ -1,4 +1,3 @@
-<!-- eslint-disable @typescript-eslint/no-explicit-any -->
 <script setup lang="ts">
 definePageMeta({
   middleware: ["auth"],
@@ -11,8 +10,7 @@ useSeoMeta({
 
 const status = ref(0);
 const isUploading = ref(false);
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const selectedFiles = ref<any>(null);
+const selectedFiles = ref<File[]>([]);
 const apiResponse = ref<unknown>(null);
 const error = ref<string | null>(null);
 const currentJobId = ref<string | null>(null);
@@ -87,29 +85,13 @@ const pollJobStatus = async (jobId: string): Promise<void> => {
 };
 
 const uploadFile = async () => {
-  if (!selectedFiles.value) {
+  if (!selectedFiles.value.length) {
     error.value = "Please select a file to upload";
 
     return;
   }
 
-  const fileArray = Array.isArray(selectedFiles.value)
-    ? selectedFiles.value
-    : [selectedFiles.value];
-
-  if (fileArray.length === 0) {
-    error.value = "Please select a file to upload";
-
-    return;
-  }
-
-  const file = fileArray[0] as File | undefined;
-
-  if (!file || !(file instanceof File)) {
-    error.value = "No file selected";
-
-    return;
-  }
+  const file = selectedFiles.value[0]!;
 
   if (file.size > MAX_FILE_SIZE_BYTES) {
     error.value = `File is too large. Maximum size is ${MAX_FILE_SIZE_LABEL}.`;
@@ -211,16 +193,9 @@ onUnmounted(() => {
       <UiSpinner :loading="status === 2 || isUploading" overlay>
         <UCard>
           <div class="space-y-6">
-            <UFileUpload
-              v-model="selectedFiles"
-              label="Drop your poster here"
-              :description="`PDF, DOC, DOCX, PPT, PPTX, XLS, XLSX (max. ${MAX_FILE_SIZE_LABEL})`"
-              class="min-h-48 w-full"
-              color="primary"
-              highlight
-              layout="list"
-              accept="application/pdf, application/msword, application/vnd.openxmlformats-officedocument.wordprocessingml.document, application/vnd.ms-powerpoint, application/vnd.openxmlformats-officedocument.presentationml.presentation, application/vnd.ms-excel,s application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            />
+            <UiFileUpload @on-change="selectedFiles = $event">
+              <UiFileUploadGrid />
+            </UiFileUpload>
 
             <!-- Upload Progress -->
             <div v-if="isUploading" class="flex flex-col gap-1">
