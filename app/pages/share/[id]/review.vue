@@ -22,6 +22,8 @@ useSeoMeta({
 
 const zenodoLoginUrl = ref("");
 const zenodoTokenExists = ref(false);
+const zenodoLoading = ref(true);
+const zenodoConfigError = ref(false);
 
 // Repository selection state
 type Repository =
@@ -86,6 +88,7 @@ const simulatedPublished = ref(false);
 
 async function downloadMetadata() {
   isDownloading.value = true;
+  window.umami?.track("download_initiated", { posterId: id });
   try {
     const response = await fetch(`/api/poster/${id}/download`, {
       method: "GET",
@@ -128,6 +131,7 @@ async function downloadMetadata() {
     URL.revokeObjectURL(url);
 
     downloadComplete.value = true;
+    window.umami?.track("download_completed", { posterId: id });
   } catch (err) {
     console.error("[download]", err);
     toast.add({
@@ -263,25 +267,43 @@ if (posterError.value) {
   });
 }
 
-useFetch("/api/release/zenodo", {
+const {
+  data: zenodoData,
+  pending: zenodoPending,
+  error: zenodoFetchError,
+} = useFetch("/api/release/zenodo", {
   headers: useRequestHeaders(["cookie"]),
   method: "GET",
   params: {
     posterId: id,
   },
   server: false,
-})
-  .then((response) => {
-    const data = response.data?.value;
+});
+
+// Using watch instead of .then() because useFetch with server:false resolves its
+// Promise immediately on the server with null data.
+// watch() reacts when the client fetch completes.
+watch(
+  [zenodoData, zenodoPending, zenodoFetchError],
+  ([data, pending, error]) => {
+    if (pending) return;
+    if (error) {
+      console.error("Zenodo fetch error:", error);
+      zenodoConfigError.value = true;
+      zenodoLoading.value = false;
+
+      return;
+    }
     console.log("Zenodo fetch data:", data);
     zenodoLoginUrl.value = data?.zenodoLoginURL ?? "";
     zenodoTokenExists.value = data?.zenodoToken ?? false;
+    zenodoConfigError.value = !data?.zenodoLoginURL;
     existingDepositions.value = (data?.existingDepositions ??
       []) as typeof existingDepositions.value;
-  })
-  .catch((error) => {
-    console.error("Zenodo fetch error:", error);
-  });
+    zenodoLoading.value = false;
+  },
+  { immediate: true },
+);
 
 // Zenodo sign-in handler
 function handleZenodoSignIn() {
@@ -298,6 +320,12 @@ async function handleZenodoDisconnect() {
       description: (error as Error).message,
     });
   }
+}
+
+function selectRepository(repo: (typeof repositories)[number]) {
+  if (!repo.enabled) return;
+  selectedRepository.value = repo.id;
+  window.umami?.track("zenodo_repository_selected", { repository: repo.id });
 }
 
 function resetArchive() {
@@ -318,6 +346,7 @@ function handleProgressEvent(event: {
   if (event.step === "complete") {
     archiveComplete.value = true;
     archiveResult.value = event.data ?? null;
+    window.umami?.track("zenodo_publish_completed", { posterId: id });
     archiveSteps.value.forEach((s) => {
       if (s.status !== "error") s.status = "completed";
     });
@@ -327,6 +356,7 @@ function handleProgressEvent(event: {
 
   if (event.step === "error") {
     archiveError.value = event.message || "An error occurred";
+    window.umami?.track("zenodo_publish_error", { posterId: id });
     const activeStep = archiveSteps.value.find(
       (s) => s.status === "in_progress",
     );
@@ -346,6 +376,7 @@ function handleProgressEvent(event: {
 async function handleArchive() {
   resetArchive();
   isArchiving.value = true;
+  window.umami?.track("zenodo_publish_started", { posterId: id });
 
   try {
     const response = await fetch("/api/release/zenodo", {
@@ -477,7 +508,7 @@ async function handleArchive() {
           ]"
           color="primary"
           variant="outline"
-          @click="repo.enabled && (selectedRepository = repo.id)"
+          @click="selectRepository(repo)"
         >
           <UIcon :name="repo.icon" class="size-12" />
 
@@ -511,14 +542,28 @@ async function handleArchive() {
         <h3 class="text-lg font-semibold">Archive to Zenodo</h3>
       </div>
 
+      <!-- Loading state while fetching Zenodo token status -->
+      <UiSpinner v-if="zenodoLoading" class="py-8" />
+
       <!-- Not signed in -->
-      <template v-if="!zenodoTokenExists">
+      <template v-else-if="!zenodoTokenExists">
         <div class="flex items-center justify-between">
-          <p class="text-muted text-sm">
+          <p v-if="zenodoConfigError" class="text-error text-sm">
+            Zenodo integration is not configured. Check your server environment
+            variables.
+          </p>
+
+          <p v-else class="text-muted text-sm">
             Ready to archive on Zenodo? Sign in to get started.
           </p>
 
-          <UButton color="primary" size="lg" @click="handleZenodoSignIn">
+          <UButton
+            color="primary"
+            size="lg"
+            :loading="zenodoLoading"
+            :disabled="zenodoConfigError"
+            @click="handleZenodoSignIn"
+          >
             Sign in to Zenodo
           </UButton>
         </div>
@@ -792,11 +837,9 @@ async function handleArchive() {
         />
 
         <p class="text-sm">
-          Your poster is now registered in Posters.science and is discoverable
-          under
-          <NuxtLink to="/discover" class="text-primary font-medium"
-            >Find Posters</NuxtLink
-          >.
+          Your poster remains a draft. Once you have published it to a
+          repository, return to your dashboard to add the publication details
+          and make it discoverable on Posters.science.
         </p>
 
         <UAlert
@@ -837,7 +880,7 @@ async function handleArchive() {
           :disabled="!downloadAcknowledged"
           @click="downloadMetadata"
         >
-          Download my files and register my poster on Posters.science
+          Download my files
         </UButton>
       </template>
     </div>
