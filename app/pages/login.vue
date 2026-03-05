@@ -55,6 +55,7 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
         icon: "material-symbols:check-circle-outline",
       });
 
+      window.umami?.track("login_completed");
       if (routeQueryParams.redirect) {
         console.log("redirecting to", routeQueryParams.redirect);
 

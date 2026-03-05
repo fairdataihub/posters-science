@@ -30,7 +30,9 @@ const poster = ref({
   id: api?.id ?? posterId,
   title: api?.title ?? "Untitled Poster",
   description: api?.description ?? "",
-  imageUrl: api?.imageUrl || "https://placehold.co/600x400",
+  imageUrl:
+    api?.imageUrl ||
+    `https://api.dicebear.com/9.x/shapes/svg?seed=${api?.id ?? posterId}`,
   authors: (api?.creators ?? []).map((creator: any) => {
     const rawName: string = creator.name ?? "";
     const givenName =
@@ -138,6 +140,9 @@ const handleLike = async () => {
 
     poster.value.likes = result.likes ?? poster.value.likes;
     liked.value = result.liked;
+    window.umami?.track(result.liked ? "poster_liked" : "poster_unliked", {
+      posterId: poster.value.id,
+    });
   } catch (err) {
     console.error(err);
     toast.add({
@@ -149,6 +154,10 @@ const handleLike = async () => {
     liking.value = false;
   }
 };
+
+onMounted(() => {
+  window.umami?.track("poster_viewed", { posterId: poster.value.id });
+});
 
 const tabItems = [
   {

@@ -52,7 +52,9 @@ if (data.value) {
       id: poster.id,
       title: poster.title ?? "Untitled poster",
       description: poster.description ?? "",
-      imageUrl: poster.imageUrl || "https://placehold.co/600x400",
+      imageUrl:
+        poster.imageUrl ||
+        `https://api.dicebear.com/9.x/shapes/svg?seed=${poster.id ?? poster.title}`,
       keywords: Array.isArray(poster.keywords) ? poster.keywords : [],
       publishedAt: poster.publishedAt ? new Date(poster.publishedAt) : null,
       created: poster.created ? poster.created : new Date(),

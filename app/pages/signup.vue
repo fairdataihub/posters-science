@@ -62,6 +62,7 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
         icon: "material-symbols:mail-outline",
       });
 
+      window.umami?.track("signup_completed");
       navigateTo("/login");
     })
     .catch((error) => {

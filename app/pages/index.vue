@@ -41,6 +41,10 @@ const links = ref([
         <div
           class="bg-primary/20 absolute inset-0 -z-10 animate-pulse rounded-xl blur-3xl"
         />
+
+        <p class="text-muted text-center text-xs sm:-ml-4">
+          This image is AI-generated.
+        </p>
       </div>
     </UPageHero>
 

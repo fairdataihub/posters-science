@@ -45,6 +45,7 @@ const pollJobStatus = async (jobId: string): Promise<void> => {
       response.posterId
     ) {
       status.value = 4; // Complete
+      window.umami?.track("upload_completed", { posterId: response.posterId });
       navigateTo(`/share/${response.posterId}`);
 
       return;
@@ -52,6 +53,7 @@ const pollJobStatus = async (jobId: string): Promise<void> => {
 
     if (response.status === "failed") {
       error.value = response.error || "Extraction failed";
+      window.umami?.track("upload_failed");
       apiResponse.value = response; // Update to show failed status
       status.value = 0;
       isUploading.value = false;
@@ -123,6 +125,7 @@ const uploadFile = async () => {
 
   try {
     status.value = 1; // Uploading
+    window.umami?.track("upload_started");
 
     // 1. Upload file to Bunny first
     const formData = new FormData();

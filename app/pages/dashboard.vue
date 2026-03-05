@@ -169,7 +169,10 @@ async function savePublicationInfo() {
         <div class="flex h-full gap-8">
           <div class="w-[150px] shrink-0 overflow-hidden">
             <NuxtImg
-              :src="poster.imageUrl || 'https://placehold.co/200x150'"
+              :src="
+                poster.imageUrl ||
+                `https://api.dicebear.com/9.x/shapes/svg?seed=${poster.id}`
+              "
               :alt="poster.title"
               class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
             />
