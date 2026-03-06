@@ -302,7 +302,6 @@ watch(
       []) as typeof existingDepositions.value;
     zenodoLoading.value = false;
   },
-  { immediate: true },
 );
 
 // Zenodo sign-in handler
@@ -548,22 +547,11 @@ async function handleArchive() {
       <!-- Not signed in -->
       <template v-else-if="!zenodoTokenExists">
         <div class="flex items-center justify-between">
-          <p v-if="zenodoConfigError" class="text-error text-sm">
-            Zenodo integration is not configured. Check your server environment
-            variables.
-          </p>
-
-          <p v-else class="text-muted text-sm">
+          <p class="text-muted text-sm">
             Ready to archive on Zenodo? Sign in to get started.
           </p>
 
-          <UButton
-            color="primary"
-            size="lg"
-            :loading="zenodoLoading"
-            :disabled="zenodoConfigError"
-            @click="handleZenodoSignIn"
-          >
+          <UButton color="primary" size="lg" @click="handleZenodoSignIn">
             Sign in to Zenodo
           </UButton>
         </div>
