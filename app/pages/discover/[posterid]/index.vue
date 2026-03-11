@@ -191,13 +191,13 @@ const tabItems = [
                 size="lg"
                 icon="heroicons:academic-cap"
               >
-                {{ poster.conference.acronym }} {{ poster.conference.year }}
+                {{ poster.conference.name }} {{ poster.conference.year }}
               </UBadge>
 
               <template #content>
                 <p class="px-2 py-1 text-sm">
-                  {{ poster.conference.name }} <br />
-                  {{ poster.conference.venue }} |
+                  {{ poster.conference.name }}
+                  {{ poster.conference.venue }} -
                   {{ poster.conference.location }}
                 </p>
               </template>
@@ -258,15 +258,20 @@ const tabItems = [
           </div>
 
           <div class="flex items-center gap-2">
-            <UButton
-              color="primary"
-              variant="solid"
-              icon="heroicons:arrow-down-tray"
-              size="lg"
-              disabled
+            <NuxtLink
+              v-if="poster.doi"
+              :to="`https://doi.org/${poster.doi}`"
+              target="_blank"
             >
-              Download
-            </UButton>
+              <UButton
+                color="primary"
+                variant="solid"
+                icon="heroicons:eye"
+                size="lg"
+              >
+                View Poster
+              </UButton>
+            </NuxtLink>
 
             <UButton
               :color="liked ? 'error' : 'neutral'"
