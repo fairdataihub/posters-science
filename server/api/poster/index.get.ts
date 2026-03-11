@@ -24,7 +24,7 @@ export default defineEventHandler(async (event) => {
       userId,
     },
     orderBy: {
-      created: "desc",
+      updated: "desc",
     },
   });
 

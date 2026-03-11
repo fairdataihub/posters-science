@@ -16,7 +16,7 @@ type Poster = {
   title: string;
   description: string;
   imageUrl: string;
-  status: string;
+  status: "draft" | "downloaded" | "published";
   publishedAt: Date | null;
   created: Date;
   updated: Date;
@@ -215,22 +215,19 @@ async function savePublicationInfo() {
 
               <div class="flex items-center gap-2">
                 <UButton
-                  v-if="
-                    poster.status === 'published' &&
-                    (!poster.posterMetadata.publisher ||
-                      !poster.posterMetadata.doi ||
-                      !poster.posterMetadata.license)
-                  "
+                  v-if="poster.status === 'downloaded'"
                   color="secondary"
                   variant="subtle"
-                  label="Add missing metadata"
+                  label="Add publication metadata"
                   icon="heroicons:plus"
                   size="xs"
                   @click.stop="openPublicationModal(poster)"
                 />
 
                 <UButton
-                  v-if="poster.status === 'draft'"
+                  v-if="
+                    poster.status === 'draft' || poster.status === 'downloaded'
+                  "
                   color="error"
                   variant="ghost"
                   label=""
@@ -243,10 +240,13 @@ async function savePublicationInfo() {
                   :color="
                     poster.status === 'published'
                       ? 'success'
-                      : poster.extractionJob?.status === 'pending-extraction' ||
-                          poster.extractionJob?.status === 'processing'
-                        ? 'secondary'
-                        : 'warning'
+                      : poster.status === 'downloaded'
+                        ? 'primary'
+                        : poster.extractionJob?.status ===
+                              'pending-extraction' ||
+                            poster.extractionJob?.status === 'processing'
+                          ? 'secondary'
+                          : 'warning'
                   "
                   variant="solid"
                   size="sm"
@@ -254,10 +254,13 @@ async function savePublicationInfo() {
                   {{
                     poster.status === "published"
                       ? "Published"
-                      : poster.extractionJob?.status === "pending-extraction" ||
-                          poster.extractionJob?.status === "processing"
-                        ? "Pending"
-                        : "Draft"
+                      : poster.status === "downloaded"
+                        ? "Downloaded"
+                        : poster.extractionJob?.status ===
+                              "pending-extraction" ||
+                            poster.extractionJob?.status === "processing"
+                          ? "Pending"
+                          : "Draft"
                   }}
                 </UBadge>
               </div>

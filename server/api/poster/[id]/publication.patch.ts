@@ -24,7 +24,7 @@ export default defineEventHandler(async (event) => {
 
   const poster = await prisma.poster.findUnique({
     where: { id: posterId, userId: user.id },
-    select: { id: true },
+    select: { id: true, status: true },
   });
 
   if (!poster) {
@@ -47,6 +47,13 @@ export default defineEventHandler(async (event) => {
     where: { posterId },
     data: updateData,
   });
+
+  if (poster.status === "downloaded") {
+    await prisma.poster.update({
+      where: { id: posterId },
+      data: { status: "published", publishedAt: new Date() },
+    });
+  }
 
   return { success: true };
 });

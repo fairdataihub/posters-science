@@ -59,7 +59,7 @@ model Poster {
 
     imageUrl String
 
-    status      String    @default("draft") // draft, published
+    status      String    @default("draft") // draft, downloaded, published
     publishedAt DateTime?
 
     user   User   @relation(fields: [userId], references: [id])

@@ -99,6 +99,12 @@ export default defineEventHandler(async (event) => {
   const zipEntryName = extractionJob.fileName || "poster.pdf";
   archive.append(nodeStream, { name: zipEntryName });
 
+  // Mark as downloaded so the dashboard prompts the user to add publication metadata
+  await prisma.poster.update({
+    where: { id: posterId },
+    data: { status: "downloaded" },
+  });
+
   const zipFilename = "poster-package.zip";
 
   setHeader(event, "Content-Type", "application/zip");
