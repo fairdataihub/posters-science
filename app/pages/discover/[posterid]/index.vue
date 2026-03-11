@@ -9,11 +9,6 @@ const posterId = route.params.posterid as string;
 const { loggedIn } = useUserSession();
 const toast = useToast();
 
-useSeoMeta({
-  title: "Poster Details",
-  description: "View detailed information about this research poster.",
-});
-
 const { data: apiData, error } = await useFetch(`/api/discover/${posterId}`);
 
 if (error.value) {
@@ -104,6 +99,21 @@ const poster = ref({
     },
     session: "",
   },
+});
+
+const posterTitle = poster.value.title;
+const posterDescription = (
+  poster.value.description ||
+  "View detailed information about this research poster."
+).slice(0, 160);
+const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent(posterTitle)}&description=${encodeURIComponent(posterDescription)}&app=posters-science&org=fairdataihub`;
+
+useSeoMeta({
+  title: `${posterTitle} - Posters.science`,
+  description: posterDescription,
+  ogTitle: posterTitle,
+  ogDescription: posterDescription,
+  ogImage,
 });
 
 const { data: likesData } = await useFetch<{ likes: number; liked: boolean }>(

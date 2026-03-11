@@ -1,7 +1,12 @@
 <script setup lang="ts">
+const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Metrics - Posters.science")}&description=${encodeURIComponent("Usage and growth metrics for the Posters.science platform")}&app=posters-science&org=fairdataihub`;
+
 useSeoMeta({
-  title: "Metrics",
-  description: "Metrics for the Posters.science platform",
+  title: "Metrics - Posters.science",
+  description: "Usage and growth metrics for the Posters.science platform.",
+  ogTitle: "Metrics - Posters.science",
+  ogDescription: "Usage and growth metrics for the Posters.science platform.",
+  ogImage,
 });
 
 // Generate fake poster registration data for the last 12 months

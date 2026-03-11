@@ -7,8 +7,14 @@ definePageMeta({
   middleware: ["auth"],
 });
 
+const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Posters.science")}&description=${encodeURIComponent("Manage and track your scientific posters")}&app=posters-science&org=fairdataihub`;
+
 useSeoMeta({
-  title: "Dashboard",
+  title: "Dashboard - Posters.science",
+  description: "Manage and track your scientific posters.",
+  ogTitle: "Dashboard - Posters.science",
+  ogDescription: "Manage and track your scientific posters.",
+  ogImage,
 });
 
 type Poster = {

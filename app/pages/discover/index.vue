@@ -7,9 +7,14 @@ import {
   getLocalTimeZone,
 } from "@internationalized/date";
 
+const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Discover Posters - Posters.science")}&description=${encodeURIComponent("Find and explore scientific posters on a variety of topics.")}&app=posters-science&org=fairdataihub`;
+
 useSeoMeta({
-  title: "Discover Posters",
-  description: "Discover posters on a variety of topics.",
+  title: "Discover Posters - Posters.science",
+  description: "Find and explore scientific posters on a variety of topics.",
+  ogTitle: "Discover Posters - Posters.science",
+  ogDescription: "Find and explore scientific posters on a variety of topics.",
+  ogImage,
 });
 
 const df = new DateFormatter("en-US", {

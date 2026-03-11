@@ -15,9 +15,14 @@ const selectedLicense = ref("");
 // Download completion state
 const downloadComplete = ref(false);
 
+const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Submit Poster - Posters.science")}&description=${encodeURIComponent("Archive your scientific poster on a trusted open repository")}&app=posters-science&org=fairdataihub`;
+
 useSeoMeta({
-  title: "Submit Poster",
+  title: "Submit Poster - Posters.science",
   description: "Archive your poster on a trusted repository.",
+  ogTitle: "Submit Poster - Posters.science",
+  ogDescription: "Archive your scientific poster on a trusted open repository.",
+  ogImage,
 });
 
 const zenodoLoginUrl = ref("");

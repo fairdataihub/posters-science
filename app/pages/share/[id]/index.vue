@@ -31,9 +31,14 @@ const toast = useToast();
 
 const { id } = route.params as { id: string };
 
+const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Edit Poster Metadata - Posters.science")}&description=${encodeURIComponent("Review and edit the metadata for your poster submission")}&app=posters-science&org=fairdataihub`;
+
 useSeoMeta({
-  title: "Review poster metadata",
-  description: "Review the metadata for your poster submission",
+  title: "Edit Poster Metadata - Posters.science",
+  description: "Review and edit the metadata for your poster submission.",
+  ogTitle: "Edit Poster Metadata - Posters.science",
+  ogDescription: "Review and edit the metadata for your poster submission.",
+  ogImage,
 });
 
 const loading = ref(false);
