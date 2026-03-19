@@ -39,4 +39,4 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
 
-      - run: kamal proxy reboot
+      - run: kamal proxy reboot -y
