@@ -1,8 +1,8 @@
 <!-- eslint-disable @typescript-eslint/no-explicit-any -->
 <script setup lang="ts">
 import dayjs from "dayjs";
+import licenses from "@/assets/data/licenses.json";
 
-// Get the poster ID from the route
 const route = useRoute();
 const posterId = route.params.posterid as string;
 
@@ -54,23 +54,23 @@ const poster = ref({
     return { givenName, familyName, affiliation, orcid };
   }),
   publishedAt: api?.publishedAt ? new Date(api.publishedAt) : undefined,
-  created: api?.created ? new Date(api.created) : undefined,
   version: api?.version ?? null,
   doi: api?.doi ?? null,
   license: api?.license ?? null,
+  publisher: api?.publisher ?? null,
+  publicationYear: api?.publicationYear ?? null,
+  language: api?.language ?? null,
+  format: api?.format ?? null,
+  size: api?.size ?? null,
+  domain: api?.domain ?? null,
   keywords: api?.keywords ?? [],
-  views: 0,
-  citations: 0,
-  shares: 0,
+  identifiers: (api?.identifiers ?? []) as any[],
   likes: 0,
-  relatedItems: [] as any[],
+  views: 0,
   references: (api?.relatedIdentifiers ?? []).map((ri: any, index: number) => ({
     id: `ref-${index}`,
     title: ri.relatedIdentifier ?? `Related Resource ${index + 1}`,
     relationType: ri.relationType ?? "References",
-    authors: "",
-    journal: "",
-    year: null as number | null,
     doi: ri.relatedIdentifier ?? "",
     url: ri.relatedIdentifier?.startsWith("http")
       ? ri.relatedIdentifier
@@ -80,15 +80,17 @@ const poster = ref({
   })),
   funding: (api?.fundingReferences ?? []).map((f: any) => ({
     agency: f.funderName ?? "Unknown Funder",
+    awardTitle: f.awardTitle ?? null,
     grantNumber: f.awardNumber ?? f.funderIdentifier ?? "",
+    awardUri: f.awardUri ?? null,
   })),
-  acknowledgments: "",
   conference: {
     name: conf?.conferenceName ?? "",
     acronym: conf?.conferenceAcronym ?? "",
     year: conf?.conferenceYear ?? null,
     location: conf?.conferenceLocation ?? "",
-    venue: "",
+    uri: conf?.conferenceUri ?? "",
+    series: conf?.conferenceSeries ?? "",
     dates: {
       start: conf?.conferenceStartDate
         ? new Date(conf.conferenceStartDate)
@@ -97,8 +99,26 @@ const poster = ref({
         ? new Date(conf.conferenceEndDate)
         : undefined,
     },
-    session: "",
   },
+});
+
+const licenseInfo = computed(() => {
+  if (!poster.value.license) return null;
+
+  return licenses.find((l) => l.licenseId === poster.value.license) ?? null;
+});
+
+const languageDisplay = computed(() => {
+  if (!poster.value.language) return null;
+  try {
+    return (
+      new Intl.DisplayNames(["en"], { type: "language" }).of(
+        poster.value.language,
+      ) ?? poster.value.language
+    );
+  } catch {
+    return poster.value.language;
+  }
 });
 
 const posterTitle = poster.value.title;
@@ -116,13 +136,18 @@ useSeoMeta({
   ogImage,
 });
 
-const { data: likesData } = await useFetch<{ likes: number; liked: boolean }>(
-  `/api/discover/${posterId}/like`,
-);
+const [{ data: likesData }, { data: viewsData }] = await Promise.all([
+  useFetch<{ likes: number; liked: boolean }>(`/api/discover/${posterId}/like`),
+  useFetch<{ views: number | null }>(`/api/discover/${posterId}/views`),
+]);
 
 if (likesData.value) {
   liked.value = likesData.value.liked;
   poster.value.likes = likesData.value.likes;
+}
+
+if (viewsData.value?.views != null) {
+  poster.value.views = viewsData.value.views;
 }
 
 const handleLike = async () => {
@@ -180,11 +205,6 @@ const tabItems = [
     icon: "ooui:reference",
     slot: "references",
   },
-  {
-    label: "Related Items",
-    icon: "tdesign:relativity",
-    slot: "related",
-  },
 ];
 </script>
 
@@ -193,22 +213,34 @@ const tabItems = [
     <div class="border-b border-gray-200">
       <UContainer class="py-6">
         <div class="flex flex-col items-start justify-between">
-          <div class="flex items-center gap-3">
-            <UPopover arrow mode="hover">
+          <div class="mb-2 flex flex-wrap items-center gap-2">
+            <UBadge
+              v-if="poster.domain"
+              color="neutral"
+              variant="soft"
+              size="lg"
+              icon="heroicons:beaker"
+            >
+              {{ poster.domain }}
+            </UBadge>
+
+            <UPopover v-if="poster.conference.name" arrow mode="hover">
               <UBadge
                 color="primary"
                 variant="soft"
                 size="lg"
                 icon="heroicons:academic-cap"
               >
-                {{ poster.conference.name }} {{ poster.conference.year }}
+                {{ poster.conference.name }}
+                {{ poster.conference.year ? poster.conference.year : "" }}
               </UBadge>
 
               <template #content>
                 <p class="px-2 py-1 text-sm">
                   {{ poster.conference.name }}
-                  {{ poster.conference.venue }} -
-                  {{ poster.conference.location }}
+                  <template v-if="poster.conference.location">
+                    - {{ poster.conference.location }}
+                  </template>
                 </p>
               </template>
             </UPopover>
@@ -227,44 +259,42 @@ const tabItems = [
               like{{ poster.likes === 1 ? "" : "s" }}
             </UBadge>
 
-            <UBadge color="info" variant="soft" size="lg" icon="heroicons:eye">
+            <UBadge
+              v-if="poster.views > 0"
+              color="neutral"
+              variant="soft"
+              size="lg"
+              icon="heroicons:eye"
+            >
               {{
                 new Intl.NumberFormat("en-US", { notation: "compact" }).format(
-                  poster.views || 0,
+                  poster.views,
                 )
               }}
-              views
+              view{{ poster.views === 1 ? "" : "s" }}
             </UBadge>
           </div>
 
-          <h1 class="mt-1 mb-2 text-3xl font-bold">
-            {{ poster.title }}
-          </h1>
-
-          <div class="mb-2 flex items-center gap-4 text-sm">
-            <span class="flex items-center gap-1">
-              <Icon name="heroicons:eye" class="h-4 w-4" />
-              {{ poster.views.toLocaleString() }} views
-            </span>
-
-            <span class="flex items-center gap-1">
-              <Icon name="heroicons:heart" class="h-4 w-4" />
-              {{ poster.likes }} likes
-            </span>
+          <div class="mt-1 mb-2 flex items-baseline gap-3">
+            <h1 class="text-3xl font-bold">{{ poster.title }}</h1>
           </div>
 
-          <div class="mb-4 flex items-center gap-2 text-sm">
-            <span v-if="poster.doi"> DOI: {{ poster.doi }} </span>
+          <div
+            v-if="poster.keywords.length > 0"
+            class="mb-4 flex flex-wrap items-center gap-1.5"
+          >
+            <span class="text-sm text-gray-400">Keywords:</span>
 
-            <span v-if="poster.doi">•</span>
-
-            <span v-if="poster.publishedAt">
-              Published {{ dayjs(poster.publishedAt).format("MMM D, YYYY") }}
-            </span>
-
-            <span v-if="poster.version">•</span>
-
-            <span v-if="poster.version"> Version {{ poster.version }} </span>
+            <UBadge
+              v-for="keyword in poster.keywords"
+              :key="keyword"
+              color="primary"
+              variant="soft"
+              size="md"
+              class="capitalize"
+            >
+              {{ keyword }}
+            </UBadge>
           </div>
 
           <div class="flex items-center gap-2">
@@ -315,7 +345,7 @@ const tabItems = [
           <UTabs :items="tabItems" variant="link">
             <template #overview>
               <div class="mt-4 flex flex-col gap-4">
-                <UCard>
+                <UCard v-if="poster.conference.name">
                   <template #header>
                     <div class="flex items-center gap-2">
                       <Icon name="heroicons:academic-cap" class="h-5 w-5" />
@@ -326,115 +356,136 @@ const tabItems = [
                     </div>
                   </template>
 
-                  <div class="space-y-4">
-                    <div class="flex flex-col gap-4">
-                      <h3 class="mb-1 font-semibold">
-                        {{ poster.conference.name }}
-                      </h3>
+                  <div class="space-y-2 text-sm">
+                    <h3 class="mb-3 font-semibold">
+                      {{ poster.conference.name }}
+                    </h3>
 
-                      <div class="space-y-2 text-sm">
-                        <div
-                          v-if="poster.conference.acronym"
-                          class="flex items-center gap-2"
-                        >
-                          <Icon name="heroicons:academic-cap" class="h-4 w-4" />
+                    <div
+                      v-if="poster.conference.acronym"
+                      class="flex items-center gap-2"
+                    >
+                      <Icon
+                        name="heroicons:tag"
+                        class="h-4 w-4 shrink-0 text-gray-400"
+                      />
 
-                          <span class="">Acronym:</span>
+                      <span class="text-gray-500">Acronym:</span>
 
-                          <span class="font-medium">{{
-                            poster.conference.acronym
-                          }}</span>
-                        </div>
-
-                        <div class="space-y-2 text-sm">
-                          <div
-                            v-if="poster.conference.year != null"
-                            class="flex items-center gap-2"
-                          >
-                            <Icon name="heroicons:calendar" class="h-4 w-4" />
-
-                            <span class="">Year:</span>
-
-                            <span class="font-medium">{{
-                              poster.conference.year
-                            }}</span>
-                          </div>
-
-                          <div
-                            v-if="poster.conference.venue"
-                            class="flex items-center gap-2"
-                          >
-                            <Icon
-                              name="heroicons:building-office"
-                              class="h-4 w-4"
-                            />
-
-                            <span class="">Venue:</span>
-
-                            <span class="font-medium">{{
-                              poster.conference.venue
-                            }}</span>
-                          </div>
-
-                          <div
-                            v-if="poster.conference.location"
-                            class="flex items-center gap-2"
-                          >
-                            <Icon name="heroicons:map-pin" class="h-4 w-4" />
-
-                            <span class="">Location:</span>
-
-                            <span class="font-medium">{{
-                              poster.conference.location
-                            }}</span>
-                          </div>
-
-                          <div
-                            v-if="
-                              poster.conference.dates.start ||
-                              poster.conference.dates.end
-                            "
-                            class="flex items-center gap-2"
-                          >
-                            <Icon name="heroicons:calendar" class="h-4 w-4" />
-
-                            <span class="">Dates:</span>
-
-                            <span class="font-medium">
-                              {{
-                                dayjs(poster.conference.dates.start).format(
-                                  "MMM D",
-                                )
-                              }}
-                              -
-                              {{
-                                dayjs(poster.conference.dates.end).format(
-                                  "MMM D, YYYY",
-                                )
-                              }}
-                            </span>
-                          </div>
-
-                          <div
-                            v-if="poster.conference.session"
-                            class="flex items-center gap-2"
-                          >
-                            <Icon
-                              name="heroicons:presentation-chart-bar"
-                              class="h-4 w-4"
-                            />
-
-                            <span class="">Session:</span>
-
-                            <span class="font-medium">{{
-                              poster.conference.session
-                            }}</span>
-                          </div>
-                        </div>
-                      </div>
+                      <span class="font-medium">{{
+                        poster.conference.acronym
+                      }}</span>
                     </div>
-                  </div></UCard
-                >
+
+                    <div
+                      v-if="poster.conference.series"
+                      class="flex items-center gap-2"
+                    >
+                      <Icon
+                        name="heroicons:rectangle-stack"
+                        class="h-4 w-4 shrink-0 text-gray-400"
+                      />
+
+                      <span class="text-gray-500">Series:</span>
+
+                      <span class="font-medium">{{
+                        poster.conference.series
+                      }}</span>
+                    </div>
+
+                    <div
+                      v-if="poster.conference.year != null"
+                      class="flex items-center gap-2"
+                    >
+                      <Icon
+                        name="heroicons:calendar"
+                        class="h-4 w-4 shrink-0 text-gray-400"
+                      />
+
+                      <span class="text-gray-500">Year:</span>
+
+                      <span class="font-medium">{{
+                        poster.conference.year
+                      }}</span>
+                    </div>
+
+                    <div
+                      v-if="poster.conference.location"
+                      class="flex items-center gap-2"
+                    >
+                      <Icon
+                        name="heroicons:map-pin"
+                        class="h-4 w-4 shrink-0 text-gray-400"
+                      />
+
+                      <span class="text-gray-500">Location:</span>
+
+                      <span class="font-medium">{{
+                        poster.conference.location
+                      }}</span>
+                    </div>
+
+                    <div
+                      v-if="
+                        poster.conference.dates.start ||
+                        poster.conference.dates.end
+                      "
+                      class="flex items-center gap-2"
+                    >
+                      <Icon
+                        name="heroicons:calendar-days"
+                        class="h-4 w-4 shrink-0 text-gray-400"
+                      />
+
+                      <span class="text-gray-500">Dates:</span>
+
+                      <span class="font-medium">
+                        <template v-if="poster.conference.dates.start">
+                          {{
+                            dayjs(poster.conference.dates.start).format("MMM D")
+                          }}
+                        </template>
+
+                        <template
+                          v-if="
+                            poster.conference.dates.start &&
+                            poster.conference.dates.end
+                          "
+                        >
+                          -
+                        </template>
+
+                        <template v-if="poster.conference.dates.end">
+                          {{
+                            dayjs(poster.conference.dates.end).format(
+                              "MMM D, YYYY",
+                            )
+                          }}
+                        </template>
+                      </span>
+                    </div>
+
+                    <div
+                      v-if="poster.conference.uri"
+                      class="flex items-center gap-2"
+                    >
+                      <Icon
+                        name="heroicons:link"
+                        class="h-4 w-4 shrink-0 text-gray-400"
+                      />
+
+                      <span class="text-gray-500">Website:</span>
+
+                      <a
+                        :href="poster.conference.uri"
+                        target="_blank"
+                        class="font-medium text-blue-600 hover:underline"
+                      >
+                        {{ poster.conference.uri }}
+                      </a>
+                    </div>
+                  </div>
+                </UCard>
 
                 <UCard>
                   <template #header>
@@ -446,22 +497,25 @@ const tabItems = [
                   </div>
                 </UCard>
 
-                <UCard>
+                <UCard v-if="poster.identifiers.length > 0">
                   <template #header>
-                    <h2 class="text-xl font-semibold">Keywords</h2>
+                    <h2 class="text-xl font-semibold">Identifiers</h2>
                   </template>
 
-                  <div class="flex flex-wrap gap-2">
-                    <UBadge
-                      v-for="keyword in poster.keywords"
-                      :key="keyword"
-                      color="primary"
-                      variant="soft"
-                      size="lg"
-                      class="capitalize"
+                  <div class="space-y-2">
+                    <div
+                      v-for="(identifier, index) in poster.identifiers"
+                      :key="index"
+                      class="flex items-center gap-2 text-sm"
                     >
-                      {{ keyword }}
-                    </UBadge>
+                      <UBadge color="neutral" variant="soft" size="sm">
+                        {{ identifier.identifierType }}
+                      </UBadge>
+
+                      <span class="font-mono text-gray-700">{{
+                        identifier.identifier
+                      }}</span>
+                    </div>
                   </div>
                 </UCard>
 
@@ -478,17 +532,27 @@ const tabItems = [
                     >
                       <p class="font-medium">{{ fund.agency }}</p>
 
-                      <p class="text-sm">Grant: {{ fund.grantNumber }}</p>
+                      <p
+                        v-if="fund.awardTitle"
+                        class="text-sm font-medium text-gray-700"
+                      >
+                        {{ fund.awardTitle }}
+                      </p>
+
+                      <p v-if="fund.grantNumber" class="text-sm text-gray-600">
+                        Grant: {{ fund.grantNumber }}
+                      </p>
+
+                      <a
+                        v-if="fund.awardUri"
+                        :href="fund.awardUri"
+                        target="_blank"
+                        class="text-xs text-blue-600 hover:underline"
+                      >
+                        Award details
+                      </a>
                     </div>
                   </div>
-                </UCard>
-
-                <UCard v-if="poster.acknowledgments">
-                  <template #header>
-                    <h2 class="text-xl font-semibold">Acknowledgments</h2>
-                  </template>
-
-                  <p>{{ poster.acknowledgments }}</p>
                 </UCard>
               </div>
             </template>
@@ -505,19 +569,13 @@ const tabItems = [
                       {{ ref.relationType }}
                     </UBadge>
 
-                    <p class="font-medium">{{ ref.title }}</p>
-
-                    <p class="text-sm">{{ ref.authors }}</p>
-
-                    <p class="text-sm">{{ ref.journal }}, {{ ref.year }}</p>
-
-                    <p class="text-sm">
+                    <p class="mt-1 text-sm">
                       <a
                         :href="ref.url"
-                        class="text-blue-600 hover:underline"
+                        class="font-medium text-blue-600 hover:underline"
                         target="_blank"
                       >
-                        DOI: {{ ref.doi }}
+                        {{ ref.doi }}
                       </a>
                     </p>
                   </div>
@@ -532,69 +590,10 @@ const tabItems = [
                 />
               </div>
             </template>
-
-            <template #related>
-              <div v-if="poster.relatedItems.length > 0">
-                <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <NuxtLink
-                    v-for="item in poster.relatedItems"
-                    :key="item.id"
-                    :to="`/discover/${item.id}`"
-                  >
-                    <UCard
-                      class="cursor-pointer transition-shadow hover:shadow-lg"
-                    >
-                      <div class="mb-3 aspect-video overflow-hidden rounded-lg">
-                        <NuxtImg
-                          :src="item.imageUrl"
-                          :alt="item.title"
-                          class="h-full w-full object-cover"
-                        />
-                      </div>
-
-                      <h3 class="mb-2 line-clamp-2 font-medium">
-                        {{ item.title }}
-                      </h3>
-
-                      <p class="mb-2 text-sm">{{ item.authors }}</p>
-
-                      <div class="flex items-center justify-between text-xs">
-                        <span>{{
-                          dayjs(item.publishedAt).format("MMM YYYY")
-                        }}</span>
-
-                        <span class="flex items-center gap-1">
-                          <Icon name="heroicons:eye" class="h-3 w-3" />
-                          {{ item.views }}
-                        </span>
-                      </div>
-                    </UCard>
-                  </NuxtLink>
-                </div>
-              </div>
-
-              <UEmpty
-                v-else
-                class="mt-4"
-                icon="i-lucide-file"
-                title="No related items found"
-                description="This poster has no related resources."
-              />
-            </template>
           </UTabs>
         </div>
 
         <div class="flex flex-col gap-4">
-          <UCard>
-            <div class="aspect-video overflow-hidden rounded-lg">
-              <NuxtImg
-                :src="poster.imageUrl"
-                :alt="poster.title"
-                class="h-full w-full object-cover"
-              />
-            </div>
-          </UCard>
-
           <UCard>
             <template #header>
               <h3 class="text-lg font-semibold">Authors</h3>
@@ -610,11 +609,11 @@ const tabItems = [
                   {{ author.givenName }} {{ author.familyName }}
                 </p>
 
-                <p v-if="author.affiliation" class="text-sm">
+                <p v-if="author.affiliation" class="text-sm text-gray-600">
                   {{ author.affiliation }}
                 </p>
 
-                <p v-if="author.orcid" class="text-xs">
+                <p v-if="author.orcid" class="text-xs text-gray-500">
                   ORCID: {{ author.orcid }}
                 </p>
               </div>
@@ -627,54 +626,71 @@ const tabItems = [
             </template>
 
             <div class="space-y-3 text-sm">
-              <div v-if="poster.license" class="flex justify-between">
-                <span class="">License:</span>
+              <div v-if="languageDisplay" class="flex flex-col gap-0.5">
+                <span
+                  class="text-xs font-medium tracking-wide text-gray-400 uppercase"
+                  >Language</span
+                >
 
-                <span class="font-medium">{{ poster.license }}</span>
-              </div>
-
-              <div class="flex justify-between">
-                <span class="">Published:</span>
-
-                <span class="font-medium">{{
-                  dayjs(poster.publishedAt).format("MMM D, YYYY")
+                <span class="font-medium text-gray-700">{{
+                  languageDisplay
                 }}</span>
               </div>
 
-              <div v-if="poster.version" class="flex justify-between">
-                <span class="">Version:</span>
+              <div v-if="poster.format" class="flex flex-col gap-0.5">
+                <span
+                  class="text-xs font-medium tracking-wide text-gray-400 uppercase"
+                  >Format</span
+                >
 
-                <span class="font-medium">{{ poster.version }}</span>
+                <span class="font-medium text-gray-700">{{
+                  poster.format
+                }}</span>
               </div>
 
-              <div v-if="poster.doi" class="flex justify-between">
-                <span class="">DOI:</span>
+              <div v-if="poster.size" class="flex flex-col gap-0.5">
+                <span
+                  class="text-xs font-medium tracking-wide text-gray-400 uppercase"
+                  >Size</span
+                >
 
-                <span class="font-medium text-blue-600">{{ poster.doi }}</span>
-              </div>
-            </div>
-          </UCard>
-
-          <UCard>
-            <template #header>
-              <h3 class="text-lg font-semibold">Metrics</h3>
-            </template>
-
-            <div class="grid grid-cols-2 gap-4 text-center">
-              <div>
-                <p class="text-2xl font-bold text-blue-600">
-                  {{ poster.views.toLocaleString() }}
-                </p>
-
-                <p class="text-sm">Views</p>
+                <span class="font-medium text-gray-700">{{ poster.size }}</span>
               </div>
 
-              <div>
-                <p class="text-2xl font-bold text-purple-600">
-                  {{ poster.citations }}
-                </p>
+              <div v-if="poster.version" class="flex flex-col gap-0.5">
+                <span
+                  class="text-xs font-medium tracking-wide text-gray-400 uppercase"
+                  >Version</span
+                >
 
-                <p class="text-sm">Citations</p>
+                <span class="font-medium text-gray-700">{{
+                  poster.version
+                }}</span>
+              </div>
+
+              <div v-if="poster.license" class="flex flex-col gap-0.5">
+                <span
+                  class="text-xs font-medium tracking-wide text-gray-400 uppercase"
+                  >License</span
+                >
+
+                <div class="flex flex-row gap-2">
+                  <span class="font-medium text-gray-700">{{
+                    licenseInfo?.name ?? poster.license
+                  }}</span>
+
+                  <div class="flex flex-wrap items-center gap-2 text-xs">
+                    <UBadge
+                      v-if="licenseInfo?.isOsiApproved"
+                      color="success"
+                      variant="soft"
+                      size="md"
+                      icon="heroicons:check-circle"
+                    >
+                      OSI Approved
+                    </UBadge>
+                  </div>
+                </div>
               </div>
             </div>
           </UCard>
