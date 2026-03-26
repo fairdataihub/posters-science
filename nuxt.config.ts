@@ -40,6 +40,9 @@ export default defineNuxtConfig({
     bunnyPublicStorage: "",
     bunnyPublicStorageKey: "",
     warningDmpApi: "",
+    umamiUsername: "",
+    umamiPassword: "",
+    umamiWebsiteId: "",
     siteEnv: "",
     public: {
       enableEmailVerification: false,

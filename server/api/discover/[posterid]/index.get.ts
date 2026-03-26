@@ -13,6 +13,7 @@ export default defineEventHandler(async (event) => {
     include: {
       user: { select: { givenName: true, familyName: true } },
       posterMetadata: true,
+      _count: { select: { likes: true } },
     },
   });
 
@@ -22,8 +23,47 @@ export default defineEventHandler(async (event) => {
 
   const meta = poster.posterMetadata;
 
+  const session = await getUserSession(event);
+  const userId = session?.user?.id as string | undefined;
+
+  const liked = userId
+    ? Boolean(
+        await prisma.like.findUnique({
+          where: { userId_posterId: { userId, posterId } },
+        }),
+      )
+    : false;
+
+  const { umamiWebsiteId } = useRuntimeConfig();
+
+  let views: number | null = null;
+
+  const umamiToken = await getUmamiToken();
+
+  if (umamiToken && umamiWebsiteId) {
+    try {
+      const params = new URLSearchParams({
+        startAt: "0",
+        endAt: String(Date.now()),
+        path: `/discover/${posterid}`,
+      });
+
+      const data = await $fetch<{ visits: number }>(
+        `https://umami.fairdataihub.org/api/websites/${umamiWebsiteId}/stats?${params}`,
+        { headers: { Authorization: `Bearer ${umamiToken}` } },
+      );
+
+      views = data.visits ?? null;
+    } catch {
+      // non-critical, leave views as null
+    }
+  }
+
   return {
     id: poster.id,
+    views,
+    likes: poster._count.likes,
+    liked,
     title: poster.title,
     description: poster.description,
     imageUrl: poster.imageUrl,

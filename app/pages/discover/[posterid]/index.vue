@@ -18,7 +18,7 @@ if (error.value) {
 const api = apiData.value as any;
 const conf = api?.conference;
 
-const liked = ref(false);
+const liked = ref(api?.liked ?? false);
 const liking = ref(false);
 
 const poster = ref({
@@ -65,8 +65,8 @@ const poster = ref({
   domain: api?.domain ?? null,
   keywords: api?.keywords ?? [],
   identifiers: (api?.identifiers ?? []) as any[],
-  likes: 0,
-  views: 0,
+  likes: api?.likes ?? 0,
+  views: api?.views ?? 0,
   references: (api?.relatedIdentifiers ?? []).map((ri: any, index: number) => ({
     id: `ref-${index}`,
     title: ri.relatedIdentifier ?? `Related Resource ${index + 1}`,
@@ -136,20 +136,6 @@ useSeoMeta({
   ogImage,
 });
 
-const [{ data: likesData }, { data: viewsData }] = await Promise.all([
-  useFetch<{ likes: number; liked: boolean }>(`/api/discover/${posterId}/like`),
-  useFetch<{ views: number | null }>(`/api/discover/${posterId}/views`),
-]);
-
-if (likesData.value) {
-  liked.value = likesData.value.liked;
-  poster.value.likes = likesData.value.likes;
-}
-
-if (viewsData.value?.views != null) {
-  poster.value.views = viewsData.value.views;
-}
-
 const handleLike = async () => {
   if (!loggedIn.value) {
     toast.add({
@@ -189,7 +175,6 @@ const handleLike = async () => {
     liking.value = false;
   }
 };
-
 onMounted(() => {
   window.umami?.track("poster_viewed", { posterId: poster.value.id });
 });
