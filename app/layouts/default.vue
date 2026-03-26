@@ -2,6 +2,8 @@
 import type { NavigationMenuItem } from "@nuxt/ui";
 
 const { clear } = useUserSession();
+const feedbackOpen = useState("feedbackOpen", () => false);
+
 const route = useRoute();
 
 const logout = async () => {
@@ -126,5 +128,39 @@ const footerItems: NavigationMenuItem[] = [
         />
       </template>
     </UFooter>
+
+    <div class="fixed right-6 bottom-6 z-30">
+      <UButton
+        color="info"
+        variant="solid"
+        size="xl"
+        class="rounded-full p-3"
+        aria-label="How are we doing? Give us feedback!"
+        @click="feedbackOpen = true"
+      >
+        <template #leading>
+          <Icon name="material-symbols:rate-review" size="25" />
+        </template>
+      </UButton>
+    </div>
+
+    <UModal
+      v-model:open="feedbackOpen"
+      title="Poster Submission Feedback"
+      description="Tell us how the experience was using our platform!"
+      class="max-w-2xl"
+      :ui="{ title: 'text-xl font-semibold' }"
+    >
+      <template #body>
+        <iframe
+          src="https://tally.so/embed/XxEBYP?alignLeft=1&hideTitle=1"
+          width="100%"
+          height="500"
+          frameborder="0"
+          title="Feedback form"
+          class="dark:[filter:invert(1)_contrast(0.9)_brightness(1.2)]"
+        />
+      </template>
+    </UModal>
   </div>
 </template>

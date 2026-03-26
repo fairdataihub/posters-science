@@ -169,6 +169,9 @@ async function handleSimulatedArchive() {
     }
 
     simulatedPublished.value = true;
+    setTimeout(() => {
+      feedbackOpen.value = true;
+    }, 2000);
   } catch (error) {
     toast.add({
       title: "Simulation Failed",
@@ -231,6 +234,8 @@ interface ArchiveStep {
   label: string;
   status: "pending" | "in_progress" | "completed" | "error";
 }
+
+const feedbackOpen = useState("feedbackOpen", () => false);
 
 const isArchiving = ref(false);
 const archiveError = ref("");
@@ -354,6 +359,9 @@ function handleProgressEvent(event: {
     archiveSteps.value.forEach((s) => {
       if (s.status !== "error") s.status = "completed";
     });
+    setTimeout(() => {
+      feedbackOpen.value = true;
+    }, 3000);
 
     return;
   }
