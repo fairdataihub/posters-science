@@ -104,8 +104,8 @@ jobs:
         with:
           node-version: 20
 
-      - run: npm install
+      - run: yarn install
 
-      - run: npm run prisma:generate
+      - run: yarn prisma:generate
 
-      - run: npm run prisma:migrate:deploy
+      - run: yarn prisma:migrate:deploy
