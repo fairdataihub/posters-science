@@ -1,5 +1,4 @@
-export default defineCachedEventHandler(
-  async (_event) => {
+export default defineEventHandler(async (_event) => {
     const rawPosters =
       (await prisma.poster.findMany({
         where: {
@@ -64,6 +63,4 @@ export default defineCachedEventHandler(
       posters,
       total: count,
     };
-  },
-  { maxAge: 60 * 5 },
-);
+  });
