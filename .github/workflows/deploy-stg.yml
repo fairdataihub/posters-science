@@ -19,6 +19,7 @@ jobs:
   # Job for deploying the UI/frontend application
   deploy-ui:
     runs-on: ubuntu-latest
+    needs: migrate-db
     environment: stg # Uses staging environment secrets
 
     # Environment variables for Kamal deployment and container registry
@@ -90,30 +91,21 @@ jobs:
       - run: kamal setup
 
   # Job for running database migrations
-  # migrate-db:
-  #   runs-on: ubuntu-latest
-  #   environment: prd  # Uses production environment secrets
-  #   defaults:
-  #     run:
-  #       working-directory: ui  # All commands run from the ui directory
-  #   env:
-  #     DATABASE_URL: ${{ secrets.DATABASE_URL }}
+  migrate-db:
+    runs-on: ubuntu-latest
+    environment: stg
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
-  #   steps:
-  #     # Step 1: Checkout the repository code
-  #     - uses: actions/checkout@v3
+    steps:
+      - uses: actions/checkout@v4
 
-  #     # Step 2: Setup Node.js environment for Prisma operations
-  #     - uses: actions/setup-node@v3
-  #       with:
-  #         node-version: 20
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
 
-  #     # Step 3: Install Node.js dependencies
-  #     - run: yarn install
+      - run: npm install
 
-  #     # Step 4: Generate Prisma client for database operations
-  #     - run: yarn prisma:generate
+      - run: npm run prisma:generate
 
-  #     # Step 5: Deploy database migrations to production
-  #     # Redirects output to /dev/null to reduce log noise
-  #     - run: yarn prisma:migrate:deploy > /dev/null
+      - run: npm run prisma:migrate:deploy
