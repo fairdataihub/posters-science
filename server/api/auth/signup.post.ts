@@ -16,7 +16,7 @@ export default defineEventHandler(async (event) => {
 
   const { siteEnv } = config.public;
 
-  if (siteEnv !== "dev") {
+  if (siteEnv !== "dev" && siteEnv !== "staging") {
     throw createError({
       statusCode: 404,
       statusMessage: "Signup is not enabled for this environment",
