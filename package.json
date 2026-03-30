@@ -26,11 +26,13 @@
   "dependencies": {
     "@inspira-ui/plugins": "^0.0.2",
     "@internationalized/date": "^3.10.0",
+    "@nuxt/content": "^3.12.0",
     "@nuxt/image": "^1.11.0",
     "@paralleldrive/cuid2": "^3.3.0",
     "@vueuse/core": "13.4.0",
     "archiver": "^7.0.1",
     "bcrypt": "^5.1.1",
+    "better-sqlite3": "^12.8.0",
     "date-fns": "^4.1.0",
     "marked": "^15.0.7",
     "motion-v": "^2.0.0",

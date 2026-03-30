@@ -15,6 +15,7 @@ export default defineNuxtConfig({
     "@nuxt/eslint",
     "@nuxt/image",
     "nuxt-echarts",
+    "@nuxt/content",
   ],
   // Runtime config values can be overridden at container startup using NUXT_ prefixed env vars.
   // This works because Nuxt scans for NUXT_* env vars when the app starts (not at build time)
