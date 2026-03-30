@@ -8,12 +8,14 @@ useSeoMeta({
 const { data: privacy } = await useAsyncData(() =>
   queryCollection("content").path("/privacy").first(),
 );
+
+if (!privacy.value) {
+  throw showError({ statusCode: 404, statusMessage: "Page not found" });
+}
 </script>
 
 <template>
   <UContainer class="py-12">
-    <ContentRenderer v-if="privacy" :value="privacy" />
-
-    <div v-else>Document not found</div>
+    <ContentRenderer :value="privacy!" />
   </UContainer>
 </template>

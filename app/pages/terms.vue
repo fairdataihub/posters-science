@@ -8,12 +8,14 @@ useSeoMeta({
 const { data: terms } = await useAsyncData(() =>
   queryCollection("content").path("/terms").first(),
 );
+
+if (!terms.value) {
+  throw showError({ statusCode: 404, statusMessage: "Page not found" });
+}
 </script>
 
 <template>
   <UContainer class="py-12">
-    <ContentRenderer v-if="terms" :value="terms" />
-
-    <div v-else>Document not found</div>
+    <ContentRenderer :value="terms!" />
   </UContainer>
 </template>
