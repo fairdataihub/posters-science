@@ -337,7 +337,13 @@ onMounted(() => {
 
           <UCard class="h-full transition-shadow duration-200 hover:shadow-md">
             <div class="flex flex-col gap-4">
-              <Icon name="si:ai-fill" class="text-primary h-8 w-8" />
+              <div class="flex items-start justify-between">
+                <Icon name="si:ai-fill" class="text-primary h-8 w-8" />
+
+                <UBadge color="neutral" variant="soft" size="sm">
+                  Coming soon
+                </UBadge>
+              </div>
 
               <h3 class="text-xl font-semibold">AI-powered smart search</h3>
 
