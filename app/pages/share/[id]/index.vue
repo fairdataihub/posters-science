@@ -478,9 +478,9 @@ async function onSubmit(event: FormSubmitEvent<StrictFormSchema>) {
     }
 
     toast.add({
-      title: "Metadata Saved",
+      title: "Draft Saved",
       description:
-        "Your metadata has been saved. Proceed to the next step to publish your poster.",
+        "Your poster details have been saved as a draft to your profile. You can return to it any time before publishing.",
       color: "success",
     });
 
