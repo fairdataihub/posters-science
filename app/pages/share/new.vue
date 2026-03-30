@@ -176,14 +176,14 @@ onUnmounted(() => {
 <template>
   <div class="mx-auto flex w-full max-w-screen-xl flex-col gap-6 px-6">
     <UPageHeader
-      title="Share a Poster"
-      description="Upload your poster and we'll handle the rest"
+      title="Upload Poster"
+      description="Upload the PDF or image file of your poster. (Max size: 10MB)"
     >
       <template #headline>
         <UBreadcrumb
           :items="[
             { label: 'Dashboard', to: '/dashboard' },
-            { label: 'Share a Poster', to: '/share/new' },
+            { label: 'Upload Poster', to: '/share/new' },
           ]"
         />
       </template>
