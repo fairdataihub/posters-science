@@ -440,7 +440,7 @@ async function saveDraft() {
     }
 
     toast.add({
-      title: "Draft Saved",
+      title: "Changes Saved",
       description: "Your progress has been saved.",
       color: "success",
     });
@@ -478,9 +478,8 @@ async function onSubmit(event: FormSubmitEvent<StrictFormSchema>) {
     }
 
     toast.add({
-      title: "Draft Saved",
-      description:
-        "Your poster details have been saved as a draft to your profile. You can return to it any time before publishing.",
+      title: "Changes Saved",
+      description: "Your progress has been saved.",
       color: "success",
     });
 
@@ -1389,28 +1388,32 @@ async function addSubjectAndFocus() {
       </div>
 
       <div class="flex gap-3">
-        <UButton
-          :disabled="savingDraft || loading"
-          :loading="savingDraft"
-          class="flex-1"
-          variant="outline"
-          icon="i-lucide-save"
-          label="Save Draft"
-          type="button"
-          size="lg"
-          @click="saveDraft"
-        />
+        <UTooltip text="Save your progress without moving to the next step" class="flex-1">
+          <UButton
+            :disabled="savingDraft || loading"
+            :loading="savingDraft"
+            class="w-full"
+            variant="outline"
+            icon="i-lucide-save"
+            label="Save Changes"
+            type="button"
+            size="lg"
+            @click="saveDraft"
+          />
+        </UTooltip>
 
-        <UButton
-          :disabled="loading || savingDraft"
-          :loading="loading"
-          class="flex-1"
-          variant="solid"
-          icon="i-lucide-arrow-right"
-          label="Continue"
-          type="submit"
-          size="lg"
-        />
+        <UTooltip text="Save your changes and proceed to the publishing step" class="flex-1">
+          <UButton
+            :disabled="loading || savingDraft"
+            :loading="loading"
+            class="w-full"
+            variant="solid"
+            icon="i-lucide-arrow-right"
+            label="Save Changes and Continue"
+            type="submit"
+            size="lg"
+          />
+        </UTooltip>
       </div>
     </UForm>
   </div>
