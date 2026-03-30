@@ -61,6 +61,16 @@ export const LICENSE_OPTIONS = licenses.map((lic) => ({
   value: lic.licenseId,
 }));
 
+const ccBy4 = licenses.find((lic) => lic.licenseId === "CC-BY-4.0");
+
+export const LICENSE_OPTIONS_WITH_SUGGESTED = [
+  { type: "label" as const, label: "Suggested" },
+  ...(ccBy4 ? [{ label: ccBy4.name, value: ccBy4.licenseId }] : []),
+  { type: "separator" as const },
+  { type: "label" as const, label: "All Licenses" },
+  ...LICENSE_OPTIONS,
+];
+
 export const IDENTIFIER_TYPE_OPTIONS = identifierTypes.map((id) => ({
   label: id.label,
   value: id.value,

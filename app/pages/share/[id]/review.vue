@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { LICENSE_OPTIONS } from "~/utils/poster_schema";
+import { LICENSE_OPTIONS_WITH_SUGGESTED } from "~/utils/poster_schema";
 
 definePageMeta({
   middleware: ["auth"],
@@ -457,7 +457,7 @@ async function handleArchive() {
   <div class="mx-auto flex w-full max-w-screen-xl flex-col gap-6 px-6 pb-10">
     <UPageHeader
       title="Review Poster Submission"
-      description="Verify your information before archiving"
+      description="Submit your poster for publication on a trusted repository."
     >
       <template #headline>
         <UBreadcrumb
@@ -666,8 +666,6 @@ async function handleArchive() {
                 View on Zenodo
               </UButton>
 
-              <UButton variant="outline" to="/discover"> Find Posters </UButton>
-
               <UButton variant="outline" :to="`/share/${id}`">
                 View Poster Details
               </UButton>
@@ -699,54 +697,52 @@ async function handleArchive() {
               create a new Zenodo publication?
             </p>
 
-            <div class="flex items-start gap-8">
-              <!-- Deposition mode selection -->
-              <div class="flex-1">
-                <URadioGroup
-                  v-model="depositionMode"
-                  :items="depositionModeOptions"
+            <div>
+              <URadioGroup
+                v-model="depositionMode"
+                :items="depositionModeOptions"
+              />
+
+              <!-- Existing deposition selector -->
+              <div v-if="depositionMode === 'existing'" class="mt-4">
+                <p class="text-muted mb-2 text-sm">Select your Zenodo record</p>
+
+                <USelect
+                  v-model="selectedDeposition"
+                  :items="selectableDepositions"
+                  placeholder="Choose a deposition..."
+                  class="w-full max-w-md"
                 />
+              </div>
 
-                <!-- Existing deposition selector -->
-                <div v-if="depositionMode === 'existing'" class="mt-4">
-                  <p class="text-muted mb-2 text-sm">
-                    Select your Zenodo record
-                  </p>
+              <!-- License selection -->
+              <div class="mt-4">
+                <p class="text-muted mb-2 text-sm">License</p>
 
-                  <USelect
-                    v-model="selectedDeposition"
-                    :items="selectableDepositions"
-                    placeholder="Choose a deposition..."
-                    class="w-full max-w-md"
-                  />
-                </div>
-
-                <!-- License selection -->
-                <div class="mt-4">
-                  <p class="text-muted mb-2 text-sm">License</p>
-
-                  <USelect
-                    v-model="selectedLicense"
-                    :items="LICENSE_OPTIONS"
-                    placeholder="Select a license"
-                    class="w-full max-w-md"
-                  />
-                </div>
+                <USelectMenu
+                  v-model="selectedLicense"
+                  :items="LICENSE_OPTIONS_WITH_SUGGESTED"
+                  placeholder="Select a license"
+                  class="w-full max-w-md"
+                  :virtualize="true"
+                />
               </div>
 
               <!-- Archive button -->
-              <UButton
-                color="primary"
-                size="lg"
-                :disabled="!readyToArchive"
-                @click="handleArchive"
-              >
-                {{
-                  depositionMode === "new"
-                    ? "Create New Deposition"
-                    : "Archive to Selected Deposition"
-                }}
-              </UButton>
+              <div class="mt-6">
+                <UButton
+                  color="primary"
+                  size="lg"
+                  :disabled="!readyToArchive"
+                  @click="handleArchive"
+                >
+                  {{
+                    depositionMode === "new"
+                      ? "Create New Deposition"
+                      : "Archive to Selected Deposition"
+                  }}
+                </UButton>
+              </div>
             </div>
           </div>
         </template>
@@ -782,8 +778,6 @@ async function handleArchive() {
 
           <div class="flex gap-3">
             <UButton color="primary" to="/dashboard"> Go to Dashboard </UButton>
-
-            <UButton variant="outline" to="/discover"> Find Posters </UButton>
           </div>
         </div>
       </template>
@@ -794,11 +788,12 @@ async function handleArchive() {
           <div>
             <p class="text-muted mb-2 text-sm">License</p>
 
-            <USelect
+            <USelectMenu
               v-model="selectedLicense"
-              :items="LICENSE_OPTIONS"
+              :items="LICENSE_OPTIONS_WITH_SUGGESTED"
               placeholder="Select a license"
               class="w-full max-w-md"
+              :virtualize="true"
             />
           </div>
 
@@ -853,8 +848,6 @@ async function handleArchive() {
 
         <div class="flex gap-3">
           <UButton color="primary" to="/dashboard"> Go to Dashboard </UButton>
-
-          <UButton variant="outline" to="/discover"> Find Posters </UButton>
         </div>
       </template>
 
