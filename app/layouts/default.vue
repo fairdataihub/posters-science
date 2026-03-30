@@ -110,15 +110,6 @@ const footerItems: NavigationMenuItem[] = [
         <UColorModeButton />
 
         <UButton
-          icon="i-simple-icons-bluesky"
-          color="neutral"
-          variant="ghost"
-          to="https://bluesky.social/profile/fairdataihub.org"
-          target="_blank"
-          aria-label="BlueSky"
-        />
-
-        <UButton
           icon="i-simple-icons-github"
           color="neutral"
           variant="ghost"
