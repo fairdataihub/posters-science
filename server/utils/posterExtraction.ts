@@ -7,6 +7,22 @@ const extractionAgent = new Agent({
   bodyTimeout: 900000, // 15 minutes
 });
 
+function sanitizeUnknown<T>(value: T): T {
+  if (typeof value === "string") {
+    return (value.trim().toLowerCase() === "unknown" ? null : value) as T;
+  }
+  if (Array.isArray(value)) {
+    return value.map(sanitizeUnknown) as T;
+  }
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([k, v]) => [k, sanitizeUnknown(v)]),
+    ) as T;
+  }
+
+  return value;
+}
+
 interface ExtractionResult {
   success: true;
   posterId: number;
@@ -76,11 +92,11 @@ export async function processExtraction(
       throw new Error("Invalid data received from extraction API");
     }
 
-    const extractedData = parseResult.data;
+    const extractedData = sanitizeUnknown(parseResult.data);
 
     // Transform the extracted data
     const creators = (extractedData.creators ?? []).map((creator) => ({
-      name: creator.name ?? "Unknown Creator",
+      name: creator.name ?? null,
       ...(creator.givenName && { givenName: creator.givenName }),
       ...(creator.familyName && { familyName: creator.familyName }),
       ...(creator.nameType && { nameType: creator.nameType }),
