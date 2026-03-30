@@ -61,11 +61,17 @@ export const LICENSE_OPTIONS = licenses.map((lic) => ({
   value: lic.licenseId,
 }));
 
-const ccBy4 = licenses.find((lic) => lic.licenseId === "CC-BY-4.0");
+const SUGGESTED_LICENSE_IDS = ["CC-BY-4.0", "CC0-1.0"];
+
+const suggestedLicenses = SUGGESTED_LICENSE_IDS.flatMap((id) => {
+  const lic = licenses.find((l) => l.licenseId === id);
+
+  return lic ? [{ label: lic.name, value: lic.licenseId }] : [];
+});
 
 export const LICENSE_OPTIONS_WITH_SUGGESTED = [
   { type: "label" as const, label: "Suggested" },
-  ...(ccBy4 ? [{ label: ccBy4.name, value: ccBy4.licenseId }] : []),
+  ...suggestedLicenses,
   { type: "separator" as const },
   { type: "label" as const, label: "All Licenses" },
   ...LICENSE_OPTIONS,
