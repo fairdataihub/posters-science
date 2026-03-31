@@ -2,8 +2,9 @@
 import { z } from "zod";
 import type { FormSubmitEvent } from "#ui/types";
 
-const config = useRuntimeConfig();
 const { loggedIn } = useUserSession();
+const { siteEnv } = useRuntimeConfig().public;
+const isDev = siteEnv === "development" || siteEnv === "dev";
 
 if (loggedIn.value) {
   await navigateTo("/dashboard");
@@ -32,11 +33,10 @@ const schema = z.object({
 type Schema = z.output<typeof schema>;
 
 const state = reactive({
-  emailAddress:
-    config.public.siteEnv === "development" ? "rick@example.com" : "",
-  familyName: config.public.siteEnv === "development" ? "Sanchez" : "",
-  givenName: config.public.siteEnv === "development" ? "Rick" : "",
-  password: config.public.siteEnv === "development" ? "12345678" : "",
+  emailAddress: isDev ? "rick@example.com" : "",
+  familyName: isDev ? "Sanchez" : "",
+  givenName: isDev ? "Rick" : "",
+  password: isDev ? "12345678" : "",
 });
 
 async function onSubmit(event: FormSubmitEvent<Schema>) {
@@ -57,9 +57,9 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
       toast.add({
         title: "Account created successfully",
         color: "info",
-        description: config.public.ENABLE_EMAIL_VERIFICATION
-          ? "Please check your email to verify your account before logging in."
-          : "You can now log in to your account.",
+        description: isDev
+          ? "You can now log in to your account."
+          : "Please check your email to verify your account before logging in.",
         icon: "material-symbols:mail-outline",
       });
 

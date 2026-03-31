@@ -36,8 +36,13 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  // Check if the user has verified their email
-  if (!user.emailVerified) {
+  // Check if the user has verified their email (skipped in development)
+  const config = useRuntimeConfig();
+  const isDev =
+    config.public.siteEnv === "development" ||
+    config.public.siteEnv === "dev";
+
+  if (!isDev && !user.emailVerified) {
     throw createError({
       statusCode: 403,
       statusMessage:

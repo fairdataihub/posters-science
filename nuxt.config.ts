@@ -24,12 +24,8 @@ export default defineNuxtConfig({
   //   - NUXT_ZENODO_CLIENT_ID -> runtimeConfig.zenodoClientId
   // Using process.env.XXX here would bake values at build time, making them unchangeable at runtime.
   runtimeConfig: {
-    emailVerificationDomain: "",
-    mailFrom: "noreply@example.com",
-    mailHost: "smtp.example.com",
-    mailPass: "",
-    mailPort: "587",
-    mailUser: "",
+    resendApiKey: "",
+    siteUrl: "http://localhost:3000",
     zenodoClientId: "",
     zenodoClientSecret: "",
     zenodoRedirectUri: "",
@@ -46,7 +42,6 @@ export default defineNuxtConfig({
     umamiWebsiteId: "",
     siteEnv: "",
     public: {
-      enableEmailVerification: false,
       baseUrl: "",
       siteEnv: "",
     },

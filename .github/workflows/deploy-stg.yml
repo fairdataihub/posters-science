@@ -31,9 +31,9 @@ jobs:
       KAMAL_SERVER_IP: ${{ secrets.KAMAL_SERVER_IP }}
       KAMAL_APP_DOMAIN: ${{ secrets.KAMAL_APP_DOMAIN }}
       KAMAL_APP_NAME: ${{ secrets.KAMAL_APP_NAME }}
+      # Nuxt runtime config overrides (NUXT_ prefix)
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       NUXT_SESSION_PASSWORD: ${{ secrets.NUXT_SESSION_PASSWORD }}
-      # Nuxt runtime config overrides (NUXT_ prefix)
       NUXT_POSTER_EXTRACTION_API: ${{ secrets.NUXT_POSTER_EXTRACTION_API }}
       NUXT_PUBLIC_SITE_ENV: ${{ secrets.NUXT_PUBLIC_SITE_ENV }}
       NUXT_ZENODO_CLIENT_ID: ${{ secrets.NUXT_ZENODO_CLIENT_ID }}
@@ -45,6 +45,8 @@ jobs:
       NUXT_BUNNY_PRIVATE_STORAGE_KEY: ${{ secrets.NUXT_BUNNY_PRIVATE_STORAGE_KEY }}
       NUXT_BUNNY_PUBLIC_STORAGE: ${{ secrets.NUXT_BUNNY_PUBLIC_STORAGE }}
       NUXT_BUNNY_PUBLIC_STORAGE_KEY: ${{ secrets.NUXT_BUNNY_PUBLIC_STORAGE_KEY }}
+      NUXT_SITE_URL: ${{ secrets.NUXT_SITE_URL }}
+      NUXT_RESEND_API_KEY: ${{ secrets.NUXT_RESEND_API_KEY }}
 
     steps:
       # Step 1: Checkout the repository code
