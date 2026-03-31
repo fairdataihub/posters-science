@@ -45,6 +45,8 @@ model User {
 }
 
 model UserEmailVerification {
+    id String @id @default(cuid(2))
+
     user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
     userId String
 
@@ -56,6 +58,8 @@ model UserEmailVerification {
 }
 
 model UserForgotPassword {
+    id String @id @default(cuid(2))
+
     user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
     userId String
 
