@@ -32,10 +32,11 @@ const schema = z.object({
 type Schema = z.output<typeof schema>;
 
 const state = reactive({
-  emailAddress: "rick@example.com",
-  familyName: "Sanchez",
-  givenName: "Rick",
-  password: "12345678",
+  emailAddress:
+    config.public.siteEnv === "development" ? "rick@example.com" : "",
+  familyName: config.public.siteEnv === "development" ? "Sanchez" : "",
+  givenName: config.public.siteEnv === "development" ? "Rick" : "",
+  password: config.public.siteEnv === "development" ? "12345678" : "",
 });
 
 async function onSubmit(event: FormSubmitEvent<Schema>) {
