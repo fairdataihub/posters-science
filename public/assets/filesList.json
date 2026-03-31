@@ -2,8 +2,13 @@
   {
     "fileName": "poster_schema.json",
     "title": "Poster Schema",
-    "description": "A comprehensive JSON Schema for scientific poster metadata. Extends DataCite v4.6 with poster-specific fields including content sections, table/image captions, ethics approvals, and physical dimensions.",
+    "description": "A comprehensive JSON Schema for scientific poster metadata. Extends DataCite v4.7 with poster-specific fields including content sections, table/image captions, conference metadata, and research field.",
     "versions": [
+      {
+        "label": "v0.2",
+        "fileLabel": "v0.2",
+        "url": "/schema/v0.2/poster_schema.json"
+      },
       {
         "label": "v0.1",
         "fileLabel": "v0.1",
