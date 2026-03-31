@@ -497,9 +497,24 @@ const tabItems = [
                         {{ identifier.identifierType }}
                       </UBadge>
 
-                      <span class="font-mono text-gray-700">{{
-                        identifier.identifier
-                      }}</span>
+                      <span class="font-mono text-gray-700">
+                        {{ identifier.identifier }}
+                      </span>
+
+                      <NuxtLink
+                        v-if="identifier.identifierType === 'DOI'"
+                        :to="
+                          identifier.identifierType === 'DOI'
+                            ? `https://doi.org/${identifier.identifier}`
+                            : identifier.url
+                        "
+                        target="_blank"
+                      >
+                        <UIcon
+                          name="gridicons:external"
+                          class="flex items-center justify-center"
+                        />
+                      </NuxtLink>
                     </div>
                   </div>
                 </UCard>

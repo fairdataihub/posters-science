@@ -30,3 +30,6 @@ example_posters/
 postgres-data/*
 redis-data/*
 database.sqlite
+
+# Automated poster extraction
+merged/
