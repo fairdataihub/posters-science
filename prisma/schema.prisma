@@ -38,7 +38,36 @@ model User {
 
     likes Like[] @relation("UserLikes")
 
+    userEmailVerifications UserEmailVerification[]
+    userForgotPasswords    UserForgotPassword[]
+
     @@index([emailAddress])
+}
+
+model UserEmailVerification {
+    id String @id @default(cuid(2))
+
+    user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+    userId String
+
+    verificationToken String   @unique
+    expiresAt         DateTime
+
+    created DateTime @default(now())
+    updated DateTime @updatedAt
+}
+
+model UserForgotPassword {
+    id String @id @default(cuid(2))
+
+    user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+    userId String
+
+    resetToken String   @unique
+    expiresAt  DateTime
+
+    created DateTime @default(now())
+    updated DateTime @updatedAt
 }
 
 model UserInterest {
