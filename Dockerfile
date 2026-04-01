@@ -38,8 +38,8 @@ WORKDIR /app
 # Copy only the necessary files from builder stage
 # COPY --from=builder /app/package.json ./
 COPY --from=builder /app/.output ./
-COPY --from=builder /app/shared/generated ./shared/generated
-COPY --from=builder /app/node_modules/@prisma/client ./node_modules/@prisma/client
+# COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma/
+# COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 # Copy the Prisma schema & migrations, so `prisma migrate deploy` can see them
 COPY --from=builder /app/prisma ./prisma
 
