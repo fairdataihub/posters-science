@@ -58,6 +58,11 @@ export default defineNuxtConfig({
       "LegendComponent",
     ],
   },
+  nitro: {
+    externals: {
+      external: ["@prisma/client", ".prisma/client"],
+    },
+  },
   image: {
     // Options
   },
