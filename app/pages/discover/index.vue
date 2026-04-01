@@ -109,7 +109,19 @@ if (error.value) {
 const extractAvailableTags = () => {
   const allTags = new Set<string>();
   posters.value.forEach((poster) => {
-    poster.keywords.forEach((tag) => allTags.add(tag));
+    poster.keywords.forEach((tag) => {
+      // normalize tags and remove special characters for better matching
+      const cleanedTag = tag
+        .replace(/[^a-z0-9\s\-_]/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+
+      if (!cleanedTag) {
+        return;
+      }
+
+      allTags.add(cleanedTag);
+    });
   });
   availableTags.value = Array.from(allTags).sort();
 };
