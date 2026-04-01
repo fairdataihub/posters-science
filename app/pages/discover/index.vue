@@ -92,13 +92,7 @@ const { data, error, status } = await useFetch("/api/discover", {
 });
 
 function triggerSearch() {
-  committedSearch.value = searchQuery.value;
-  page.value = 1;
-}
-
-function clearSearch() {
-  searchQuery.value = "";
-  committedSearch.value = "";
+  committedSearch.value = searchQuery.value.trim();
   page.value = 1;
 }
 

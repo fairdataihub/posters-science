@@ -25,7 +25,7 @@ const links = ref([
   },
 ]);
 
-const { data: discoverData } = await useFetch("/api/discover/stats");
+const { data: discoverData } = useFetch("/api/discover/stats");
 
 const displayCount = ref(0);
 const displayIndexedCount = ref(0);
@@ -50,13 +50,12 @@ onMounted(() => {
     discoverData.value?.indexedViaAutomationCount ?? 0,
     displayIndexedCount,
   );
-});
 
-onMounted(() => {
   const onScroll = () => {
     scrollY.value = window.scrollY;
   };
   window.addEventListener("scroll", onScroll, { passive: true });
+
   onUnmounted(() => window.removeEventListener("scroll", onScroll));
 });
 </script>
