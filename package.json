@@ -40,6 +40,7 @@
     "nodemailer": "6.10.0",
     "resend": "6.10.0",
     "sanitize-html": "2.14.0",
+    "tailwindcss": "^4.2.2",
     "vue": "latest",
     "vue3-lottie": "3.3.1"
   },
