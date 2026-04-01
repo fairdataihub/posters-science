@@ -9,7 +9,7 @@ const prisma = new PrismaClient();
 
 /**
  * Usage:
- *   yarn tsx scripts/add-extracted-posters.ts
+ *   pnpm tsx scripts/add-extracted-posters.ts
  *
  * Optional:
  *   --dir     path to merged folder (default: ./merged)

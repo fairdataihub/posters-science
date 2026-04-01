@@ -9,8 +9,8 @@
     "preview": "nuxt preview",
     "lint:js": "eslint .",
     "lint:prettier": "prettier --check .",
-    "lint": "yarn lint:js && yarn lint:prettier",
-    "lint:fix": "prettier --write --list-different . && yarn lint:js --fix",
+    "lint": "pnpm lint:js && pnpm lint:prettier",
+    "lint:fix": "prettier --write --list-different . && pnpm lint:js --fix",
     "prisma:generate": "prisma generate",
     "prisma:migrate:deploy": "prisma migrate deploy",
     "prisma:migrate:dev": "prisma migrate dev",
@@ -19,7 +19,7 @@
     "prisma:db:push": "prisma db push",
     "prisma:db:pull": "prisma db pull",
     "postinstall": "nuxt prepare && prisma generate",
-    "reset": "rm -rf node_modules && rm -rf .nuxt && rm -rf .output && rm -rf dist && yarn install",
+    "reset": "rm -rf node_modules && rm -rf .nuxt && rm -rf .output && rm -rf dist && pnpm install",
     "prune-branches": "git removed-branches --prune --force",
     "test:upload": "npx tsx scripts/upload-test-posters.ts",
     "test:dummy": "npx tsx scripts/create-dummy-posters.ts"
@@ -87,8 +87,18 @@
     "vue-echarts": "8.0.1",
     "zod": "4.3.6"
   },
-  "volta": {
-    "node": "22.20.0",
-    "yarn": "1.22.22"
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@parcel/watcher",
+      "@prisma/client",
+      "@prisma/engines",
+      "bcrypt",
+      "better-sqlite3",
+      "esbuild",
+      "prisma",
+      "sharp",
+      "unrs-resolver",
+      "vue-demi"
+    ]
   }
 }
