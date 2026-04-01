@@ -1,8 +1,11 @@
 # Build stage
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
 # Use alpine-based image and install only necessary dependencies
 RUN apk add --no-cache openssl
+
+# Enable corepack and install pnpm
+RUN corepack enable && corepack prepare pnpm@10 --activate
 
 WORKDIR /app
 
@@ -10,19 +13,19 @@ WORKDIR /app
 ARG DATABASE_URL
 
 # Copy only necessary files for dependency installation
-COPY package.json yarn.lock ./
+COPY package.json pnpm-lock.yaml ./
 COPY prisma ./prisma/
 
-RUN yarn install --frozen-lockfile \
-  && yarn prisma:generate \
-  && yarn cache clean
+RUN pnpm install --frozen-lockfile \
+  && pnpm prisma:generate \
+  && pnpm store prune
 
 # Copy source files and build
 COPY . .
-RUN yarn run build
+RUN pnpm run build
 
 # Production stage
-FROM node:20-alpine
+FROM node:22-alpine
 
 LABEL maintainer="FAIR Data Innovations Hub <contact@fairdataihub.org>" \
   description="A platform for disseminating research posters."

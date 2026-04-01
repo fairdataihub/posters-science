@@ -98,11 +98,11 @@ jobs:
   #         node-version: 20
 
   #     # Step 3: Install Node.js dependencies
-  #     - run: yarn install
+  #     - run: pnpm install --frozen-lockfile
 
   #     # Step 4: Generate Prisma client for database operations
-  #     - run: yarn prisma:generate
+  #     - run: pnpm prisma:generate
 
   #     # Step 5: Deploy database migrations to production
   #     # Redirects output to /dev/null to reduce log noise
-  #     - run: yarn prisma:migrate:deploy > /dev/null
+  #     - run: pnpm prisma:migrate:deploy > /dev/null

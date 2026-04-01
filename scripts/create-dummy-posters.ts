@@ -7,7 +7,7 @@ const prisma = new PrismaClient();
 
 /**
  * Usage:
- *   yarn tsx scripts/seed-dummy-posters.ts --count 25 --email test@example.com
+ *   pnpm tsx scripts/seed-dummy-posters.ts --count 25 --email test@example.com
  *
  * Optional:
  *   --clear   (deletes existing posters for that user first)
