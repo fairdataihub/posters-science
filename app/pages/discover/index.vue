@@ -6,6 +6,7 @@ import {
   DateFormatter,
   getLocalTimeZone,
 } from "@internationalized/date";
+import { refDebounced } from "@vueuse/core";
 
 const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Discover Posters - Posters.science")}&description=${encodeURIComponent("Find and explore scientific posters on a variety of topics.")}&app=posters-science&org=fairdataihub`;
 
@@ -44,16 +45,12 @@ const page = ref(1);
 const sortBy = ref("Newest");
 const posters = ref<Poster[]>([]);
 const total = ref(0);
-const selectedTags = ref<string[]>([]);
-const availableTags = ref<string[]>([]);
+const searchQuery = ref("");
+const debouncedSearch = refDebounced(searchQuery, 300);
 
-const { data, error } = await useFetch("/api/discover");
-
-if (data.value) {
-  const apiPosters = (data.value.posters || []) as unknown as Poster[];
-
-  if (apiPosters.length > 0) {
-    posters.value = apiPosters.map((poster) => ({
+const mapPosters = (apiPosters: Poster[]) => {
+  if (apiPosters.length > 0 || debouncedSearch.value) {
+    return apiPosters.map((poster) => ({
       id: poster.id,
       title: poster.title ?? "Untitled poster",
       description: poster.description ?? "",
@@ -67,95 +64,58 @@ if (data.value) {
       views: typeof poster.views === "number" ? poster.views : 0,
       likes: typeof poster.likes === "number" ? poster.likes : 0,
     }));
-    total.value = data.value.total ?? posters.value.length;
   } else {
-    posters.value = Array.from({ length: 31 }, (_, index) => {
-      return {
-        id: index + 1,
-        title: faker.lorem.sentence(),
-        description: faker.lorem.paragraph(),
-        imageUrl: faker.image.urlPicsumPhotos({
-          width: 400,
-          height: 300,
-          blur: 0,
-        }),
-        keywords: Array.from({ length: faker.number.int(10) }, () =>
-          faker.lorem.word(),
-        ),
-        publishedAt: faker.date.past(),
-        created: faker.date.past(),
-        updated: faker.date.past(),
-        views: faker.number.int(100),
-        likes: faker.number.int(100),
-      };
-    });
-    total.value = posters.value.length;
+    return Array.from({ length: 31 }, (_, index) => ({
+      id: index + 1,
+      title: faker.lorem.sentence(),
+      description: faker.lorem.paragraph(),
+      imageUrl: faker.image.urlPicsumPhotos({
+        width: 400,
+        height: 300,
+        blur: 0,
+      }),
+      keywords: Array.from({ length: faker.number.int(10) }, () =>
+        faker.lorem.word(),
+      ),
+      publishedAt: faker.date.past(),
+      created: faker.date.past(),
+      updated: faker.date.past(),
+      views: faker.number.int(100),
+      likes: faker.number.int(100),
+    }));
   }
+};
 
-  posters.value = posters.value.sort((a, b) => {
-    return a.publishedAt && b.publishedAt
-      ? new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime()
-      : a.created && b.created
-        ? new Date(b.created).getTime() - new Date(a.created).getTime()
-        : 0;
-  });
-}
+const { data, error, status } = await useFetch("/api/discover", {
+  query: { search: debouncedSearch },
+});
+
+watch(debouncedSearch, () => {
+  page.value = 1;
+});
+
+watch(
+  data,
+  (val) => {
+    if (!val) return;
+    const apiPosters = (val.posters || []) as unknown as Poster[];
+    posters.value = mapPosters(apiPosters).sort((a, b) =>
+      a.publishedAt && b.publishedAt
+        ? new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime()
+        : a.created && b.created
+          ? new Date(b.created).getTime() - new Date(a.created).getTime()
+          : 0,
+    );
+    total.value = val.total ?? posters.value.length;
+  },
+  { immediate: true },
+);
 
 if (error.value) {
   console.error(error.value);
 }
 
-// Extract unique tags from all posters
-const extractAvailableTags = () => {
-  const allTags = new Set<string>();
-  posters.value.forEach((poster) => {
-    poster.keywords.forEach((tag) => {
-      // normalize tags and remove special characters for better matching
-      const cleanedTag = tag
-        .replace(/[^a-z0-9\s\-_]/g, "")
-        .replace(/\s+/g, " ")
-        .trim();
-
-      if (!cleanedTag) {
-        return;
-      }
-
-      allTags.add(cleanedTag);
-    });
-  });
-  availableTags.value = Array.from(allTags).sort();
-};
-
-// Computed property for filtered posters
-const filteredPosters = computed(() => {
-  if (selectedTags.value.length === 0) {
-    return posters.value;
-  } else {
-    return posters.value.filter((poster) =>
-      selectedTags.value.some((selectedTag) =>
-        poster.keywords.includes(selectedTag),
-      ),
-    );
-  }
-});
-
-// Computed property for total count
-const totalFiltered = computed(() => filteredPosters.value.length);
-
-// Toggle tag selection
-const toggleTag = (tag: string, checked: boolean | string) => {
-  const isChecked = Boolean(checked);
-  if (isChecked) {
-    if (!selectedTags.value.includes(tag)) {
-      selectedTags.value.push(tag);
-    }
-  } else {
-    selectedTags.value = selectedTags.value.filter((t) => t !== tag);
-  }
-};
-
-// Initialize
-extractAvailableTags();
+const totalFiltered = computed(() => total.value);
 </script>
 
 <template>
@@ -234,41 +194,14 @@ extractAvailableTags();
             </div>
 
             <div>
-              <h4 class="mb-3 text-sm font-medium">Tags</h4>
+              <h4 class="mb-3 text-sm font-medium">Search</h4>
 
-              <div class="space-y-2">
-                <div v-if="availableTags.length === 0" class="text-sm">
-                  No tags available
-                </div>
-
-                <div v-else class="space-y-2">
-                  <div
-                    v-for="tag in availableTags.slice(0, 10)"
-                    :key="tag"
-                    class="flex items-center"
-                  >
-                    <UCheckbox
-                      :id="`tag-${tag}`"
-                      :model-value="selectedTags.includes(tag)"
-                      class="mr-2"
-                      @update:model-value="(checked) => toggleTag(tag, checked)"
-                    />
-
-                    <label
-                      :for="`tag-${tag}`"
-                      class="flex-1 cursor-pointer text-sm capitalize"
-                    >
-                      {{ tag }}
-                    </label>
-                  </div>
-                </div>
-
-                <div v-if="selectedTags.length > 0" class="pt-2">
-                  <UButton variant="ghost" size="xs" @click="selectedTags = []">
-                    Clear all filters
-                  </UButton>
-                </div>
-              </div>
+              <UInput
+                v-model="searchQuery"
+                placeholder="Search posters..."
+                icon="i-lucide-search"
+                size="sm"
+              />
             </div>
           </div>
         </UCard>
@@ -302,94 +235,96 @@ extractAvailableTags();
           </div>
         </div>
 
-        <UPageGrid v-if="filteredPosters.length > 0">
-          <NuxtLink
-            v-for="poster in filteredPosters.slice((page - 1) * 9, page * 9)"
-            :key="poster.id"
-            :to="`/discover/${poster.id}`"
-            class="relative h-full"
-          >
-            <UCard
-              class="group relative flex h-full flex-1 cursor-pointer flex-col transition-all duration-300 hover:shadow-lg"
+        <UiSpinner :loading="status === 'pending'" overlay>
+          <UPageGrid v-if="posters.length > 0">
+            <NuxtLink
+              v-for="poster in posters.slice((page - 1) * 9, page * 9)"
+              :key="poster.id"
+              :to="`/discover/${poster.id}`"
+              class="relative h-full"
             >
-              <div class="relative h-full flex-1">
-                <div class="relative overflow-hidden">
-                  <NuxtImg
-                    :src="poster.imageUrl"
-                    :alt="poster.title"
-                    class="h-48 w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                  />
-                </div>
-
-                <div class="relative flex flex-col justify-between gap-2 p-2">
-                  <div class="flex flex-col gap-3">
-                    <h3 class="line-clamp-2 text-lg font-semibold">
-                      {{ poster.title }}
-                    </h3>
-
-                    <p class="line-clamp-3 text-sm leading-relaxed">
-                      {{ poster.description }}
-                    </p>
-
-                    <div class="flex flex-wrap gap-1">
-                      <UBadge
-                        v-for="tag in poster.keywords.slice(0, 2)"
-                        :key="tag"
-                        color="neutral"
-                        variant="soft"
-                        class="capitalize"
-                      >
-                        {{ tag }}
-                      </UBadge>
-
-                      <UBadge
-                        v-if="poster.keywords.length > 2"
-                        color="neutral"
-                        variant="soft"
-                      >
-                        + {{ poster.keywords.length - 2 }}
-                      </UBadge>
-                    </div>
+              <UCard
+                class="group relative flex h-full flex-1 cursor-pointer flex-col transition-all duration-300 hover:shadow-lg"
+              >
+                <div class="relative h-full flex-1">
+                  <div class="relative overflow-hidden">
+                    <NuxtImg
+                      :src="poster.imageUrl"
+                      :alt="poster.title"
+                      class="h-48 w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                    />
                   </div>
 
-                  <div
-                    class="flex items-center justify-between border-t border-gray-100 pt-2 text-sm"
-                  >
-                    <div class="flex items-center gap-4">
-                      <span class="flex items-center gap-1">
-                        <Icon name="heroicons:eye" />
-                        {{ poster.views }}
-                      </span>
+                  <div class="relative flex flex-col justify-between gap-2 p-2">
+                    <div class="flex flex-col gap-3">
+                      <h3 class="line-clamp-2 text-lg font-semibold">
+                        {{ poster.title }}
+                      </h3>
 
-                      <span class="flex items-center gap-1">
-                        <Icon name="heroicons:heart" />
-                        {{ poster.likes }}
-                      </span>
+                      <p class="line-clamp-3 text-sm leading-relaxed">
+                        {{ poster.description }}
+                      </p>
+
+                      <div class="flex flex-wrap gap-1">
+                        <UBadge
+                          v-for="tag in poster.keywords.slice(0, 2)"
+                          :key="tag"
+                          color="neutral"
+                          variant="soft"
+                          class="capitalize"
+                        >
+                          {{ tag }}
+                        </UBadge>
+
+                        <UBadge
+                          v-if="poster.keywords.length > 2"
+                          color="neutral"
+                          variant="soft"
+                        >
+                          + {{ poster.keywords.length - 2 }}
+                        </UBadge>
+                      </div>
                     </div>
 
-                    <span class="flex items-center gap-1">
-                      <Icon name="heroicons:calendar-days" />
-                      {{ dayjs(poster.created).format("MMM D, YYYY") }}
-                    </span>
+                    <div
+                      class="flex items-center justify-between border-t border-gray-100 pt-2 text-sm"
+                    >
+                      <div class="flex items-center gap-4">
+                        <span class="flex items-center gap-1">
+                          <Icon name="heroicons:eye" />
+                          {{ poster.views }}
+                        </span>
+
+                        <span class="flex items-center gap-1">
+                          <Icon name="heroicons:heart" />
+                          {{ poster.likes }}
+                        </span>
+                      </div>
+
+                      <span class="flex items-center gap-1">
+                        <Icon name="heroicons:calendar-days" />
+                        {{ dayjs(poster.created).format("MMM D, YYYY") }}
+                      </span>
+                    </div>
                   </div>
                 </div>
-              </div>
-            </UCard>
-          </NuxtLink>
-        </UPageGrid>
+              </UCard>
+            </NuxtLink>
+          </UPageGrid>
 
-        <!-- Empty State -->
-        <div v-else class="py-12 text-center">
-          <div
-            class="mx-auto mb-4 flex h-24 w-24 items-center justify-center rounded-full"
-          >
-            <Icon name="heroicons:magnifying-glass" class="h-12 w-12" />
+          <!-- Empty State -->
+          <div v-else class="py-12 text-center">
+            <div
+              class="mx-auto mb-4 flex h-24 w-24 items-center justify-center rounded-full"
+            >
+              <Icon name="heroicons:magnifying-glass" class="h-12 w-12" />
+            </div>
+
+            <h3 class="mb-2 text-lg font-medium">No posters found</h3>
+
+            <p class="mb-6">Try adjusting your search criteria or filters.</p>
           </div>
-
-          <h3 class="mb-2 text-lg font-medium">No posters found</h3>
-
-          <p class="mb-6">Try adjusting your search criteria or filters.</p>
-        </div>
+        </UiSpinner>
 
         <div class="flex justify-center pt-8 pb-4">
           <UPagination
