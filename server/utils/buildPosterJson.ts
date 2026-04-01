@@ -1,4 +1,4 @@
-import type { PosterMetadata } from "@prisma/client";
+import type { PosterMetadata } from "#shared/generated/client";
 import licenses from "../../app/assets/data/licenses.json";
 
 /**

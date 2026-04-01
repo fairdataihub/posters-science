@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import "dotenv/config";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "../shared/generated/client";
 import { faker } from "@faker-js/faker";
 
 const prisma = new PrismaClient();
