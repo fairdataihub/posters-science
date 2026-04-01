@@ -6,7 +6,6 @@ import {
   DateFormatter,
   getLocalTimeZone,
 } from "@internationalized/date";
-import { refDebounced } from "@vueuse/core";
 
 const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Discover Posters - Posters.science")}&description=${encodeURIComponent("Find and explore scientific posters on a variety of topics.")}&app=posters-science&org=fairdataihub`;
 
@@ -40,16 +39,18 @@ type Poster = {
   likes: number;
 };
 
+const PAGE_SIZE = 9;
+
 const page = ref(1);
 
 const sortBy = ref("Newest");
 const posters = ref<Poster[]>([]);
 const total = ref(0);
 const searchQuery = ref("");
-const debouncedSearch = refDebounced(searchQuery, 300);
+const committedSearch = ref("");
 
 const mapPosters = (apiPosters: Poster[]) => {
-  if (apiPosters.length > 0 || debouncedSearch.value) {
+  if (apiPosters.length > 0 || committedSearch.value) {
     return apiPosters.map((poster) => ({
       id: poster.id,
       title: poster.title ?? "Untitled poster",
@@ -87,12 +88,19 @@ const mapPosters = (apiPosters: Poster[]) => {
 };
 
 const { data, error, status } = await useFetch("/api/discover", {
-  query: { search: debouncedSearch },
+  query: { search: committedSearch, page, limit: PAGE_SIZE },
 });
 
-watch(debouncedSearch, () => {
+function triggerSearch() {
+  committedSearch.value = searchQuery.value;
   page.value = 1;
-});
+}
+
+function clearSearch() {
+  searchQuery.value = "";
+  committedSearch.value = "";
+  page.value = 1;
+}
 
 watch(
   data,
@@ -192,22 +200,28 @@ const totalFiltered = computed(() => total.value);
                 </template>
               </UPopover>
             </div>
-
-            <div>
-              <h4 class="mb-3 text-sm font-medium">Search</h4>
-
-              <UInput
-                v-model="searchQuery"
-                placeholder="Search posters..."
-                icon="i-lucide-search"
-                size="sm"
-              />
-            </div>
           </div>
         </UCard>
       </div>
 
       <div class="min-w-0 flex-1">
+        <div class="flex items-center gap-2 pb-4">
+          <UInput
+            v-model="searchQuery"
+            placeholder="Search posters by title, description, or keywords..."
+            icon="i-lucide-search"
+            @keydown.enter="triggerSearch"
+          />
+
+          <UButton
+            color="primary"
+            variant="outline"
+            label="Search Posters"
+            icon="i-lucide-search"
+            @click="triggerSearch"
+          />
+        </div>
+
         <div class="flex items-center justify-between pb-4">
           <div>
             <p class="text-sm">
@@ -238,7 +252,7 @@ const totalFiltered = computed(() => total.value);
         <UiSpinner :loading="status === 'pending'" overlay>
           <UPageGrid v-if="posters.length > 0">
             <NuxtLink
-              v-for="poster in posters.slice((page - 1) * 9, page * 9)"
+              v-for="poster in posters"
               :key="poster.id"
               :to="`/discover/${poster.id}`"
               class="relative h-full"
@@ -329,6 +343,7 @@ const totalFiltered = computed(() => total.value);
         <div class="flex justify-center pt-8 pb-4">
           <UPagination
             v-model:page="page"
+            :loading="status === 'pending'"
             :total="totalFiltered"
             variant="outline"
           />

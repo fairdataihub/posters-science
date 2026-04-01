@@ -1,5 +1,9 @@
 export default defineEventHandler(async (event) => {
-  const { search } = getQuery(event);
+  const { search, page, limit } = getQuery(event);
+
+  const pageNum = Math.max(1, parseInt(String(page || "1")));
+  const limitNum = Math.min(50, Math.max(1, parseInt(String(limit || "9"))));
+  const skip = (pageNum - 1) * limitNum;
 
   const searchFilter = search
     ? {
@@ -29,6 +33,8 @@ export default defineEventHandler(async (event) => {
       orderBy: {
         publishedAt: "desc",
       },
+      skip,
+      take: limitNum,
       include: {
         posterMetadata: {
           select: {
