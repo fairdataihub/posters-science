@@ -25,7 +25,7 @@ const links = ref([
   },
 ]);
 
-const { data: discoverData } = await useFetch("/api/discover");
+const { data: discoverData } = await useFetch("/api/discover/stats");
 
 const displayCount = ref(0);
 const displayIndexedCount = ref(0);
@@ -45,8 +45,11 @@ const animateCount = (target: number, output: Ref<number>) => {
 };
 
 onMounted(() => {
-  animateCount(discoverData.value?.total ?? 0, displayCount);
-  animateCount(1215, displayIndexedCount);
+  animateCount(discoverData.value?.sharedViaPlatformCount ?? 0, displayCount);
+  animateCount(
+    discoverData.value?.indexedViaAutomationCount ?? 0,
+    displayIndexedCount,
+  );
 });
 
 onMounted(() => {
