@@ -2,7 +2,7 @@
 import "dotenv/config";
 import * as fs from "fs";
 import * as path from "path";
-import { PrismaClient } from "../shared/generated/client";
+import { PrismaClient } from "../shared/generated";
 import { faker } from "@faker-js/faker";
 
 const prisma = new PrismaClient();
