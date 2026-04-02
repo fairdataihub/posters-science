@@ -559,6 +559,15 @@ async function handleArchive() {
 
       <!-- Not signed in -->
       <template v-else-if="!zenodoTokenExists">
+        <UAlert
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-triangle-alert"
+          class="mb-4"
+          title="Zenodo sign-in may require more than one attempt"
+          description="Zenodo's authentication can occasionally fail on the first try due to a known timing issue on their side. If you are redirected to an error page, use your browser's Back button to return to the Zenodo authorization page and approve access again. It typically resolves after one or two attempts."
+        />
+
         <div class="flex items-center justify-between">
           <p class="text-muted text-sm">
             Ready to archive on Zenodo? Sign in to get started.

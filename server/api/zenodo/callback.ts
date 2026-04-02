@@ -60,11 +60,10 @@ export default defineEventHandler(async (event) => {
       errorBody,
     );
 
-    throw createError({
-      statusCode: 500,
-      statusMessage: `Failed to obtain Zenodo access token: ${oauthTokenResponse.status}`,
-      data: { zenodoError: errorBody },
-    });
+    return sendRedirect(
+      event,
+      `/zenodo-auth-error?posterId=${encodeURIComponent(posterId)}`,
+    );
   }
 
   console.log("Zenodo OAuth token obtained successfully");
