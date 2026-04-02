@@ -20,7 +20,7 @@ const reviewLink = posterId
       variant="subtle"
       icon="i-lucide-triangle-alert"
       title="This is a known intermittent issue"
-      description="Zenodo's authentication occasionally rejects the sign-in code on the first attempt. This is not caused by anything you did wrong but rather a timing issue on Zenodo's side."
+      description="Zenodo authentication occasionally fails on the first attempt. This is a known issue and we are currently working with the Zenodo team to resolve it. This is not caused by anything you did wrong."
     />
 
     <div class="flex flex-col gap-3">

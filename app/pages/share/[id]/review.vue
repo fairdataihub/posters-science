@@ -565,7 +565,7 @@ async function handleArchive() {
           icon="i-lucide-triangle-alert"
           class="mb-4"
           title="Zenodo sign-in may require more than one attempt"
-          description="Zenodo's authentication can occasionally fail on the first try due to a known timing issue on their side. If you are redirected to an error page, use your browser's Back button to return to the Zenodo authorization page and approve access again. It typically resolves after one or two attempts."
+          description="There is a known issue where Zenodo authentication can occasionally fail on the first try. We are currently working with the Zenodo team to resolve this. If you are redirected to an error page, use your browser's Back button to return to the Zenodo authorization page and approve access again. It typically resolves after one or two attempts."
         />
 
         <div class="flex items-center justify-between">
