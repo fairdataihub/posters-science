@@ -396,7 +396,7 @@ onMounted(() => {
                 />
 
                 <div class="text-5xl font-bold text-pink-600">
-                  {{ displayCount }}
+                  {{ displayCount.toLocaleString() }}
                 </div>
 
                 <p class="text-lg font-semibold">Published Posters</p>
