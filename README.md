@@ -44,7 +44,7 @@ A free, open-source platform for sharing, discovering, and citing scientific pos
 
 ## About
 
-Posters.science is a platform for researchers to upload, share, and discover scientific conference posters. When a poster is uploaded, the platform automatically extracts structured metadata — titles, authors, affiliations, sections, figure captions, and more — making posters findable, citable, and machine-readable.
+Posters.science is a platform for researchers to upload, share, and discover scientific conference posters. When a poster is uploaded, the platform automatically extracts structured metadata such as titles, authors, affiliations, sections, and figure captions. This makes posters findable, citable, and machine-readable.
 
 The platform is built around [FAIR principles](https://www.go-fair.org/fair-principles/) (Findable, Accessible, Interoperable, Reusable) and integrates with [Zenodo](https://zenodo.org/) so that posters can be deposited with a DOI for long-term archival and citation.
 
@@ -84,11 +84,11 @@ flowchart TD
     G -.->|Optional| J["Deposit to Zenodo\nwith DOI"]
 ```
 
-**Text extraction** — PDF posters are processed by [pdfalto](https://github.com/kermitt2/pdfalto) for layout-aware text extraction. Image posters (JPG, PNG) are processed by [Qwen2-VL](https://huggingface.co/Qwen/Qwen2-VL-7B-Instruct), a vision-language model that reads text directly from the image. This is handled by the [extraction API](https://github.com/fairdataihub/posters-science-extraction-api).
+**Text extraction.** PDF posters are processed by [pdfalto](https://github.com/kermitt2/pdfalto) for layout-aware text extraction. Image posters (JPG, PNG) are processed by [Qwen2-VL](https://huggingface.co/Qwen/Qwen2-VL-7B-Instruct), a vision-language model that reads text directly from the image. This is handled by the [extraction API](https://github.com/fairdataihub/posters-science-extraction-api).
 
-**Metadata structuring** — The extracted raw text is structured into JSON by [Llama 3.1 8B](https://huggingface.co/fairdataihub/Llama-3.1-8B-Poster-Extraction) with parameters optimized for poster extraction. The output includes titles, authors, affiliations, content sections, figure/table captions, and more. See [poster2json](https://github.com/fairdataihub/poster2json) for the full extraction package.
+**Metadata structuring.** The extracted raw text is structured into JSON by [Llama 3.1 8B](https://huggingface.co/fairdataihub/Llama-3.1-8B-Poster-Extraction) with parameters optimized for poster extraction. The output includes titles, authors, affiliations, content sections, and figure/table captions. See [poster2json](https://github.com/fairdataihub/poster2json) for the full extraction package.
 
-**What gets stored** — The poster file is stored securely. Extracted metadata (conforming to the [poster-json-schema](https://github.com/fairdataihub/poster-json-schema), aligned with DataCite 4.7) is stored in a PostgreSQL database and made searchable on the platform. Users can optionally deposit their poster to [Zenodo](https://zenodo.org/) for a persistent DOI.
+**What gets stored.** The poster file is stored securely. Extracted metadata conforming to the [poster-json-schema](https://github.com/fairdataihub/poster-json-schema) (aligned with DataCite 4.7) is stored in a PostgreSQL database and made searchable on the platform. Users can optionally deposit their poster to [Zenodo](https://zenodo.org/) for a persistent DOI.
 
 ### Tech Stack
 
@@ -181,7 +181,7 @@ This project is funded by [The Navigation Fund](https://www.navigation.org/) ([1
 
 ## License
 
-MIT License — see [LICENSE](LICENSE) for details.
+Distributed under the MIT License. See [LICENSE](LICENSE) for details.
 
 ## Contributing
 
