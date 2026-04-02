@@ -1,14 +1,14 @@
 # Terms of Use
 
-These Terms of Use (the "Terms") govern your access to and use of Posters.Science (the "Platform") and related services. By accessing or using the Platform, you agree to be bound by these Terms. If you do not agree to these Terms, you must not use the Platform.
+These Terms of Use (the "Terms") govern your access to and use of Posters.science (the "Platform") and related services. By accessing or using the Platform, you agree to be bound by these Terms. If you do not agree to these Terms, you must not use the Platform.
 
-**Note:** Posters.Science is a platform for discovering and sharing scientific posters. The Platform does not host poster files directly — it provides metadata, previews, and links to posters archived in external repositories such as Zenodo. The Platform is designed to support responsible sharing and reuse of scientific posters in accordance with FAIR (Findable, Accessible, Interoperable, Reusable) data principles.
+**Note:** Posters.science is a platform for discovering and sharing scientific posters. The Platform does not host poster files directly — it provides metadata, previews, and links to posters archived in external repositories such as Zenodo. The Platform is designed to support responsible sharing and reuse of scientific posters in accordance with FAIR (Findable, Accessible, Interoperable, Reusable) data principles.
 
 ## 1. Definitions
 
 For the purposes of these Terms:
 
-- **"Posters.Science" or "Platform"** means the open platform for discovering, sharing, and indexing scientific posters, operated by the FAIR Data Innovations Hub.
+- **"Posters.science" or "Platform"** means the open platform for discovering, sharing, and indexing scientific posters, operated by the FAIR Data Innovations Hub.
 - **"Services"** means all functionality provided through the Platform, including poster discovery, poster submission, metadata browsing, and related tools.
 - **"User", "you"** means any individual or entity that accesses or uses the Platform.
 - **"Poster Record"** means a poster submission consisting of metadata, a poster.json file, and a link to the poster archived on an external repository.
@@ -26,7 +26,7 @@ Certain features of the Platform may require you to create an account. You agree
 
 ## 3. Nature of the Service
 
-Posters.Science is designed to make scientific posters more findable, accessible, and reusable. The Platform:
+Posters.science is designed to make scientific posters more findable, accessible, and reusable. The Platform:
 
 - Enables researchers to submit posters by uploading a PDF or image, reviewing AI-extracted metadata, and archiving the poster on Zenodo;
 - Automatically discovers and indexes poster records from external repositories using [PosterSentry](https://huggingface.co/fairdataihub/poster-sentry), an AI-powered verification model;
@@ -54,7 +54,7 @@ If you submit a poster to the Platform, you agree that:
 - You have the right to archive the poster on Zenodo and to make the associated metadata publicly available;
 - The poster and its metadata do not violate any third-party intellectual property rights, confidentiality obligations, or applicable laws;
 - You will provide accurate and complete metadata to support responsible discovery and reuse; and
-- You understand that your poster will be archived on Zenodo and that a `poster.json` file conforming to the Posters.Science schema will be generated and made publicly available.
+- You understand that your poster will be archived on Zenodo and that a `poster.json` file conforming to the Posters.science schema will be generated and made publicly available.
 
 ## 6. Acceptable Use
 
@@ -72,7 +72,7 @@ You agree not to use the Platform or Services to:
 
 ### 7.1 Platform and Software
 
-The Posters.Science software, design, and infrastructure are made available as open source. The source code is available at [github.com/fairdataihub/posters-science](https://github.com/fairdataihub/posters-science) and may be used subject to the terms of the applicable license(s).
+The Posters.science software, design, and infrastructure are made available as open source. The source code is available at [github.com/fairdataihub/posters-science](https://github.com/fairdataihub/posters-science) and may be used subject to the terms of the applicable license(s).
 
 ### 7.2 Poster Content and Metadata
 
@@ -95,11 +95,11 @@ We aim to provide a reliable service, but the Platform may experience downtime, 
 
 ## 11. Limitation of Liability
 
-To the fullest extent permitted by law, in no event shall the operators of Posters.Science, the FAIR Data Innovations Hub, or their respective institutions, funders, employees, or affiliates be liable for any indirect, incidental, consequential, special, exemplary, or punitive damages, or any loss of data, profits, or opportunities, arising out of or in connection with your use of or inability to use the Platform or any poster record.
+To the fullest extent permitted by law, in no event shall the operators of Posters.science, the FAIR Data Innovations Hub, or their respective institutions, funders, employees, or affiliates be liable for any indirect, incidental, consequential, special, exemplary, or punitive damages, or any loss of data, profits, or opportunities, arising out of or in connection with your use of or inability to use the Platform or any poster record.
 
 ## 12. Indemnification
 
-You agree to indemnify, defend, and hold harmless the operators of Posters.Science and their collaborators and institutions from and against any claims, liabilities, damages, losses, and expenses (including reasonable attorneys' fees) arising out of or in any way connected with your use of the Platform, your submission of poster content, your violation of these Terms, or your violation of any applicable law or third-party rights.
+You agree to indemnify, defend, and hold harmless the operators of Posters.science and their collaborators and institutions from and against any claims, liabilities, damages, losses, and expenses (including reasonable attorneys' fees) arising out of or in any way connected with your use of the Platform, your submission of poster content, your violation of these Terms, or your violation of any applicable law or third-party rights.
 
 ## 13. Third-Party Services
 
@@ -113,4 +113,4 @@ _Last updated: March 30, 2026_
 
 ## 15. Contact
 
-If you have questions about these Terms or about Posters.Science, please contact us through our [Contact page](/contact). You may also report technical issues or feature requests via our GitHub issues at [github.com/fairdataihub/posters-science/issues](https://github.com/fairdataihub/posters-science/issues).
+If you have questions about these Terms or about Posters.science, please contact us through our [Contact page](/contact). You may also report technical issues or feature requests via our GitHub issues at [github.com/fairdataihub/posters-science/issues](https://github.com/fairdataihub/posters-science/issues).

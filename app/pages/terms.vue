@@ -1,8 +1,8 @@
 <script setup lang="ts">
 useSeoMeta({
-  title: "Terms of Use - Posters.Science",
+  title: "Terms of Use - Posters.science",
   description:
-    "Terms and conditions governing the use of the Posters.Science platform and associated services.",
+    "Terms and conditions governing the use of the Posters.science platform and associated services.",
 });
 
 const { data: terms } = await useAsyncData(() =>

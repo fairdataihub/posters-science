@@ -72,12 +72,12 @@ export default defineEventHandler(async (event) => {
 
     await sendEmail({
       to: body.data.emailAddress,
-      subject: "Verify your email address — Posters.Science",
+      subject: "Verify your email address — Posters.science",
       html: `
 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; color: #333;">
   <h2 style="color: #1a1a1a;">Confirm Your Email Address</h2>
   <p>Hi ${body.data.givenName},</p>
-  <p>Thanks for signing up to Posters.Science! Please verify your email address by clicking the button below.</p>
+  <p>Thanks for signing up to Posters.science! Please verify your email address by clicking the button below.</p>
   <div style="text-align: center; margin: 32px 0;">
     <a href="${verificationLink}"
        style="background-color: #4F46E5; color: #ffffff; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: bold; display: inline-block;">
@@ -90,7 +90,7 @@ export default defineEventHandler(async (event) => {
   </p>
   <hr style="border: none; border-top: 1px solid #eee; margin: 24px 0;" />
   <p style="font-size: 12px; color: #999;">This link expires in <strong>30 minutes</strong>. If you didn't create an account, you can safely ignore this email.</p>
-  <p style="font-size: 13px; color: #555;">~ Posters.Science</p>
+  <p style="font-size: 13px; color: #555;">~ Posters.science</p>
 </div>
       `,
     });

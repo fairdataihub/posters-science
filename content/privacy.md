@@ -1,10 +1,10 @@
 # Privacy Policy
 
-This Privacy Policy explains how Posters.Science ("we", "our", or "us") collects, uses, and protects information when you use our platform and related services. By using Posters.Science, you agree to the practices described in this policy.
+This Privacy Policy explains how Posters.science ("we", "our", or "us") collects, uses, and protects information when you use our platform and related services. By using Posters.science, you agree to the practices described in this policy.
 
 ## 1. What We Collect
 
-We may collect the following types of information when you use Posters.Science:
+We may collect the following types of information when you use Posters.science:
 
 - **Account information:** such as your name, email address, affiliation, and password when you create an account.
 - **Poster submissions:** metadata and poster files you upload when submitting a poster, including information used to generate a `poster.json` file and to archive your poster on Zenodo.
@@ -17,14 +17,14 @@ We use the information we collect for purposes including:
 
 - Creating and managing your user account;
 - Processing poster submissions, generating `poster.json` files, and facilitating archiving on Zenodo;
-- Operating, maintaining, and improving Posters.Science and its features;
+- Operating, maintaining, and improving Posters.science and its features;
 - Monitoring service performance and security (for example, using logs and anonymous analytics);
 - Communicating with you about your account, submissions, or updates to our services and policies; and
 - Supporting platform evaluation in aggregate form (for example, number of posters shared or indexed).
 
 ## 3. Cookies and Analytics
 
-Posters.Science uses cookies strictly to keep you logged in and remember your preferences. For usage analytics, we use [Umami](https://umami.is), a privacy-focused, open-source analytics platform. Umami does not collect any personally identifiable information (PII), does not use cookies for tracking, and does not track users across sites or sessions. The analytics data we collect is fully anonymous and used only to understand general usage patterns and improve the platform. We do not sell your personal information.
+Posters.science uses cookies strictly to keep you logged in and remember your preferences. For usage analytics, we use [Umami](https://umami.is), a privacy-focused, open-source analytics platform. Umami does not collect any personally identifiable information (PII), does not use cookies for tracking, and does not track users across sites or sessions. The analytics data we collect is fully anonymous and used only to understand general usage patterns and improve the platform. We do not sell your personal information.
 
 ## 4. Sharing of Information
 
@@ -39,7 +39,7 @@ We do not sell or rent your personal information to third parties.
 
 ## 5. Data Security
 
-We use technical and organizational measures to help protect information processed through Posters.Science, including encrypted connections (HTTPS/TLS) and regularly updated systems. However, no method of transmission or storage is completely secure, and we cannot guarantee absolute security.
+We use technical and organizational measures to help protect information processed through Posters.science, including encrypted connections (HTTPS/TLS) and regularly updated systems. However, no method of transmission or storage is completely secure, and we cannot guarantee absolute security.
 
 ## 6. Data Retention
 
@@ -58,11 +58,11 @@ To exercise these rights or ask questions about your data, you can contact us us
 
 ## 8. Third-Party Links and Services
 
-Posters.Science links to external services including Zenodo and GitHub. This Privacy Policy applies only to Posters.Science. We are not responsible for the privacy practices of third-party sites or services.
+Posters.science links to external services including Zenodo and GitHub. This Privacy Policy applies only to Posters.science. We are not responsible for the privacy practices of third-party sites or services.
 
 ## 9. Changes to This Policy
 
-We may update this Privacy Policy from time to time to reflect changes to our practices or legal requirements. When we do, we will update the "Last updated" date below. Your continued use of Posters.Science after changes are posted means you accept the updated policy.
+We may update this Privacy Policy from time to time to reflect changes to our practices or legal requirements. When we do, we will update the "Last updated" date below. Your continued use of Posters.science after changes are posted means you accept the updated policy.
 
 _Last updated: March 30, 2026_
 

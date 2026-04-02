@@ -1,8 +1,8 @@
 <script setup lang="ts">
 useSeoMeta({
-  title: "Privacy Policy - Posters.Science",
+  title: "Privacy Policy - Posters.science",
   description:
-    "How the Posters.Science platform collects, uses, and protects personal information related to the use of the platform.",
+    "How the Posters.science platform collects, uses, and protects personal information related to the use of the platform.",
 });
 
 const { data: privacy } = await useAsyncData(() =>

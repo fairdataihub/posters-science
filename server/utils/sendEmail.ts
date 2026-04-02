@@ -15,7 +15,7 @@ export const sendEmail = async (options: {
   const resend = new Resend(config.resendApiKey);
 
   const { error } = await resend.emails.send({
-    from: "Posters.Science <noreply@posters.science>",
+    from: "Posters.science <noreply@posters.science>",
     to: [options.to],
     subject: options.subject,
     html: options.html,
