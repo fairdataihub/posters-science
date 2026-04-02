@@ -87,19 +87,5 @@
     "typescript": "5.9.3",
     "vue-echarts": "8.0.1",
     "zod": "4.3.6"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "@parcel/watcher",
-      "@prisma/client",
-      "@prisma/engines",
-      "bcrypt",
-      "better-sqlite3",
-      "esbuild",
-      "prisma",
-      "sharp",
-      "unrs-resolver",
-      "vue-demi"
-    ]
   }
 }

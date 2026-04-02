@@ -82,6 +82,9 @@ env:
     - NUXT_BUNNY_PUBLIC_STORAGE_KEY
     - NUXT_SITE_URL
     - NUXT_RESEND_API_KEY
+    - NUXT_UMAMI_USERNAME
+    - NUXT_UMAMI_PASSWORD
+    - NUXT_UMAMI_WEBSITE_ID
 # Aliases are triggered with "bin/kamal <alias>". You can overwrite arguments on invocation:
 # "bin/kamal app logs -r job" will tail logs from the first server in the job section.
 # These are convenient shortcuts for common operations

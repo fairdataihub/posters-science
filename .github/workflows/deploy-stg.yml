@@ -47,6 +47,9 @@ jobs:
       NUXT_BUNNY_PUBLIC_STORAGE_KEY: ${{ secrets.NUXT_BUNNY_PUBLIC_STORAGE_KEY }}
       NUXT_SITE_URL: ${{ secrets.NUXT_SITE_URL }}
       NUXT_RESEND_API_KEY: ${{ secrets.NUXT_RESEND_API_KEY }}
+      NUXT_UMAMI_USERNAME: ${{ secrets.NUXT_UMAMI_USERNAME }}
+      NUXT_UMAMI_PASSWORD: ${{ secrets.NUXT_UMAMI_PASSWORD }}
+      NUXT_UMAMI_WEBSITE_ID: ${{ secrets.NUXT_UMAMI_WEBSITE_ID }}
 
     steps:
       # Step 1: Checkout the repository code
