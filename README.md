@@ -50,7 +50,23 @@ The platform is built around [FAIR principles](https://www.go-fair.org/fair-prin
 
 Posters.science is developed by the [FAIR Data Innovations Hub](https://fairdataihub.org/) at the [California Medical Innovations Institute (CalMI2)](https://calmi2.org/).
 
-## How Poster Processing Works
+## Related Resources
+
+| Resource | Description |
+|----------|-------------|
+| [poster2json](https://github.com/fairdataihub/poster2json) | Python package and CLI for poster metadata extraction ([docs](https://fairdataihub.github.io/poster2json/)) |
+| [poster-json-schema](https://github.com/fairdataihub/poster-json-schema) | JSON schema for machine-actionable and FAIR poster metadata (DataCite 4.7) |
+| [poster-json-examples](https://github.com/fairdataihub/poster-json-examples) | Manually annotated ground-truth poster examples |
+| [posters-science-extraction-api](https://github.com/fairdataihub/posters-science-extraction-api) | Extraction API service used by the platform |
+| [poster-sentry](https://github.com/fairdataihub/poster-sentry) | Lightweight multimodal scientific poster classifier |
+| [poster-sentry-training](https://github.com/fairdataihub/poster-sentry-training) | Training data and scripts for the poster-sentry classifier |
+| [posters-science-dev-docs](https://github.com/fairdataihub/posters-science-dev-docs) | Developer documentation site ([live](https://dev.posters.science)) |
+| [posters-science-survey](https://github.com/fairdataihub/posters-science-survey) | Community survey on scientific poster sharing practices |
+| [poster-sharing-reuse-paper-code](https://github.com/fairdataihub/poster-sharing-reuse-paper-code) | Analysis code for the poster sharing and reuse study |
+
+## Developers
+
+### How Poster Processing Works
 
 When a user uploads a poster (PDF or image), the platform runs an automated extraction pipeline to convert the poster into structured, machine-readable metadata. Here is what happens:
 
@@ -74,7 +90,7 @@ flowchart TD
 
 **What gets stored** — The poster file is stored securely. Extracted metadata (conforming to the [poster-json-schema](https://github.com/fairdataihub/poster-json-schema), aligned with DataCite 4.7) is stored in a PostgreSQL database and made searchable on the platform. Users can optionally deposit their poster to [Zenodo](https://zenodo.org/) for a persistent DOI.
 
-## Tech Stack
+### Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
@@ -86,35 +102,16 @@ flowchart TD
 | Repository Integration | [Zenodo](https://zenodo.org/) |
 | Deployment | [Docker](https://www.docker.com/) |
 
-## Ecosystem
+### Getting Started
 
-Posters.science is made up of several repositories:
-
-| Repository | Description |
-|-----------|-------------|
-| [poster2json](https://github.com/fairdataihub/poster2json) | Python package and CLI for poster metadata extraction ([docs](https://fairdataihub.github.io/poster2json/)) |
-| [posters-science-extraction-api](https://github.com/fairdataihub/posters-science-extraction-api) | Extraction API service used by the platform |
-| [poster-json-schema](https://github.com/fairdataihub/poster-json-schema) | JSON schema for machine-actionable and FAIR poster metadata |
-| [poster-json-examples](https://github.com/fairdataihub/poster-json-examples) | Manually annotated ground-truth poster examples |
-| [poster-sentry](https://github.com/fairdataihub/poster-sentry) | Lightweight multimodal scientific poster classifier |
-| [poster-sentry-training](https://github.com/fairdataihub/poster-sentry-training) | Training data and scripts for the poster-sentry classifier |
-| [posters-science-dev-docs](https://github.com/fairdataihub/posters-science-dev-docs) | Developer documentation site ([live](https://dev.posters.science)) |
-| [posters-science-survey](https://github.com/fairdataihub/posters-science-survey) | Community survey on scientific poster sharing practices |
-
-### Related Research
-
-- [poster-sharing-reuse-paper-code](https://github.com/fairdataihub/poster-sharing-reuse-paper-code) — Analysis code for the poster sharing and reuse study
-
-## Getting Started
-
-### Prerequisites
+#### Prerequisites
 
 - [Node.js](https://nodejs.org/) (22.x recommended)
 - [Yarn](https://yarnpkg.com/) (1.x)
 - [Docker](https://www.docker.com/)
 - [Volta](https://volta.sh/) (optional, for Node version management)
 
-### Setup
+#### Setup
 
 1. Clone the repository
 
@@ -142,8 +139,6 @@ Posters.science is made up of several repositories:
    ```
 
 5. Open the application at [http://localhost:3000](http://localhost:3000)
-
-## Development
 
 ### Database
 
