@@ -49,7 +49,7 @@ const reviewLink = posterId
         color="primary"
         size="lg"
         icon="i-lucide-arrow-left"
-        @click="$router.go(-2)"
+        @click="$router.go(-1)"
       >
         Back to Zenodo Authorization
       </UButton>
