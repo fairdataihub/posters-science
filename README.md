@@ -121,25 +121,32 @@ Posters.science is made up of several repositories:
    cd posters-science
    ```
 
-2. Install dependencies
+2. Trust and install the required tool versions
+
+   ```bash
+   mise trust
+   mise install
+   ```
+
+3. Install dependencies
 
    ```bash
    pnpm install
    ```
 
-3. Add your environment variables
+4. Add your environment variables
 
    ```bash
    cp .env.example .env
    ```
 
-4. Start the development server
+5. Start the development server
 
    ```bash
    pnpm dev
    ```
 
-5. Open the application at [http://localhost:3000](http://localhost:3000)
+6. Open the application at [http://localhost:3000](http://localhost:3000)
 
 ## Development
 
