@@ -22,7 +22,8 @@
     "reset": "rm -rf node_modules && rm -rf .nuxt && rm -rf .output && rm -rf dist && pnpm install",
     "prune-branches": "git removed-branches --prune --force",
     "test:upload": "npx tsx scripts/upload-test-posters.ts",
-    "test:dummy": "npx tsx scripts/create-dummy-posters.ts"
+    "test:dummy": "npx tsx scripts/create-dummy-posters.ts",
+    "scripts:add:posters": "npx tsx scripts/add-extracted-posters.ts"
   },
   "dependencies": {
     "@inspira-ui/plugins": "0.0.2",

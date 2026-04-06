@@ -2,10 +2,11 @@
 import "dotenv/config";
 import * as fs from "fs";
 import * as path from "path";
-import { PrismaClient } from "../shared/generated";
-import { faker } from "@faker-js/faker";
+import { PrismaClient } from "../shared/generated/client";
+import { PrismaPg } from "@prisma/adapter-pg";
 
-const prisma = new PrismaClient();
+const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
+const prisma = new PrismaClient({ adapter });
 
 /**
  * Usage:
@@ -14,18 +15,15 @@ const prisma = new PrismaClient();
  * Optional:
  *   --dir     path to merged folder (default: ./merged)
  *   --limit   max number of posters to import (default: all)
- *   --clear   delete existing posters for that user first
- *   --skip-existing  skip posters whose DOI already exists in the DB (default: true)
+ *
+ * Posters are upserted by DOI URL (https://doi.org/<doi>).
+ * If a poster with the same DOI already exists it will be updated; otherwise created.
  */
 function getArg(name: string): string | undefined {
   const idx = process.argv.indexOf(`--${name}`);
   if (idx === -1) return undefined;
 
   return process.argv[idx + 1];
-}
-
-function hasFlag(name: string): boolean {
-  return process.argv.includes(`--${name}`);
 }
 
 type JsonPoster = {
@@ -111,10 +109,20 @@ function mapToDbFields(data: JsonPoster) {
   const posterDescription =
     descriptions[0]?.description ?? "No description provided for this poster";
 
-  const identifiers = data.identifiers ?? [];
-  const doi =
-    identifiers.find((x: any) => x?.identifierType === "DOI")?.identifier ??
-    null;
+  const identifiers = (data.identifiers ?? []).map((id: any) => {
+    if (id?.identifierType === "DOI" && typeof id?.identifier === "string") {
+      return {
+        ...id,
+        identifier: id.identifier.toLowerCase(),
+      };
+    }
+
+    return id;
+  });
+
+  const doiEntry = identifiers.find((x: any) => x?.identifierType === "DOI");
+  const doiRaw = doiEntry?.identifier;
+  const doi = typeof doiRaw === "string" ? doiRaw.toLowerCase() : null;
 
   const publisher =
     typeof data.publisher === "string"
@@ -232,28 +240,21 @@ function collectJsonFiles(mergedDir: string): string[] {
 
 async function main() {
   const userId = "0";
-  const clear = hasFlag("clear");
-  const skipExisting = !hasFlag("no-skip-existing");
   const limitArg = getArg("limit");
   const limit = limitArg ? Number(limitArg) : Infinity;
   const mergedDir = getArg("dir") ?? path.join(process.cwd(), "merged");
 
   console.log(`\n👤 Importing posters for userId: ${userId}`);
 
-  if (clear) {
-    console.log(`🧹 Clearing existing posters for userId=${userId}...`);
-    await prisma.poster.deleteMany({ where: { userId } });
-  }
-
   const allFiles = collectJsonFiles(mergedDir);
   console.log(`📂 Found ${allFiles.length} JSON files in ${mergedDir}`);
 
-  let imported = 0;
-  let skipped = 0;
+  let created = 0;
+  let updated = 0;
   let errored = 0;
 
   for (const filePath of allFiles) {
-    if (imported >= limit) break;
+    if (created + updated >= limit) break;
 
     const raw = fs.readFileSync(filePath, "utf-8");
     let data: JsonPoster;
@@ -267,77 +268,105 @@ async function main() {
 
     const mapped = mapToDbFields(data);
 
-    // Skip if this DOI already exists in the DB
-    if (skipExisting && mapped.doi) {
-      const existing = await prisma.posterMetadata.findFirst({
-        where: { doi: mapped.doi },
-        select: { posterId: true },
-      });
-      if (existing) {
-        skipped++;
-        continue;
-      }
-    }
-
-    try {
-      const created = await prisma.$transaction(async (tx) => {
-        const poster = await tx.poster.create({
-          data: {
-            userId,
-            title: mapped.posterTitle,
-            description: mapped.posterDescription,
-            imageUrl: "",
-            automated: true,
-            status: "published",
-            publishedAt: mapped.issuedAt,
-            created: mapped.issuedAt,
-            updated: mapped.issuedAt,
-            randomInt: faker.number.int(1000000),
-          },
-          select: { id: true, title: true },
-        });
-
-        await tx.posterMetadata.create({
-          data: {
-            posterId: poster.id,
-            doi: mapped.doi,
-            identifiers: mapped.identifiers,
-            creators: mapped.creators,
-            publisher: mapped.publisher,
-            publicationYear: mapped.publicationYear,
-            subjects: mapped.subjects,
-            language: mapped.language,
-            relatedIdentifiers: mapped.relatedIdentifiers,
-            size: mapped.size,
-            format: mapped.format,
-            version: mapped.version,
-            license: mapped.license,
-            fundingReferences: mapped.fundingReferences,
-            conferenceName: mapped.conferenceName,
-            conferenceLocation: mapped.conferenceLocation,
-            conferenceUri: mapped.conferenceUri,
-            conferenceIdentifier: mapped.conferenceIdentifier,
-            conferenceIdentifierType: mapped.conferenceIdentifierType,
-            conferenceYear: mapped.conferenceYear,
-            conferenceStartDate: mapped.conferenceStartDate,
-            conferenceEndDate: mapped.conferenceEndDate,
-            conferenceAcronym: mapped.conferenceAcronym,
-            conferenceSeries: mapped.conferenceSeries,
-            posterContent: mapped.posterContent,
-            tableCaptions: mapped.tableCaptions,
-            imageCaptions: mapped.imageCaptions,
-            domain: mapped.domain,
+    // The unique key is the DOI URL (https://doi.org/<doi>)
+    const existingMetadata = mapped.doi
+      ? await prisma.posterMetadata.findFirst({
+          where: {
+            doi: {
+              equals: mapped.doi,
+              mode: "insensitive",
+            },
           },
           select: { posterId: true },
+        })
+      : null;
+
+    const metadataPayload = {
+      doi: mapped.doi,
+      identifiers: mapped.identifiers,
+      creators: mapped.creators,
+      publisher: mapped.publisher,
+      publicationYear: mapped.publicationYear,
+      subjects: mapped.subjects,
+      language: mapped.language,
+      relatedIdentifiers: mapped.relatedIdentifiers,
+      size: mapped.size,
+      format: mapped.format,
+      version: mapped.version,
+      license: mapped.license,
+      fundingReferences: mapped.fundingReferences,
+      conferenceName: mapped.conferenceName,
+      conferenceLocation: mapped.conferenceLocation,
+      conferenceUri: mapped.conferenceUri,
+      conferenceIdentifier: mapped.conferenceIdentifier,
+      conferenceIdentifierType: mapped.conferenceIdentifierType,
+      conferenceYear: mapped.conferenceYear,
+      conferenceStartDate: mapped.conferenceStartDate,
+      conferenceEndDate: mapped.conferenceEndDate,
+      conferenceAcronym: mapped.conferenceAcronym,
+      conferenceSeries: mapped.conferenceSeries,
+      posterContent: mapped.posterContent,
+      tableCaptions: mapped.tableCaptions,
+      imageCaptions: mapped.imageCaptions,
+      domain: mapped.domain,
+    };
+
+    try {
+      if (existingMetadata) {
+        // Update existing poster and its metadata
+        await prisma.$transaction(async (tx) => {
+          await tx.poster.update({
+            where: { id: existingMetadata.posterId },
+            data: {
+              title: mapped.posterTitle,
+              description: mapped.posterDescription,
+              publishedAt: mapped.issuedAt,
+              updated: mapped.issuedAt,
+            },
+          });
+
+          await tx.posterMetadata.update({
+            where: { posterId: existingMetadata.posterId },
+            data: metadataPayload,
+          });
         });
 
-        return poster;
-      });
+        updated++;
+        console.log(
+          `   🔄 [updated] ${existingMetadata.posterId} — ${mapped.posterTitle.slice(0, 60)}`,
+        );
+      } else {
+        // Create new poster and metadata
+        const poster = await prisma.$transaction(async (tx) => {
+          const p = await tx.poster.create({
+            data: {
+              userId,
+              title: mapped.posterTitle,
+              description: mapped.posterDescription,
+              imageUrl: "",
+              automated: true,
+              status: "published",
+              publishedAt: mapped.issuedAt,
+              created: mapped.issuedAt,
+              updated: mapped.issuedAt,
+              randomInt: Math.floor(Math.random() * 1000000),
+            },
+            select: { id: true, title: true },
+          });
 
-      imported++;
-      console.log(
-        `   ✅ [${imported}] ${created.id} — ${created.title.slice(0, 60)}`,
-      );
+          await tx.posterMetadata.create({
+            data: { posterId: p.id, ...metadataPayload },
+            select: { posterId: true },
+          });
+
+          return p;
+        });
+
+        created++;
+        console.log(
+          `   ✅ [created] ${poster.id} — ${poster.title.slice(0, 60)}`,
+        );
+      }
     } catch (err: any) {
       console.warn(`   ❌ Failed: ${filePath}\n      ${err?.message}`);
       errored++;
@@ -345,7 +374,7 @@ async function main() {
   }
 
   console.log(
-    `\n🎉 Done. Imported: ${imported}, Skipped (duplicate): ${skipped}, Errored: ${errored}\n`,
+    `\n🎉 Done. Created: ${created}, Updated: ${updated}, Errored: ${errored}\n`,
   );
 }
 
