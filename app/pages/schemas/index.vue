@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import schemaListJSON from "../../../public/filesList.json";
+import schemaListJSON from "../../../public/assets/filesList.json";
 
 definePageMeta({
   layout: false,
