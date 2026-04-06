@@ -5,16 +5,6 @@ const verifySchema = z.object({
 });
 
 export default defineEventHandler(async (event) => {
-  const config = useRuntimeConfig();
-  const { siteEnv } = config.public;
-
-  if (siteEnv !== "dev" && siteEnv !== "staging") {
-    throw createError({
-      statusCode: 404,
-      statusMessage: "Email verification is not enabled for this environment",
-    });
-  }
-
   const body = await readValidatedBody(event, (b) => verifySchema.safeParse(b));
 
   if (!body.success) {

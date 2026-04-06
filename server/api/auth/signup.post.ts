@@ -15,13 +15,6 @@ export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig();
   const { siteEnv } = config.public;
 
-  if (siteEnv !== "dev" && siteEnv !== "staging" && siteEnv !== "development") {
-    throw createError({
-      statusCode: 404,
-      statusMessage: "Signup is not enabled for this environment",
-    });
-  }
-
   const session = await getUserSession(event);
 
   if ("user" in session) {
