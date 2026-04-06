@@ -42,13 +42,14 @@ export default defineEventHandler(async (event) => {
 
   const config = useRuntimeConfig();
   if (filePath && config.bunnyPrivateStorage && config.bunnyPrivateStorageKey) {
-    const res = await fetch(`${config.bunnyPrivateStorage}/${filePath}`, {
+    const folderPath = filePath.substring(0, filePath.lastIndexOf("/") + 1);
+    const res = await fetch(`${config.bunnyPrivateStorage}/${folderPath}`, {
       method: "DELETE",
       headers: { AccessKey: config.bunnyPrivateStorageKey },
     });
     if (!res.ok) {
       console.error(
-        `[poster/delete] Bunny delete failed for ${filePath}: ${res.status}`,
+        `[poster/delete] Bunny delete failed for ${folderPath}: ${res.status}`,
       );
     }
   }
