@@ -2,22 +2,44 @@
 import type { NavigationMenuItem } from "@nuxt/ui";
 
 const { clear } = useUserSession();
+const feedbackOpen = useState("feedbackOpen", () => false);
+
 const route = useRoute();
 
 const logout = async () => {
   clear();
-  await navigateTo("/login");
+  await navigateTo("/");
 };
 
 const headerItems = computed<NavigationMenuItem[]>(() => [
   {
     label: "Dashboard",
-    to: "/app/dashboard",
-    active: route.path.startsWith("/app/dashboard"),
+    to: "/dashboard",
+    active: route.path.startsWith("/dashboard"),
   },
   {
-    label: "Changelog",
-    to: "https://github.com/fairdataihub/nuxt-starter/CHANGELOG.md",
+    label: "Find Posters",
+    to: "/discover",
+    active: route.path.startsWith("/discover"),
+  },
+  {
+    label: "Share a Poster",
+    to: "/share/new",
+    active: route.path.startsWith("/share"),
+  },
+  // {
+  //   label: "Learn More",
+  //   to: "/about",
+  //   active: route.path.startsWith("/about"),
+  // },
+  // {
+  //   label: "Metrics",
+  //   to: "/metrics",
+  //   active: route.path.startsWith("/metrics"),
+  // },
+  {
+    label: "GitHub",
+    to: "https://github.com/fairdataihub/posters-science",
     target: "_blank",
   },
 ]);
@@ -33,28 +55,19 @@ const footerItems: NavigationMenuItem[] = [
 
 <template>
   <div class="relative">
-    <UiAuroraBackground class="absolute inset-0 -z-10 h-full" />
+    <!-- <UiAuroraBackground class="absolute inset-0 -z-10 h-full" /> -->
 
-    <UHeader class="!hidden">
+    <UHeader>
       <template #title>
-        <NuxtLink to="/" class="flex text-2xl font-bold"> Nuxt App </NuxtLink>
+        <NuxtLink to="/" class="flex text-2xl font-bold">
+          Posters.science
+        </NuxtLink>
       </template>
 
       <UNavigationMenu :items="headerItems" />
 
       <template #right>
         <UColorModeButton />
-
-        <UTooltip text="Open on GitHub" :kbds="['meta', 'G']">
-          <UButton
-            color="neutral"
-            variant="ghost"
-            to="https://github.com/fairdataihub/nuxt-starter"
-            target="_blank"
-            icon="i-simple-icons-github"
-            aria-label="GitHub"
-          />
-        </UTooltip>
 
         <AuthState v-slot="{ loggedIn }">
           <UButton
@@ -67,11 +80,9 @@ const footerItems: NavigationMenuItem[] = [
           </UButton>
 
           <div v-else class="flex items-center justify-center gap-3">
-            <UButton to="/login" color="neutral" variant="outline">
-              Sign in
-            </UButton>
+            <UButton to="/login" variant="outline"> Sign in </UButton>
 
-            <UButton to="/signup" color="neutral">
+            <UButton to="/signup">
               <template #trailing>
                 <Icon name="i-heroicons-arrow-right-20-solid" size="20" />
               </template>
@@ -86,7 +97,7 @@ const footerItems: NavigationMenuItem[] = [
       <slot />
     </UMain>
 
-    <UFooter class="">
+    <UFooter>
       <template #left>
         <p class="text-muted text-sm">
           Copyright © {{ new Date().getFullYear() }}
@@ -108,5 +119,39 @@ const footerItems: NavigationMenuItem[] = [
         />
       </template>
     </UFooter>
+
+    <div class="fixed right-6 bottom-6 z-30">
+      <UButton
+        color="info"
+        variant="solid"
+        size="xl"
+        class="rounded-full p-3"
+        aria-label="How are we doing? Give us feedback!"
+        @click="feedbackOpen = true"
+      >
+        <template #leading>
+          <Icon name="material-symbols:rate-review" size="25" />
+        </template>
+      </UButton>
+    </div>
+
+    <UModal
+      v-model:open="feedbackOpen"
+      title="Poster Submission Feedback"
+      description="Tell us how the experience was using our platform!"
+      class="max-w-2xl"
+      :ui="{ title: 'text-xl font-semibold' }"
+    >
+      <template #body>
+        <iframe
+          src="https://tally.so/embed/XxEBYP?alignLeft=1&hideTitle=1"
+          width="100%"
+          height="500"
+          frameborder="0"
+          title="Feedback form"
+          class="dark:[filter:invert(1)_contrast(0.9)_brightness(1.2)]"
+        />
+      </template>
+    </UModal>
   </div>
 </template>

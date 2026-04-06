@@ -3,6 +3,7 @@ import { Motion } from "motion-v";
 import type { HTMLAttributes } from "vue";
 
 interface BoxRevealProps {
+  // eslint-disable-next-line vue/require-default-prop
   class?: HTMLAttributes["class"];
   color?: string;
   delay?: number;
@@ -50,7 +51,7 @@ const visibleSlideVariants = {
         ease: 'easeIn',
         delay: props.delay,
       }"
-    ></Motion>
+    />
   </div>
 </template>
 

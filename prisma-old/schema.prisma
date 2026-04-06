@@ -1,0 +1,194 @@
+generator client {
+    provider        = "prisma-client-js"
+    previewFeatures = ["strictUndefinedChecks"]
+}
+
+// generator kysely {
+//   provider = "prisma-kysely"
+
+//   output   = "../types"
+//   fileName = "kysely.ts"
+// }
+
+datasource db {
+    provider = "postgresql"
+    url      = env("DATABASE_URL")
+}
+
+model User {
+    id String @id @default(cuid(2))
+
+    givenName  String @default("") // first name
+    familyName String @default("") // last name
+
+    emailAddress String @unique
+    password     String
+
+    emailVerified                 Boolean   @default(false)
+    emailVerifiedAt               DateTime?
+    emailVerificationToken        String?   @unique
+    emailVerificationTokenExpires DateTime?
+
+    created DateTime @default(now())
+    updated DateTime @updatedAt
+    Poster  Poster[]
+
+    ZenodoToken       ZenodoToken?
+    ZenodoDepositions ZenodoDeposition[]
+
+    likes Like[] @relation("UserLikes")
+
+    @@index([emailAddress])
+}
+
+model UserInterest {
+    id String @id @default(cuid(2))
+
+    emailAddress String @unique
+
+    created DateTime @default(now())
+
+    @@index([emailAddress])
+}
+
+model Poster {
+    id Int @id @default(autoincrement())
+
+    title       String
+    description String
+
+    imageUrl String
+
+    status      String    @default("draft") // draft, downloaded, published
+    publishedAt DateTime?
+
+    user   User   @relation(fields: [userId], references: [id])
+    userId String
+
+    randomInt Int @default(0) // a field to touch when data in a related table is updated - For sorting by last updated
+
+    created DateTime @default(now())
+    updated DateTime @updatedAt
+
+    posterMetadata    PosterMetadata?
+    zenodoDepositions ZenodoDeposition?
+
+    extractionJob ExtractionJob?
+
+    automated Boolean @default(false) // Whether the poster was created through automated extraction or manual submission
+
+    likes Like[] @relation("PosterLikes")
+}
+
+model PosterMetadata {
+    poster   Poster @relation(fields: [posterId], references: [id], onDelete: Cascade)
+    posterId Int    @id
+
+    doi String?
+
+    identifiers Json @default("[]") // [{ identifier: string, identifierType: string }]
+
+    creators Json @default("[]") // [{ name: string, nameType: string, nameIdentifiers: string[], affiliation: string[] }]
+
+    publisher       String?
+    publicationYear Int?
+
+    subjects String[] @default([])
+
+    domain   String?
+    language String?
+    version  String?
+
+    size   String?
+    format String?
+
+    license String? // SPDX identifier
+
+    fundingReferences Json @default("[]") // [{ funderName: string, funderIdentifier: string, funderIdentifierType: string, awardNumber: string, awardUri: string, awardTitle: string }]
+
+    conferenceName           String?
+    conferenceLocation       String?
+    conferenceUri            String?
+    conferenceIdentifier     String?
+    conferenceIdentifierType String?
+    conferenceYear           Int?
+    conferenceStartDate      String?
+    conferenceEndDate        String?
+    conferenceAcronym        String?
+    conferenceSeries         String?
+
+    relatedIdentifiers Json @default("[]") // [{ relatedIdentifier: string, relatedIdentifierType: string, relationType: string }]
+
+    posterContent Json @default("[]") // { sections: [{ sectionTitle: string, sectionContent: string }], unstructuredContent: string }
+    tableCaptions Json @default("[]") // [{ id: string, caption: string }]
+    imageCaptions Json @default("[]") // [{ id: string, caption: string }]
+
+    created DateTime @default(now())
+    updated DateTime @updatedAt
+}
+
+model Like {
+    user   User   @relation("UserLikes", fields: [userId], references: [id], onDelete: Cascade)
+    userId String
+
+    poster   Poster @relation("PosterLikes", fields: [posterId], references: [id], onDelete: Cascade)
+    posterId Int
+
+    created DateTime @default(now())
+    updated DateTime @updatedAt
+
+    @@id([userId, posterId])
+}
+
+model ZenodoToken {
+    id String @id @default(cuid(2))
+
+    user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+    userId String @unique
+
+    accessToken  String
+    refreshToken String
+    expiresAt    DateTime
+
+    created DateTime @default(now())
+    updated DateTime @updatedAt
+
+    @@index([userId])
+}
+
+model ZenodoDeposition {
+    id String @id @default(cuid(2))
+
+    depositionId           Int     @unique // Last published Zenodo deposition ID
+    status                 String  @default("unpublished") // draft, published, unpublished
+    lastPublishedZenodoDoi String? // Last published Zenodo DOI
+
+    user   User   @relation(fields: [userId], references: [id])
+    userId String
+
+    poster   Poster @relation(fields: [posterId], references: [id], onDelete: Cascade)
+    posterId Int    @unique
+
+    created DateTime @default(now())
+    updated DateTime @updatedAt
+}
+
+model ExtractionJob {
+    // This record and the files will only be removed after the poster is published or a doi is submitted
+    id String @id @default(cuid(2))
+
+    poster   Poster @relation(fields: [posterId], references: [id], onDelete: Cascade)
+    posterId Int    @unique
+
+    fileName String
+    filePath String
+
+    completed Boolean @default(false)
+    status    String  @default("pending-extraction") // pending-extraction, processing, completed, failed
+    error     String? // Filled when job fails
+
+    created DateTime @default(now())
+    updated DateTime @updatedAt
+
+    @@index([status])
+}

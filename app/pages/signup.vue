@@ -2,11 +2,12 @@
 import { z } from "zod";
 import type { FormSubmitEvent } from "#ui/types";
 
-const config = useRuntimeConfig();
 const { loggedIn } = useUserSession();
+const { siteEnv } = useRuntimeConfig().public;
+const isDev = siteEnv === "development" || siteEnv === "dev";
 
 if (loggedIn.value) {
-  await navigateTo("/app/dashboard");
+  await navigateTo("/dashboard");
 }
 
 definePageMeta({
@@ -32,10 +33,10 @@ const schema = z.object({
 type Schema = z.output<typeof schema>;
 
 const state = reactive({
-  emailAddress: "rick@example.com",
-  familyName: "Sanchez",
-  givenName: "Rick",
-  password: "12345678",
+  emailAddress: isDev ? "rick@example.com" : "",
+  familyName: isDev ? "Sanchez" : "",
+  givenName: isDev ? "Rick" : "",
+  password: isDev ? "12345678" : "",
 });
 
 async function onSubmit(event: FormSubmitEvent<Schema>) {
@@ -56,16 +57,19 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
       toast.add({
         title: "Account created successfully",
         color: "info",
-        description: config.public.ENABLE_EMAIL_VERIFICATION
-          ? "Please check your email to verify your account before logging in."
-          : "You can now log in to your account.",
+        description: isDev
+          ? "You can now log in to your account."
+          : "Please check your email to verify your account before logging in.",
         icon: "material-symbols:mail-outline",
       });
+
+      window.umami?.track("signup_completed");
+      navigateTo("/login");
     })
     .catch((error) => {
       console.error(error.data);
       toast.add({
-        title: "Error creating account",
+        title: "Registration failed",
         color: "error",
         description: error.data.statusMessage,
         icon: "material-symbols:error",
@@ -138,8 +142,8 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
 
     <template #footer>
       <p class="text-center text-sm">
-        By signing in, you agree to our
-        <NuxtLink to="/signup" class="text-primary-500 text-sm font-medium">
+        By signing up, you agree to our
+        <NuxtLink to="/terms" class="text-primary-500 text-sm font-medium">
           Terms of Service</NuxtLink
         >.
       </p>

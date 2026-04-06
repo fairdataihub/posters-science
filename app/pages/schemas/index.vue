@@ -1,9 +1,13 @@
 <script setup lang="ts">
 import schemaListJSON from "../../../public/assets/filesList.json";
 
+definePageMeta({
+  layout: false,
+});
+
 useSeoMeta({
-  title: "Posters.Science Schemas",
-  description: "A collection of schemas used in posters.science applications",
+  title: "Poster.science Schemas",
+  description: "A collection of schemas used in poster.science applications",
 });
 </script>
 
@@ -11,7 +15,7 @@ useSeoMeta({
   <main
     class="flex min-h-screen flex-col items-start justify-start bg-black p-24 text-slate-50"
   >
-    <h1 class="text-5xl font-bold">Posters.Science Schemas</h1>
+    <h1 class="text-5xl font-bold">Poster.science Schemas</h1>
 
     <h2 class="mt-6 mb-3 px-5 text-base font-medium">
       A collection of schemas used in poster.science applications

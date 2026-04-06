@@ -18,6 +18,8 @@ logs
 .DS_Store
 .fleet
 .idea
+.vscode/
+example_posters/
 
 # Local env files
 .env
@@ -28,3 +30,9 @@ logs
 postgres-data/*
 redis-data/*
 database.sqlite
+
+# Prisma generated files
+shared/generated/*
+
+# Automated poster extraction
+merged/

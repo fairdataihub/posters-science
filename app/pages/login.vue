@@ -3,12 +3,13 @@ import { z } from "zod";
 import type { FormSubmitEvent } from "#ui/types";
 
 const { loggedIn } = useUserSession();
+const { siteEnv } = useRuntimeConfig().public;
 const route = useRoute();
 
 const routeQueryParams = route.query;
 
 if (loggedIn.value) {
-  await navigateTo("/app/dashboard");
+  await navigateTo("/dashboard");
 }
 
 definePageMeta({
@@ -32,8 +33,8 @@ const schema = z.object({
 type Schema = z.output<typeof schema>;
 
 const state = reactive({
-  emailAddress: "rick@example.com",
-  password: "12345678",
+  emailAddress: siteEnv === "development" ? "rick@example.com" : "",
+  password: siteEnv === "development" ? "12345678" : "",
 });
 
 async function onSubmit(event: FormSubmitEvent<Schema>) {
@@ -55,12 +56,13 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
         icon: "material-symbols:check-circle-outline",
       });
 
+      window.umami?.track("login_completed");
       if (routeQueryParams.redirect) {
         console.log("redirecting to", routeQueryParams.redirect);
 
         window.location.href = routeQueryParams.redirect as string;
       } else {
-        window.location.href = "/app/dashboard";
+        window.location.href = "/dashboard";
       }
     })
     .catch((error) => {
@@ -147,7 +149,7 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
     <template #footer>
       <p class="text-center text-sm">
         By signing in, you agree to our
-        <NuxtLink to="/signup" class="text-primary-500 text-sm font-medium">
+        <NuxtLink to="/terms" class="text-primary-500 text-sm font-medium">
           Terms of Service</NuxtLink
         >.
       </p>

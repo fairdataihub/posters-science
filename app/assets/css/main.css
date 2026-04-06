@@ -12,10 +12,7 @@
   --auth-color-gray-900: 17 24 39;
   --auth-color-gray-950: 3 7 18;
 
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --container-8xl: 96rem /* 1536px */;
 }
 
 @theme inline {
@@ -50,4 +47,19 @@ body {
 
 pre {
   @apply text-xs whitespace-pre-wrap;
+}
+
+/* Line clamp utilities */
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.line-clamp-3 {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
