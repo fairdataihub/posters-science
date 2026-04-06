@@ -52,17 +52,17 @@ Posters.science is developed by the [FAIR Data Innovations Hub](https://fairdata
 
 ## Related Resources
 
-| Resource | Description |
-|----------|-------------|
-| [poster2json](https://github.com/fairdataihub/poster2json) | Python package and CLI for poster metadata extraction ([docs](https://fairdataihub.github.io/poster2json/)) |
-| [poster-json-schema](https://github.com/fairdataihub/poster-json-schema) | JSON schema for machine-actionable and FAIR poster metadata (DataCite 4.7) |
-| [poster-json-examples](https://github.com/fairdataihub/poster-json-examples) | Manually annotated ground-truth poster examples |
-| [posters-science-extraction-api](https://github.com/fairdataihub/posters-science-extraction-api) | Extraction API service used by the platform |
-| [poster-sentry](https://github.com/fairdataihub/poster-sentry) | Lightweight multimodal scientific poster classifier |
-| [poster-sentry-training](https://github.com/fairdataihub/poster-sentry-training) | Training data and scripts for the poster-sentry classifier |
-| [posters-science-dev-docs](https://github.com/fairdataihub/posters-science-dev-docs) | Developer documentation site ([live](https://dev.posters.science)) |
-| [posters-science-survey](https://github.com/fairdataihub/posters-science-survey) | Community survey on scientific poster sharing practices |
-| [poster-sharing-reuse-paper-code](https://github.com/fairdataihub/poster-sharing-reuse-paper-code) | Analysis code for the poster sharing and reuse study |
+| Resource                                                                                           | Description                                                                                                 |
+| -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| [poster2json](https://github.com/fairdataihub/poster2json)                                         | Python package and CLI for poster metadata extraction ([docs](https://fairdataihub.github.io/poster2json/)) |
+| [poster-json-schema](https://github.com/fairdataihub/poster-json-schema)                           | JSON schema for machine-actionable and FAIR poster metadata (DataCite 4.7)                                  |
+| [poster-json-examples](https://github.com/fairdataihub/poster-json-examples)                       | Manually annotated ground-truth poster examples                                                             |
+| [posters-science-extraction-api](https://github.com/fairdataihub/posters-science-extraction-api)   | Extraction API service used by the platform                                                                 |
+| [poster-sentry](https://github.com/fairdataihub/poster-sentry)                                     | Lightweight multimodal scientific poster classifier                                                         |
+| [poster-sentry-training](https://github.com/fairdataihub/poster-sentry-training)                   | Training data and scripts for the poster-sentry classifier                                                  |
+| [posters-science-dev-docs](https://github.com/fairdataihub/posters-science-dev-docs)               | Developer documentation site ([live](https://dev.posters.science))                                          |
+| [posters-science-survey](https://github.com/fairdataihub/posters-science-survey)                   | Community survey on scientific poster sharing practices                                                     |
+| [poster-sharing-reuse-paper-code](https://github.com/fairdataihub/poster-sharing-reuse-paper-code) | Analysis code for the poster sharing and reuse study                                                        |
 
 ## Developers
 
@@ -92,15 +92,15 @@ flowchart TD
 
 ### Tech Stack
 
-| Layer | Technology |
-|-------|-----------|
-| Frontend | [Nuxt 3](https://nuxt.com/), [Nuxt UI](https://ui.nuxt.com/), [Tailwind CSS](https://tailwindcss.com/) |
-| Backend | Nuxt server routes ([Nitro](https://nitro.build/)) |
-| Database | [PostgreSQL](https://www.postgresql.org/) via [Prisma](https://www.prisma.io/) |
-| Poster Extraction | [poster2json](https://github.com/fairdataihub/poster2json) (Python, Llama 3.1, Qwen2-VL, pdfalto) |
-| File Storage | CDN-backed object storage |
-| Repository Integration | [Zenodo](https://zenodo.org/) |
-| Deployment | [Docker](https://www.docker.com/) |
+| Layer                  | Technology                                                                                             |
+| ---------------------- | ------------------------------------------------------------------------------------------------------ |
+| Frontend               | [Nuxt 3](https://nuxt.com/), [Nuxt UI](https://ui.nuxt.com/), [Tailwind CSS](https://tailwindcss.com/) |
+| Backend                | Nuxt server routes ([Nitro](https://nitro.build/))                                                     |
+| Database               | [PostgreSQL](https://www.postgresql.org/) via [Prisma](https://www.prisma.io/)                         |
+| Poster Extraction      | [poster2json](https://github.com/fairdataihub/poster2json) (Python, Llama 3.1, Qwen2-VL, pdfalto)      |
+| File Storage           | CDN-backed object storage                                                                              |
+| Repository Integration | [Zenodo](https://zenodo.org/)                                                                          |
+| Deployment             | [Docker](https://www.docker.com/)                                                                      |
 
 ### Getting Started
 
