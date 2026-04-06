@@ -19,6 +19,7 @@ jobs:
   # Job for deploying the UI/frontend application
   deploy-ui:
     runs-on: ubuntu-latest
+    needs: migrate-db
     environment: prd # Uses production environment secrets
 
     # Environment variables for Kamal deployment and container registry
@@ -30,9 +31,25 @@ jobs:
       KAMAL_SERVER_IP: ${{ secrets.KAMAL_SERVER_IP }}
       KAMAL_APP_DOMAIN: ${{ secrets.KAMAL_APP_DOMAIN }}
       KAMAL_APP_NAME: ${{ secrets.KAMAL_APP_NAME }}
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
       # Nuxt runtime config overrides (NUXT_ prefix)
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
       NUXT_SESSION_PASSWORD: ${{ secrets.NUXT_SESSION_PASSWORD }}
+      NUXT_POSTER_EXTRACTION_API: ${{ secrets.NUXT_POSTER_EXTRACTION_API }}
+      NUXT_PUBLIC_SITE_ENV: ${{ secrets.NUXT_PUBLIC_SITE_ENV }}
+      NUXT_ZENODO_CLIENT_ID: ${{ secrets.NUXT_ZENODO_CLIENT_ID }}
+      NUXT_ZENODO_CLIENT_SECRET: ${{ secrets.NUXT_ZENODO_CLIENT_SECRET }}
+      NUXT_ZENODO_ENDPOINT: ${{ secrets.NUXT_ZENODO_ENDPOINT }}
+      NUXT_ZENODO_API_ENDPOINT: ${{ secrets.NUXT_ZENODO_API_ENDPOINT }}
+      NUXT_ZENODO_REDIRECT_URI: ${{ secrets.NUXT_ZENODO_REDIRECT_URI }}
+      NUXT_BUNNY_PRIVATE_STORAGE: ${{ secrets.NUXT_BUNNY_PRIVATE_STORAGE }}
+      NUXT_BUNNY_PRIVATE_STORAGE_KEY: ${{ secrets.NUXT_BUNNY_PRIVATE_STORAGE_KEY }}
+      NUXT_BUNNY_PUBLIC_STORAGE: ${{ secrets.NUXT_BUNNY_PUBLIC_STORAGE }}
+      NUXT_BUNNY_PUBLIC_STORAGE_KEY: ${{ secrets.NUXT_BUNNY_PUBLIC_STORAGE_KEY }}
+      NUXT_SITE_URL: ${{ secrets.NUXT_SITE_URL }}
+      NUXT_RESEND_API_KEY: ${{ secrets.NUXT_RESEND_API_KEY }}
+      NUXT_UMAMI_USERNAME: ${{ secrets.NUXT_UMAMI_USERNAME }}
+      NUXT_UMAMI_PASSWORD: ${{ secrets.NUXT_UMAMI_PASSWORD }}
+      NUXT_UMAMI_WEBSITE_ID: ${{ secrets.NUXT_UMAMI_WEBSITE_ID }}
 
     steps:
       # Step 1: Checkout the repository code
@@ -79,30 +96,26 @@ jobs:
       - run: kamal setup
 
   # Job for running database migrations
-  # migrate-db:
-  #   runs-on: ubuntu-latest
-  #   environment: prd  # Uses production environment secrets
-  #   defaults:
-  #     run:
-  #       working-directory: ui  # All commands run from the ui directory
-  #   env:
-  #     DATABASE_URL: ${{ secrets.DATABASE_URL }}
+  migrate-db:
+    runs-on: ubuntu-latest
+    environment: stg
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
-  #   steps:
-  #     # Step 1: Checkout the repository code
-  #     - uses: actions/checkout@v3
+    steps:
+      - uses: actions/checkout@v4
 
-  #     # Step 2: Setup Node.js environment for Prisma operations
-  #     - uses: actions/setup-node@v3
-  #       with:
-  #         node-version: 20
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
 
-  #     # Step 3: Install Node.js dependencies
-  #     - run: pnpm install --frozen-lockfile
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
 
-  #     # Step 4: Generate Prisma client for database operations
-  #     - run: pnpm prisma:generate
+      - run: pnpm install --frozen-lockfile
 
-  #     # Step 5: Deploy database migrations to production
-  #     # Redirects output to /dev/null to reduce log noise
-  #     - run: pnpm prisma:migrate:deploy > /dev/null
+      - run: pnpm prisma:generate
+
+      # - run: pnpm prisma:migrate:deploy
