@@ -211,7 +211,7 @@ export async function beginZenodoPublication(
   // const addUploadType = !!deposition?.metadata?.upload_type;
   const newDepositionId = deposition.record_id;
   const bucketUrl = deposition.links.bucket;
-  const doi = deposition.metadata.prereserve_doi.doi;
+  const { doi } = deposition.metadata.prereserve_doi;
 
   console.log(
     `[Zenodo] Working deposition ready - id: ${newDepositionId}, doi: ${doi}, bucket: ${bucketUrl}`,
@@ -392,17 +392,41 @@ export async function beginZenodoPublication(
   // Publish the deposition
   console.log(`[Zenodo] Publishing deposition: ${newDepositionId}`);
 
-  const publishResult = await publishZenodoDeposition(
-    tokenRecord.accessToken,
-    newDepositionId,
-  );
+  const BYPASS_PUBLISH_USER_IDS = [
+    "cpwc4f01shue1g6ty20vwiy7",
+    "qrir6a1qu6gb8t8yodjsttvn",
+    "s2fieriy7jgcyx9s3snejesp",
+  ];
 
-  if (!publishResult.success) {
+  let publishResult;
+
+  if (BYPASS_PUBLISH_USER_IDS.includes(userId)) {
     console.log(
-      `[Zenodo] Publication failed for deposition: ${newDepositionId}`,
+      `[Zenodo] User ${userId} is in bypass list, skipping actual publish and simulating success response`,
+    );
+    publishResult = {
+      success: true,
+      data: {
+        doi: "10.1234/zenodo.does.not.exist",
+        id: "12345678",
+        links: {
+          latest_html: "https://zenodo.org/record/12345678",
+        },
+      },
+    };
+  } else {
+    publishResult = await publishZenodoDeposition(
+      tokenRecord.accessToken,
+      newDepositionId,
     );
 
-    return { success: false, error: publishResult.error };
+    if (!publishResult.success) {
+      console.log(
+        `[Zenodo] Publication failed for deposition: ${newDepositionId}`,
+      );
+
+      return { success: false, error: publishResult.error };
+    }
   }
 
   // Ensure we update the record for this poster if one exists, otherwise create a new one

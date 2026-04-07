@@ -46,7 +46,7 @@ export default defineEventHandler(async (event) => {
     Connection: "keep-alive",
   });
 
-  const res = event.node.res;
+  const { res } = event.node;
   let clientConnected = true;
 
   res.on("close", () => {
