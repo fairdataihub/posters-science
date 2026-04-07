@@ -1,9 +1,20 @@
 export default defineEventHandler(async (event) => {
+  const requestStartedAt = Date.now();
+  let previousStepAt = requestStartedAt;
+  const timings: Record<string, number> = {};
+
+  const markStep = (step: string) => {
+    const now = Date.now();
+    timings[step] = now - previousStepAt;
+    previousStepAt = now;
+  };
+
   const { search, page, limit, sortBy, dateFrom, dateTo } = getQuery(event);
 
   const pageNum = Math.max(1, parseInt(String(page || "1")));
   const limitNum = Math.min(50, Math.max(1, parseInt(String(limit || "9"))));
   const skip = (pageNum - 1) * limitNum;
+  markStep("query-parse");
 
   const searchFilter = search
     ? {
@@ -23,6 +34,7 @@ export default defineEventHandler(async (event) => {
         ],
       }
     : {};
+  markStep("search-filter");
 
   const sortByStr = String(sortBy || "Newest");
   const isSortByViews = sortByStr === "Most viewed";
@@ -43,6 +55,7 @@ export default defineEventHandler(async (event) => {
         return { publishedAt: "desc" };
     }
   })();
+  markStep("sort-setup");
 
   const dateFilter =
     dateFrom || dateTo
@@ -60,6 +73,7 @@ export default defineEventHandler(async (event) => {
           },
         }
       : {};
+  markStep("date-filter");
 
   const rawPosters =
     (await prisma.poster.findMany({
@@ -82,6 +96,7 @@ export default defineEventHandler(async (event) => {
         },
       },
     })) || [];
+  markStep("db-findMany");
 
   const count = await prisma.poster.count({
     where: {
@@ -90,10 +105,12 @@ export default defineEventHandler(async (event) => {
       ...dateFilter,
     },
   });
+  markStep("db-count");
 
   const { umamiWebsiteId } = useRuntimeConfig();
   const umamiToken = await getUmamiToken();
   const endAt = String(Date.now());
+  markStep("umami-auth");
 
   const viewsResults = await Promise.all(
     rawPosters.map(async (poster) => {
@@ -115,6 +132,7 @@ export default defineEventHandler(async (event) => {
       }
     }),
   );
+  markStep("umami-views");
 
   const posters = rawPosters.map(
     ({ posterMetadata, _count, ...poster }, i) => ({
@@ -124,10 +142,26 @@ export default defineEventHandler(async (event) => {
       views: viewsResults[i] ?? 0,
     }),
   );
+  markStep("poster-map");
 
   if (isSortByViews) {
     posters.sort((a, b) => (b.views ?? 0) - (a.views ?? 0));
   }
+  markStep("post-sort");
+
+  const totalDurationMs = Date.now() - requestStartedAt;
+  event.node.res.setHeader(
+    "Server-Timing",
+    Object.entries(timings)
+      .map(([name, duration]) => `${name};dur=${duration}`)
+      .join(", "),
+  );
+
+  console.info("[discover:index.get] timings", {
+    ...timings,
+    total: totalDurationMs,
+    posters: rawPosters.length,
+  });
 
   return {
     posters,
