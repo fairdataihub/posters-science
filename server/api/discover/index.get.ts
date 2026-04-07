@@ -1,5 +1,5 @@
 export default defineEventHandler(async (event) => {
-  const { search, page, limit, sortBy } = getQuery(event);
+  const { search, page, limit, sortBy, dateFrom, dateTo } = getQuery(event);
 
   const pageNum = Math.max(1, parseInt(String(page || "1")));
   const limitNum = Math.min(50, Math.max(1, parseInt(String(limit || "9"))));
@@ -44,11 +44,29 @@ export default defineEventHandler(async (event) => {
     }
   })();
 
+  const dateFilter =
+    dateFrom || dateTo
+      ? {
+          publishedAt: {
+            ...(dateFrom ? { gte: new Date(String(dateFrom)) } : {}),
+            ...(dateTo
+              ? (() => {
+                  const end = new Date(String(dateTo));
+                  end.setHours(23, 59, 59, 999);
+
+                  return { lte: end };
+                })()
+              : {}),
+          },
+        }
+      : {};
+
   const rawPosters =
     (await prisma.poster.findMany({
       where: {
         status: "published",
         ...searchFilter,
+        ...dateFilter,
       },
       orderBy: isSortByViews ? { publishedAt: "desc" } : orderBy,
       skip,
@@ -69,6 +87,7 @@ export default defineEventHandler(async (event) => {
     where: {
       status: "published",
       ...searchFilter,
+      ...dateFilter,
     },
   });
 

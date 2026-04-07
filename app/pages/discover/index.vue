@@ -2,7 +2,7 @@
 import { faker } from "@faker-js/faker";
 import dayjs from "dayjs";
 import {
-  CalendarDate,
+  type CalendarDate,
   DateFormatter,
   getLocalTimeZone,
 } from "@internationalized/date";
@@ -21,10 +21,25 @@ const df = new DateFormatter("en-US", {
   dateStyle: "medium",
 });
 
-const dateFilterValue = shallowRef({
-  start: new CalendarDate(2022, 1, 20),
-  end: new CalendarDate(2022, 2, 10),
+const dateFilterValue = shallowRef<{
+  start: CalendarDate | undefined;
+  end: CalendarDate | undefined;
+}>({
+  start: undefined,
+  end: undefined,
 });
+
+const dateFrom = computed(() =>
+  dateFilterValue.value.start
+    ? dateFilterValue.value.start.toDate(getLocalTimeZone()).toISOString()
+    : undefined,
+);
+
+const dateTo = computed(() =>
+  dateFilterValue.value.end
+    ? dateFilterValue.value.end.toDate(getLocalTimeZone()).toISOString()
+    : undefined,
+);
 
 type Poster = {
   id: number | undefined;
@@ -88,7 +103,14 @@ const mapPosters = (apiPosters: Poster[]) => {
 };
 
 const { data, error, status } = await useFetch("/api/discover", {
-  query: { search: committedSearch, page, limit: PAGE_SIZE, sortBy },
+  query: {
+    search: committedSearch,
+    page,
+    limit: PAGE_SIZE,
+    sortBy,
+    dateFrom,
+    dateTo,
+  },
 });
 
 function triggerSearch() {
@@ -97,6 +119,10 @@ function triggerSearch() {
 }
 
 watch(sortBy, () => {
+  page.value = 1;
+});
+
+watch(dateFilterValue, () => {
   page.value = 1;
 });
 
@@ -148,49 +174,62 @@ const totalFiltered = computed(() => total.value);
             <div>
               <h4 class="mb-3 text-sm font-medium">Published</h4>
 
-              <UPopover>
-                <UButton
-                  color="neutral"
-                  variant="outline"
-                  size="sm"
-                  icon="i-lucide-calendar"
-                >
-                  <template v-if="dateFilterValue.start">
-                    <template v-if="dateFilterValue.end">
-                      {{
-                        df.format(
-                          dateFilterValue.start.toDate(getLocalTimeZone()),
-                        )
-                      }}
-                      -
-                      {{
-                        df.format(
-                          dateFilterValue.end.toDate(getLocalTimeZone()),
-                        )
-                      }}
+              <div class="flex items-center gap-2">
+                <UPopover>
+                  <UButton
+                    color="neutral"
+                    variant="outline"
+                    size="sm"
+                    icon="i-lucide-calendar"
+                  >
+                    <template v-if="dateFilterValue.start">
+                      <template v-if="dateFilterValue.end">
+                        {{
+                          df.format(
+                            dateFilterValue.start.toDate(getLocalTimeZone()),
+                          )
+                        }}
+                        -
+                        {{
+                          df.format(
+                            dateFilterValue.end.toDate(getLocalTimeZone()),
+                          )
+                        }}
+                      </template>
+
+                      <template v-else>
+                        {{
+                          df.format(
+                            dateFilterValue.start.toDate(getLocalTimeZone()),
+                          )
+                        }}
+                      </template>
                     </template>
 
-                    <template v-else>
-                      {{
-                        df.format(
-                          dateFilterValue.start.toDate(getLocalTimeZone()),
-                        )
-                      }}
-                    </template>
+                    <template v-else> Pick a date </template>
+                  </UButton>
+
+                  <template #content>
+                    <UCalendar
+                      v-model="dateFilterValue"
+                      class="p-2"
+                      :number-of-months="2"
+                      range
+                    />
                   </template>
+                </UPopover>
 
-                  <template v-else> Pick a date </template>
-                </UButton>
-
-                <template #content>
-                  <UCalendar
-                    v-model="dateFilterValue"
-                    class="p-2"
-                    :number-of-months="2"
-                    range
-                  />
-                </template>
-              </UPopover>
+                <UButton
+                  v-if="dateFilterValue.start"
+                  color="neutral"
+                  variant="ghost"
+                  size="sm"
+                  icon="i-lucide-x"
+                  @click="
+                    dateFilterValue = { start: undefined, end: undefined }
+                  "
+                />
+              </div>
             </div>
           </div>
         </UCard>
