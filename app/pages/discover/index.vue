@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { faker } from "@faker-js/faker";
 import dayjs from "dayjs";
 import {
   type CalendarDate,
@@ -65,41 +64,20 @@ const searchQuery = ref("");
 const committedSearch = ref("");
 
 const mapPosters = (apiPosters: Poster[]) => {
-  if (apiPosters.length > 0 || committedSearch.value) {
-    return apiPosters.map((poster) => ({
-      id: poster.id,
-      title: poster.title ?? "Untitled poster",
-      description: poster.description ?? "",
-      imageUrl:
-        poster.imageUrl ||
-        `https://api.dicebear.com/9.x/shapes/svg?seed=${poster.id ?? poster.title}`,
-      keywords: Array.isArray(poster.keywords) ? poster.keywords : [],
-      publishedAt: poster.publishedAt ? new Date(poster.publishedAt) : null,
-      created: poster.created ? poster.created : new Date(),
-      updated: poster.updated ? poster.updated : new Date(),
-      views: typeof poster.views === "number" ? poster.views : 0,
-      likes: typeof poster.likes === "number" ? poster.likes : 0,
-    }));
-  } else {
-    return Array.from({ length: 31 }, (_, index) => ({
-      id: index + 1,
-      title: faker.lorem.sentence(),
-      description: faker.lorem.paragraph(),
-      imageUrl: faker.image.urlPicsumPhotos({
-        width: 400,
-        height: 300,
-        blur: 0,
-      }),
-      keywords: Array.from({ length: faker.number.int(10) }, () =>
-        faker.lorem.word(),
-      ),
-      publishedAt: faker.date.past(),
-      created: faker.date.past(),
-      updated: faker.date.past(),
-      views: faker.number.int(100),
-      likes: faker.number.int(100),
-    }));
-  }
+  return apiPosters.map((poster) => ({
+    id: poster.id,
+    title: poster.title ?? "Untitled poster",
+    description: poster.description ?? "",
+    imageUrl:
+      poster.imageUrl ||
+      `https://api.dicebear.com/9.x/shapes/svg?seed=${poster.id ?? poster.title}`,
+    keywords: Array.isArray(poster.keywords) ? poster.keywords : [],
+    publishedAt: poster.publishedAt ? new Date(poster.publishedAt) : null,
+    created: poster.created ? poster.created : new Date(),
+    updated: poster.updated ? poster.updated : new Date(),
+    views: typeof poster.views === "number" ? poster.views : 0,
+    likes: typeof poster.likes === "number" ? poster.likes : 0,
+  }));
 };
 
 const { data, error, status } = await useFetch("/api/discover", {
