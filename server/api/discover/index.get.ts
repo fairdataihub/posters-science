@@ -1,5 +1,5 @@
 export default defineEventHandler(async (event) => {
-  const { search, page, limit } = getQuery(event);
+  const { search, page, limit, sortBy } = getQuery(event);
 
   const pageNum = Math.max(1, parseInt(String(page || "1")));
   const limitNum = Math.min(50, Math.max(1, parseInt(String(limit || "9"))));
@@ -24,15 +24,33 @@ export default defineEventHandler(async (event) => {
       }
     : {};
 
+  const sortByStr = String(sortBy || "Newest");
+  const isSortByViews = sortByStr === "Most viewed";
+
+  type PrismaOrderBy =
+    | { publishedAt: "asc" | "desc" }
+    | { createdAt: "asc" | "desc" }
+    | { likes: { _count: "asc" | "desc" } };
+
+  const orderBy: PrismaOrderBy = (() => {
+    switch (sortByStr) {
+      case "Oldest":
+        return { publishedAt: "asc" };
+      case "Most liked":
+        return { likes: { _count: "desc" } };
+      case "Newest":
+      default:
+        return { publishedAt: "desc" };
+    }
+  })();
+
   const rawPosters =
     (await prisma.poster.findMany({
       where: {
         status: "published",
         ...searchFilter,
       },
-      orderBy: {
-        publishedAt: "desc",
-      },
+      orderBy: isSortByViews ? { publishedAt: "desc" } : orderBy,
       skip,
       take: limitNum,
       include: {
@@ -84,9 +102,13 @@ export default defineEventHandler(async (event) => {
       ...poster,
       keywords: posterMetadata?.subjects ?? [],
       likes: _count?.likes ?? 0,
-      views: viewsResults[i],
+      views: viewsResults[i] ?? 0,
     }),
   );
+
+  if (isSortByViews) {
+    posters.sort((a, b) => (b.views ?? 0) - (a.views ?? 0));
+  }
 
   return {
     posters,

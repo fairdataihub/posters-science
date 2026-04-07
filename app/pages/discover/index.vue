@@ -88,7 +88,7 @@ const mapPosters = (apiPosters: Poster[]) => {
 };
 
 const { data, error, status } = await useFetch("/api/discover", {
-  query: { search: committedSearch, page, limit: PAGE_SIZE },
+  query: { search: committedSearch, page, limit: PAGE_SIZE, sortBy },
 });
 
 function triggerSearch() {
@@ -96,18 +96,16 @@ function triggerSearch() {
   page.value = 1;
 }
 
+watch(sortBy, () => {
+  page.value = 1;
+});
+
 watch(
   data,
   (val) => {
     if (!val) return;
     const apiPosters = (val.posters || []) as unknown as Poster[];
-    posters.value = mapPosters(apiPosters).sort((a, b) =>
-      a.publishedAt && b.publishedAt
-        ? new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime()
-        : a.created && b.created
-          ? new Date(b.created).getTime() - new Date(a.created).getTime()
-          : 0,
-    );
+    posters.value = mapPosters(apiPosters);
     total.value = val.total ?? posters.value.length;
   },
   { immediate: true },
@@ -229,15 +227,7 @@ const totalFiltered = computed(() => total.value);
 
             <USelect
               v-model="sortBy"
-              :items="[
-                'Most viewed',
-                'Most liked',
-                'Newest',
-                'Oldest',
-                'Random',
-                'Best match',
-                'Trending',
-              ]"
+              :items="['Most viewed', 'Most liked', 'Newest', 'Oldest']"
               class="w-34"
             />
           </div>
