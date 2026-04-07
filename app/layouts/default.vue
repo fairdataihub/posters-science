@@ -37,17 +37,12 @@ const headerItems = computed<NavigationMenuItem[]>(() => [
   //   to: "/metrics",
   //   active: route.path.startsWith("/metrics"),
   // },
-  {
-    label: "GitHub",
-    to: "https://github.com/fairdataihub/posters-science",
-    target: "_blank",
-  },
-  {
-    label: "Provide feedback",
-    onSelect: () => {
-      feedbackOpen.value = true;
-    },
-  },
+  // {
+  //   label: "Provide feedback",
+  //   onSelect: () => {
+  //     feedbackOpen.value = true;
+  //   },
+  // },
 ]);
 
 const footerItems: NavigationMenuItem[] = [
@@ -73,6 +68,13 @@ const footerItems: NavigationMenuItem[] = [
       <UNavigationMenu :items="headerItems" />
 
       <template #right>
+        <UButton
+          color="neutral"
+          variant="ghost"
+          label="Give Feedback"
+          @click="feedbackOpen = true"
+        />
+
         <UColorModeButton />
 
         <AuthState v-slot="{ loggedIn }">
