@@ -64,7 +64,7 @@ onMounted(() => {
   <section>
     <UPageHero
       title="The best way to discover and share posters"
-      description="Posters.science is a platform for easily discovering and sharing scientific posters"
+      description="Posters.science is a free and open source platform for easily discovering and sharing scientific posters"
       orientation="horizontal"
       :links="links"
       class="mb-0 pb-0"
@@ -315,8 +315,8 @@ onMounted(() => {
               <h3 class="text-xl font-semibold">Browse and filter</h3>
 
               <p class="text-muted text-sm leading-relaxed">
-                Browse all published posters sorted by date. Filter by keywords
-                to narrow results to your area of interest.
+                Browse all indexed posters. Filter by publication date or search
+                using keywords to find posters of interest.
               </p>
             </div>
           </UCard>
@@ -402,8 +402,7 @@ onMounted(() => {
                 <p class="text-lg font-semibold">Published Posters</p>
 
                 <p class="text-muted text-sm">
-                  Live, publicly accessible poster records shared via
-                  Posters.science.
+                  Posters shared using Posters.science.
                 </p>
               </div>
             </UCard>
