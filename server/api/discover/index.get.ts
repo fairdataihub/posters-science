@@ -36,8 +36,8 @@ export default defineEventHandler(async (event) => {
     : {};
   markStep("search-filter");
 
-  const sortByStr = String(sortBy || "Newest");
-  const isSortByViews = sortByStr === "Most viewed";
+  const sortByStr = String(sortBy || "Newest First");
+  const isSortByViews = sortByStr === "Most Viewed";
 
   type PrismaOrderBy =
     | { publishedAt: "asc" | "desc" }
@@ -46,11 +46,11 @@ export default defineEventHandler(async (event) => {
 
   const orderBy: PrismaOrderBy = (() => {
     switch (sortByStr) {
-      case "Oldest":
+      case "Oldest First":
         return { publishedAt: "asc" };
-      case "Most liked":
+      case "Most Liked":
         return { likes: { _count: "desc" } };
-      case "Newest":
+      case "Newest First":
       default:
         return { publishedAt: "desc" };
     }

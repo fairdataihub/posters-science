@@ -57,7 +57,7 @@ const PAGE_SIZE = 9;
 
 const page = ref(1);
 
-const sortBy = ref("Newest");
+const sortBy = ref("Newest First");
 const posters = ref<Poster[]>([]);
 const total = ref(0);
 const searchQuery = ref("");
@@ -244,7 +244,7 @@ const totalFiltered = computed(() => total.value);
 
             <USelect
               v-model="sortBy"
-              :items="['Newest', 'Most liked', 'Oldest']"
+              :items="['Newest First', 'Oldest First', 'Most Liked']"
               class="w-34"
             />
           </div>
