@@ -1,4 +1,6 @@
 <script setup lang="ts">
+const feedbackOpen = useState("feedbackOpen", () => false);
+
 const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Posters.science")}&description=${encodeURIComponent("The best way to discover and share scientific posters")}&app=posters-science&org=fairdataihub`;
 
 useSeoMeta({
@@ -104,6 +106,32 @@ onMounted(() => {
 
     <div class="mt-0">
       <div class="mx-auto max-w-screen-xl px-6 py-16">
+        <!-- Soft launch notice -->
+        <div class="mx-auto max-w-3xl px-6 pb-12">
+          <div
+            class="border-primary/20 bg-primary/5 flex items-start gap-3 rounded-xl border px-5 py-4"
+          >
+            <Icon
+              name="heroicons:beaker"
+              class="text-primary mt-0.5 h-5 w-5 shrink-0"
+            />
+
+            <p class="text-muted text-sm leading-relaxed">
+              <span class="text-foreground font-semibold">Soft launch:</span>
+              Posters.science is currently in early access. Core platform
+              functionality is up and running, and we'd love for you to test it.
+              We would greatly appreciate it if you could share a poster,
+              discover posters, and
+              <button
+                class="text-primary cursor-pointer font-medium underline underline-offset-2"
+                @click="feedbackOpen = true"
+              >
+                share your thoughts via our feedback form</button
+              >.
+            </p>
+          </div>
+        </div>
+
         <div class="mx-auto max-w-3xl text-center">
           <h2 class="mb-6 text-3xl font-bold tracking-tight sm:text-4xl">
             Why Posters Matter

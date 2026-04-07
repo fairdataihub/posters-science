@@ -42,6 +42,12 @@ const headerItems = computed<NavigationMenuItem[]>(() => [
     to: "https://github.com/fairdataihub/posters-science",
     target: "_blank",
   },
+  {
+    label: "Provide feedback",
+    onSelect: () => {
+      feedbackOpen.value = true;
+    },
+  },
 ]);
 
 const footerItems: NavigationMenuItem[] = [
@@ -137,7 +143,7 @@ const footerItems: NavigationMenuItem[] = [
 
     <UModal
       v-model:open="feedbackOpen"
-      title="Poster Submission Feedback"
+      title="Share Your Feedback"
       description="Tell us how the experience was using our platform!"
       class="max-w-2xl"
       :ui="{ title: 'text-xl font-semibold' }"
