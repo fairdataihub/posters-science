@@ -244,7 +244,7 @@ const totalFiltered = computed(() => total.value);
 
             <USelect
               v-model="sortBy"
-              :items="['Most viewed', 'Most liked', 'Newest', 'Oldest']"
+              :items="['Newest', 'Most liked', 'Oldest']"
               class="w-34"
             />
           </div>
@@ -328,17 +328,12 @@ const totalFiltered = computed(() => total.value);
           </UPageGrid>
 
           <!-- Empty State -->
-          <div v-else class="py-12 text-center">
-            <div
-              class="mx-auto mb-4 flex h-24 w-24 items-center justify-center rounded-full"
-            >
-              <Icon name="heroicons:magnifying-glass" class="h-12 w-12" />
-            </div>
-
-            <h3 class="mb-2 text-lg font-medium">No posters found</h3>
-
-            <p class="mb-6">Try adjusting your search criteria or filters.</p>
-          </div>
+          <UEmpty
+            v-else
+            icon="heroicons:magnifying-glass"
+            title="No posters found"
+            description="Try adjusting your search criteria or filters."
+          />
         </UiSpinner>
 
         <div class="flex justify-center pt-8 pb-4">
