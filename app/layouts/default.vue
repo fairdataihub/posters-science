@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { NavigationMenuItem } from "@nuxt/ui";
 
-const { clear } = useUserSession();
+const { clear, user } = useUserSession();
 const feedbackOpen = useState("feedbackOpen", () => false);
 
 const route = useRoute();
@@ -78,14 +78,21 @@ const footerItems: NavigationMenuItem[] = [
         <UColorModeButton />
 
         <AuthState v-slot="{ loggedIn }">
-          <UButton
-            v-if="loggedIn"
-            color="neutral"
-            variant="outline"
-            @click="logout"
-          >
-            Logout
-          </UButton>
+          <div v-if="loggedIn" class="flex items-center justify-center gap-3">
+            <NuxtLink to="/profile">
+              <UTooltip text="View your account settings">
+                <UAvatar
+                  :src="`https://api.dicebear.com/9.x/thumbs/svg?seed=${user?.id}`"
+                  :alt="user?.id"
+                  class="squircle cursor-pointer rounded-none"
+                />
+              </UTooltip>
+            </NuxtLink>
+
+            <UButton color="neutral" variant="outline" @click="logout">
+              Logout
+            </UButton>
+          </div>
 
           <div v-else class="flex items-center justify-center gap-3">
             <UButton to="/login" variant="outline"> Sign in </UButton>
