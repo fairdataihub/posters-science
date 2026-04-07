@@ -17,8 +17,18 @@ export default defineEventHandler(async (event) => {
 
   const body = await readBody(event);
   console.log("Received Zenodo publication request:", JSON.stringify(body));
-  const { posterId, mode, existingDepositionId, license } =
-    payloadSchema.parse(body);
+
+  const parsed = payloadSchema.safeParse(body);
+
+  if (!parsed.success) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: "Invalid request payload",
+      data: parsed.error.issues,
+    });
+  }
+
+  const { posterId, mode, existingDepositionId, license } = parsed.data;
 
   const { zenodoToken } = await validateZenodoToken(userId);
 

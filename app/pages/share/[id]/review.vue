@@ -731,6 +731,7 @@ async function handleArchive() {
                 <USelectMenu
                   v-model="selectedLicense"
                   :items="LICENSE_OPTIONS_WITH_SUGGESTED"
+                  value-key="value"
                   placeholder="Select a license"
                   class="w-full max-w-md"
                   :virtualize="true"
@@ -800,6 +801,7 @@ async function handleArchive() {
             <USelectMenu
               v-model="selectedLicense"
               :items="LICENSE_OPTIONS_WITH_SUGGESTED"
+              value-key="value"
               placeholder="Select a license"
               class="w-full max-w-md"
               :virtualize="true"
