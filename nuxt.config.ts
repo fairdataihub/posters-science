@@ -1,5 +1,19 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
+  app: {
+    head: {
+      script: [
+        {
+          async: true,
+          "data-website-id":
+            process.env.NUXT_SITE_ENV === "production"
+              ? "d158bfbd-fc6c-4707-9fad-5b91d487fcd3"
+              : "2af39e23-23fe-4a82-9fb5-dae97dec61b3",
+          src: "https://umami.fairdataihub.org/mushroom",
+        },
+      ],
+    },
+  },
   compatibilityDate: "2025-01-16",
   css: ["~/assets/css/main.css"],
   devtools: { enabled: true },

@@ -5,14 +5,6 @@ useHead({
   htmlAttrs: {
     lang: "en",
   },
-  script: [
-    {
-      defer: true,
-      src: "https://umami.fairdataihub.org/mushroom",
-      "data-website-id": "2af39e23-23fe-4a82-9fb5-dae97dec61b3",
-      "data-exclude-search": true,
-    },
-  ],
   link: [
     { href: "/favicon.ico", rel: "shortcut icon" },
     { href: "/favicon-96x96.png", rel: "icon", sizes: "96x96" },
