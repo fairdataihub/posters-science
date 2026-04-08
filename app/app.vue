@@ -1,10 +1,20 @@
 <script setup lang="ts">
 const colorMode = useColorMode();
 
+const { umamiWebsiteId } = useRuntimeConfig();
+
 useHead({
   htmlAttrs: {
     lang: "en",
   },
+  script: [
+    {
+      defer: true,
+      src: "https://umami.fairdataihub.org/mushroom",
+      "data-website-id": umamiWebsiteId,
+      "data-exclude-search": true,
+    },
+  ],
   link: [
     { href: "/favicon.ico", rel: "shortcut icon" },
     { href: "/favicon-96x96.png", rel: "icon", sizes: "96x96" },
