@@ -16,6 +16,7 @@ export default defineNuxtConfig({
     "@nuxt/image",
     "nuxt-echarts",
     "@nuxt/content",
+    // "@scalar/nuxt",
   ],
   // Runtime config values can be overridden at container startup using NUXT_ prefixed env vars.
   // This works because Nuxt scans for NUXT_* env vars when the app starts (not at build time)
@@ -62,6 +63,24 @@ export default defineNuxtConfig({
     moduleSideEffects: ["@prisma/client", ".prisma/client"],
     rollupConfig: {
       external: ["@prisma/client", ".prisma/client"],
+    },
+    experimental: {
+      openAPI: true,
+    },
+    openAPI: {
+      meta: {
+        title: "Posters.science API Documentation",
+        description: "API Documentation for Posters.science",
+      },
+      route: "/_docs/openapi.json",
+      ui: {
+        scalar: {
+          route: "/_docs/scalar",
+        },
+        swagger: {
+          route: "/_docs/swagger",
+        },
+      },
     },
   },
   image: {
