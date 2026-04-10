@@ -50,7 +50,7 @@ useSeoMeta({
 
 <template>
   <UApp>
-    <NuxtLoadingIndicator />
+    <NuxtLoadingIndicator color="oklch(71.8% 0.202 349.761)" />
 
     <NuxtLayout>
       <NuxtPage />
