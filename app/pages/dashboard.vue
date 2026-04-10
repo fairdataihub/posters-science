@@ -59,6 +59,34 @@ const isSaving = ref(false);
 const doiError = ref("");
 const toast = useToast();
 
+const regeneratingThumbnailsLoading = ref(false);
+
+async function regenerateThumbnail(poster: Poster) {
+  regeneratingThumbnailsLoading.value = true;
+
+  try {
+    await $fetch<{ imageUrl: string }>(`/api/poster/${poster.id}/thumbnail`, {
+      method: "POST",
+    });
+
+    toast.add({
+      title: "Thumbnail regenerated",
+      description:
+        "The poster thumbnail has been updated. It may take a few minutes to reflect the changes.",
+      color: "success",
+    });
+  } catch (err) {
+    console.error(err);
+    toast.add({
+      title: "Error",
+      description: "There was a problem regenerating the thumbnail.",
+      color: "error",
+    });
+  } finally {
+    regeneratingThumbnailsLoading.value = false;
+  }
+}
+
 // Delete draft state
 const deleteModalOpen = ref(false);
 const posterToDelete = ref<Poster | null>(null);
@@ -147,6 +175,14 @@ async function savePublicationInfo() {
     isSaving.value = false;
   }
 }
+
+const getImage = (poster: Poster) => {
+  if (poster.status === "published") {
+    return poster.imageUrl;
+  } else {
+    return `/api/poster/${poster.id}/thumbnail`;
+  }
+};
 </script>
 
 <template>
@@ -176,7 +212,7 @@ async function savePublicationInfo() {
           <div class="w-[150px] shrink-0 overflow-hidden">
             <NuxtImg
               :src="
-                poster.imageUrl ||
+                getImage(poster) ||
                 `https://api.dicebear.com/9.x/shapes/svg?seed=${poster.id}`
               "
               :alt="poster.title"
@@ -194,6 +230,8 @@ async function savePublicationInfo() {
                 {{ poster.description || "No description available" }}
               </p>
             </div>
+
+            {{ getImage(poster) }}
 
             <div
               class="flex items-center justify-between border-t border-gray-100 pt-2 text-xs"
@@ -229,6 +267,23 @@ async function savePublicationInfo() {
                   size="xs"
                   @click.stop="openPublicationModal(poster)"
                 />
+
+                <UTooltip text="Regenerate the thumbnail for this poster">
+                  <UButton
+                    v-if="
+                      poster.status === 'draft' ||
+                      poster.status === 'downloaded'
+                    "
+                    color="neutral"
+                    variant="ghost"
+                    label=""
+                    :disabled="regeneratingThumbnailsLoading"
+                    icon="heroicons:arrow-path"
+                    size="xs"
+                    :loading="regeneratingThumbnailsLoading"
+                    @click.stop="regenerateThumbnail(poster)"
+                  />
+                </UTooltip>
 
                 <UButton
                   v-if="

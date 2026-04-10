@@ -1,11 +1,4 @@
-import { faker } from "@faker-js/faker";
-import { Agent } from "undici";
 import { schema } from "~~/app/utils/poster_schema";
-
-const extractionAgent = new Agent({
-  headersTimeout: 900000, // 15 minutes
-  bodyTimeout: 900000, // 15 minutes
-});
 
 function sanitizeUnknown<T>(value: T): T {
   if (typeof value === "string") {
@@ -66,8 +59,7 @@ export async function processExtraction(
       method: "POST",
       body: forwardFormData,
       signal: AbortSignal.timeout(900000), // 15 minutes
-      dispatcher: extractionAgent,
-    } as RequestInit);
+    });
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -190,13 +182,9 @@ export async function processExtraction(
         userId,
         title: posterTitle,
         description: posterDescription,
-        imageUrl: faker.image.urlPicsumPhotos({
-          width: 400,
-          height: 300,
-          blur: 0,
-        }),
+        imageUrl: "",
         status: "draft",
-        randomInt: faker.number.int(1000000),
+        randomInt: Math.floor(Math.random() * 1000000),
         posterMetadata: {
           create: {
             doi: extractedData.doi ?? null,
