@@ -49,7 +49,7 @@ type Poster = {
   publishedAt: Date | null;
   created: Date;
   updated: Date;
-  views: number;
+  // views: number;
   likes: number;
 };
 
@@ -75,7 +75,7 @@ const mapPosters = (apiPosters: Poster[]) => {
     publishedAt: poster.publishedAt ? new Date(poster.publishedAt) : null,
     created: poster.created ? poster.created : new Date(),
     updated: poster.updated ? poster.updated : new Date(),
-    views: typeof poster.views === "number" ? poster.views : 0,
+    // views: typeof poster.views === "number" ? poster.views : 0,
     likes: typeof poster.likes === "number" ? poster.likes : 0,
   }));
 };
