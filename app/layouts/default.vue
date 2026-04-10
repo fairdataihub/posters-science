@@ -45,6 +45,35 @@ const headerItems = computed<NavigationMenuItem[]>(() => [
   // },
 ]);
 
+const profileDropdownItems = ref([
+  [
+    {
+      label: `${user?.value?.givenName} ${user?.value?.familyName}`,
+      avatar: {
+        src: `https://api.dicebear.com/9.x/shapes/svg?seed=${user?.value?.id}`,
+      },
+      type: "label",
+    },
+    {
+      icon: "material-symbols:account-circle",
+      label: "Profile",
+      to: "/profile",
+    },
+    {
+      icon: "material-symbols:star",
+      label: "Liked posters",
+      to: "/liked",
+    },
+  ],
+  [
+    {
+      icon: "majesticons:logout",
+      label: "Logout",
+      onSelect: logout,
+    },
+  ],
+]);
+
 const footerItems: NavigationMenuItem[] = [
   {
     label: "Made with ♥ by the FAIR Data Innovations Hub",
@@ -77,33 +106,42 @@ const footerItems: NavigationMenuItem[] = [
 
         <UColorModeButton />
 
-        <AuthState v-slot="{ loggedIn }">
-          <div v-if="loggedIn" class="flex items-center justify-center gap-3">
-            <NuxtLink to="/profile">
-              <UTooltip text="View your account settings">
-                <UAvatar
-                  :src="`https://api.dicebear.com/9.x/thumbs/svg?seed=${user?.id}`"
-                  :alt="user?.id"
-                  class="squircle cursor-pointer rounded-none"
-                />
-              </UTooltip>
+        <AuthState>
+          <template #default="{ loggedIn }">
+            <NuxtLink v-if="!loggedIn" to="/login">
+              <UButton size="lg" label="Log in" />
             </NuxtLink>
 
-            <UButton color="neutral" variant="outline" @click="logout">
-              Logout
-            </UButton>
-          </div>
+            <NuxtLink v-if="!loggedIn" to="/register">
+              <UButton size="lg" label="Get started" />
+            </NuxtLink>
 
-          <div v-else class="flex items-center justify-center gap-3">
-            <UButton to="/login" variant="outline"> Sign in </UButton>
+            <UDropdownMenu
+              :items="profileDropdownItems"
+              arrow
+              :content="{
+                align: 'end',
+              }"
+              :ui="{
+                content: 'w-48',
+              }"
+            >
+              <UButton
+                v-if="loggedIn"
+                :avatar="{
+                  src: `https://api.dicebear.com/9.x/shapes/svg?seed=${user?.id}`,
+                }"
+                size="xl"
+                color="neutral"
+                variant="ghost"
+              />
+            </UDropdownMenu>
+          </template>
 
-            <UButton to="/signup">
-              <template #trailing>
-                <Icon name="i-heroicons-arrow-right-20-solid" size="20" />
-              </template>
-              Sign up
-            </UButton>
-          </div>
+          <template #placeholder>
+            <!-- this will be rendered on server side -->
+            <USkeleton class="h-12 w-12 rounded-full" />
+          </template>
         </AuthState>
       </template>
     </UHeader>
