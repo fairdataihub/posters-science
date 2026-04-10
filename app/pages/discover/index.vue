@@ -305,10 +305,10 @@ const totalFiltered = computed(() => total.value);
                       class="flex items-center justify-between border-t border-gray-100 pt-2 text-sm"
                     >
                       <div class="flex items-center gap-4">
-                        <span class="flex items-center gap-1">
+                        <!-- <span class="flex items-center gap-1">
                           <Icon name="heroicons:eye" />
                           {{ poster.views }}
-                        </span>
+                        </span> -->
 
                         <span class="flex items-center gap-1">
                           <Icon name="heroicons:heart" />

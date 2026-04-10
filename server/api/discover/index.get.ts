@@ -107,47 +107,47 @@ export default defineEventHandler(async (event) => {
   });
   markStep("db-count");
 
-  const { umamiWebsiteId } = useRuntimeConfig();
-  const umamiToken = await getUmamiToken();
-  const endAt = String(Date.now());
-  markStep("umami-auth");
+  // const { umamiWebsiteId } = useRuntimeConfig();
+  // const umamiToken = await getUmamiToken();
+  // const endAt = String(Date.now());
+  // markStep("umami-auth");
 
-  const viewsResults = await Promise.all(
-    rawPosters.map(async (poster) => {
-      if (!umamiToken || !umamiWebsiteId) return null;
-      try {
-        const params = new URLSearchParams({
-          startAt: "0",
-          endAt,
-          path: `/discover/${poster.id}`,
-        });
-        const data = await $fetch<{ visits: number }>(
-          `https://umami.fairdataihub.org/api/websites/${umamiWebsiteId}/stats?${params}`,
-          { headers: { Authorization: `Bearer ${umamiToken}` } },
-        );
+  // const viewsResults = await Promise.all(
+  //   rawPosters.map(async (poster) => {
+  //     if (!umamiToken || !umamiWebsiteId) return null;
+  //     try {
+  //       const params = new URLSearchParams({
+  //         startAt: "0",
+  //         endAt,
+  //         path: `/discover/${poster.id}`,
+  //       });
+  //       const data = await $fetch<{ visits: number }>(
+  //         `https://umami.fairdataihub.org/api/websites/${umamiWebsiteId}/stats?${params}`,
+  //         { headers: { Authorization: `Bearer ${umamiToken}` } },
+  //       );
 
-        return data.visits ?? null;
-      } catch {
-        return null;
-      }
-    }),
-  );
-  markStep("umami-views");
+  //       return data.visits ?? null;
+  //     } catch {
+  //       return null;
+  //     }
+  //   }),
+  // );
+  // markStep("umami-views");
 
   const posters = rawPosters.map(
     ({ posterMetadata, _count, ...poster }, i) => ({
       ...poster,
       keywords: posterMetadata?.subjects ?? [],
       likes: _count?.likes ?? 0,
-      views: viewsResults[i] ?? 0,
+      // views: viewsResults[i] ?? 0,
     }),
   );
   markStep("poster-map");
 
-  if (isSortByViews) {
-    posters.sort((a, b) => (b.views ?? 0) - (a.views ?? 0));
-  }
-  markStep("post-sort");
+  // if (isSortByViews) {
+  // posters.sort((a, b) => (b.views ?? 0) - (a.views ?? 0));
+  // }
+  // markStep("post-sort");
 
   const totalDurationMs = Date.now() - requestStartedAt;
   event.node.res.setHeader(
