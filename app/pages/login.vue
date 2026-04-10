@@ -54,6 +54,7 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
         title: "Login successful",
         description: "You can now access your account",
         icon: "material-symbols:check-circle-outline",
+        color: "success",
       });
 
       window.umami?.track("login_completed");
