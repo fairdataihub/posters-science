@@ -26,40 +26,6 @@ const links = ref([
     variant: "outline" as const,
   },
 ]);
-
-const { data: discoverData } = useFetch("/api/discover/stats");
-
-const displayCount = ref(0);
-const displayIndexedCount = ref(0);
-const scrollY = ref(0);
-
-const animateCount = (target: number, output: Ref<number>) => {
-  if (target === 0) return;
-  const duration = 1200;
-  const start = Date.now();
-  const tick = () => {
-    const elapsed = Date.now() - start;
-    const progress = Math.min(elapsed / duration, 1);
-    output.value = Math.round(progress * target * (2 - progress));
-    if (progress < 1) requestAnimationFrame(tick);
-  };
-  requestAnimationFrame(tick);
-};
-
-onMounted(() => {
-  animateCount(discoverData.value?.sharedViaPlatformCount ?? 0, displayCount);
-  animateCount(
-    discoverData.value?.indexedViaAutomationCount ?? 0,
-    displayIndexedCount,
-  );
-
-  const onScroll = () => {
-    scrollY.value = window.scrollY;
-  };
-  window.addEventListener("scroll", onScroll, { passive: true });
-
-  onUnmounted(() => window.removeEventListener("scroll", onScroll));
-});
 </script>
 
 <template>
@@ -398,85 +364,21 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- Section D: Metrics -->
-    <div class="mt-16">
-      <div class="mx-auto max-w-screen-xl px-6 py-12">
-        <div class="mb-12 text-center">
-          <h2 class="text-3xl font-bold tracking-tight sm:text-4xl">
-            A growing collection of FAIR poster records
-          </h2>
-        </div>
+    <ClientOnly>
+      <MetricsSection />
 
+      <template #fallback>
         <div
-          class="grid grid-cols-1 gap-8 md:grid-cols-2 md:justify-items-center"
+          class="bg-primary/10 mx-auto mt-16 flex max-w-md animate-pulse flex-col items-center gap-4 rounded-xl p-6 text-center"
         >
-          <!-- Published posters card -->
-          <div class="relative w-full">
-            <div
-              class="bg-primary/10 absolute inset-0 animate-pulse rounded-xl blur-md"
-            />
+          <Icon name="heroicons:chart-bar" class="h-10 w-10 text-pink-600" />
 
-            <UCard class="relative h-full w-full text-center">
-              <div class="flex flex-col items-center gap-3 py-4">
-                <Icon
-                  name="heroicons:document-text"
-                  class="h-10 w-10 text-pink-600"
-                />
+          <div class="h-8 w-24 rounded bg-pink-600/70" />
 
-                <div class="text-5xl font-bold text-pink-600">
-                  {{ displayCount.toLocaleString() }}
-                </div>
-
-                <p class="text-lg font-semibold">Published Posters</p>
-
-                <p class="text-muted text-sm">
-                  Posters shared using Posters.science.
-                </p>
-              </div>
-            </UCard>
-          </div>
-
-          <!-- Discovered/indexed posters card -->
-          <div class="relative w-full">
-            <div
-              class="bg-primary/10 absolute inset-0 animate-pulse rounded-xl blur-md"
-            />
-
-            <UCard class="relative h-full w-full text-center">
-              <div class="flex flex-col items-center gap-3 py-4">
-                <Icon
-                  name="heroicons:magnifying-glass-circle"
-                  class="h-10 w-10 text-pink-600"
-                />
-
-                <div class="text-5xl font-bold text-pink-600">
-                  {{ displayIndexedCount.toLocaleString() }}
-                </div>
-
-                <p class="text-lg font-semibold">Discovered Posters</p>
-
-                <p class="text-muted text-sm">
-                  Posters automatically discovered and indexed from repositories
-                  and other platforms.
-                </p>
-              </div>
-            </UCard>
-          </div>
-
-          <!-- <p class="text-muted max-w-xl text-center text-sm">
-            Additional platform analytics are available on the metrics page.
-          </p>
-
-          <UButton
-            to="/metrics"
-            variant="outline"
-            trailing-icon="heroicons:chart-bar"
-          >
-            View Full Metrics
-          </UButton> -->
+          <p class="text-muted text-sm">Loading metrics...</p>
         </div>
-      </div>
-    </div>
+      </template>
+    </ClientOnly>
 
     <!-- Funding acknowledgment -->
     <div
