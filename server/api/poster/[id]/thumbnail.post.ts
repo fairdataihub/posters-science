@@ -29,6 +29,13 @@ export default defineEventHandler(async (event) => {
     });
   }
 
+  if (poster.status === "published") {
+    throw createError({
+      statusCode: 400,
+      statusMessage: "Cannot generate thumbnail for a published poster",
+    });
+  }
+
   const filePath = poster.extractionJob?.filePath;
   if (!filePath) {
     throw createError({

@@ -209,14 +209,14 @@ const getImage = (poster: Poster) => {
         @click="navigateTo(`/share/${poster.id}`)"
       >
         <div class="flex h-full gap-8">
-          <div class="w-[150px] shrink-0 overflow-hidden">
-            <NuxtImg
+          <div class="h-full w-[150px] shrink-0 overflow-hidden">
+            <img
               :src="
                 getImage(poster) ||
                 `https://api.dicebear.com/9.x/shapes/svg?seed=${poster.id}`
               "
               :alt="poster.title"
-              class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+              class="max-h-[150px] w-full object-contain p-2 transition-transform duration-300 group-hover:scale-105"
             />
           </div>
 
@@ -230,8 +230,6 @@ const getImage = (poster: Poster) => {
                 {{ poster.description || "No description available" }}
               </p>
             </div>
-
-            {{ getImage(poster) }}
 
             <div
               class="flex items-center justify-between border-t border-gray-100 pt-2 text-xs"
