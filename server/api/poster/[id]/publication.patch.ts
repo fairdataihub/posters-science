@@ -48,6 +48,12 @@ export default defineEventHandler(async (event) => {
     data: updateData,
   });
 
+  if (poster.status === "downloaded") {
+    await prisma.poster.update({
+      where: { id: posterId },
+      data: { status: "published", publishedAt: new Date() },
+    });
+  }
 
   return { success: true };
 });
