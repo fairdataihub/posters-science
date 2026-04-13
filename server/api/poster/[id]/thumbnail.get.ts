@@ -42,11 +42,18 @@ export default defineEventHandler(async (event) => {
       });
     }
 
+    if (!res.body) {
+      throw createError({
+        statusCode: 502,
+        statusMessage: "Empty response from storage",
+      });
+    }
+
     const contentType = res.headers.get("Content-Type") ?? "image/jpeg";
     setHeader(event, "Content-Type", contentType);
     setHeader(event, "Cache-Control", "private, max-age=3600");
 
-    return sendStream(event, res.body!);
+    return sendStream(event, res.body);
   }
 
   // Public URL (published poster or external) — redirect the client directly
