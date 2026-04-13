@@ -446,6 +446,7 @@ export async function beginZenodoPublication(
     bunnyPrivateStorageKey,
     bunnyPublicStorage,
     bunnyPublicStorageKey,
+    bunnyPublicCdnUrl,
   } = config;
 
   const imageUrl = posterWithImage?.imageUrl;
@@ -466,6 +467,8 @@ export async function beginZenodoPublication(
         );
 
         if (downloadRes.ok) {
+          const contentType =
+            downloadRes.headers.get("Content-Type") ?? "image/jpeg";
           const fileBuffer = await downloadRes.arrayBuffer();
 
           const uploadRes = await fetch(
@@ -474,7 +477,7 @@ export async function beginZenodoPublication(
               method: "PUT",
               headers: {
                 AccessKey: bunnyPublicStorageKey,
-                "Content-Type": "image/jpeg",
+                "Content-Type": contentType,
                 "Content-Length": String(fileBuffer.byteLength),
               },
               body: fileBuffer,
@@ -482,7 +485,7 @@ export async function beginZenodoPublication(
           );
 
           if (uploadRes.ok) {
-            newImageUrl = `https://cdn.posters.science/${thumbnailPath}`;
+            newImageUrl = `${bunnyPublicCdnUrl}/${thumbnailPath}`;
           } else {
             console.error(
               `[Zenodo] Failed to upload thumbnail to public storage: ${uploadRes.status}`,
