@@ -59,15 +59,21 @@ const isSaving = ref(false);
 const doiError = ref("");
 const toast = useToast();
 
-const regeneratingThumbnailsLoading = ref(false);
+const regeneratingThumbnailIds = ref<number[]>([]);
+const thumbnailCacheBust = reactive<Record<number, number>>({});
 
 async function regenerateThumbnail(poster: Poster) {
-  regeneratingThumbnailsLoading.value = true;
+  regeneratingThumbnailIds.value = [
+    ...regeneratingThumbnailIds.value,
+    poster.id,
+  ];
 
   try {
-    await $fetch<{ imageUrl: string }>(`/api/poster/${poster.id}/thumbnail`, {
+    await $fetch<{ success: boolean }>(`/api/poster/${poster.id}/thumbnail`, {
       method: "POST",
     });
+
+    thumbnailCacheBust[poster.id] = Date.now();
 
     toast.add({
       title: "Thumbnail regenerated",
@@ -83,7 +89,9 @@ async function regenerateThumbnail(poster: Poster) {
       color: "error",
     });
   } finally {
-    regeneratingThumbnailsLoading.value = false;
+    regeneratingThumbnailIds.value = regeneratingThumbnailIds.value.filter(
+      (id) => id !== poster.id,
+    );
   }
 }
 
@@ -179,9 +187,10 @@ async function savePublicationInfo() {
 const getImage = (poster: Poster) => {
   if (poster.status === "published") {
     return poster.imageUrl;
-  } else {
-    return `/api/poster/${poster.id}/thumbnail`;
   }
+  const bust = thumbnailCacheBust[poster.id];
+
+  return `/api/poster/${poster.id}/thumbnail${bust ? `?t=${bust}` : ""}`;
 };
 </script>
 
@@ -275,10 +284,10 @@ const getImage = (poster: Poster) => {
                     color="neutral"
                     variant="ghost"
                     label=""
-                    :disabled="regeneratingThumbnailsLoading"
+                    :disabled="regeneratingThumbnailIds.includes(poster.id)"
                     icon="heroicons:arrow-path"
                     size="xs"
-                    :loading="regeneratingThumbnailsLoading"
+                    :loading="regeneratingThumbnailIds.includes(poster.id)"
                     @click.stop="regenerateThumbnail(poster)"
                   />
                 </UTooltip>

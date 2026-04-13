@@ -446,7 +446,6 @@ export async function beginZenodoPublication(
     bunnyPrivateStorageKey,
     bunnyPublicStorage,
     bunnyPublicStorageKey,
-    bunnyPublicCdnUrl,
   } = config;
 
   const imageUrl = posterWithImage?.imageUrl;
@@ -485,7 +484,7 @@ export async function beginZenodoPublication(
           );
 
           if (uploadRes.ok) {
-            newImageUrl = `${bunnyPublicCdnUrl}/${thumbnailPath}`;
+            newImageUrl = `https://cdn.posters.science/${thumbnailPath}`;
           } else {
             console.error(
               `[Zenodo] Failed to upload thumbnail to public storage: ${uploadRes.status}`,
