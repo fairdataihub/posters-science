@@ -433,11 +433,80 @@ export async function beginZenodoPublication(
     });
   }
 
+  // Move thumbnail from private to public storage before publishing
+  const posterWithImage = await prisma.poster.findUnique({
+    where: { id: posterInt },
+    select: { imageUrl: true },
+  });
+
+  let newImageUrl: string | undefined;
+
+  const {
+    bunnyPrivateStorage,
+    bunnyPrivateStorageKey,
+    bunnyPublicStorage,
+    bunnyPublicStorageKey,
+  } = config;
+
+  const imageUrl = posterWithImage?.imageUrl;
+  if (
+    imageUrl &&
+    bunnyPrivateStorage &&
+    imageUrl.startsWith(bunnyPrivateStorage)
+  ) {
+    const thumbnailPath = imageUrl
+      .slice(bunnyPrivateStorage.length)
+      .replace(/^\//, "");
+
+    if (bunnyPrivateStorageKey && bunnyPublicStorage && bunnyPublicStorageKey) {
+      try {
+        const downloadRes = await fetch(
+          `${bunnyPrivateStorage}/${thumbnailPath}`,
+          { headers: { AccessKey: bunnyPrivateStorageKey } },
+        );
+
+        if (downloadRes.ok) {
+          const contentType =
+            downloadRes.headers.get("Content-Type") ?? "image/jpeg";
+          const fileBuffer = await downloadRes.arrayBuffer();
+
+          const uploadRes = await fetch(
+            `${bunnyPublicStorage}/${thumbnailPath}`,
+            {
+              method: "PUT",
+              headers: {
+                AccessKey: bunnyPublicStorageKey,
+                "Content-Type": contentType,
+                "Content-Length": String(fileBuffer.byteLength),
+              },
+              body: fileBuffer,
+            },
+          );
+
+          if (uploadRes.ok) {
+            newImageUrl = `https://cdn.posters.science/${thumbnailPath}`;
+          } else {
+            console.error(
+              `[Zenodo] Failed to upload thumbnail to public storage: ${uploadRes.status}`,
+            );
+          }
+        } else {
+          console.error(
+            `[Zenodo] Failed to download thumbnail from private storage: ${downloadRes.status}`,
+          );
+        }
+      } catch (err) {
+        console.error("[Zenodo] Error moving thumbnail:", err);
+      }
+    }
+  }
+
   await prisma.poster.update({
     where: { id: posterInt },
     data: {
       status: "published",
       publishedAt: new Date(),
+      ...(newImageUrl && { imageUrl: newImageUrl }),
     },
   });
 

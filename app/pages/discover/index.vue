@@ -263,7 +263,7 @@ const totalFiltered = computed(() => total.value);
               >
                 <div class="relative h-full flex-1">
                   <div class="relative overflow-hidden">
-                    <NuxtImg
+                    <img
                       :src="poster.imageUrl"
                       :alt="poster.title"
                       class="h-48 w-full object-cover transition-transform duration-300 group-hover:scale-105"

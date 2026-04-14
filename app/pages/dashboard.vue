@@ -59,6 +59,42 @@ const isSaving = ref(false);
 const doiError = ref("");
 const toast = useToast();
 
+const regeneratingThumbnailIds = ref<number[]>([]);
+const thumbnailCacheBust = reactive<Record<number, number>>({});
+
+async function regenerateThumbnail(poster: Poster) {
+  regeneratingThumbnailIds.value = [
+    ...regeneratingThumbnailIds.value,
+    poster.id,
+  ];
+
+  try {
+    await $fetch<{ success: boolean }>(`/api/poster/${poster.id}/thumbnail`, {
+      method: "POST",
+    });
+
+    thumbnailCacheBust[poster.id] = Date.now();
+
+    toast.add({
+      title: "Thumbnail regenerated",
+      description:
+        "The poster thumbnail has been updated. It may take a few minutes to reflect the changes.",
+      color: "success",
+    });
+  } catch (err) {
+    console.error(err);
+    toast.add({
+      title: "Error",
+      description: "There was a problem regenerating the thumbnail.",
+      color: "error",
+    });
+  } finally {
+    regeneratingThumbnailIds.value = regeneratingThumbnailIds.value.filter(
+      (id) => id !== poster.id,
+    );
+  }
+}
+
 // Delete draft state
 const deleteModalOpen = ref(false);
 const posterToDelete = ref<Poster | null>(null);
@@ -147,6 +183,15 @@ async function savePublicationInfo() {
     isSaving.value = false;
   }
 }
+
+const getImage = (poster: Poster) => {
+  if (poster.status === "published") {
+    return poster.imageUrl;
+  }
+  const bust = thumbnailCacheBust[poster.id];
+
+  return `/api/poster/${poster.id}/thumbnail${bust ? `?t=${bust}` : ""}`;
+};
 </script>
 
 <template>
@@ -173,14 +218,14 @@ async function savePublicationInfo() {
         @click="navigateTo(`/share/${poster.id}`)"
       >
         <div class="flex h-full gap-8">
-          <div class="w-[150px] shrink-0 overflow-hidden">
-            <NuxtImg
+          <div class="h-full w-[150px] shrink-0 overflow-hidden">
+            <img
               :src="
-                poster.imageUrl ||
+                getImage(poster) ||
                 `https://api.dicebear.com/9.x/shapes/svg?seed=${poster.id}`
               "
               :alt="poster.title"
-              class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+              class="max-h-[150px] w-full object-contain p-2 transition-transform duration-300 group-hover:scale-105"
             />
           </div>
 
@@ -229,6 +274,23 @@ async function savePublicationInfo() {
                   size="xs"
                   @click.stop="openPublicationModal(poster)"
                 />
+
+                <UTooltip text="Regenerate the thumbnail for this poster">
+                  <UButton
+                    v-if="
+                      poster.status === 'draft' ||
+                      poster.status === 'downloaded'
+                    "
+                    color="neutral"
+                    variant="ghost"
+                    label=""
+                    :disabled="regeneratingThumbnailIds.includes(poster.id)"
+                    icon="heroicons:arrow-path"
+                    size="xs"
+                    :loading="regeneratingThumbnailIds.includes(poster.id)"
+                    @click.stop="regenerateThumbnail(poster)"
+                  />
+                </UTooltip>
 
                 <UButton
                   v-if="
