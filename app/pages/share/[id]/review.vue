@@ -456,7 +456,7 @@ async function handleArchive() {
 <template>
   <div class="mx-auto flex w-full max-w-screen-xl flex-col gap-6 px-6 pb-10">
     <UPageHeader
-      title="Review Poster Submission"
+      title="Submit Poster"
       description="Submit your poster for publication on a trusted repository."
     >
       <template #headline>
