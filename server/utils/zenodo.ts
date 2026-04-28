@@ -374,7 +374,58 @@ export async function beginZenodoPublication(
     return { success: false, error: uploadResult.error };
   }
 
-  // TODO: Retrieve and upload poster file
+  // Retrieve and upload poster file
+  const extractionJob = await prisma.extractionJob.findUnique({
+    where: { posterId: posterInt },
+  });
+
+  if (!extractionJob?.filePath) {
+    console.log(
+      `[Zenodo] No extraction job or file path found for poster: ${posterId}`,
+    );
+
+    return { success: false, error: "Poster file not found for upload" };
+  }
+
+  console.log(
+    `[Zenodo] Fetching poster file from BunnyCDN: ${extractionJob.filePath}`,
+  );
+
+  const posterFileRes = await fetch(
+    `${config.bunnyPrivateStorage}/${extractionJob.filePath}`,
+    { headers: { AccessKey: config.bunnyPrivateStorageKey } },
+  );
+
+  if (!posterFileRes.ok) {
+    console.log(
+      `[Zenodo] Failed to fetch poster file from BunnyCDN: ${posterFileRes.status}`,
+    );
+
+    return {
+      success: false,
+      error: "Failed to retrieve poster file from storage",
+    };
+  }
+
+  const posterFileBuffer = await posterFileRes.arrayBuffer();
+  const posterFileBlob = new Blob([posterFileBuffer], {
+    type: "application/octet-stream",
+  });
+
+  const posterFileUploadResult = await uploadFileToZenodoBucket(
+    bucketUrl,
+    tokenRecord.accessToken,
+    extractionJob.fileName || "poster.pdf",
+    posterFileBlob,
+  );
+
+  if (!posterFileUploadResult.success) {
+    console.log(
+      `[Zenodo] Failed to upload poster file: ${posterFileUploadResult.error}`,
+    );
+
+    return { success: false, error: posterFileUploadResult.error };
+  }
 
   await onProgress?.({
     step: "upload_files",

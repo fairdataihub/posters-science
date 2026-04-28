@@ -8,6 +8,7 @@ const posterId = route.params.posterid as string;
 
 const { loggedIn } = useUserSession();
 const toast = useToast();
+const { siteEnv } = useRuntimeConfig().public;
 
 const { data: apiData, error } = await useFetch(`/api/discover/${posterId}`);
 
@@ -19,6 +20,7 @@ const api = apiData.value as any;
 const conf = api?.conference;
 
 const liked = ref(api?.liked ?? false);
+
 const liking = ref(false);
 
 const poster = ref({
@@ -100,6 +102,19 @@ const poster = ref({
         : undefined,
     },
   },
+});
+
+const zenodoUrl = computed(() => {
+  if (!poster.value.doi) return null;
+  const isSandbox =
+    siteEnv === "staging" || siteEnv === "development" || siteEnv === "dev";
+  if (isSandbox) {
+    const recordId = poster.value.doi.split("/zenodo.")[1];
+
+    return `https://sandbox.zenodo.org/records/${recordId}`;
+  }
+
+  return `https://doi.org/${poster.value.doi}`;
 });
 
 const licenseInfo = computed(() => {
@@ -283,11 +298,7 @@ const tabItems = [
           </div>
 
           <div class="flex items-center gap-2">
-            <NuxtLink
-              v-if="poster.doi"
-              :to="`https://doi.org/${poster.doi}`"
-              target="_blank"
-            >
+            <NuxtLink v-if="zenodoUrl" :to="zenodoUrl" target="_blank">
               <UButton
                 color="primary"
                 variant="solid"
