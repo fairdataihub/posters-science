@@ -223,9 +223,10 @@ watch(depositionMode, () => {
 
 const readyToArchive = computed(
   () =>
-    depositionMode.value === "new" ||
-    (depositionMode.value === "existing" &&
-      selectedDeposition.value !== undefined),
+    !!selectedLicense.value &&
+    (depositionMode.value === "new" ||
+      (depositionMode.value === "existing" &&
+        selectedDeposition.value !== undefined)),
 );
 
 // Archive progress state
@@ -726,7 +727,9 @@ async function handleArchive() {
 
               <!-- License selection -->
               <div class="mt-4">
-                <p class="text-muted mb-2 text-sm">License</p>
+                <p class="text-muted mb-2 text-sm">
+                  License <span class="text-error">*</span>
+                </p>
 
                 <USelectMenu
                   v-model="selectedLicense"
@@ -796,7 +799,9 @@ async function handleArchive() {
       <template v-else>
         <div class="mt-5 flex flex-col gap-4">
           <div>
-            <p class="text-muted mb-2 text-sm">License</p>
+            <p class="text-muted mb-2 text-sm">
+              License <span class="text-error">*</span>
+            </p>
 
             <USelectMenu
               v-model="selectedLicense"
@@ -812,6 +817,7 @@ async function handleArchive() {
             <UButton
               color="primary"
               size="lg"
+              :disabled="!selectedLicense"
               :loading="isSimulatedPublishing"
               @click="handleSimulatedArchive"
             >
