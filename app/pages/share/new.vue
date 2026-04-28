@@ -193,6 +193,15 @@ onUnmounted(() => {
       <UiSpinner :loading="status === 2 || isUploading" overlay>
         <UCard>
           <div class="space-y-6">
+            <!-- Maintenance Notice -->
+            <UAlert
+              color="warning"
+              variant="soft"
+              icon="i-heroicons-wrench-screwdriver"
+              title="Upload temporarily unavailable"
+              description="This feature is temporarily unavailable. Please check back soon."
+            />
+
             <UiFileUpload @on-change="selectedFiles = $event">
               <UiFileUploadGrid />
             </UiFileUpload>
@@ -252,7 +261,7 @@ onUnmounted(() => {
 
           <template #footer>
             <UButton
-              :disabled="isUploading"
+              disabled
               class="flex w-full justify-center"
               variant="outline"
               icon="i-heroicons-cloud-arrow-up-solid"
