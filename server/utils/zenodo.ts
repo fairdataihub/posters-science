@@ -374,7 +374,74 @@ export async function beginZenodoPublication(
     return { success: false, error: uploadResult.error };
   }
 
-  // TODO: Retrieve and upload poster file
+  // Retrieve and upload poster file
+  const extractionJob = await prisma.extractionJob.findUnique({
+    where: { posterId: posterInt },
+  });
+
+  if (!extractionJob?.filePath) {
+    console.log(
+      `[Zenodo] No extraction job or file path found for poster: ${posterId}`,
+    );
+
+    return { success: false, error: "Poster file not found for upload" };
+  }
+
+  console.log(
+    `[Zenodo] Fetching poster file from BunnyCDN: ${extractionJob.filePath}`,
+  );
+
+  const posterFileRes = await fetch(
+    `${config.bunnyPrivateStorage}/${extractionJob.filePath}`,
+    { headers: { AccessKey: config.bunnyPrivateStorageKey } },
+  );
+
+  if (!posterFileRes.ok) {
+    console.log(
+      `[Zenodo] Failed to fetch poster file from BunnyCDN: ${posterFileRes.status}`,
+    );
+
+    return {
+      success: false,
+      error: "Failed to retrieve poster file from storage",
+    };
+  }
+
+  const posterFileName = extractionJob.fileName || "poster.pdf";
+  const posterFileContentLength = posterFileRes.headers.get("Content-Length");
+
+  console.log(
+    `[Zenodo] Uploading poster file "${posterFileName}" to bucket: ${bucketUrl}`,
+  );
+
+  const posterFileUploadRes = await fetch(`${bucketUrl}/${posterFileName}`, {
+    method: "PUT",
+    // @ts-expect-error required when body is a ReadableStream
+    duplex: "half",
+    headers: {
+      "Content-Type": "application/octet-stream",
+      ...(posterFileContentLength
+        ? { "Content-Length": posterFileContentLength }
+        : {}),
+      Authorization: `Bearer ${tokenRecord.accessToken}`,
+    },
+    body: posterFileRes.body,
+  });
+
+  if (!posterFileUploadRes.ok) {
+    console.log(
+      `[Zenodo] Failed to upload poster file "${posterFileName}" (status: ${posterFileUploadRes.status})`,
+    );
+
+    const errorMsg = await getZenodoErrorMessage(
+      `Failed to upload file "${posterFileName}"`,
+      posterFileUploadRes,
+    );
+
+    return { success: false, error: errorMsg };
+  }
+
+  console.log(`[Zenodo] Uploaded poster file "${posterFileName}" successfully`);
 
   await onProgress?.({
     step: "upload_files",
@@ -895,6 +962,7 @@ async function uploadFileToZenodoBucket(
       method: "PUT",
       headers: {
         "Content-Type": "application/octet-stream",
+        "Content-Length": String(content.size),
         Authorization: `Bearer ${zenodoToken}`,
       },
       body: content,
