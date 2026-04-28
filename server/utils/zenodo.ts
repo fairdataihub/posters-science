@@ -407,25 +407,41 @@ export async function beginZenodoPublication(
     };
   }
 
-  const posterFileBuffer = await posterFileRes.arrayBuffer();
-  const posterFileBlob = new Blob([posterFileBuffer], {
-    type: "application/octet-stream",
-  });
+  const posterFileName = extractionJob.fileName || "poster.pdf";
+  const posterFileContentLength = posterFileRes.headers.get("Content-Length");
 
-  const posterFileUploadResult = await uploadFileToZenodoBucket(
-    bucketUrl,
-    tokenRecord.accessToken,
-    extractionJob.fileName || "poster.pdf",
-    posterFileBlob,
+  console.log(
+    `[Zenodo] Uploading poster file "${posterFileName}" to bucket: ${bucketUrl}`,
   );
 
-  if (!posterFileUploadResult.success) {
+  const posterFileUploadRes = await fetch(`${bucketUrl}/${posterFileName}`, {
+    method: "PUT",
+    // @ts-expect-error required when body is a ReadableStream
+    duplex: "half",
+    headers: {
+      "Content-Type": "application/octet-stream",
+      ...(posterFileContentLength
+        ? { "Content-Length": posterFileContentLength }
+        : {}),
+      Authorization: `Bearer ${tokenRecord.accessToken}`,
+    },
+    body: posterFileRes.body,
+  });
+
+  if (!posterFileUploadRes.ok) {
     console.log(
-      `[Zenodo] Failed to upload poster file: ${posterFileUploadResult.error}`,
+      `[Zenodo] Failed to upload poster file "${posterFileName}" (status: ${posterFileUploadRes.status})`,
     );
 
-    return { success: false, error: posterFileUploadResult.error };
+    const errorMsg = await getZenodoErrorMessage(
+      `Failed to upload file "${posterFileName}"`,
+      posterFileUploadRes,
+    );
+
+    return { success: false, error: errorMsg };
   }
+
+  console.log(`[Zenodo] Uploaded poster file "${posterFileName}" successfully`);
 
   await onProgress?.({
     step: "upload_files",
@@ -946,6 +962,7 @@ async function uploadFileToZenodoBucket(
       method: "PUT",
       headers: {
         "Content-Type": "application/octet-stream",
+        "Content-Length": String(content.size),
         Authorization: `Bearer ${zenodoToken}`,
       },
       body: content,
