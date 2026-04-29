@@ -1,10 +1,7 @@
 <script setup lang="ts">
 import dayjs from "dayjs";
-import {
-  type CalendarDate,
-  DateFormatter,
-  getLocalTimeZone,
-} from "@internationalized/date";
+import { getLocalTimeZone } from "@internationalized/date";
+import type { CalendarDate } from "@internationalized/date";
 
 const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Discover Posters - Posters.science")}&description=${encodeURIComponent("Find and explore scientific posters on a variety of topics.")}&app=posters-science&org=fairdataihub`;
 
@@ -14,10 +11,6 @@ useSeoMeta({
   ogTitle: "Discover Posters - Posters.science",
   ogDescription: "Find and explore scientific posters on a variety of topics.",
   ogImage,
-});
-
-const df = new DateFormatter("en-US", {
-  dateStyle: "medium",
 });
 
 const dateFilterValue = shallowRef<{
@@ -152,66 +145,7 @@ const hasActiveFilters = computed(() => !!dateFilterValue.value.start);
           </template>
 
           <div class="space-y-6">
-            <div>
-              <h4 class="mb-3 text-sm font-medium">Published</h4>
-
-              <div class="flex items-center gap-2">
-                <UPopover>
-                  <UButton
-                    color="neutral"
-                    variant="outline"
-                    size="sm"
-                    icon="i-lucide-calendar"
-                  >
-                    <template v-if="dateFilterValue.start">
-                      <template v-if="dateFilterValue.end">
-                        {{
-                          df.format(
-                            dateFilterValue.start.toDate(getLocalTimeZone()),
-                          )
-                        }}
-                        -
-                        {{
-                          df.format(
-                            dateFilterValue.end.toDate(getLocalTimeZone()),
-                          )
-                        }}
-                      </template>
-
-                      <template v-else>
-                        {{
-                          df.format(
-                            dateFilterValue.start.toDate(getLocalTimeZone()),
-                          )
-                        }}
-                      </template>
-                    </template>
-
-                    <template v-else> Pick a date </template>
-                  </UButton>
-
-                  <template #content>
-                    <UCalendar
-                      v-model="dateFilterValue"
-                      class="p-2"
-                      :number-of-months="2"
-                      range
-                    />
-                  </template>
-                </UPopover>
-
-                <UButton
-                  v-if="dateFilterValue.start"
-                  color="neutral"
-                  variant="ghost"
-                  size="sm"
-                  icon="i-lucide-x"
-                  @click="
-                    dateFilterValue = { start: undefined, end: undefined }
-                  "
-                />
-              </div>
-            </div>
+            <DiscoverPublishedDateFilter v-model="dateFilterValue" />
           </div>
         </UCard>
       </div>
@@ -238,62 +172,10 @@ const hasActiveFilters = computed(() => !!dateFilterValue.value.start);
           </UButton>
 
           <div v-show="showMobileFilter" class="mt-2 rounded-lg border p-4">
-            <h4 class="mb-3 text-sm font-medium">Published</h4>
-
-            <div class="flex items-center gap-2">
-              <UPopover>
-                <UButton
-                  color="neutral"
-                  variant="outline"
-                  size="sm"
-                  icon="i-lucide-calendar"
-                >
-                  <template v-if="dateFilterValue.start">
-                    <template v-if="dateFilterValue.end">
-                      {{
-                        df.format(
-                          dateFilterValue.start.toDate(getLocalTimeZone()),
-                        )
-                      }}
-                      -
-                      {{
-                        df.format(
-                          dateFilterValue.end.toDate(getLocalTimeZone()),
-                        )
-                      }}
-                    </template>
-
-                    <template v-else>
-                      {{
-                        df.format(
-                          dateFilterValue.start.toDate(getLocalTimeZone()),
-                        )
-                      }}
-                    </template>
-                  </template>
-
-                  <template v-else> Pick a date </template>
-                </UButton>
-
-                <template #content>
-                  <UCalendar
-                    v-model="dateFilterValue"
-                    class="p-2"
-                    :number-of-months="1"
-                    range
-                  />
-                </template>
-              </UPopover>
-
-              <UButton
-                v-if="dateFilterValue.start"
-                color="neutral"
-                variant="ghost"
-                size="sm"
-                icon="i-lucide-x"
-                @click="dateFilterValue = { start: undefined, end: undefined }"
-              />
-            </div>
+            <DiscoverPublishedDateFilter
+              v-model="dateFilterValue"
+              :number-of-months="1"
+            />
           </div>
         </div>
 
