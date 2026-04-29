@@ -120,6 +120,9 @@ if (error.value) {
 }
 
 const totalFiltered = computed(() => total.value);
+
+const showMobileFilter = ref(false);
+const hasActiveFilters = computed(() => !!dateFilterValue.value.start);
 </script>
 
 <template>
@@ -140,7 +143,7 @@ const totalFiltered = computed(() => total.value);
     />
 
     <div class="flex gap-6">
-      <div :class="['block w-80 flex-shrink-0 transition-all duration-300']">
+      <div class="hidden w-80 flex-shrink-0 md:block">
         <UCard class="sticky top-4">
           <template #header>
             <div class="flex items-center justify-between">
@@ -214,6 +217,86 @@ const totalFiltered = computed(() => total.value);
       </div>
 
       <div class="min-w-0 flex-1">
+        <!-- Mobile filter toggle — hidden on md+ -->
+        <div class="mb-4 md:hidden">
+          <UButton
+            color="neutral"
+            variant="outline"
+            icon="i-lucide-sliders-horizontal"
+            :trailing-icon="
+              showMobileFilter ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'
+            "
+            class="w-full justify-between"
+            @click="showMobileFilter = !showMobileFilter"
+          >
+            <span class="flex items-center gap-2">
+              Filters
+              <UBadge v-if="hasActiveFilters" color="primary" size="xs"
+                >1</UBadge
+              >
+            </span>
+          </UButton>
+
+          <div v-show="showMobileFilter" class="mt-2 rounded-lg border p-4">
+            <h4 class="mb-3 text-sm font-medium">Published</h4>
+
+            <div class="flex items-center gap-2">
+              <UPopover>
+                <UButton
+                  color="neutral"
+                  variant="outline"
+                  size="sm"
+                  icon="i-lucide-calendar"
+                >
+                  <template v-if="dateFilterValue.start">
+                    <template v-if="dateFilterValue.end">
+                      {{
+                        df.format(
+                          dateFilterValue.start.toDate(getLocalTimeZone()),
+                        )
+                      }}
+                      -
+                      {{
+                        df.format(
+                          dateFilterValue.end.toDate(getLocalTimeZone()),
+                        )
+                      }}
+                    </template>
+
+                    <template v-else>
+                      {{
+                        df.format(
+                          dateFilterValue.start.toDate(getLocalTimeZone()),
+                        )
+                      }}
+                    </template>
+                  </template>
+
+                  <template v-else> Pick a date </template>
+                </UButton>
+
+                <template #content>
+                  <UCalendar
+                    v-model="dateFilterValue"
+                    class="p-2"
+                    :number-of-months="1"
+                    range
+                  />
+                </template>
+              </UPopover>
+
+              <UButton
+                v-if="dateFilterValue.start"
+                color="neutral"
+                variant="ghost"
+                size="sm"
+                icon="i-lucide-x"
+                @click="dateFilterValue = { start: undefined, end: undefined }"
+              />
+            </div>
+          </div>
+        </div>
+
         <div class="flex items-center gap-2 pb-4">
           <UInput
             v-model="searchQuery"
