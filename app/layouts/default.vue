@@ -37,12 +37,16 @@ const headerItems = computed<NavigationMenuItem[]>(() => [
   //   to: "/metrics",
   //   active: route.path.startsWith("/metrics"),
   // },
-  // {
-  //   label: "Provide feedback",
-  //   onSelect: () => {
-  //     feedbackOpen.value = true;
-  //   },
-  // },
+]);
+
+const mobileHeaderItems = computed<NavigationMenuItem[]>(() => [
+  ...headerItems.value,
+  {
+    label: "Give feedback",
+    onSelect: () => {
+      feedbackOpen.value = true;
+    },
+  },
 ]);
 
 const profileDropdownItems = ref([
@@ -94,13 +98,14 @@ const footerItems: NavigationMenuItem[] = [
         </NuxtLink>
       </template>
 
-      <UNavigationMenu :items="headerItems" />
+      <UNavigationMenu :items="headerItems" class="hidden md:flex" />
 
       <template #right>
         <UButton
           color="neutral"
           variant="ghost"
           label="Give Feedback"
+          class="hidden md:inline-flex"
           @click="feedbackOpen = true"
         />
 
@@ -110,10 +115,6 @@ const footerItems: NavigationMenuItem[] = [
           <template #default="{ loggedIn }">
             <NuxtLink v-if="!loggedIn" to="/login">
               <UButton size="lg" label="Log in" />
-            </NuxtLink>
-
-            <NuxtLink v-if="!loggedIn" to="/register">
-              <UButton size="lg" label="Get started" />
             </NuxtLink>
 
             <UDropdownMenu
@@ -143,6 +144,16 @@ const footerItems: NavigationMenuItem[] = [
             <USkeleton class="h-12 w-12 rounded-full" />
           </template>
         </AuthState>
+      </template>
+
+      <template #body>
+        <div class="px-1 pb-2 md:hidden">
+          <UNavigationMenu
+            :items="mobileHeaderItems"
+            orientation="vertical"
+            class="-mx-2.5"
+          />
+        </div>
       </template>
     </UHeader>
 
