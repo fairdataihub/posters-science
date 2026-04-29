@@ -224,7 +224,7 @@ const hasActiveFilters = computed(() => !!dateFilterValue.value.start);
               class="relative h-full"
             >
               <UCard
-                class="group relative flex h-full flex-1 cursor-pointer flex-col transition-all duration-300 hover:shadow-lg"
+                class="group relative flex h-full flex-1 cursor-pointer flex-col shadow-sm ring-0 transition-shadow duration-300 hover:shadow-md"
               >
                 <div class="relative h-full flex-1">
                   <div class="relative overflow-hidden">
