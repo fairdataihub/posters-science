@@ -38,7 +38,7 @@ const links = ref([
       class="mb-0 pb-0"
     >
       <div class="group relative inline-block">
-        <img src="/assets/images/fairy.png" alt="Logo" class="block pl-16" />
+        <img src="/assets/images/fairy.png" alt="Logo" class="block sm:pl-16" />
         <!-- Glow effect behind the image -->
         <div
           class="bg-primary/20 absolute inset-0 -z-10 animate-pulse rounded-xl blur-3xl"
@@ -73,7 +73,7 @@ const links = ref([
     <div class="mt-0">
       <div class="mx-auto max-w-screen-xl px-6 py-16">
         <!-- Soft launch notice -->
-        <div class="mx-auto max-w-3xl px-6 pb-12">
+        <div class="mx-auto max-w-3xl pb-12">
           <div
             class="border-primary/20 bg-primary/5 flex items-start gap-3 rounded-xl border px-5 py-4"
           >
@@ -88,12 +88,8 @@ const links = ref([
               functionality is up and running, and we'd love for you to test it.
               We would greatly appreciate it if you could share a poster,
               discover posters, and
-              <button
-                class="text-primary cursor-pointer font-medium underline underline-offset-2"
-                @click="feedbackOpen = true"
-              >
-                share your thoughts via our feedback form</button
-              >.
+              <!-- prettier-ignore -->
+              <span class="text-primary cursor-pointer font-medium underline underline-offset-2" @click="feedbackOpen = true">share your thoughts via our feedback form.</span>
             </p>
           </div>
         </div>
