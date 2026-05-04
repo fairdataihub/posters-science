@@ -38,6 +38,9 @@ importers:
       better-sqlite3:
         specifier: 12.8.0
         version: 12.8.0
+      d3-cloud:
+        specifier: ^1.2.9
+        version: 1.2.9
       date-fns:
         specifier: 4.1.0
         version: 4.1.0
@@ -114,6 +117,9 @@ importers:
       '@types/bcrypt':
         specifier: 5.0.2
         version: 5.0.2
+      '@types/d3-cloud':
+        specifier: ^1.2.9
+        version: 1.2.9
       '@types/nodemailer':
         specifier: 6.4.17
         version: 6.4.17
@@ -2730,6 +2736,12 @@ packages:
   '@types/bcrypt@5.0.2':
     resolution: {integrity: sha512-6atioO8Y75fNcbmj0G7UjI9lXN2pQ/IGJ2FWT4a/btd0Lk9lQalHLKhkgKVZ3r+spnmWUKfbMi1GEe9wyHQfNQ==}
 
+  '@types/d3-cloud@1.2.9':
+    resolution: {integrity: sha512-5EWJvnlCrqTThGp8lYHx+DL00sOjx2HTlXH1WRe93k5pfOIhPQaL63NttaKYIbT7bTXp/USiunjNS/N4ipttIQ==}
+
+  '@types/d3@3.5.53':
+    resolution: {integrity: sha512-8yKQA9cAS6+wGsJpBysmnhlaaxlN42Qizqkw+h2nILSlS+MAG2z4JdO6p+PJrJ+ACvimkmLJL281h157e52psQ==}
+
   '@types/debug@4.1.13':
     resolution: {integrity: sha512-KSVgmQmzMwPlmtljOomayoR89W4FynCAi3E8PPs7vmDVPe84hT+vGPKkJfThkmXs0x0jAaa9U8uW8bbfyS2fWw==}
 
@@ -3854,6 +3866,12 @@ packages:
     peerDependenciesMeta:
       typescript:
         optional: true
+
+  d3-cloud@1.2.9:
+    resolution: {integrity: sha512-leL1GLneC9ZQtnV+6TGWrNlGfI1WX7S2arcTv2vae12DaXo5wjm6GBCkskXbrDlyOymd/A75Pyj1H37MW4BZ/Q==}
+
+  d3-dispatch@1.0.6:
+    resolution: {integrity: sha512-fVjoElzjhCEy+Hbn8KygnmMS7Or0a9sI2UzGwoB7cCtvI1XpVN9GpoYlnb3xt2YV66oXYb1fLJ8GMvP4hdU1RA==}
 
   date-fns@4.1.0:
     resolution: {integrity: sha512-Ukq0owbQXxa/U3EGtsdVBkR1w7KOQ5gIBqdH2hkvknzZPYvBxb/aa6E8L7tmjFtkwZBu3UXBbjIgPo/Ez4xaNg==}
@@ -10905,6 +10923,12 @@ snapshots:
     dependencies:
       '@types/node': 25.5.0
 
+  '@types/d3-cloud@1.2.9':
+    dependencies:
+      '@types/d3': 3.5.53
+
+  '@types/d3@3.5.53': {}
+
   '@types/debug@4.1.13':
     dependencies:
       '@types/ms': 2.1.0
@@ -12163,6 +12187,12 @@ snapshots:
       clsx: 2.1.1
     optionalDependencies:
       typescript: 5.9.3
+
+  d3-cloud@1.2.9:
+    dependencies:
+      d3-dispatch: 1.0.6
+
+  d3-dispatch@1.0.6: {}
 
   date-fns@4.1.0: {}
 

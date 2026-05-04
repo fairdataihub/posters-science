@@ -32,11 +32,11 @@ const headerItems = computed<NavigationMenuItem[]>(() => [
   //   to: "/about",
   //   active: route.path.startsWith("/about"),
   // },
-  // {
-  //   label: "Metrics",
-  //   to: "/metrics",
-  //   active: route.path.startsWith("/metrics"),
-  // },
+  {
+    label: "Metrics",
+    to: "/metrics",
+    active: route.path.startsWith("/metrics"),
+  },
   // {
   //   label: "Provide feedback",
   //   onSelect: () => {
