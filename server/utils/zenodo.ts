@@ -346,7 +346,7 @@ export async function beginZenodoPublication(
       publication_type: "poster",
       creators: creators.map((c) => {
         const orcid = c.nameIdentifiers?.find(
-          (n) => n.nameIdentifierScheme === "ORCID",
+          (n) => n.nameIdentifierScheme?.toLowerCase() === "orcid",
         )?.nameIdentifier;
 
         return {
