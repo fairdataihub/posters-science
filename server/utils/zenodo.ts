@@ -300,29 +300,86 @@ export async function beginZenodoPublication(
   });
 
   // Build Zenodo deposition metadata from poster data
-  const creators = poster.posterMetadata.creators as {
+  const meta = poster.posterMetadata;
+
+  const creators = meta.creators as {
     name: string;
     affiliation?: { name: string }[];
+    nameIdentifiers?: {
+      nameIdentifier: string;
+      nameIdentifierScheme: string;
+    }[];
   }[];
 
-  // TODO: Add more metadata fields as needed
-  const posterLicense = poster.posterMetadata.license;
+  const posterLicense = meta.license;
+
+  const keywords = (meta.subjects ?? []).filter((s: string) => s !== "");
+
+  const rawRelated = meta.relatedIdentifiers as {
+    relatedIdentifier?: string;
+    relatedIdentifierType?: string;
+    relationType?: string;
+  }[];
+  const zenodoRelated = Array.isArray(rawRelated)
+    ? rawRelated
+        .filter(
+          (r) =>
+            r.relatedIdentifier && r.relatedIdentifierType && r.relationType,
+        )
+        .map((r) => ({
+          identifier: r.relatedIdentifier!,
+          scheme: r.relatedIdentifierType!.toLowerCase(),
+          relation:
+            r.relationType!.charAt(0).toLowerCase() + r.relationType!.slice(1),
+        }))
+    : [];
+
+  const conferenceDates =
+    meta.conferenceStartDate && meta.conferenceEndDate
+      ? `${meta.conferenceStartDate} - ${meta.conferenceEndDate}`
+      : meta.conferenceStartDate || meta.conferenceEndDate || undefined;
+
   const metadata = {
     metadata: {
       title: poster.title,
       upload_type: "poster",
       publication_type: "poster",
-      creators: creators.map((c) => ({
-        name: c.name,
-        ...(c.affiliation?.[0]?.name && {
-          affiliation: c.affiliation[0].name,
-        }),
-      })),
+      creators: creators.map((c) => {
+        const orcid = c.nameIdentifiers?.find(
+          (n) => n.nameIdentifierScheme?.toLowerCase() === "orcid",
+        )?.nameIdentifier;
+
+        return {
+          name: c.name,
+          ...(c.affiliation?.[0]?.name && {
+            affiliation: c.affiliation[0].name,
+          }),
+          ...(orcid && { orcid }),
+        };
+      }),
       description: poster.description,
       prereserve_doi: {
         doi,
       },
       ...(posterLicense && { license: posterLicense }),
+      ...(keywords.length > 0 && { keywords }),
+      ...(meta.language && { language: meta.language }),
+      ...(zenodoRelated.length > 0 && { related_identifiers: zenodoRelated }),
+      ...(meta.conferenceName && {
+        conference_title: meta.conferenceName,
+      }),
+      ...(meta.conferenceAcronym && {
+        conference_acronym: meta.conferenceAcronym,
+      }),
+      ...(meta.conferenceLocation && {
+        conference_place: meta.conferenceLocation,
+      }),
+      ...(meta.conferenceUri && { conference_url: meta.conferenceUri }),
+      ...(conferenceDates && { conference_dates: conferenceDates }),
+      ...(meta.version && { version: meta.version }),
+      ...(meta.publicationYear && {
+        publication_date: `${meta.publicationYear}`,
+      }),
     },
   };
 

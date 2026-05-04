@@ -92,6 +92,7 @@ export function buildPosterJson(
   const validImageCaptions = filterCaptions(meta.imageCaptions);
 
   const posterJson: Record<string, unknown> = {
+    $schema: "https://posters.science/schema/v0.2/poster_schema.json",
     ...(doi && { doi }),
     ...(prefix && { prefix }),
     ...(suffix && { suffix }),
