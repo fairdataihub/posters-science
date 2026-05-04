@@ -484,7 +484,7 @@ async function onSubmit(event: FormSubmitEvent<StrictFormSchema>) {
     });
 
     // Navigate to review page
-    await navigateTo(`/share/${id}/review`);
+    await navigateTo(`/share/${id}/publish`);
   } catch (err) {
     console.error(err);
     toast.add({
@@ -1204,6 +1204,7 @@ async function addSubjectAndFocus() {
                   <UFormField
                     :name="`relatedIdentifiers.${iIndex}.relationType`"
                     label="Relation Type"
+                    description="A=Your poster, B=The resource"
                     required
                     class="flex-1"
                   >
