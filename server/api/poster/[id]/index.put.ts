@@ -62,7 +62,16 @@ export default defineEventHandler(async (event) => {
       })),
     }),
     ...(creator.affiliation && {
-      affiliation: creator.affiliation.map((aff) => ({ name: aff.name })),
+      affiliation: creator.affiliation.map((aff) => ({
+        name: aff.name,
+        ...(aff.affiliationIdentifier && {
+          affiliationIdentifier: aff.affiliationIdentifier,
+        }),
+        ...(aff.affiliationIdentifierScheme && {
+          affiliationIdentifierScheme: aff.affiliationIdentifierScheme,
+        }),
+        ...(aff.schemeURI && { schemeURI: aff.schemeURI }),
+      })),
     }),
   }));
 

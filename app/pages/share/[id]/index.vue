@@ -9,6 +9,7 @@ import {
   IDENTIFIER_TYPE_OPTIONS,
   IDENTIFIER_TYPE_PLACEHOLDER_OPTIONS,
   RELATION_TYPE_OPTIONS,
+  FUNDER_IDENTIFIER_TYPE_OPTIONS,
 } from "@/utils/poster_schema";
 import {
   CalendarDate,
@@ -741,44 +742,84 @@ async function addSubjectAndFocus() {
                     v-for="(affiliation, aIndex) in state.creators[cIndex]
                       ?.affiliation"
                     :key="aIndex"
-                    class="mb-2 flex gap-2"
+                    class="mb-2 space-y-2 rounded-xl border border-gray-200 p-3"
                   >
+                    <div class="flex gap-2">
+                      <UFormField
+                        class="w-full"
+                        :name="`creators.${cIndex}.affiliation.${aIndex}.name`"
+                        label="Name"
+                        required
+                      >
+                        <UInput
+                          v-model="affiliation.name"
+                          placeholder="University of California, San Diego"
+                        />
+                      </UFormField>
+
+                      <UButton
+                        class="mt-6"
+                        size="sm"
+                        color="error"
+                        variant="outline"
+                        icon="i-lucide-trash"
+                        @click="
+                          removeRow(
+                            state.creators[cIndex]?.affiliation!,
+                            aIndex,
+                          )
+                        "
+                      />
+
+                      <UButton
+                        class="mt-6"
+                        size="sm"
+                        color="success"
+                        variant="outline"
+                        icon="i-lucide-plus"
+                        @click="
+                          state.creators[cIndex]?.affiliation?.push({
+                            name: '',
+                            affiliationIdentifier: '',
+                            affiliationIdentifierScheme: '',
+                            schemeURI: '',
+                          })
+                        "
+                      />
+                    </div>
+
+                    <div class="grid gap-2 md:grid-cols-2">
+                      <UFormField
+                        :name="`creators.${cIndex}.affiliation.${aIndex}.affiliationIdentifier`"
+                        label="Affiliation Identifier"
+                      >
+                        <UInput
+                          v-model="affiliation.affiliationIdentifier"
+                          placeholder="https://ror.org/0168r3w48"
+                        />
+                      </UFormField>
+
+                      <UFormField
+                        :name="`creators.${cIndex}.affiliation.${aIndex}.affiliationIdentifierScheme`"
+                        label="Identifier Scheme"
+                      >
+                        <UInput
+                          v-model="affiliation.affiliationIdentifierScheme"
+                          placeholder="ROR"
+                        />
+                      </UFormField>
+                    </div>
+
                     <UFormField
-                      class="w-full"
-                      :name="`creators.${cIndex}.affiliation.${aIndex}.name`"
-                      label=""
-                      required
+                      :name="`creators.${cIndex}.affiliation.${aIndex}.schemeURI`"
+                      label="Scheme URI"
                     >
                       <UInput
-                        v-model="affiliation.name"
-                        placeholder="University of California, San Diego"
+                        v-model="affiliation.schemeURI"
+                        placeholder="https://ror.org"
+                        class="w-full"
                       />
                     </UFormField>
-
-                    <UButton
-                      size="sm"
-                      color="error"
-                      variant="outline"
-                      icon="i-lucide-trash"
-                      @click="
-                        removeRow(state.creators[cIndex]?.affiliation!, aIndex)
-                      "
-                    />
-
-                    <UButton
-                      size="sm"
-                      color="success"
-                      variant="outline"
-                      icon="i-lucide-plus"
-                      @click="
-                        state.creators[cIndex]?.affiliation?.push({
-                          name: '',
-                          affiliationIdentifier: '',
-                          affiliationIdentifierScheme: '',
-                          schemeURI: '',
-                        })
-                      "
-                    />
                   </div>
                 </div>
 
@@ -1244,6 +1285,132 @@ async function addSubjectAndFocus() {
                     relatedIdentifier: '',
                     relatedIdentifierType: '',
                     relationType: '',
+                  })
+                "
+              />
+            </div>
+          </CardCollapsibleContent>
+
+          <CardCollapsibleContent
+            title="Funding"
+            :collapse="false"
+            description="Grants and funding sources that supported this work"
+          >
+            <div class="space-y-4">
+              <div
+                v-for="(funder, fIndex) in state.fundingReferences"
+                :key="fIndex"
+                class="space-y-3 rounded-xl border border-gray-200 p-4"
+              >
+                <div class="flex items-start justify-between gap-3">
+                  <UFormField
+                    :name="`fundingReferences.${fIndex}.funderName`"
+                    label="Funder Name"
+                    required
+                    class="flex-1"
+                  >
+                    <UInput
+                      v-model="funder.funderName"
+                      placeholder="National Institutes of Health"
+                    />
+                  </UFormField>
+
+                  <UButton
+                    v-if="state.fundingReferences.length > 1"
+                    class="mt-6"
+                    size="xs"
+                    trailing-icon="i-lucide-trash-2"
+                    color="error"
+                    variant="solid"
+                    @click="removeRow(state.fundingReferences, fIndex)"
+                  >
+                    Delete
+                  </UButton>
+                </div>
+
+                <div class="grid gap-3 md:grid-cols-2">
+                  <UFormField
+                    :name="`fundingReferences.${fIndex}.funderIdentifier`"
+                    label="Funder Identifier"
+                  >
+                    <UInput
+                      v-model="funder.funderIdentifier"
+                      placeholder="https://doi.org/10.13039/100000002"
+                    />
+                  </UFormField>
+
+                  <UFormField
+                    :name="`fundingReferences.${fIndex}.funderIdentifierType`"
+                    label="Identifier Type"
+                  >
+                    <USelect
+                      v-model="funder.funderIdentifierType"
+                      :items="FUNDER_IDENTIFIER_TYPE_OPTIONS"
+                      placeholder="Select a type"
+                      class="w-full"
+                    />
+                  </UFormField>
+                </div>
+
+                <UFormField
+                  :name="`fundingReferences.${fIndex}.schemeUri`"
+                  label="Scheme URI"
+                >
+                  <UInput
+                    v-model="funder.schemeUri"
+                    placeholder="https://doi.org/10.13039/501100000780"
+                    class="w-full"
+                  />
+                </UFormField>
+
+                <div class="grid gap-3 md:grid-cols-3">
+                  <UFormField
+                    :name="`fundingReferences.${fIndex}.awardNumber`"
+                    label="Award Number"
+                  >
+                    <UInput
+                      v-model="funder.awardNumber"
+                      placeholder="R01GM123456"
+                    />
+                  </UFormField>
+
+                  <UFormField
+                    :name="`fundingReferences.${fIndex}.awardTitle`"
+                    label="Award Title"
+                  >
+                    <UInput
+                      v-model="funder.awardTitle"
+                      placeholder="Grant title"
+                    />
+                  </UFormField>
+
+                  <UFormField
+                    :name="`fundingReferences.${fIndex}.awardUri`"
+                    label="Award URI"
+                  >
+                    <UInput
+                      v-model="funder.awardUri"
+                      placeholder="https://reporter.nih.gov/..."
+                    />
+                  </UFormField>
+                </div>
+              </div>
+
+              <UButton
+                icon="i-lucide-plus"
+                variant="outline"
+                color="primary"
+                class="w-full"
+                label="Add Funding Reference"
+                @click="
+                  state.fundingReferences.push({
+                    funderName: '',
+                    funderIdentifier: '',
+                    funderIdentifierType: undefined,
+                    schemeUri: '',
+                    awardNumber: '',
+                    awardUri: '',
+                    awardTitle: '',
                   })
                 "
               />

@@ -234,6 +234,14 @@ const DescriptionEntrySchema = z.object({
   ]),
 });
 
+export const FUNDER_IDENTIFIER_TYPE_OPTIONS = [
+  "Crossref Funder ID",
+  "GRID",
+  "ISNI",
+  "ROR",
+  "Other",
+] as const;
+
 const FundingSchema = z.object({
   funderName: z.string().min(1, { message: "Funder name is required" }),
   funderIdentifier: z.string().optional(),
