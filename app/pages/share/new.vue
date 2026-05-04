@@ -177,7 +177,7 @@ onUnmounted(() => {
   <div class="mx-auto flex w-full max-w-screen-xl flex-col gap-6 px-6">
     <UPageHeader
       title="Upload Poster"
-      description="Upload the PDF or image file of your poster. (Max size: 10MB)"
+      description="Upload the PDF or image file of your poster."
     >
       <template #headline>
         <UBreadcrumb

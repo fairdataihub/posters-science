@@ -155,7 +155,7 @@ if (data.value) {
       state.identifiers = (
         meta.identifiers as { identifier?: string; identifierType?: string }[]
       ).map((i) => ({
-        identifier: i.identifier || "DEMO",
+        identifier: i.identifier || "",
         identifierType: i.identifierType || "",
       }));
     }
@@ -604,7 +604,11 @@ async function addSubjectAndFocus() {
               <UInput v-model="state.title" />
             </UFormField>
 
-            <UFormField label="Description" required name="description">
+            <UFormField
+              label="Description/Abstract"
+              required
+              name="description"
+            >
               <UTextarea v-model="state.description" class="w-full" />
             </UFormField>
 
@@ -671,7 +675,7 @@ async function addSubjectAndFocus() {
             <div
               v-for="(creator, cIndex) in state.creators"
               :key="cIndex"
-              class="space-y-2 rounded-xl border border-gray-200 p-4"
+              class="space-y-4 rounded-xl border border-gray-200 p-4"
             >
               <div class="flex items-start justify-between gap-3">
                 <UFormField
@@ -797,6 +801,93 @@ async function addSubjectAndFocus() {
                   />
                 </div>
               </UFormField>
+
+              <UFormField
+                label="Creator Identifiers (e.g., ORCID)"
+                name="nameIdentifiers"
+              >
+                <div
+                  v-if="
+                    state.creators[cIndex]?.nameIdentifiers &&
+                    state.creators[cIndex]?.nameIdentifiers?.length > 0
+                  "
+                >
+                  <div
+                    v-for="(ni, niIndex) in state.creators[cIndex]
+                      ?.nameIdentifiers"
+                    :key="niIndex"
+                    class="mb-2 flex gap-2"
+                  >
+                    <UFormField
+                      class="w-40 shrink-0"
+                      :name="`creators.${cIndex}.nameIdentifiers.${niIndex}.nameIdentifierScheme`"
+                      label="Identifier Type"
+                    >
+                      <UInput
+                        v-model="ni.nameIdentifierScheme"
+                        placeholder="e.g., ORCID"
+                      />
+                    </UFormField>
+
+                    <UFormField
+                      class="w-full"
+                      :name="`creators.${cIndex}.nameIdentifiers.${niIndex}.nameIdentifier`"
+                      label="Identifier"
+                      required
+                    >
+                      <UInput
+                        v-model="ni.nameIdentifier"
+                        placeholder="https://orcid.org/0000-0000-0000-0000"
+                      />
+                    </UFormField>
+
+                    <UButton
+                      size="sm"
+                      color="error"
+                      variant="outline"
+                      icon="i-lucide-trash"
+                      @click="
+                        removeRow(
+                          state.creators[cIndex]?.nameIdentifiers!,
+                          niIndex,
+                        )
+                      "
+                    />
+
+                    <UButton
+                      size="sm"
+                      color="success"
+                      variant="outline"
+                      icon="i-lucide-plus"
+                      @click="
+                        state.creators[cIndex]?.nameIdentifiers?.push({
+                          nameIdentifier: '',
+                          nameIdentifierScheme: '',
+                          schemeURI: '',
+                        })
+                      "
+                    />
+                  </div>
+                </div>
+
+                <div v-else>
+                  <UButton
+                    size="sm"
+                    class="w-full"
+                    color="success"
+                    variant="outline"
+                    label="Add Creator Identifier"
+                    icon="i-lucide-plus"
+                    @click="
+                      state.creators[cIndex]?.nameIdentifiers?.push({
+                        nameIdentifier: '',
+                        nameIdentifierScheme: '',
+                        schemeURI: '',
+                      })
+                    "
+                  />
+                </div>
+              </UFormField>
             </div>
 
             <UButton
@@ -832,7 +923,7 @@ async function addSubjectAndFocus() {
               >
                 <UInput
                   v-model="state.conference.conferenceName"
-                  placeholder="e.g., ARVO 2025"
+                  placeholder="e.g., Association for Research in Vision and Ophthalmology Conference"
                 />
               </UFormField>
 
@@ -1065,7 +1156,7 @@ async function addSubjectAndFocus() {
           </CardCollapsibleContent>
 
           <CardCollapsibleContent
-            title="Related Publications"
+            title="Related Resources"
             :collapse="false"
             description="Links to related publications, datasets, or supplementary materials"
           >
@@ -1089,7 +1180,7 @@ async function addSubjectAndFocus() {
                           (id) =>
                             id.value ===
                             relatedIdentifier.relatedIdentifierType,
-                        )?.label || 'Select an identifier type'
+                        )?.label || 'https://doi.org/10.1038/sdata.2016.18'
                       "
                     />
                   </UFormField>
@@ -1388,7 +1479,10 @@ async function addSubjectAndFocus() {
       </div>
 
       <div class="flex gap-3">
-        <UTooltip text="Save your progress without moving to the next step" class="flex-1">
+        <UTooltip
+          text="Save your progress without moving to the next step"
+          class="flex-1"
+        >
           <UButton
             :disabled="savingDraft || loading"
             :loading="savingDraft"
@@ -1402,7 +1496,10 @@ async function addSubjectAndFocus() {
           />
         </UTooltip>
 
-        <UTooltip text="Save your changes and proceed to the publishing step" class="flex-1">
+        <UTooltip
+          text="Save your changes and proceed to the publishing step"
+          class="flex-1"
+        >
           <UButton
             :disabled="loading || savingDraft"
             :loading="loading"

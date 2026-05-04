@@ -57,6 +57,8 @@ export default defineEventHandler(async (event) => {
     ...(creator.nameIdentifiers && {
       nameIdentifiers: creator.nameIdentifiers.map((ni) => ({
         nameIdentifier: ni.nameIdentifier,
+        nameIdentifierScheme: ni.nameIdentifierScheme,
+        schemeURI: ni.schemeURI,
       })),
     }),
     ...(creator.affiliation && {
