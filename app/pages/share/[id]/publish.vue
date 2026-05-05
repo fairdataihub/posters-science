@@ -555,11 +555,30 @@ async function handleArchive() {
         <h3 class="text-lg font-semibold">Archive to Zenodo</h3>
       </div>
 
+      <p class="mb-5 text-sm">
+        Zenodo is a free and open-source general-purpose repository developed
+        and maintained by the European Organization for Nuclear Research (CERN)
+        in partnership with OpenAIRE. It is one of the most popular repositories
+        for sharing posters.
+      </p>
+
       <!-- Loading state while fetching Zenodo token status -->
       <UiSpinner v-if="zenodoLoading" class="py-8" />
 
       <!-- Not signed in -->
       <template v-else-if="!zenodoTokenExists">
+        <p class="mb-4 text-sm">
+          If you don't have a Zenodo account already, please create one first at
+          <ULink
+            to="https://zenodo.org"
+            target="_blank"
+            class="text-primary underline"
+          >
+            zenodo.org</ULink
+          >
+          before continuing.
+        </p>
+
         <UAlert
           color="warning"
           variant="subtle"
@@ -686,10 +705,13 @@ async function handleArchive() {
         <!-- Archive controls (shown when not archiving) -->
         <template v-else>
           <div class="mb-4 flex items-center justify-between">
-            <span class="text-success flex items-center gap-2 text-sm">
-              <UIcon name="i-lucide-check-circle" class="size-4" />
+            <UBadge
+              color="success"
+              variant="subtle"
+              icon="i-lucide-check-circle"
+            >
               Connected to Zenodo
-            </span>
+            </UBadge>
 
             <UButton
               variant="outline"

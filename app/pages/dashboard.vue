@@ -62,6 +62,18 @@ const toast = useToast();
 const regeneratingThumbnailIds = ref<number[]>([]);
 const thumbnailCacheBust = reactive<Record<number, number>>({});
 
+const expandedDescriptions = ref(new Set<number>());
+
+function toggleDescription(posterId: number) {
+  const updated = new Set(expandedDescriptions.value);
+  if (updated.has(posterId)) {
+    updated.delete(posterId);
+  } else {
+    updated.add(posterId);
+  }
+  expandedDescriptions.value = updated;
+}
+
 async function regenerateThumbnail(poster: Poster) {
   regeneratingThumbnailIds.value = [
     ...regeneratingThumbnailIds.value,
@@ -209,41 +221,68 @@ const getImage = (poster: Poster) => {
       ]"
     />
 
-    <UPageList>
+    <UPageList class="max-md:flex max-md:flex-col max-md:gap-4">
       <UPageCard
         v-for="(poster, index) in posters"
         :key="index + 1"
         variant="ghost"
-        class="group h-50 cursor-pointer overflow-hidden rounded-none border-t border-b border-gray-100 transition-all duration-300"
+        class="group h-50 cursor-pointer overflow-hidden rounded-none border-t border-b border-gray-100 transition-all duration-300 max-md:h-auto max-md:rounded-xl max-md:border max-md:bg-white max-md:shadow-sm max-md:hover:shadow-md dark:max-md:border-gray-800 dark:max-md:bg-gray-950"
         @click="navigateTo(`/share/${poster.id}`)"
       >
-        <div class="flex h-full gap-8">
-          <div class="h-full w-[150px] shrink-0 overflow-hidden">
+        <div
+          class="flex h-full gap-8 max-md:h-auto max-md:flex-col max-md:gap-0"
+        >
+          <div
+            class="h-full w-[150px] shrink-0 overflow-hidden max-md:h-44 max-md:w-full max-md:border-b max-md:border-gray-100 dark:max-md:border-gray-800"
+          >
             <img
               :src="
                 getImage(poster) ||
                 `https://api.dicebear.com/9.x/shapes/svg?seed=${poster.id}`
               "
               :alt="poster.title"
-              class="max-h-[150px] w-full object-contain p-2 transition-transform duration-300 group-hover:scale-105"
+              class="max-h-[150px] w-full object-contain p-2 transition-transform duration-300 group-hover:scale-105 max-md:h-full max-md:max-h-none max-md:p-3"
             />
           </div>
 
-          <div class="flex h-full w-full min-w-0 flex-col justify-between py-1">
+          <div
+            class="flex h-full w-full min-w-0 flex-col justify-between py-1 max-md:h-auto max-md:gap-3 max-md:p-4 max-md:py-4"
+          >
             <div class="flex flex-col gap-2">
               <h3 class="line-clamp-2 text-lg font-semibold">
                 {{ poster.title || "No title available" }}
               </h3>
 
-              <p class="line-clamp-2 text-sm">
-                {{ poster.description || "No description available" }}
-              </p>
+              <div class="flex flex-col gap-1">
+                <p
+                  :class="[
+                    'text-sm',
+                    expandedDescriptions.has(poster.id) ? '' : 'line-clamp-2',
+                  ]"
+                >
+                  {{ poster.description || "No description available" }}
+                </p>
+
+                <button
+                  v-if="(poster.description?.length ?? 0) > 100"
+                  class="text-primary w-fit text-left text-xs font-medium md:hidden"
+                  @click.stop="toggleDescription(poster.id)"
+                >
+                  {{
+                    expandedDescriptions.has(poster.id)
+                      ? "Show less"
+                      : "Show more"
+                  }}
+                </button>
+              </div>
             </div>
 
             <div
-              class="flex items-center justify-between border-t border-gray-100 pt-2 text-xs"
+              class="flex items-center justify-between border-t border-gray-100 pt-2 text-xs max-md:flex-wrap max-md:gap-y-2 dark:border-gray-800"
             >
-              <div class="flex items-center gap-2">
+              <div
+                class="flex items-center gap-2 max-md:flex-col max-md:items-start max-md:gap-1"
+              >
                 <span class="flex items-center gap-1">
                   <Icon name="heroicons:calendar-days" class="h-3 w-3" />
 
@@ -253,7 +292,7 @@ const getImage = (poster: Poster) => {
 
                 <span
                   v-if="poster.publishedAt"
-                  class="flex items-center gap-1 border-l border-gray-100 pl-2"
+                  class="flex items-center gap-1 border-l border-gray-100 pl-2 max-md:border-l-0 max-md:pl-0 dark:border-gray-800"
                 >
                   <Icon
                     name="heroicons:presentation-chart-bar"
@@ -264,7 +303,7 @@ const getImage = (poster: Poster) => {
                 </span>
               </div>
 
-              <div class="flex items-center gap-2">
+              <div class="flex items-center gap-2 max-md:flex-wrap">
                 <UButton
                   v-if="poster.status === 'downloaded'"
                   color="secondary"

@@ -95,7 +95,6 @@ export async function processExtraction(
       ...(creator.nameIdentifiers && {
         nameIdentifiers: creator.nameIdentifiers.map((ni) => ({
           nameIdentifier: ni.nameIdentifier,
-          nameIdentifierType: ni.nameIdentifierScheme || null,
           nameIdentifierScheme: ni.nameIdentifierScheme || null,
         })),
       }),

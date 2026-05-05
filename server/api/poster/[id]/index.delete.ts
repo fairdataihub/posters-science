@@ -29,18 +29,20 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  if (poster.status !== "draft") {
+  if (poster.status === "published") {
     throw createError({
       statusCode: 400,
-      statusMessage: "Only draft posters can be deleted",
+      statusMessage: "Published posters cannot be deleted",
     });
   }
 
   const filePath = poster.extractionJob?.filePath;
 
+  // Delete from DB
   await prisma.poster.delete({ where: { id: posterId } });
 
   const config = useRuntimeConfig();
+  // Delete from Bunny if filepath exists
   if (filePath && config.bunnyPrivateStorage && config.bunnyPrivateStorageKey) {
     const folderPath = filePath.substring(0, filePath.lastIndexOf("/") + 1);
     const res = await fetch(`${config.bunnyPrivateStorage}/${folderPath}`, {
