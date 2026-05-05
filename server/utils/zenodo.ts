@@ -408,6 +408,8 @@ export async function beginZenodoPublication(
   // Build poster.json from DB data and upload to Zenodo bucket
   console.log(`[Zenodo] Building poster.json for poster: ${posterId}`);
 
+  poster.posterMetadata.publisher = "Zenodo";
+
   const posterJson = buildPosterJson(poster.posterMetadata, {
     title: poster.title,
     description: poster.description,
