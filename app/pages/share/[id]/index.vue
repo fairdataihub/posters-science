@@ -1312,7 +1312,7 @@ async function addSubjectAndFocus() {
                   >
                     <UInput
                       v-model="funder.funderIdentifier"
-                      placeholder="https://doi.org/10.13039/100000002"
+                      placeholder="https://ror.org/04xfq0f34"
                     />
                   </UFormField>
 
@@ -1335,7 +1335,7 @@ async function addSubjectAndFocus() {
                 >
                   <UInput
                     v-model="funder.schemeUri"
-                    placeholder="https://doi.org/10.13039/501100000780"
+                    placeholder="https://ror.org"
                     class="w-full"
                   />
                 </UFormField>
