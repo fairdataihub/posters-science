@@ -52,6 +52,7 @@ const subjectInputRefs = ref<{ $el?: HTMLElement; focus?: () => void }[]>([]);
 const state = reactive<StrictFormSchema>({
   title: "",
   description: "",
+  submissionAbstract: "",
   doi: "",
   identifiers: [],
   creators: [
@@ -302,6 +303,10 @@ if (data.value) {
           })) || [],
         unstructuredContent: meta.posterContent.unstructuredContent || "",
       };
+
+      if (meta.posterContent.submissionAbstract) {
+        state.submissionAbstract = meta.posterContent.submissionAbstract;
+      }
     }
 
     // Table and image captions (support legacy tableCaption/imageCaption)
@@ -598,11 +603,7 @@ async function addSubjectAndFocus() {
               <UInput v-model="state.title" />
             </UFormField>
 
-            <UFormField
-              label="Description/Abstract"
-              required
-              name="description"
-            >
+            <UFormField label="Description" required name="description">
               <UTextarea v-model="state.description" class="w-full" />
             </UFormField>
 
@@ -1077,6 +1078,20 @@ async function addSubjectAndFocus() {
         :class="additionalInfoCollapsed ? 'hidden opacity-0' : 'opacity-100'"
       >
         <div class="space-y-6">
+          <CardCollapsibleContent
+            title="Submission Abstract"
+            :collapse="false"
+            description="A formal abstract for conference or repository submission."
+          >
+            <UFormField name="submissionAbstract">
+              <UTextarea
+                v-model="state.submissionAbstract"
+                class="w-full"
+                placeholder="Enter a formal abstract for submission purposes"
+              />
+            </UFormField>
+          </CardCollapsibleContent>
+
           <CardCollapsibleContent
             title="General"
             :collapse="false"

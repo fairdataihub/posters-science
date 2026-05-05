@@ -128,9 +128,11 @@ export default defineEventHandler(async (event) => {
   const conferenceAcronym = conference?.conferenceAcronym ?? null;
   const conferenceSeries = conference?.conferenceSeries ?? null;
 
-  const posterContent = data.posterContent ?? {
-    sections: [],
-    unstructuredContent: "",
+  const posterContent = {
+    ...(data.posterContent ?? { sections: [], unstructuredContent: "" }),
+    ...(data.submissionAbstract && {
+      submissionAbstract: data.submissionAbstract,
+    }),
   };
   const tableCaptions = data.tableCaptions ?? [];
   const imageCaptions = data.imageCaptions ?? [];

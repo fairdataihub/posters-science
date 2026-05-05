@@ -7,7 +7,7 @@ import licenses from "../../app/assets/data/licenses.json";
  */
 export function buildPosterJson(
   meta: PosterMetadata,
-  options?: { title?: string; description?: string },
+  options?: { title?: string; description?: string; zenodoDoi?: string },
 ) {
   const doi = meta.doi ?? undefined;
   let prefix: string | undefined;
@@ -39,6 +39,7 @@ export function buildPosterJson(
     : (posterContentRaw as {
         sections?: unknown[];
         unstructuredContent?: string;
+        submissionAbstract?: string;
       } | null);
 
   const rawSections = posterContentObj?.sections ?? [];
@@ -69,9 +70,22 @@ export function buildPosterJson(
       : undefined;
 
   const titles = options?.title ? [{ title: options.title }] : undefined;
-  const descriptions = options?.description
-    ? [{ description: options.description, descriptionType: "Abstract" }]
-    : undefined;
+  const descriptionEntries: { description: string; descriptionType: string }[] =
+    [];
+  if (options?.description) {
+    descriptionEntries.push({
+      description: options.description,
+      descriptionType: "Other",
+    });
+  }
+  if (posterContentObj?.submissionAbstract) {
+    descriptionEntries.push({
+      description: posterContentObj.submissionAbstract,
+      descriptionType: "Abstract",
+    });
+  }
+  const descriptions =
+    descriptionEntries.length > 0 ? descriptionEntries : undefined;
 
   const fundingRefs = Array.isArray(meta.fundingReferences)
     ? (meta.fundingReferences as unknown[]).filter(
@@ -85,6 +99,13 @@ export function buildPosterJson(
     : [];
 
   const validIdentifiers = filterIdentifiers(meta.identifiers);
+  const zenodoDoi = options?.zenodoDoi;
+  const mergedIdentifiers = zenodoDoi
+    ? [
+        { identifier: zenodoDoi, identifierType: "DOI" },
+        ...(validIdentifiers ?? []),
+      ]
+    : validIdentifiers;
   const validRelatedIdentifiers = filterRelatedIdentifiers(
     meta.relatedIdentifiers,
   );
@@ -98,7 +119,7 @@ export function buildPosterJson(
     ...(suffix && { suffix }),
     ...(titles && { titles }),
     ...(descriptions && { descriptions }),
-    ...(validIdentifiers && { identifiers: validIdentifiers }),
+    ...(mergedIdentifiers && { identifiers: mergedIdentifiers }),
     creators: cleanCreators(meta.creators),
     ...(publisher && { publisher }),
     ...(meta.publicationYear && { publicationYear: meta.publicationYear }),

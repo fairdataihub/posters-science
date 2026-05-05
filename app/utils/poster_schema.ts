@@ -306,6 +306,7 @@ const PosterSectionSchema = z.object({
 const PosterContentSchema = z.object({
   sections: z.array(PosterSectionSchema).optional(),
   unstructuredContent: z.string().optional(),
+  submissionAbstract: z.string().optional(),
 });
 
 // EXTRACTION API SCHEMA
@@ -392,6 +393,7 @@ export type PosterResponse = z.infer<typeof posterResponseSchema>;
 export const formSchema = z.object({
   title: z.string().default(""),
   description: z.string().default(""),
+  submissionAbstract: z.string().default(""),
 
   doi: z.string().default(""),
   creators: z.array(FormCreatorSchema).default([]),
@@ -491,6 +493,7 @@ const StrictConferenceSchema = z.object({
 export const strictFormSchema = z.object({
   title: z.string().min(1, { message: "Title is required" }),
   description: z.string().min(1, { message: "Description is required" }),
+  submissionAbstract: z.string().optional(),
   language: z.string(),
   domain: z.string(),
   doi: z.string(),
