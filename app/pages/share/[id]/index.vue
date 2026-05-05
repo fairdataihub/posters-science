@@ -221,6 +221,24 @@ if (data.value) {
           }),
         };
       });
+      // Back-fill scheme URIs for data loaded from the API
+      state.creators.forEach((creator) => {
+        creator.nameIdentifiers?.forEach((ni) => {
+          if (!ni.schemeURI && ni.nameIdentifier?.includes("orcid.org")) {
+            ni.nameIdentifierScheme ||= "ORCID";
+            ni.schemeURI = "https://orcid.org";
+          }
+        });
+        creator.affiliation?.forEach((aff) => {
+          if (
+            !aff.schemeURI &&
+            aff.affiliationIdentifier?.includes("ror.org")
+          ) {
+            aff.affiliationIdentifierScheme ||= "ROR";
+            aff.schemeURI = "https://ror.org";
+          }
+        });
+      });
       console.log("Transformed creators", state.creators);
     }
 
@@ -525,6 +543,32 @@ function removeRow<T>(arr: T[], index: number) {
   arr.splice(index, 1);
 }
 
+function handleAffiliationIdentifierInput(
+  value: string,
+  cIndex: number,
+  aIndex: number,
+) {
+  const aff = state.creators[cIndex]?.affiliation?.[aIndex];
+  if (!aff) return;
+  if (value.includes("ror.org")) {
+    aff.affiliationIdentifierScheme = "ROR";
+    aff.schemeURI = "https://ror.org";
+  }
+}
+
+function handleNameIdentifierInput(
+  value: string,
+  cIndex: number,
+  niIndex: number,
+) {
+  const ni = state.creators[cIndex]?.nameIdentifiers?.[niIndex];
+  if (!ni) return;
+  if (value.includes("orcid.org")) {
+    ni.nameIdentifierScheme = "ORCID";
+    ni.schemeURI = "https://orcid.org";
+  }
+}
+
 async function addSubjectAndFocus() {
   state.subjects.push("");
   await nextTick();
@@ -672,6 +716,14 @@ async function addSubjectAndFocus() {
               :key="cIndex"
               class="space-y-4 rounded-xl border border-gray-200 p-4"
             >
+              <div
+                class="bg-primary-50 inline-flex items-center rounded-md px-3 py-1"
+              >
+                <p class="text-primary-700 text-base font-medium">
+                  Author {{ cIndex + 1 }}
+                </p>
+              </div>
+
               <div class="flex items-start justify-between gap-3">
                 <UFormField
                   :name="`creators.${cIndex}.givenName`"
@@ -724,6 +776,111 @@ async function addSubjectAndFocus() {
                   Delete Creator
                 </UButton>
               </div>
+
+              <UFormField
+                label="Creator Identifiers (e.g., ORCID)"
+                name="nameIdentifiers"
+              >
+                <div
+                  v-if="
+                    state.creators[cIndex]?.nameIdentifiers &&
+                    state.creators[cIndex]?.nameIdentifiers?.length > 0
+                  "
+                >
+                  <div
+                    v-for="(ni, niIndex) in state.creators[cIndex]
+                      ?.nameIdentifiers"
+                    :key="niIndex"
+                    class="mb-2 space-y-2 rounded-xl border border-gray-200 p-3"
+                  >
+                    <div class="flex gap-2">
+                      <UFormField
+                        class="w-40 shrink-0"
+                        :name="`creators.${cIndex}.nameIdentifiers.${niIndex}.nameIdentifierScheme`"
+                        label="Identifier Type"
+                      >
+                        <UInput
+                          v-model="ni.nameIdentifierScheme"
+                          placeholder="e.g., ORCID"
+                        />
+                      </UFormField>
+
+                      <UFormField
+                        class="w-full"
+                        :name="`creators.${cIndex}.nameIdentifiers.${niIndex}.nameIdentifier`"
+                        label="Identifier"
+                        required
+                      >
+                        <UInput
+                          v-model="ni.nameIdentifier"
+                          placeholder="https://orcid.org/0000-0000-0000-0000"
+                          @update:model-value="
+                            (v) => handleNameIdentifierInput(v, cIndex, niIndex)
+                          "
+                        />
+                      </UFormField>
+
+                      <UButton
+                        class="mt-6"
+                        size="sm"
+                        color="error"
+                        variant="outline"
+                        icon="i-lucide-trash"
+                        @click="
+                          removeRow(
+                            state.creators[cIndex]?.nameIdentifiers!,
+                            niIndex,
+                          )
+                        "
+                      />
+
+                      <UButton
+                        class="mt-6"
+                        size="sm"
+                        color="success"
+                        variant="outline"
+                        icon="i-lucide-plus"
+                        @click="
+                          state.creators[cIndex]?.nameIdentifiers?.push({
+                            nameIdentifier: '',
+                            nameIdentifierScheme: '',
+                            schemeURI: '',
+                          })
+                        "
+                      />
+                    </div>
+
+                    <UFormField
+                      :name="`creators.${cIndex}.nameIdentifiers.${niIndex}.schemeURI`"
+                      label="Scheme URI"
+                    >
+                      <UInput
+                        v-model="ni.schemeURI"
+                        placeholder="https://orcid.org"
+                        class="w-full"
+                      />
+                    </UFormField>
+                  </div>
+                </div>
+
+                <div v-else>
+                  <UButton
+                    size="sm"
+                    class="w-full"
+                    color="success"
+                    variant="outline"
+                    label="Add Creator Identifier"
+                    icon="i-lucide-plus"
+                    @click="
+                      state.creators[cIndex]?.nameIdentifiers?.push({
+                        nameIdentifier: '',
+                        nameIdentifierScheme: '',
+                        schemeURI: '',
+                      })
+                    "
+                  />
+                </div>
+              </UFormField>
 
               <UFormField label="Affiliations" name="affiliation">
                 <div
@@ -790,6 +947,14 @@ async function addSubjectAndFocus() {
                         <UInput
                           v-model="affiliation.affiliationIdentifier"
                           placeholder="https://ror.org/0168r3w48"
+                          @update:model-value="
+                            (v) =>
+                              handleAffiliationIdentifierInput(
+                                v,
+                                cIndex,
+                                aIndex,
+                              )
+                          "
                         />
                       </UFormField>
 
@@ -830,93 +995,6 @@ async function addSubjectAndFocus() {
                         name: '',
                         affiliationIdentifier: '',
                         affiliationIdentifierScheme: '',
-                        schemeURI: '',
-                      })
-                    "
-                  />
-                </div>
-              </UFormField>
-
-              <UFormField
-                label="Creator Identifiers (e.g., ORCID)"
-                name="nameIdentifiers"
-              >
-                <div
-                  v-if="
-                    state.creators[cIndex]?.nameIdentifiers &&
-                    state.creators[cIndex]?.nameIdentifiers?.length > 0
-                  "
-                >
-                  <div
-                    v-for="(ni, niIndex) in state.creators[cIndex]
-                      ?.nameIdentifiers"
-                    :key="niIndex"
-                    class="mb-2 flex gap-2"
-                  >
-                    <UFormField
-                      class="w-40 shrink-0"
-                      :name="`creators.${cIndex}.nameIdentifiers.${niIndex}.nameIdentifierScheme`"
-                      label="Identifier Type"
-                    >
-                      <UInput
-                        v-model="ni.nameIdentifierScheme"
-                        placeholder="e.g., ORCID"
-                      />
-                    </UFormField>
-
-                    <UFormField
-                      class="w-full"
-                      :name="`creators.${cIndex}.nameIdentifiers.${niIndex}.nameIdentifier`"
-                      label="Identifier"
-                      required
-                    >
-                      <UInput
-                        v-model="ni.nameIdentifier"
-                        placeholder="https://orcid.org/0000-0000-0000-0000"
-                      />
-                    </UFormField>
-
-                    <UButton
-                      size="sm"
-                      color="error"
-                      variant="outline"
-                      icon="i-lucide-trash"
-                      @click="
-                        removeRow(
-                          state.creators[cIndex]?.nameIdentifiers!,
-                          niIndex,
-                        )
-                      "
-                    />
-
-                    <UButton
-                      size="sm"
-                      color="success"
-                      variant="outline"
-                      icon="i-lucide-plus"
-                      @click="
-                        state.creators[cIndex]?.nameIdentifiers?.push({
-                          nameIdentifier: '',
-                          nameIdentifierScheme: '',
-                          schemeURI: '',
-                        })
-                      "
-                    />
-                  </div>
-                </div>
-
-                <div v-else>
-                  <UButton
-                    size="sm"
-                    class="w-full"
-                    color="success"
-                    variant="outline"
-                    label="Add Creator Identifier"
-                    icon="i-lucide-plus"
-                    @click="
-                      state.creators[cIndex]?.nameIdentifiers?.push({
-                        nameIdentifier: '',
-                        nameIdentifierScheme: '',
                         schemeURI: '',
                       })
                     "
@@ -1079,15 +1157,15 @@ async function addSubjectAndFocus() {
       >
         <div class="space-y-6">
           <CardCollapsibleContent
-            title="Submission Abstract"
+            title="Poster Abstract"
             :collapse="false"
-            description="A formal abstract for conference or repository submission."
+            description="Provide here your poster abstract exactly as submitted to the conference."
           >
             <UFormField name="submissionAbstract">
               <UTextarea
                 v-model="state.submissionAbstract"
                 class="w-full"
-                placeholder="Enter a formal abstract for submission purposes"
+                placeholder="Enter your poster abstract as submitted to the conference"
               />
             </UFormField>
           </CardCollapsibleContent>
@@ -1457,7 +1535,6 @@ async function addSubjectAndFocus() {
                 <UFormField
                   :name="`posterContent.sections.${sIndex}.sectionTitle`"
                   label="Section Title"
-                  required
                   class="flex-1"
                 >
                   <UInput
@@ -1469,7 +1546,6 @@ async function addSubjectAndFocus() {
                 <UFormField
                   :name="`posterContent.sections.${sIndex}.sectionContent`"
                   label="Section Content"
-                  required
                   class="flex-1"
                 >
                   <!-- TODO: Add a rich text editor here. -->

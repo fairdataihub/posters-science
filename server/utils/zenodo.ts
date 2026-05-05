@@ -334,6 +334,23 @@ export async function beginZenodoPublication(
         }))
     : [];
 
+  const rawFunding = meta.fundingReferences as {
+    funderName?: string;
+    funderIdentifier?: string;
+    funderIdentifierType?: string;
+    awardNumber?: string;
+  }[];
+
+  const zenodoGrants = Array.isArray(rawFunding)
+    ? rawFunding
+        .filter((f) => f.funderIdentifier)
+        .map((f) => ({
+          id: f.awardNumber
+            ? `${f.funderIdentifier}::${f.awardNumber}`
+            : f.funderIdentifier!,
+        }))
+    : [];
+
   const conferenceDates =
     meta.conferenceStartDate && meta.conferenceEndDate
       ? `${meta.conferenceStartDate} - ${meta.conferenceEndDate}`
@@ -380,6 +397,7 @@ export async function beginZenodoPublication(
       ...(meta.publicationYear && {
         publication_date: `${meta.publicationYear}`,
       }),
+      ...(zenodoGrants.length > 0 && { grants: zenodoGrants }),
     },
   };
 
