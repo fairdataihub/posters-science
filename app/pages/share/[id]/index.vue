@@ -255,7 +255,6 @@ if (data.value) {
 
     if (meta.size) state.size = meta.size;
     if (meta.format) state.format = meta.format;
-    if (meta.version) state.version = meta.version;
     if (meta.license) state.license = meta.license;
 
     // Funding references - cast funderIdentifierType to enum
@@ -428,17 +427,10 @@ async function saveDraft() {
   savingDraft.value = true;
 
   try {
-    const response = await $fetch(`/api/poster/${id}`, {
+    await $fetch(`/api/poster/${id}?draft=true`, {
       method: "PUT",
       body: state,
     });
-
-    if (!response || (response as any).error) {
-      throw new Error(
-        (response as any)?.message ||
-          "Unknown error occurred while saving draft.",
-      );
-    }
 
     toast.add({
       title: "Changes Saved",
@@ -556,6 +548,7 @@ async function addSubjectAndFocus() {
     </UPageHeader>
 
     <UForm
+      ref="formRef"
       :schema="strictFormSchema"
       :state="state"
       class="space-y-6"
@@ -1106,10 +1099,6 @@ async function addSubjectAndFocus() {
                 />
               </UFormField>
 
-              <UFormField label="Version" name="version">
-                <UInput v-model="state.version" placeholder="e.g., 1.0" />
-              </UFormField>
-
               <!-- License moved to review/submit step (Zenodo flow) -->
               <UFormField v-if="false" name="license" label="License">
                 <USelect
@@ -1207,7 +1196,7 @@ async function addSubjectAndFocus() {
                 :key="iIndex"
                 class="space-y-2 rounded-xl border border-gray-200 p-4"
               >
-                <div class="flex items-start justify-between gap-3">
+                <div class="flex items-start gap-3">
                   <UFormField
                     :name="`relatedIdentifiers.${iIndex}.relatedIdentifier`"
                     label="Identifier"
@@ -1239,39 +1228,30 @@ async function addSubjectAndFocus() {
                       placeholder="Select an identifier type"
                     />
                   </UFormField>
-                </div>
-
-                <div class="flex items-start justify-between gap-3">
-                  <UFormField
-                    :name="`relatedIdentifiers.${iIndex}.relationType`"
-                    label="Relation Type"
-                    description="A=Your poster, B=The resource"
-                    required
-                    class="flex-1"
-                  >
-                    <USelect
-                      v-model="relatedIdentifier.relationType"
-                      class="w-full"
-                      :items="RELATION_TYPE_OPTIONS"
-                      placeholder="Select a relation type"
-                    />
-                  </UFormField>
 
                   <UButton
-                    v-if="
-                      state.relatedIdentifiers &&
-                      state.relatedIdentifiers.length > 1
-                    "
-                    class="mt-7"
-                    size="xs"
-                    trailing-icon="i-lucide-trash-2"
+                    class="mt-6 shrink-0"
+                    size="sm"
+                    icon="i-lucide-trash-2"
                     color="error"
-                    variant="solid"
+                    variant="outline"
                     @click="removeRow(state.relatedIdentifiers, iIndex)"
-                  >
-                    Delete Related Identifier
-                  </UButton>
+                  />
                 </div>
+
+                <UFormField
+                  :name="`relatedIdentifiers.${iIndex}.relationType`"
+                  label="Relation Type"
+                  description="A=Your poster, B=The resource"
+                  required
+                >
+                  <USelect
+                    v-model="relatedIdentifier.relationType"
+                    class="w-full"
+                    :items="RELATION_TYPE_OPTIONS"
+                    placeholder="Select a relation type"
+                  />
+                </UFormField>
               </div>
 
               <UButton
@@ -1316,16 +1296,13 @@ async function addSubjectAndFocus() {
                   </UFormField>
 
                   <UButton
-                    v-if="state.fundingReferences.length > 1"
-                    class="mt-6"
-                    size="xs"
-                    trailing-icon="i-lucide-trash-2"
+                    class="mt-6 shrink-0"
+                    size="sm"
+                    icon="i-lucide-trash-2"
                     color="error"
-                    variant="solid"
+                    variant="outline"
                     @click="removeRow(state.fundingReferences, fIndex)"
-                  >
-                    Delete
-                  </UButton>
+                  />
                 </div>
 
                 <div class="grid gap-3 md:grid-cols-2">

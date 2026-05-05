@@ -240,7 +240,7 @@ export const FUNDER_IDENTIFIER_TYPE_OPTIONS = [
   "ISNI",
   "ROR",
   "Other",
-] as const;
+];
 
 const FundingSchema = z.object({
   funderName: z.string().min(1, { message: "Funder name is required" }),

@@ -1,4 +1,8 @@
-import { strictFormSchema } from "~~/app/utils/poster_schema";
+import { flattenError } from "zod";
+import {
+  strictFormSchema,
+  type StrictFormSchema,
+} from "~~/app/utils/poster_schema";
 
 export default defineEventHandler(async (event) => {
   const session = await requireUserSession(event);
@@ -34,19 +38,34 @@ export default defineEventHandler(async (event) => {
     });
   }
 
+  const isDraft = getQuery(event).draft === "true";
+
   // Parse and validate the request body
   const body = await readBody(event);
-  const parseResult = strictFormSchema.safeParse(body);
 
-  if (!parseResult.success) {
-    throw createError({
-      statusCode: 422,
-      statusMessage: "Invalid poster data",
-      data: parseResult.error.flatten(),
-    });
+  let data: StrictFormSchema;
+
+  if (isDraft) {
+    data = body as StrictFormSchema;
+  } else {
+    const parseResult = strictFormSchema.safeParse(body);
+
+    if (!parseResult.success) {
+      throw createError({
+        statusCode: 422,
+        statusMessage: "Invalid poster data",
+        data: {
+          ...flattenError(parseResult.error),
+          issues: parseResult.error.issues.map((i) => ({
+            path: i.path,
+            message: i.message,
+          })),
+        },
+      });
+    }
+
+    data = parseResult.data;
   }
-
-  const { data } = parseResult;
 
   // Transform form data to DB format (PosterMetadata fields only)
   const creators = (data.creators ?? []).map((creator) => ({
