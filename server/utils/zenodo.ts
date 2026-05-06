@@ -213,9 +213,12 @@ export async function beginZenodoPublication(
   const bucketUrl = deposition.links.bucket;
   const { doi } = deposition.metadata.prereserve_doi;
 
+  const draftUrl = `${config.zenodoEndpoint}/deposit/${newDepositionId}`;
+
   console.log(
     `[Zenodo] Working deposition ready - id: ${newDepositionId}, doi: ${doi}, bucket: ${bucketUrl}`,
   );
+  console.log(`[Zenodo] Draft URL: ${draftUrl}`);
 
   // Update zenodoDeposition information
   const posterInt = parseInt(posterId);
@@ -341,15 +344,42 @@ export async function beginZenodoPublication(
     awardNumber?: string;
   }[];
 
-  const zenodoGrants = Array.isArray(rawFunding)
-    ? rawFunding
-        .filter((f) => f.funderIdentifier)
-        .map((f) => ({
-          id: f.awardNumber
-            ? `${f.funderIdentifier}::${f.awardNumber}`
-            : f.funderIdentifier!,
-        }))
+  // Entries without an award number are skipped since it is not valid for Zenodo
+  // Each candidate is validated against Zenodo's awards API, which is the
+  // only reliable way to know if Zenodo will accept it. If found, we use Zenodo's
+  // canonical award ID directly so the format is always correct regardless of what
+  // identifier type the user entered. The retry fallback below handles edge cases.
+  const candidateGrants = Array.isArray(rawFunding)
+    ? rawFunding.filter((f) => f.awardNumber?.trim())
     : [];
+
+  const zenodoGrants: { id: string }[] = [];
+
+  for (const grant of candidateGrants) {
+    const awardNumber = grant.awardNumber!.trim();
+
+    const awardsRes = await fetch(
+      `${config.zenodoApiEndpoint}/awards?q=${encodeURIComponent(awardNumber)}&size=5`,
+    ).catch(() => null);
+
+    const awardsData = awardsRes?.ok
+      ? await awardsRes.json().catch(() => null)
+      : null;
+    const match = awardsData?.hits?.hits?.find(
+      (a: { id: string; number: string }) => a.number === awardNumber,
+    );
+
+    if (match) {
+      console.log(
+        `[Zenodo] Grant validated: "${match.id}" (${match.funder?.name})`,
+      );
+      zenodoGrants.push({ id: match.id });
+    } else {
+      console.log(
+        `[Zenodo] Skipping grant with award "${awardNumber}" - not found in Zenodo's awards database`,
+      );
+    }
+  }
 
   const conferenceDates =
     meta.conferenceStartDate && meta.conferenceEndDate
@@ -403,12 +433,40 @@ export async function beginZenodoPublication(
 
   // Update the zenodo deposition metadata
   console.log(`[Zenodo] Updating metadata for deposition: ${newDepositionId}`);
+  console.log(`[Zenodo] Grants being sent: ${JSON.stringify(zenodoGrants)}`);
 
-  await updateDepositionMetadata(
+  let metadataResult = await updateDepositionMetadata(
     newDepositionId,
     tokenRecord.accessToken,
     metadata,
   );
+
+  // Zenodo validates grant IDs against its internal OpenAIRE database and rejects the
+  // entire metadata PUT if any grant is unrecognised. Retry without grants so publication
+  // still gets added
+  if (
+    !metadataResult.success &&
+    metadataResult.error?.includes("Invalid value") &&
+    zenodoGrants.length > 0
+  ) {
+    console.log(
+      `[Zenodo] One or more grants not found in Zenodo's OpenAIRE database, retrying without grants. Dropped: ${JSON.stringify(zenodoGrants)}`,
+    );
+
+    const metadataWithoutGrants = {
+      metadata: { ...metadata.metadata, grants: undefined },
+    };
+
+    metadataResult = await updateDepositionMetadata(
+      newDepositionId,
+      tokenRecord.accessToken,
+      metadataWithoutGrants,
+    );
+  }
+
+  if (!metadataResult.success) {
+    return { success: false, error: metadataResult.error };
+  }
 
   await onProgress?.({
     step: "upload_metadata",
@@ -535,7 +593,8 @@ export async function beginZenodoPublication(
   });
 
   // Publish the deposition
-  console.log(`[Zenodo] Publishing deposition: ${newDepositionId}`);
+  console.log(`[Zenodo] About to publish deposition: ${newDepositionId}`);
+  console.log(`[Zenodo] Inspect draft before publish: ${draftUrl}`);
 
   const publishResult = await publishZenodoDeposition(
     tokenRecord.accessToken,
@@ -858,30 +917,6 @@ async function updateDepositionMetadata(
 
     console.log(`[Zenodo] Metadata updated for deposition: ${depositionId}`);
 
-    // if the metadata does not have an upload_type, add it and update the metadata again
-    console.log("[Zenodo] Checking for upload_type in metadata");
-    if (
-      !updatedData?.metadata?.upload_type ||
-      updatedData?.metadata?.upload_type != "poster"
-    ) {
-      console.log(
-        "[Zenodo] upload_type present, re-updating metadata with poster type",
-      );
-
-      console.log("[Zenodo] Current metadata:", updatedData.metadata);
-
-      const newMetadata = {
-        ...updatedData.metadata,
-        upload_type: "poster",
-      };
-
-      console.log("[Zenodo] New metadata:", newMetadata);
-
-      await updateDepositionMetadata(depositionId, zenodoToken, {
-        metadata: newMetadata,
-      });
-    }
-
     return { success: true, data: updatedData };
   } catch (error) {
     console.log("[Zenodo] Error updating metadata:", error);
@@ -1111,6 +1146,9 @@ async function publishZenodoDeposition(
 
     console.log(
       `[Zenodo] Deposition ${depositionId} published at: ${data.links?.latest_html}`,
+    );
+    console.log(
+      `[Zenodo] Published record URL: ${data.links?.record_html ?? data.links?.latest_html}`,
     );
 
     return { success: true, data };
