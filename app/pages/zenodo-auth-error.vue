@@ -3,7 +3,7 @@ const route = useRoute();
 const posterId = route.query.posterId as string | undefined;
 
 const reviewLink = posterId
-  ? `/share/${posterId}/review?repository=zenodo`
+  ? `/share/${posterId}/publish?repository=zenodo`
   : "/dashboard";
 </script>
 
