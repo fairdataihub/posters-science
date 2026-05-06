@@ -366,7 +366,8 @@ export async function beginZenodoPublication(
       ? await awardsRes.json().catch(() => null)
       : null;
     const match = awardsData?.hits?.hits?.find(
-      (a: { id: string; number: string }) => a.number === awardNumber,
+      (a: { id: string; number: string; funder?: { name?: string } }) =>
+        a.number === awardNumber,
     );
 
     if (match) {
