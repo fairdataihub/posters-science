@@ -469,6 +469,11 @@ export async function beginZenodoPublication(
     return { success: false, error: metadataResult.error };
   }
 
+  const zenodoVersion = metadataResult.data?.metadata?.version;
+  if (zenodoVersion) {
+    meta.version = zenodoVersion;
+  }
+
   await onProgress?.({
     step: "upload_metadata",
     status: "completed",
@@ -729,12 +734,15 @@ export async function beginZenodoPublication(
         ...currentIdentifiers,
       ];
 
+  const publishedVersion = publishResult.data.metadata?.version || undefined;
+
   await prisma.posterMetadata.update({
     where: { posterId: posterInt },
     data: {
       doi: publishedDoi,
       publisher: "Zenodo",
       identifiers: updatedIdentifiers,
+      ...(publishedVersion && { version: publishedVersion }),
     },
   });
 
