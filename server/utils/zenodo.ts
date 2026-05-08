@@ -715,11 +715,26 @@ export async function beginZenodoPublication(
     },
   });
 
+  const publishedDoi = publishResult.data.doi;
+  const currentIdentifiers = Array.isArray(meta.identifiers)
+    ? (meta.identifiers as { identifier: string; identifierType: string }[])
+    : [];
+  const alreadyHasDoi = currentIdentifiers.some(
+    (i) => i.identifier === publishedDoi && i.identifierType === "DOI",
+  );
+  const updatedIdentifiers = alreadyHasDoi
+    ? currentIdentifiers
+    : [
+        { identifier: publishedDoi, identifierType: "DOI" },
+        ...currentIdentifiers,
+      ];
+
   await prisma.posterMetadata.update({
     where: { posterId: posterInt },
     data: {
-      doi: publishResult.data.doi,
+      doi: publishedDoi,
       publisher: "Zenodo",
+      identifiers: updatedIdentifiers,
     },
   });
 
