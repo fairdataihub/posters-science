@@ -152,6 +152,25 @@ type ProgressCallback = (
   event: PublicationProgressEvent,
 ) => void | Promise<void>;
 
+function extractOrcid(ni: {
+  nameIdentifier: string;
+  nameIdentifierScheme?: string;
+  schemeURI?: string;
+}): string | undefined {
+  const { nameIdentifier, nameIdentifierScheme, schemeURI } = ni;
+  if (!nameIdentifier) return undefined;
+
+  if (nameIdentifier.toLowerCase().includes("orcid.org/")) {
+    return nameIdentifier.replace(/.*orcid\.org\//i, "").trim() || undefined;
+  }
+
+  const isOrcid =
+    nameIdentifierScheme?.toLowerCase() === "orcid" ||
+    schemeURI?.toLowerCase().includes("orcid.org");
+
+  return isOrcid ? nameIdentifier : undefined;
+}
+
 export async function beginZenodoPublication(
   posterId: string,
   mode: string,
@@ -310,7 +329,8 @@ export async function beginZenodoPublication(
     affiliation?: { name: string }[];
     nameIdentifiers?: {
       nameIdentifier: string;
-      nameIdentifierScheme: string;
+      nameIdentifierScheme?: string;
+      schemeURI?: string;
     }[];
   }[];
 
@@ -393,9 +413,7 @@ export async function beginZenodoPublication(
       upload_type: "poster",
       publication_type: "poster",
       creators: creators.map((c) => {
-        const orcid = c.nameIdentifiers?.find(
-          (n) => n.nameIdentifierScheme?.toLowerCase() === "orcid",
-        )?.nameIdentifier;
+        const orcid = c.nameIdentifiers?.map(extractOrcid).find(Boolean);
 
         return {
           name: c.name,
