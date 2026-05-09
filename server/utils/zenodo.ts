@@ -152,6 +152,25 @@ type ProgressCallback = (
   event: PublicationProgressEvent,
 ) => void | Promise<void>;
 
+function extractOrcid(ni: {
+  nameIdentifier: string;
+  nameIdentifierScheme?: string;
+  schemeURI?: string;
+}): string | undefined {
+  const { nameIdentifier, nameIdentifierScheme, schemeURI } = ni;
+  if (!nameIdentifier) return undefined;
+
+  if (nameIdentifier.toLowerCase().includes("orcid.org/")) {
+    return nameIdentifier.replace(/.*orcid\.org\//i, "").trim() || undefined;
+  }
+
+  const isOrcid =
+    nameIdentifierScheme?.toLowerCase() === "orcid" ||
+    schemeURI?.toLowerCase().includes("orcid.org");
+
+  return isOrcid ? nameIdentifier : undefined;
+}
+
 export async function beginZenodoPublication(
   posterId: string,
   mode: string,
@@ -310,7 +329,8 @@ export async function beginZenodoPublication(
     affiliation?: { name: string }[];
     nameIdentifiers?: {
       nameIdentifier: string;
-      nameIdentifierScheme: string;
+      nameIdentifierScheme?: string;
+      schemeURI?: string;
     }[];
   }[];
 
@@ -393,9 +413,7 @@ export async function beginZenodoPublication(
       upload_type: "poster",
       publication_type: "poster",
       creators: creators.map((c) => {
-        const orcid = c.nameIdentifiers?.find(
-          (n) => n.nameIdentifierScheme?.toLowerCase() === "orcid",
-        )?.nameIdentifier;
+        const orcid = c.nameIdentifiers?.map(extractOrcid).find(Boolean);
 
         return {
           name: c.name,
@@ -467,6 +485,18 @@ export async function beginZenodoPublication(
 
   if (!metadataResult.success) {
     return { success: false, error: metadataResult.error };
+  }
+
+  const zenodoVersion = metadataResult.data?.metadata?.version;
+  if (zenodoVersion) {
+    meta.version = zenodoVersion;
+  } else if (!meta.version) {
+    meta.version = mode === "new" ? "1" : undefined;
+  } else if (mode === "existing") {
+    const prev = parseInt(meta.version, 10);
+    if (!isNaN(prev)) {
+      meta.version = String(prev + 1);
+    }
   }
 
   await onProgress?.({
@@ -715,11 +745,27 @@ export async function beginZenodoPublication(
     },
   });
 
+  const publishedDoi = publishResult.data.doi;
+  const currentIdentifiers = Array.isArray(meta.identifiers)
+    ? (meta.identifiers as { identifier: string; identifierType: string }[])
+    : [];
+  const alreadyHasDoi = currentIdentifiers.some(
+    (i) => i.identifier === publishedDoi && i.identifierType === "DOI",
+  );
+  const updatedIdentifiers = alreadyHasDoi
+    ? currentIdentifiers
+    : [
+        { identifier: publishedDoi, identifierType: "DOI" },
+        ...currentIdentifiers,
+      ];
+
   await prisma.posterMetadata.update({
     where: { posterId: posterInt },
     data: {
-      doi: publishResult.data.doi,
+      doi: publishedDoi,
       publisher: "Zenodo",
+      identifiers: updatedIdentifiers,
+      ...(meta.version && { version: meta.version }),
     },
   });
 
