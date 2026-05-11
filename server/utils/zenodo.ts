@@ -152,6 +152,8 @@ type ProgressCallback = (
   event: PublicationProgressEvent,
 ) => void | Promise<void>;
 
+type PosterIdentifier = { identifier: string; identifierType: string };
+
 function extractOrcid(ni: {
   nameIdentifier: string;
   nameIdentifierScheme?: string;
@@ -323,6 +325,10 @@ export async function beginZenodoPublication(
 
   // Build Zenodo deposition metadata from poster data
   const meta = poster.posterMetadata;
+
+  const metaIdentifiers: PosterIdentifier[] = Array.isArray(meta.identifiers)
+    ? (meta.identifiers as PosterIdentifier[])
+    : [];
 
   const creators = meta.creators as {
     name: string;
@@ -746,18 +752,21 @@ export async function beginZenodoPublication(
   });
 
   const publishedDoi = publishResult.data.doi;
-  const currentIdentifiers = Array.isArray(meta.identifiers)
-    ? (meta.identifiers as { identifier: string; identifierType: string }[])
-    : [];
-  const alreadyHasDoi = currentIdentifiers.some(
+
+  if (!publishedDoi) {
+    console.error(
+      `[Zenodo] Published deposition ${newDepositionId} is missing a DOI in the response`,
+    );
+
+    return { success: false, error: "Published deposition is missing a DOI" };
+  }
+
+  const alreadyHasDoi = metaIdentifiers.some(
     (i) => i.identifier === publishedDoi && i.identifierType === "DOI",
   );
-  const updatedIdentifiers = alreadyHasDoi
-    ? currentIdentifiers
-    : [
-        { identifier: publishedDoi, identifierType: "DOI" },
-        ...currentIdentifiers,
-      ];
+  const updatedIdentifiers: PosterIdentifier[] = alreadyHasDoi
+    ? metaIdentifiers
+    : [{ identifier: publishedDoi, identifierType: "DOI" }, ...metaIdentifiers];
 
   await prisma.posterMetadata.update({
     where: { posterId: posterInt },
