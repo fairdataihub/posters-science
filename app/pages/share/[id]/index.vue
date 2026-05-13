@@ -514,7 +514,7 @@ async function onSubmit(event: FormSubmitEvent<StrictFormSchema>) {
   }
 }
 
-function onError(event: {
+async function onError(event: {
   errors: { id?: string; path?: string; message?: string }[];
 }) {
   const errorCount = event.errors.length;
@@ -530,13 +530,34 @@ function onError(event: {
     icon: "material-symbols:error",
   });
 
-  console.log("Validation errors:", event.errors);
+  if (!firstError?.id) return;
 
-  // Scroll to first error field if it has an id
-  if (firstError?.id) {
-    const el = document.getElementById(firstError.id);
-    el?.scrollIntoView({ behavior: "smooth", block: "center" });
+  const fieldId = firstError.id;
+
+  if (
+    fieldId.startsWith("posterContent") ||
+    fieldId.startsWith("tableCaptions") ||
+    fieldId.startsWith("imageCaptions")
+  ) {
+    posterContentCollapsed.value = false;
+  } else if (
+    fieldId === "submissionAbstract" ||
+    fieldId === "language" ||
+    fieldId === "domain" ||
+    fieldId === "license" ||
+    fieldId.startsWith("identifiers") ||
+    fieldId.startsWith("relatedIdentifiers") ||
+    fieldId.startsWith("fundingReferences")
+  ) {
+    additionalInfoCollapsed.value = false;
+  } else {
+    mandatoryCollapsed.value = false;
   }
+
+  await nextTick();
+
+  const el = document.getElementById(fieldId);
+  el?.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
 function removeRow<T>(arr: T[], index: number) {
@@ -679,15 +700,17 @@ async function addSubjectAndFocus() {
                     icon="i-lucide-trash"
                     @click="removeRow(state.subjects, sIndex)"
                   />
-
-                  <UButton
-                    size="sm"
-                    color="success"
-                    variant="outline"
-                    icon="i-lucide-plus"
-                    @click="state.subjects.push('')"
-                  />
                 </div>
+
+                <UButton
+                  size="sm"
+                  class="mt-2 w-full"
+                  color="success"
+                  variant="outline"
+                  label="Add Keyword"
+                  icon="i-lucide-plus"
+                  @click="addSubjectAndFocus"
+                />
               </div>
 
               <div v-else>
@@ -717,9 +740,11 @@ async function addSubjectAndFocus() {
               class="space-y-4 rounded-xl border border-gray-200 p-4"
             >
               <div
-                class="bg-primary-50 inline-flex items-center rounded-md px-3 py-1"
+                class="bg-primary-50 inline-flex items-center rounded-md px-3 py-1 dark:bg-pink-950/60"
               >
-                <p class="text-primary-700 text-base font-medium">
+                <p
+                  class="text-primary-700 text-base font-medium dark:text-pink-300"
+                >
                   Author {{ cIndex + 1 }}
                 </p>
               </div>
@@ -791,7 +816,7 @@ async function addSubjectAndFocus() {
                     v-for="(ni, niIndex) in state.creators[cIndex]
                       ?.nameIdentifiers"
                     :key="niIndex"
-                    class="mb-2 space-y-2 rounded-xl border border-gray-200 p-3"
+                    class="mb-2 space-y-2 rounded-xl border border-l-4 border-gray-200 border-l-pink-300 p-3 dark:border-l-pink-700"
                   >
                     <div class="flex gap-2">
                       <UFormField
@@ -833,21 +858,6 @@ async function addSubjectAndFocus() {
                           )
                         "
                       />
-
-                      <UButton
-                        class="mt-6"
-                        size="sm"
-                        color="success"
-                        variant="outline"
-                        icon="i-lucide-plus"
-                        @click="
-                          state.creators[cIndex]?.nameIdentifiers?.push({
-                            nameIdentifier: '',
-                            nameIdentifierScheme: '',
-                            schemeURI: '',
-                          })
-                        "
-                      />
                     </div>
 
                     <UFormField
@@ -861,6 +871,22 @@ async function addSubjectAndFocus() {
                       />
                     </UFormField>
                   </div>
+
+                  <UButton
+                    size="sm"
+                    class="mt-2 w-full"
+                    color="success"
+                    variant="outline"
+                    label="Add Creator Identifier"
+                    icon="i-lucide-plus"
+                    @click="
+                      state.creators[cIndex]?.nameIdentifiers?.push({
+                        nameIdentifier: '',
+                        nameIdentifierScheme: '',
+                        schemeURI: '',
+                      })
+                    "
+                  />
                 </div>
 
                 <div v-else>
@@ -893,7 +919,7 @@ async function addSubjectAndFocus() {
                     v-for="(affiliation, aIndex) in state.creators[cIndex]
                       ?.affiliation"
                     :key="aIndex"
-                    class="mb-2 space-y-2 rounded-xl border border-gray-200 p-3"
+                    class="mb-2 space-y-2 rounded-xl border border-l-4 border-gray-200 border-l-pink-300 p-3 dark:border-l-pink-700"
                   >
                     <div class="flex gap-2">
                       <UFormField
@@ -919,22 +945,6 @@ async function addSubjectAndFocus() {
                             state.creators[cIndex]?.affiliation!,
                             aIndex,
                           )
-                        "
-                      />
-
-                      <UButton
-                        class="mt-6"
-                        size="sm"
-                        color="success"
-                        variant="outline"
-                        icon="i-lucide-plus"
-                        @click="
-                          state.creators[cIndex]?.affiliation?.push({
-                            name: '',
-                            affiliationIdentifier: '',
-                            affiliationIdentifierScheme: '',
-                            schemeURI: '',
-                          })
                         "
                       />
                     </div>
@@ -980,6 +990,23 @@ async function addSubjectAndFocus() {
                       />
                     </UFormField>
                   </div>
+
+                  <UButton
+                    size="sm"
+                    class="mt-2 w-full"
+                    color="success"
+                    variant="outline"
+                    label="Add Affiliation"
+                    icon="i-lucide-plus"
+                    @click="
+                      state.creators[cIndex]?.affiliation?.push({
+                        name: '',
+                        affiliationIdentifier: '',
+                        affiliationIdentifierScheme: '',
+                        schemeURI: '',
+                      })
+                    "
+                  />
                 </div>
 
                 <div v-else>
@@ -1287,7 +1314,7 @@ async function addSubjectAndFocus() {
               <div
                 v-for="(relatedIdentifier, iIndex) in state.relatedIdentifiers"
                 :key="iIndex"
-                class="space-y-2 rounded-xl border border-gray-200 p-4"
+                class="space-y-2 rounded-xl border border-l-4 border-gray-200 border-l-pink-300 p-4 dark:border-l-pink-700"
               >
                 <div class="flex items-start gap-3">
                   <UFormField
@@ -1373,7 +1400,7 @@ async function addSubjectAndFocus() {
               <div
                 v-for="(funder, fIndex) in state.fundingReferences"
                 :key="fIndex"
-                class="space-y-3 rounded-xl border border-gray-200 p-4"
+                class="space-y-3 rounded-xl border border-l-4 border-gray-200 border-l-pink-300 p-4 dark:border-l-pink-700"
               >
                 <div class="flex items-start justify-between gap-3">
                   <UFormField
@@ -1530,7 +1557,7 @@ async function addSubjectAndFocus() {
               <div
                 v-for="(section, sIndex) in state.posterContent?.sections || []"
                 :key="sIndex"
-                class="space-y-2 rounded-xl border border-gray-200 p-4"
+                class="space-y-2 rounded-xl border border-l-4 border-gray-200 border-l-pink-300 p-4 dark:border-l-pink-700"
               >
                 <UFormField
                   :name="`posterContent.sections.${sIndex}.sectionTitle`"
@@ -1597,12 +1624,11 @@ async function addSubjectAndFocus() {
               <div
                 v-for="(caption, cIndex) in state.tableCaptions || []"
                 :key="cIndex"
-                class="space-y-2 rounded-xl border border-gray-200 p-4"
+                class="space-y-2 rounded-xl border border-l-4 border-gray-200 border-l-pink-300 p-4 dark:border-l-pink-700"
               >
                 <UFormField
                   :name="`tableCaptions.${cIndex}.id`"
                   label="Table Identifier"
-                  required
                   class="flex-1"
                 >
                   <UInput v-model="caption.id" placeholder="e.g., Table 1" />
@@ -1611,7 +1637,6 @@ async function addSubjectAndFocus() {
                 <UFormField
                   :name="`tableCaptions.${cIndex}.caption`"
                   label="Table Caption"
-                  required
                   class="flex-1"
                 >
                   <UInput
@@ -1659,12 +1684,11 @@ async function addSubjectAndFocus() {
               <div
                 v-for="(caption, cIndex) in state.imageCaptions || []"
                 :key="cIndex"
-                class="space-y-2 rounded-xl border border-gray-200 p-4"
+                class="space-y-2 rounded-xl border border-l-4 border-gray-200 border-l-pink-300 p-4 dark:border-l-pink-700"
               >
                 <UFormField
                   :name="`imageCaptions.${cIndex}.id`"
                   label="Image Identifier"
-                  required
                   class="flex-1"
                 >
                   <UInput v-model="caption.id" placeholder="e.g., Image 1" />
@@ -1673,7 +1697,6 @@ async function addSubjectAndFocus() {
                 <UFormField
                   :name="`imageCaptions.${cIndex}.caption`"
                   label="Image Caption"
-                  required
                   class="flex-1"
                 >
                   <UInput
