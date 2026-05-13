@@ -44,6 +44,7 @@ type Poster = {
   updated: Date;
   // views: number;
   likes: number;
+  automated: boolean;
 };
 
 const PAGE_SIZE = 9;
@@ -70,6 +71,8 @@ const mapPosters = (apiPosters: Poster[]) => {
     updated: poster.updated ? poster.updated : new Date(),
     // views: typeof poster.views === "number" ? poster.views : 0,
     likes: typeof poster.likes === "number" ? poster.likes : 0,
+    automated:
+      typeof poster.automated === "boolean" ? poster.automated : false,
   }));
 };
 
@@ -233,6 +236,16 @@ const hasActiveFilters = computed(() => !!dateFilterValue.value.start);
                       :alt="poster.title"
                       class="h-48 w-full object-cover transition-transform duration-300 group-hover:scale-105"
                     />
+
+                    <UBadge
+                      v-if="poster.automated"
+                      color="primary"
+                      variant="solid"
+                      icon="i-lucide-sparkles"
+                      class="absolute left-2 top-2 z-10"
+                    >
+                      Auto-indexed
+                    </UBadge>
                   </div>
 
                   <div class="relative flex flex-col justify-between gap-2 p-2">
