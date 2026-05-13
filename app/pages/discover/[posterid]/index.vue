@@ -398,7 +398,9 @@ const tabItems = [
                         class="h-4 w-4 shrink-0 text-gray-400"
                       />
 
-                      <span class="text-gray-500">Year:</span>
+                      <span class="text-gray-500 dark:text-gray-400"
+                        >Year:</span
+                      >
 
                       <span class="font-medium">{{
                         poster.conference.year
@@ -508,7 +510,7 @@ const tabItems = [
                         {{ identifier.identifierType }}
                       </UBadge>
 
-                      <span class="font-mono text-gray-700">
+                      <span class="font-mono text-gray-700 dark:text-gray-300">
                         {{ identifier.identifier }}
                       </span>
 
@@ -545,12 +547,15 @@ const tabItems = [
 
                       <p
                         v-if="fund.awardTitle"
-                        class="text-sm font-medium text-gray-700"
+                        class="text-sm font-medium text-gray-700 dark:text-gray-300"
                       >
                         {{ fund.awardTitle }}
                       </p>
 
-                      <p v-if="fund.grantNumber" class="text-sm text-gray-600">
+                      <p
+                        v-if="fund.grantNumber"
+                        class="text-sm text-gray-600 dark:text-gray-400"
+                      >
                         Grant: {{ fund.grantNumber }}
                       </p>
 
@@ -620,11 +625,17 @@ const tabItems = [
                   {{ author.givenName }} {{ author.familyName }}
                 </p>
 
-                <p v-if="author.affiliation" class="text-sm text-gray-600">
+                <p
+                  v-if="author.affiliation"
+                  class="text-sm text-gray-600 dark:text-gray-400"
+                >
                   {{ author.affiliation }}
                 </p>
 
-                <p v-if="author.orcid" class="text-xs text-gray-500">
+                <p
+                  v-if="author.orcid"
+                  class="text-xs text-gray-500 dark:text-gray-400"
+                >
                   ORCID: {{ author.orcid }}
                 </p>
               </div>
@@ -643,7 +654,7 @@ const tabItems = [
                   >Language</span
                 >
 
-                <span class="font-medium text-gray-700">{{
+                <span class="font-medium text-gray-700 dark:text-gray-300">{{
                   languageDisplay
                 }}</span>
               </div>
@@ -654,7 +665,7 @@ const tabItems = [
                   >Format</span
                 >
 
-                <span class="font-medium text-gray-700">{{
+                <span class="font-medium text-gray-700 dark:text-gray-300">{{
                   poster.format
                 }}</span>
               </div>
@@ -665,7 +676,9 @@ const tabItems = [
                   >Size</span
                 >
 
-                <span class="font-medium text-gray-700">{{ poster.size }}</span>
+                <span class="font-medium text-gray-700 dark:text-gray-300">{{
+                  poster.size
+                }}</span>
               </div>
 
               <div v-if="poster.version" class="flex flex-col gap-0.5">
@@ -674,7 +687,7 @@ const tabItems = [
                   >Version</span
                 >
 
-                <span class="font-medium text-gray-700">{{
+                <span class="font-medium text-gray-700 dark:text-gray-300">{{
                   poster.version
                 }}</span>
               </div>
@@ -686,7 +699,7 @@ const tabItems = [
                 >
 
                 <div class="flex flex-row gap-2">
-                  <span class="font-medium text-gray-700">{{
+                  <span class="font-medium text-gray-700 dark:text-gray-300">{{
                     licenseInfo?.name ?? poster.license
                   }}</span>
 
