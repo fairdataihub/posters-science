@@ -379,7 +379,9 @@ export async function beginZenodoPublication(
   const conferenceDates =
     meta.conferenceStartDate && meta.conferenceEndDate
       ? `${meta.conferenceStartDate} - ${meta.conferenceEndDate}`
-      : meta.conferenceStartDate || meta.conferenceEndDate || undefined;
+      : meta.conferenceStartDate ||
+        meta.conferenceEndDate ||
+        (meta.conferenceYear ? String(meta.conferenceYear) : undefined);
 
   // Validate grants against Zenodo's OpenAIRE awards database
   const candidateGrants = Array.isArray(rawFunding)
