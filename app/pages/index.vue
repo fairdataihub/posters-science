@@ -383,6 +383,17 @@ const links = ref([
       </div>
     </div>
 
+    <p class="text-muted mx-auto mt-12 max-w-2xl text-center text-sm">
+      Want to learn more about how Posters.science works? Check out
+      our
+      <a
+        href="https://docs.posters.science"
+        target="_blank"
+        class="text-primary hover:underline"
+        >documentation</a
+      >.
+    </p>
+
     <ClientOnly>
       <MetricsSection />
 
