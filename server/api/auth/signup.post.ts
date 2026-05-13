@@ -13,7 +13,7 @@ const signupSchema = z.object({
 
 export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig();
-  const { siteEnv } = config.public;
+  const siteEnv = config.siteEnv || config.public.siteEnv;
 
   const session = await getUserSession(event);
 

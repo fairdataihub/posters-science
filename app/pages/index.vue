@@ -99,16 +99,14 @@ const links = ref([
             Why Posters Matter
           </h2>
 
-          <p class="text-muted text-lg leading-relaxed">
+          <p class="text-muted text-justify text-lg leading-relaxed">
             It is estimated that millions of scientific posters are presented
             every year at conferences, making them one of the most common forms
             of scientific communication. Posters often highlight early-stage
             insights and preliminary results, introducing them for the first
             time beyond the research team. As such, they represent a valuable
-            source of scientific knowledge. However, they are not consistently
-            shared. When shared, they are not FAIR (Findable, Accessible,
-            Interoperable, Reusable). This limits their visibility and long-term
-            impact. We want to change that.
+            source of scientific knowledge. Yet most are seen by a handful of
+            conference attendees and then forgotten. We want to change that.
           </p>
         </div>
       </div>
@@ -122,9 +120,17 @@ const links = ref([
             Share your poster in three steps
           </h2>
 
-          <p class="text-muted mx-auto mt-4 max-w-2xl text-lg">
-            From upload to a citable, FAIR-compliant and AI-ready poster record
-            in minutes.
+          <p
+            class="text-muted mx-auto mt-4 max-w-3xl text-justify text-lg leading-relaxed"
+          >
+            Science is shifting toward a culture where impact goes beyond
+            journal publications, and posters are increasingly recognized as
+            valuable research outputs in their own right. Posters.science gives
+            your poster a citable record so others can formally credit your
+            findings, makes it discoverable to researchers searching for work
+            like yours, and ensures it's AI-ready for the next generation of
+            scientific tools. Turn it into a legitimate, lasting output you can
+            claim alongside your other contributions.
           </p>
         </div>
 
@@ -263,10 +269,15 @@ const links = ref([
             Explore scientific posters from across the web
           </h2>
 
-          <p class="text-muted mx-auto mt-4 max-w-2xl text-lg">
-            Posters.science automatically discovers and indexes posters from
-            repositories and other platforms, so you can find them all in one
-            place.
+          <p
+            class="text-muted mx-auto mt-4 max-w-3xl text-justify text-lg leading-relaxed"
+          >
+            Posters.science automatically discovers and indexes scientific
+            posters from repositories and platforms across the web. Use
+            Posters.science's discover feature and browse the latest findings to
+            spark new hypotheses, support your ideas, stay ahead of emerging
+            work in your field, and connect with researchers working on the same
+            problems.
           </p>
         </div>
 
@@ -298,16 +309,28 @@ const links = ref([
             </div>
           </UCard>
 
-          <UCard class="h-full transition-shadow duration-200 hover:shadow-md">
-            <div class="flex flex-col gap-4">
+          <UCard
+            class="h-full transition-shadow duration-200 hover:shadow-md [&>[data-slot=body]]:flex [&>[data-slot=body]]:h-full [&>[data-slot=body]]:flex-col"
+          >
+            <div class="flex flex-1 flex-col gap-4">
               <Icon name="heroicons:squares-2x2" class="text-primary h-8 w-8" />
 
               <h3 class="text-xl font-semibold">Browse and filter</h3>
 
-              <p class="text-muted text-sm leading-relaxed">
+              <p class="text-muted flex-1 text-sm leading-relaxed">
                 Browse all indexed posters. Filter by publication date or search
                 using keywords to find posters of interest.
               </p>
+
+              <UButton
+                to="/discover"
+                variant="outline"
+                size="xs"
+                trailing-icon="ic:outline-saved-search"
+                class="self-start"
+              >
+                Browse posters
+              </UButton>
             </div>
           </UCard>
 
