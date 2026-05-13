@@ -378,17 +378,29 @@ const getImage = (poster: Poster) => {
     </UPageList>
 
     <div v-if="posters.length === 0" class="py-12 text-center">
-      <div
-        class="mx-auto mb-4 flex h-24 w-24 items-center justify-center rounded-full bg-gray-100"
+      <NuxtLink
+        to="/share/new"
+        class="group inline-block rounded-2xl px-8 py-6 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800/50"
       >
-        <Icon name="heroicons:document-text" class="h-12 w-12 text-gray-400" />
-      </div>
+        <div
+          class="mx-auto mb-4 flex h-24 w-24 items-center justify-center rounded-full bg-gray-100 transition-colors group-hover:bg-gray-200"
+        >
+          <Icon
+            name="heroicons:document-text"
+            class="h-12 w-12 text-gray-400 transition-colors group-hover:text-gray-500"
+          />
+        </div>
 
-      <h3 class="mb-2 text-lg font-medium text-gray-900">No posters yet</h3>
+        <h3 class="mb-2 text-lg font-medium text-gray-900 dark:text-gray-100">
+          No posters yet
+        </h3>
 
-      <p class="mb-6 text-gray-500">
-        Get started by sharing your first poster.
-      </p>
+        <p
+          class="mb-6 text-gray-500 underline-offset-2 group-hover:underline dark:text-gray-400"
+        >
+          Get started by sharing your first poster.
+        </p>
+      </NuxtLink>
     </div>
 
     <!-- Delete draft modal -->
