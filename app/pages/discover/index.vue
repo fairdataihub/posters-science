@@ -71,8 +71,7 @@ const mapPosters = (apiPosters: Poster[]) => {
     updated: poster.updated ? poster.updated : new Date(),
     // views: typeof poster.views === "number" ? poster.views : 0,
     likes: typeof poster.likes === "number" ? poster.likes : 0,
-    automated:
-      typeof poster.automated === "boolean" ? poster.automated : false,
+    automated: typeof poster.automated === "boolean" ? poster.automated : false,
   }));
 };
 
@@ -154,7 +153,7 @@ const hasActiveFilters = computed(() => !!dateFilterValue.value.start);
       </div>
 
       <div class="min-w-0 flex-1">
-        <!-- Mobile filter toggle — hidden on md+ -->
+        <!-- Mobile filter toggle - hidden on md+ -->
         <div class="mb-4 md:hidden">
           <UButton
             color="neutral"
@@ -242,7 +241,7 @@ const hasActiveFilters = computed(() => !!dateFilterValue.value.start);
                       color="primary"
                       variant="solid"
                       icon="i-lucide-sparkles"
-                      class="absolute left-2 top-2 z-10"
+                      class="absolute top-2 left-2 z-10"
                     >
                       Auto-indexed
                     </UBadge>
