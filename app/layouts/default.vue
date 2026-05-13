@@ -33,6 +33,11 @@ const headerItems = computed<NavigationMenuItem[]>(() => [
     to: "/share/new",
     active: route.path.startsWith("/share"),
   },
+  {
+    label: "Documentation",
+    to: "https://dev.posters.science",
+    target: "_blank",
+  },
   // {
   //   label: "Learn More",
   //   to: "/about",
