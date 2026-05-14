@@ -341,6 +341,16 @@ const tabItems = [
           <UTabs :items="tabItems" variant="link">
             <template #overview>
               <div class="mt-4 flex flex-col gap-4">
+                <UCard>
+                  <template #header>
+                    <h2 class="text-xl font-semibold">Description</h2>
+                  </template>
+
+                  <div class="max-w-none">
+                    <p class="whitespace-pre-line">{{ poster.description }}</p>
+                  </div>
+                </UCard>
+
                 <UCard v-if="poster.conference.name">
                   <template #header>
                     <div class="flex items-center gap-2">
@@ -482,16 +492,6 @@ const tabItems = [
                         {{ poster.conference.uri }}
                       </a>
                     </div>
-                  </div>
-                </UCard>
-
-                <UCard>
-                  <template #header>
-                    <h2 class="text-xl font-semibold">Description</h2>
-                  </template>
-
-                  <div class="max-w-none">
-                    <p class="whitespace-pre-line">{{ poster.description }}</p>
                   </div>
                 </UCard>
 

@@ -236,15 +236,20 @@ const hasActiveFilters = computed(() => !!dateFilterValue.value.start);
                       class="h-48 w-full object-cover transition-transform duration-300 group-hover:scale-105"
                     />
 
-                    <UBadge
+                    <UTooltip
                       v-if="poster.automated"
-                      color="primary"
-                      variant="solid"
-                      icon="i-lucide-sparkles"
-                      class="absolute top-2 left-2 z-10"
+                      text="This poster was picked up by our automated system."
                     >
-                      Auto-indexed
-                    </UBadge>
+                      <UBadge
+                        color="primary"
+                        variant="soft"
+                        size="sm"
+                        icon="i-lucide-sparkles"
+                        class="absolute top-2 left-2 z-10 cursor-help"
+                      >
+                        Auto-indexed
+                      </UBadge>
+                    </UTooltip>
                   </div>
 
                   <div class="relative flex flex-col justify-between gap-2 p-2">
