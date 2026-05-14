@@ -106,9 +106,14 @@ const poster = ref({
 
 const zenodoUrl = computed(() => {
   if (!poster.value.doi) return null;
-  const isSandbox =
+  const isZenodoDoi = poster.value.doi.includes("/zenodo.");
+  if (!isZenodoDoi) return `https://doi.org/${poster.value.doi}`;
+
+  const isSandboxDoi = poster.value.doi.startsWith("10.5072/");
+  const isSandboxEnv =
     siteEnv === "staging" || siteEnv === "development" || siteEnv === "dev";
-  if (isSandbox) {
+
+  if (isSandboxDoi || isSandboxEnv) {
     const recordId = poster.value.doi.split("/zenodo.")[1];
 
     return `https://sandbox.zenodo.org/records/${recordId}`;
