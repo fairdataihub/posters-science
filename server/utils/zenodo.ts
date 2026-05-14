@@ -353,6 +353,7 @@ export async function beginZenodoPublication(
     relatedIdentifier?: string;
     relatedIdentifierType?: string;
     relationType?: string;
+    resourceTypeGeneral?: string;
   }[];
   const zenodoRelated = Array.isArray(rawRelated)
     ? rawRelated
@@ -499,11 +500,20 @@ export async function beginZenodoPublication(
   // After the legacy metadata write succeeds, enrich creator affiliations with ROR links
   // by reading back what Zenodo stored and patching only the affiliations field.
   // The publication proceeds regardless of whether this step succeeds.
+  const posterContentObj = meta.posterContent as {
+    submissionAbstract?: string;
+  } | null;
+
   await patchCreatorAffiliationsRdm(
     newDepositionId,
     tokenRecord.accessToken,
     creators,
     posterLicense,
+    {
+      submissionAbstract: posterContentObj?.submissionAbstract,
+      rawFunding,
+      dbRelated: Array.isArray(rawRelated) ? rawRelated : [],
+    },
   );
 
   const zenodoVersion = metadataResult.data?.metadata?.version;
@@ -1103,6 +1113,42 @@ function buildRdmCreators(
   });
 }
 
+// DataCite resourceTypeGeneral → InvenioRDM resource_type.id (conservative mapping)
+const DATACITE_TO_INVENIORDM_TYPE: Record<string, string> = {
+  Audiovisual: "video",
+  Book: "publication-book",
+  BookChapter: "publication-section",
+  ComputationalNotebook: "software-computationalnotebook",
+  ConferencePaper: "publication-conferencepaper",
+  Dataset: "dataset",
+  Dissertation: "publication-thesis",
+  Image: "image",
+  JournalArticle: "publication-article",
+  Preprint: "publication-preprint",
+  Report: "publication-report",
+  Software: "software",
+  Other: "other",
+};
+
+type RdmExtras = {
+  skipRorIds?: boolean;
+  skipFunderIds?: boolean;
+  submissionAbstract?: string;
+  rawFunding?: {
+    funderName?: string;
+    funderIdentifier?: string;
+    funderIdentifierType?: string;
+    awardNumber?: string;
+    awardTitle?: string;
+  }[];
+  dbRelated?: {
+    relatedIdentifier?: string;
+    relatedIdentifierType?: string;
+    relationType?: string;
+    resourceTypeGeneral?: string;
+  }[];
+};
+
 // Converts a legacy-API draft response to a valid InvenioRDM PUT payload.
 // Each legacy field is explicitly remapped - unknown legacy fields are dropped
 // rather than spread, which prevents InvenioRDM from silently discarding them.
@@ -1113,7 +1159,7 @@ function convertLegacyDraftToRdmPayload(
   legacyDraft: Record<string, unknown>,
   dbCreators: InvenioCreator[],
   posterLicense: string | null | undefined,
-  options?: { skipRorIds?: boolean },
+  options?: RdmExtras,
 ): object {
   const meta = (legacyDraft.metadata ?? {}) as Record<string, unknown>;
 
@@ -1135,26 +1181,82 @@ function convertLegacyDraftToRdmPayload(
   const resourceTypeId =
     (meta.resource_type as { type?: string } | undefined)?.type ?? "poster";
 
-  // [{identifier, scheme, relation}] → [{identifier, scheme, relation_type:{id}}]
-  const legacyRelated =
-    (meta.related_identifiers as
-      | { identifier?: string; scheme?: string; relation?: string }[]
-      | undefined) ?? [];
-  const rdmRelated = legacyRelated
-    .filter((r) => r.identifier && r.scheme && r.relation)
-    .filter((r) => {
-      const scheme = r.scheme!.toLowerCase();
-      const id = r.identifier!;
-      if (scheme === "url") return /^https?:\/\//.test(id);
-      if (scheme === "doi") return /^10\.\d{4,}\//.test(id);
+  // Related identifiers: prefer DB entries (have resourceTypeGeneral); fall back to legacy draft
+  const rdmRelated = (() => {
+    if (options?.dbRelated && options.dbRelated.length > 0) {
+      return options.dbRelated
+        .filter(
+          (r) =>
+            r.relatedIdentifier && r.relatedIdentifierType && r.relationType,
+        )
+        .filter((r) => {
+          const scheme = r.relatedIdentifierType!.toLowerCase();
+          const id = r.relatedIdentifier!;
+          if (scheme === "url") return /^https?:\/\//.test(id);
+          if (scheme === "doi") return /^10\.\d{4,}\//.test(id);
 
-      return true;
-    })
-    .map((r) => ({
-      identifier: r.identifier!,
-      scheme: r.scheme!.toLowerCase(),
-      relation_type: { id: r.relation!.toLowerCase() },
-    }));
+          return true;
+        })
+        .map((r) => {
+          const rdmType = r.resourceTypeGeneral
+            ? DATACITE_TO_INVENIORDM_TYPE[r.resourceTypeGeneral]
+            : undefined;
+
+          return {
+            identifier: r.relatedIdentifier!,
+            scheme: r.relatedIdentifierType!.toLowerCase(),
+            relation_type: { id: r.relationType!.toLowerCase() },
+            ...(rdmType && { resource_type: { id: rdmType } }),
+          };
+        });
+    }
+    // Legacy draft fallback
+    const legacyRelated =
+      (meta.related_identifiers as
+        | { identifier?: string; scheme?: string; relation?: string }[]
+        | undefined) ?? [];
+
+    return legacyRelated
+      .filter((r) => r.identifier && r.scheme && r.relation)
+      .filter((r) => {
+        const scheme = r.scheme!.toLowerCase();
+        const id = r.identifier!;
+        if (scheme === "url") return /^https?:\/\//.test(id);
+        if (scheme === "doi") return /^10\.\d{4,}\//.test(id);
+
+        return true;
+      })
+      .map((r) => ({
+        identifier: r.identifier!,
+        scheme: r.scheme!.toLowerCase(),
+        relation_type: { id: r.relation!.toLowerCase() },
+      }));
+  })();
+
+  // Funding: build from DB entries directly (no OpenAIRE pre-validation needed)
+  const funding = (options?.rawFunding ?? [])
+    .filter((f) => f.funderName?.trim())
+    .map((f) => {
+      const rorId = options?.skipFunderIds
+        ? undefined
+        : extractRorId(f.funderIdentifier, f.funderIdentifierType);
+      const entry: Record<string, unknown> = {
+        funder: { name: f.funderName, ...(rorId && { id: rorId }) },
+      };
+      if (f.awardNumber?.trim()) {
+        entry.award = {
+          number: f.awardNumber,
+          ...(f.awardTitle?.trim() && { title: { en: f.awardTitle } }),
+        };
+      }
+
+      return entry;
+    });
+
+  // Additional descriptions: submission abstract as InvenioRDM "abstract" type
+  const additionalDescriptions = options?.submissionAbstract
+    ? [{ description: options.submissionAbstract, type: { id: "abstract" } }]
+    : [];
 
   // meeting is already in the right shape for custom_fields
   const meeting = meta.meeting as Record<string, string> | undefined;
@@ -1177,6 +1279,10 @@ function convertLegacyDraftToRdmPayload(
       ...(language && { languages: [{ id: language }] }),
       ...(licenseId && { rights: [{ id: licenseId }] }),
       ...(rdmRelated.length > 0 && { related_identifiers: rdmRelated }),
+      ...(funding.length > 0 && { funding }),
+      ...(additionalDescriptions.length > 0 && {
+        additional_descriptions: additionalDescriptions,
+      }),
     },
     ...(Object.keys(customFields).length > 0 && {
       custom_fields: customFields,
@@ -1186,22 +1292,25 @@ function convertLegacyDraftToRdmPayload(
 
 // After the legacy metadata write succeeds, builds a proper InvenioRDM payload
 // by converting the legacy draft fields + DB creators, then PUTs via the RDM API
-// to get ROR-linked affiliations.
+// to get ROR-linked affiliations, funding, and additional descriptions.
 async function patchCreatorAffiliationsRdm(
   depositionId: number,
   zenodoToken: string,
   creators: InvenioCreator[],
   posterLicense: string | null | undefined,
+  extras?: Pick<RdmExtras, "submissionAbstract" | "rawFunding" | "dbRelated">,
 ) {
   const hasRorAffiliation = creators.some((c) =>
     c.affiliation?.some((a) =>
       extractRorId(a.affiliationIdentifier, a.affiliationIdentifierScheme),
     ),
   );
+  const hasAbstract = !!extras?.submissionAbstract;
+  const hasFunding = extras?.rawFunding?.some((f) => f.funderName?.trim());
 
-  if (!hasRorAffiliation) {
+  if (!hasRorAffiliation && !hasAbstract && !hasFunding) {
     console.log(
-      "[Zenodo] No ROR affiliations found, skipping InvenioRDM affiliation patch",
+      "[Zenodo] No ROR affiliations, abstract, or funding to patch - skipping InvenioRDM patch",
     );
 
     return;
@@ -1235,6 +1344,7 @@ async function patchCreatorAffiliationsRdm(
       legacyDraft,
       creators,
       posterLicense,
+      { ...extras },
     );
     console.log(
       `[Zenodo] RDM affiliation patch: sending InvenioRDM payload: ${JSON.stringify(payload, null, 2)}`,
@@ -1262,17 +1372,17 @@ async function patchCreatorAffiliationsRdm(
     // Zenodo's vocabulary doesn't include every ROR ID so retry without them
     if (!put.ok && put.body.includes("Invalid value")) {
       console.warn(
-        `[Zenodo] RDM affiliation patch: ROR vocabulary rejection (status: ${put.status}) - ${put.body}. Retrying without ROR IDs.`,
+        `[Zenodo] RDM affiliation patch: ROR/funder vocabulary rejection (status: ${put.status}) - ${put.body}. Retrying without ROR IDs.`,
       );
 
       const fallback = convertLegacyDraftToRdmPayload(
         legacyDraft,
         creators,
         posterLicense,
-        { skipRorIds: true },
+        { ...extras, skipRorIds: true, skipFunderIds: true },
       );
       console.log(
-        `[Zenodo] RDM affiliation patch: retry payload (name-only affiliations): ${JSON.stringify(fallback, null, 2)}`,
+        `[Zenodo] RDM affiliation patch: retry payload (name-only affiliations/funders): ${JSON.stringify(fallback, null, 2)}`,
       );
 
       put = await putDraft(fallback);
