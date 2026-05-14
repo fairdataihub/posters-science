@@ -30,6 +30,7 @@ export default defineNuxtConfig({
   vite: {
     optimizeDeps: {
       include: [
+        "@internationalized/date",
         "@vue/devtools-core",
         "@vue/devtools-kit",
         "dayjs",
@@ -38,6 +39,11 @@ export default defineNuxtConfig({
         "dayjs/plugin/utc",
         "dayjs/plugin/timezone",
         "vue3-lottie",
+        "@inspira-ui/plugins",
+        "motion-v",
+        "clsx",
+        "tailwind-merge",
+        "zod",
       ],
     },
   },
