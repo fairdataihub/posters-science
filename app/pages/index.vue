@@ -204,6 +204,24 @@ const links = ref([
               </p>
             </div>
           </div>
+
+          <div
+            class="align-center mt-5 block justify-center space-y-4 text-center"
+          >
+            <p class="text-muted mx-auto mt-12 max-w-2xl text-center text-sm">
+              Search through our catalog of posters!
+            </p>
+
+            <UButton
+              to="/discover"
+              variant="outline"
+              size="xl"
+              trailing-icon="ic:outline-saved-search"
+              class="self-start"
+            >
+              Find posters
+            </UButton>
+          </div>
         </div>
 
         <!-- poster.json info box -->
@@ -321,16 +339,6 @@ const links = ref([
                 Browse all indexed posters. Filter by publication date or search
                 using keywords to find posters of interest.
               </p>
-
-              <UButton
-                to="/discover"
-                variant="outline"
-                size="xs"
-                trailing-icon="ic:outline-saved-search"
-                class="self-start"
-              >
-                Browse posters
-              </UButton>
             </div>
           </UCard>
 
@@ -371,28 +379,25 @@ const links = ref([
           </UCard>
         </div>
 
-        <!-- <div class="mt-10 flex justify-center">
+        <div
+          class="align-center mt-5 block justify-center space-y-4 text-center"
+        >
+          <p class="text-muted mx-auto mt-12 max-w-2xl text-center text-sm">
+            Want to learn more about how Posters.science works?
+          </p>
+
           <UButton
-            to="/discover"
+            to="https://docs.posters.science"
+            target="_blank"
             size="xl"
-            trailing-icon="ic:outline-saved-search"
+            variant="outline"
+            trailing-icon="heroicons:book-open"
           >
-            Find Posters
+            View Documentation
           </UButton>
-        </div> -->
+        </div>
       </div>
     </div>
-
-    <p class="text-muted mx-auto mt-12 max-w-2xl text-center text-sm">
-      Want to learn more about how Posters.science works? Check out
-      our
-      <a
-        href="https://docs.posters.science"
-        target="_blank"
-        class="text-primary hover:underline"
-        >documentation</a
-      >.
-    </p>
 
     <ClientOnly>
       <MetricsSection />
