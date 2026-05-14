@@ -132,6 +132,20 @@ const links = ref([
             scientific tools. Turn it into a legitimate, lasting output you can
             claim alongside your other contributions.
           </p>
+
+          <div
+            class="align-center mt-6 block justify-center space-y-4 text-center"
+          >
+            <UButton
+              to="/share/new"
+              variant="outline"
+              size="xl"
+              trailing-icon="line-md:file-upload"
+              class="self-start"
+            >
+              Share Poster
+            </UButton>
+          </div>
         </div>
 
         <!-- Timeline steps with connecting gradient line -->
@@ -203,24 +217,6 @@ const links = ref([
                 Archive your poster on Zenodo to make it FAIR and citable.
               </p>
             </div>
-          </div>
-
-          <div
-            class="align-center mt-5 block justify-center space-y-4 text-center"
-          >
-            <p class="text-muted mx-auto mt-12 max-w-2xl text-center text-sm">
-              Search through our catalog of posters!
-            </p>
-
-            <UButton
-              to="/discover"
-              variant="outline"
-              size="xl"
-              trailing-icon="ic:outline-saved-search"
-              class="self-start"
-            >
-              Find posters
-            </UButton>
           </div>
         </div>
 
@@ -297,6 +293,19 @@ const links = ref([
             work in your field, and connect with researchers working on the same
             problems.
           </p>
+
+          <div
+            class="align-center mt-5 block justify-center space-y-4 text-center"
+          >
+            <UButton
+              to="/discover"
+              size="xl"
+              variant="outline"
+              trailing-icon="heroicons:magnifying-glass"
+            >
+              Find Posters
+            </UButton>
+          </div>
         </div>
 
         <div class="grid grid-cols-1 gap-8 md:grid-cols-2 xl:grid-cols-4">
@@ -383,18 +392,14 @@ const links = ref([
           class="align-center mt-5 block justify-center space-y-4 text-center"
         >
           <p class="text-muted mx-auto mt-12 max-w-2xl text-center text-sm">
-            Want to learn more about how Posters.science works?
+            Want to learn more about how Posters.science works? Check out our
+            <a
+              href="https://docs.posters.science"
+              target="_blank"
+              class="text-primary hover:underline"
+              >documentation</a
+            >.
           </p>
-
-          <UButton
-            to="https://docs.posters.science"
-            target="_blank"
-            size="xl"
-            variant="outline"
-            trailing-icon="heroicons:book-open"
-          >
-            View Documentation
-          </UButton>
         </div>
       </div>
     </div>
