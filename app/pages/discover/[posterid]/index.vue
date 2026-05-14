@@ -231,7 +231,7 @@ const tabItems = [
                 size="lg"
                 icon="heroicons:academic-cap"
               >
-                {{ poster.conference.name }}
+                {{ poster.conference.acronym }}
                 {{ poster.conference.year ? poster.conference.year : "" }}
               </UBadge>
 
