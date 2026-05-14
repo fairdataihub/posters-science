@@ -48,6 +48,10 @@ export default defineNuxtConfig({
   //   - NUXT_ZENODO_CLIENT_ID -> runtimeConfig.zenodoClientId
   // Using process.env.XXX here would bake values at build time, making them unchangeable at runtime.
   runtimeConfig: {
+    session: {
+      password: process.env.NUXT_SESSION_PASSWORD || "",
+      maxAge: 60 * 60 * 24 * 7, // 1 week in seconds
+    },
     resendApiKey: "",
     siteUrl: "http://localhost:3000",
     zenodoClientId: "",
