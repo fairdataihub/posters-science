@@ -10,6 +10,10 @@ import {
   IDENTIFIER_TYPE_PLACEHOLDER_OPTIONS,
   RELATION_TYPE_OPTIONS,
   FUNDER_IDENTIFIER_TYPE_OPTIONS,
+  inferRelatedIdentifierType,
+  inferFunderIdentifierType,
+  inferNameIdentifierScheme,
+  inferAffiliationIdentifierScheme,
 } from "@/utils/poster_schema";
 import {
   CalendarDate,
@@ -221,21 +225,26 @@ if (data.value) {
           }),
         };
       });
-      // Back-fill scheme URIs for data loaded from the API
+      // Back-fill scheme/schemeURI for data loaded from the API
       state.creators.forEach((creator) => {
         creator.nameIdentifiers?.forEach((ni) => {
-          if (!ni.schemeURI && ni.nameIdentifier?.includes("orcid.org")) {
-            ni.nameIdentifierScheme ||= "ORCID";
-            ni.schemeURI = "https://orcid.org";
+          if (!ni.schemeURI && ni.nameIdentifier) {
+            const inferred = inferNameIdentifierScheme(ni.nameIdentifier);
+            if (inferred) {
+              ni.nameIdentifierScheme ||= inferred.scheme;
+              ni.schemeURI = inferred.schemeURI;
+            }
           }
         });
         creator.affiliation?.forEach((aff) => {
-          if (
-            !aff.schemeURI &&
-            aff.affiliationIdentifier?.includes("ror.org")
-          ) {
-            aff.affiliationIdentifierScheme ||= "ROR";
-            aff.schemeURI = "https://ror.org";
+          if (!aff.schemeURI && aff.affiliationIdentifier) {
+            const inferred = inferAffiliationIdentifierScheme(
+              aff.affiliationIdentifier,
+            );
+            if (inferred) {
+              aff.affiliationIdentifierScheme ||= inferred.scheme;
+              aff.schemeURI = inferred.schemeURI;
+            }
           }
         });
       });
@@ -571,9 +580,10 @@ function handleAffiliationIdentifierInput(
 ) {
   const aff = state.creators[cIndex]?.affiliation?.[aIndex];
   if (!aff) return;
-  if (value.includes("ror.org")) {
-    aff.affiliationIdentifierScheme = "ROR";
-    aff.schemeURI = "https://ror.org";
+  const inferred = inferAffiliationIdentifierScheme(value);
+  if (inferred) {
+    aff.affiliationIdentifierScheme ||= inferred.scheme;
+    aff.schemeURI ||= inferred.schemeURI;
   }
 }
 
@@ -584,10 +594,18 @@ function handleNameIdentifierInput(
 ) {
   const ni = state.creators[cIndex]?.nameIdentifiers?.[niIndex];
   if (!ni) return;
-  if (value.includes("orcid.org")) {
-    ni.nameIdentifierScheme = "ORCID";
-    ni.schemeURI = "https://orcid.org";
+  const inferred = inferNameIdentifierScheme(value);
+  if (inferred) {
+    ni.nameIdentifierScheme ||= inferred.scheme;
+    ni.schemeURI ||= inferred.schemeURI;
   }
+}
+
+function handleFunderIdentifierInput(value: string, fIndex: number) {
+  const funder = state.fundingReferences[fIndex];
+  if (!funder) return;
+  const inferred = inferFunderIdentifierType(value);
+  if (inferred) funder.funderIdentifierType ||= inferred;
 }
 
 async function addSubjectAndFocus() {
@@ -1389,6 +1407,18 @@ async function addSubjectAndFocus() {
                               relatedIdentifier.relatedIdentifierType,
                           )?.label || 'https://doi.org/10.1038/sdata.2016.18'
                         "
+                        @update:model-value="
+                          (v) => {
+                            if (!relatedIdentifier.relatedIdentifierType) {
+                              const inferred = inferRelatedIdentifierType(
+                                String(v),
+                              );
+                              if (inferred)
+                                relatedIdentifier.relatedIdentifierType =
+                                  inferred;
+                            }
+                          }
+                        "
                       />
                     </UFormField>
 
@@ -1490,6 +1520,9 @@ async function addSubjectAndFocus() {
                       <UInput
                         v-model="funder.funderIdentifier"
                         placeholder="https://ror.org/04xfq0f34"
+                        @update:model-value="
+                          (v) => handleFunderIdentifierInput(String(v), fIndex)
+                        "
                       />
                     </UFormField>
 

@@ -58,6 +58,122 @@ function isValidUrl(value: string | undefined): boolean {
     return false;
   }
 }
+
+// Format rules for each relatedIdentifierType. Used for both validation and type inference.
+const RELATED_ID_PATTERNS: Record<
+  string,
+  { pattern: RegExp; example: string; inferCheck?: RegExp }
+> = {
+  DOI: {
+    pattern: /^10\.\d{4,}\//,
+    example: "10.5072/posters.2025.001234",
+    inferCheck: /^10\.\d{4,}\//,
+  },
+  arXiv: {
+    pattern: /^(arXiv:)?\d{4}\.\d{4,}(v\d+)?$|^(arXiv:)?[a-z-]+\/\d{7}$/i,
+    example: "2501.12345",
+    inferCheck: /^(arXiv:)?\d{4}\.\d{4,}(v\d+)?$|^(arXiv:)?[a-z-]+\/\d{7}$/i,
+  },
+  ISSN: {
+    pattern: /^\d{4}-\d{3}[\dX]$/,
+    example: "1234-5678",
+    inferCheck: /^\d{4}-\d{3}[\dX]$/,
+  },
+  EISSN: { pattern: /^\d{4}-\d{3}[\dX]$/, example: "1234-5678" },
+  LISSN: { pattern: /^\d{4}-\d{3}[\dX]$/, example: "1234-5678" },
+  ISBN: {
+    pattern: /^(?:97[89]\d{10}|\d{9}[\dX])$/,
+    example: "9783161484100",
+  },
+  PMID: {
+    pattern: /^\d{1,8}$/,
+    example: "12345678",
+    inferCheck: /^\d{5,8}$/,
+  },
+  URN: {
+    pattern: /^urn:/i,
+    example: "urn:namespace:identifier",
+    inferCheck: /^urn:[^:]+:/i,
+  },
+  LSID: {
+    pattern: /^urn:lsid:/i,
+    example: "urn:lsid:authority:namespace:identifier",
+    inferCheck: /^urn:lsid:/i,
+  },
+  ARK: {
+    pattern: /^(https?:\/\/[^/]+\/)?ark:\/\d+\//,
+    example: "ark:/12345/67890",
+    inferCheck: /^(https?:\/\/[^/]+\/)?ark:\/\d+\//,
+  },
+  URL: { pattern: /^https?:\/\//, example: "https://example.com/resource" },
+  PURL: { pattern: /^https?:\/\//, example: "https://purl.org/example" },
+  w3id: { pattern: /^https?:\/\//, example: "https://w3id.org/example" },
+};
+
+// Infers the most likely identifier type from a value.
+// Returns a type string or undefined if no confident match is found.
+export function inferRelatedIdentifierType(value: string): string | undefined {
+  if (!value.trim()) return undefined;
+  // Highest specificity first
+  if (/^10\.\d{4,}\//.test(value)) return "DOI";
+  if (/^urn:lsid:/i.test(value)) return "LSID";
+  if (/^urn:/i.test(value)) return "URN";
+  if (/^(https?:\/\/[^/]+\/)?ark:\/\d+\//i.test(value)) return "ARK";
+  if (
+    /^(arXiv:)?\d{4}\.\d{4,}(v\d+)?$/i.test(value) ||
+    /^(arXiv:)?[a-z-]+\/\d{7}$/i.test(value)
+  )
+    return "arXiv";
+  if (/^\d{4}-\d{3}[\dX]$/.test(value)) return "ISSN";
+  if (/^https?:\/\//.test(value)) return "URL";
+
+  return undefined;
+}
+
+// Infers funder identifier type from a value for the dropdown
+// ("Crossref Funder ID" | "GRID" | "ISNI" | "ROR" | undefined).
+export function inferFunderIdentifierType(
+  value: string,
+): "Crossref Funder ID" | "GRID" | "ISNI" | "ROR" | undefined {
+  if (!value.trim()) return undefined;
+  if (/ror\.org/i.test(value) || /^0[0-9a-hj-km-np-tv-z]{6}\d{2}$/i.test(value))
+    return "ROR";
+  if (/doi\.org\/10\.13039\//i.test(value)) return "Crossref Funder ID";
+  if (/^grid\.\d+\.[a-z]\d+$/i.test(value)) return "GRID";
+  // ISNI: 16 digits optionally grouped with spaces or hyphens
+  if (/^\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}$/.test(value)) return "ISNI";
+
+  return undefined;
+}
+
+// Returns inferred scheme + schemeURI for a creator name identifier free-text field.
+export function inferNameIdentifierScheme(
+  value: string,
+): { scheme: string; schemeURI: string } | undefined {
+  if (!value.trim()) return undefined;
+  if (/orcid\.org/i.test(value) || /^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$/.test(value))
+    return { scheme: "ORCID", schemeURI: "https://orcid.org" };
+  if (/^\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}$/.test(value))
+    return { scheme: "ISNI", schemeURI: "https://isni.org" };
+
+  return undefined;
+}
+
+// Returns inferred scheme + schemeURI for a creator affiliation identifier free-text field.
+export function inferAffiliationIdentifierScheme(
+  value: string,
+): { scheme: string; schemeURI: string } | undefined {
+  if (!value.trim()) return undefined;
+  if (/ror\.org/i.test(value) || /^0[0-9a-hj-km-np-tv-z]{6}\d{2}$/i.test(value))
+    return { scheme: "ROR", schemeURI: "https://ror.org" };
+  if (/^grid\.\d+\.[a-z]\d+$/i.test(value))
+    return { scheme: "GRID", schemeURI: "https://www.grid.ac" };
+  if (/^\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}$/.test(value))
+    return { scheme: "ISNI", schemeURI: "https://isni.org" };
+
+  return undefined;
+}
+
 // Constants and options for select fields
 const DATE_TYPE_VALUES = [
   "Accepted",
@@ -270,6 +386,26 @@ const RelatedIdentifierSchema = z.object({
   schemeType: z.string().optional(),
   resourceTypeGeneral: TypesSchema.shape.resourceTypeGeneral.optional(),
 });
+
+// Validates identifier format against the selected type when both are present.
+const StrictRelatedIdentifierSchema =
+  RelatedIdentifierSchema.partial().superRefine((data, ctx) => {
+    const type = data.relatedIdentifierType;
+    const id = data.relatedIdentifier;
+    if (!id || !type) return;
+
+    const rule = RELATED_ID_PATTERNS[type];
+    if (!rule) return;
+
+    const normalized = type === "ISBN" ? id.replace(/[-\s]/g, "") : id;
+    if (!rule.pattern.test(normalized)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Invalid ${type} format. Expected: ${rule.example}`,
+        path: ["relatedIdentifier"],
+      });
+    }
+  });
 
 const RightsSchema = z.object({
   rights: z.string().min(1, { message: "Rights statement is required" }),
@@ -610,7 +746,7 @@ export const strictFormSchema = z.object({
   publicationYear: z.number().int().min(1000).max(9999).optional(),
   version: z.string(),
   conference: StrictConferenceSchema,
-  relatedIdentifiers: z.array(RelatedIdentifierSchema.partial()),
+  relatedIdentifiers: z.array(StrictRelatedIdentifierSchema),
   size: z.string().optional(),
   posterContent: PosterContentSchema.optional(),
   tableCaptions: z.array(CaptionSchema).optional(),
