@@ -64,7 +64,7 @@ builder:
 # Environment variables are available to your application at runtime
 env:
   clear:
-    NODE_ENV: production  # Set to 'production' for production deployments
+    NODE_ENV: production # Set to 'production' for production deployments
   secret:
     - DATABASE_URL # Database connection string
     - NUXT_SESSION_PASSWORD
@@ -72,7 +72,6 @@ env:
     - NUXT_PUBLIC_SITE_ENV
     - NUXT_POSTER_EXTRACTION_API
     - NUXT_ZENODO_CLIENT_ID
-    - NUXT_ZENODO_CLIENT_SECRET
     - NUXT_ZENODO_ENDPOINT
     - NUXT_ZENODO_API_ENDPOINT
     - NUXT_ZENODO_REDIRECT_URI
@@ -100,7 +99,6 @@ aliases:
 #
 ssh:
   user: azureuser
-
 # Use a persistent storage volume.
 # Uncomment to add persistent storage that survives container restarts
 #
