@@ -1171,11 +1171,13 @@ function convertLegacyDraftToRdmPayload(
   // "eng" / "en" string → [{id: "eng"}]
   const language = meta.language as string | undefined;
 
-  // Use the DB license in SPDX format (lowercased) - the legacy draft stores a
-  // different identifier (e.g. "cc-zero") that InvenioRDM does not recognise.
-  const licenseId = posterLicense
-    ? posterLicense.toLowerCase()
-    : (meta.license as { id?: string } | undefined)?.id;
+  // Use the DB license in SPDX format (lowercased). We never read the license
+  // from the legacy draft because it uses Zenodo's internal identifiers
+  // (e.g. "cc-zero") that InvenioRDM rejects, and the InvenioRDM draft's
+  // rights[] field only exists after a successful prior RDM PUT. If the DB
+  // has no license, omit rights from the payload rather than risk sending a
+  // bad value.
+  const licenseId = posterLicense ? posterLicense.toLowerCase() : undefined;
 
   // {type: "poster"} → {id: "poster"}
   const resourceTypeId =
@@ -1369,8 +1371,32 @@ async function patchCreatorAffiliationsRdm(
 
     let put = await putDraft(payload);
 
-    // Zenodo's vocabulary doesn't include every ROR ID so retry without them
-    if (!put.ok && put.body.includes("Invalid value")) {
+    // Zenodo's vocabulary doesn't include every ROR/funder ID. Detect the
+    // rejection via structured errors[] first; fall back to substring match
+    // if the body isn't valid JSON or has no errors array.
+    const isVocabularyRejection = (res: {
+      ok: boolean;
+      status: number;
+      body: string;
+    }) => {
+      if (res.ok || res.status !== 400) return false;
+      try {
+        const parsed = JSON.parse(res.body) as {
+          errors?: { message?: string }[];
+        };
+        if (parsed.errors?.length) {
+          return parsed.errors.some((e) =>
+            /invalid value/i.test(e.message ?? ""),
+          );
+        }
+      } catch {
+        // not JSON — fall through to substring check
+      }
+
+      return /invalid value/i.test(res.body);
+    };
+
+    if (isVocabularyRejection(put)) {
       console.warn(
         `[Zenodo] RDM affiliation patch: ROR/funder vocabulary rejection (status: ${put.status}) - ${put.body}. Retrying without ROR IDs.`,
       );
