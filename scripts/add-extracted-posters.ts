@@ -167,9 +167,10 @@ function mapToDbFields(data: JsonPoster) {
 
   const domain = data.domain ?? "Other";
 
-  const issuedDateStr = (data.dates ?? []).find(
+  const issuedDateRaw = (data.dates ?? []).find(
     (d: any) => d?.dateType === "Issued",
   )?.date;
+  const issuedDateStr = issuedDateRaw?.split("/")[0] ?? null;
   const issuedAt = issuedDateStr ? new Date(issuedDateStr) : new Date();
 
   // Real JSON uses "content" field; fall back to empty sections
@@ -217,6 +218,22 @@ function mapToDbFields(data: JsonPoster) {
     conferenceSeries,
     domain,
   };
+}
+
+function getImageUrl(filePath: string, doi: string | null): string {
+  if (!doi) return "";
+
+  const lower = doi.toLowerCase();
+  let source: "zenodo" | "figshare" | null = null;
+
+  if (lower.includes("zenodo")) source = "zenodo";
+  else if (lower.includes("figshare")) source = "figshare";
+  if (!source) return "";
+
+  const basename = path.basename(filePath); // e.g. "12345678_complete.json"
+  const id = basename.replace(/_complete\.json$/, "");
+
+  return `https://cdn.posters.science/thumbnails/a/${source}_${id}.jpeg`;
 }
 
 function collectJsonFiles(mergedDir: string): string[] {
@@ -267,6 +284,7 @@ async function main() {
     }
 
     const mapped = mapToDbFields(data);
+    const imageUrl = getImageUrl(filePath, mapped.doi);
 
     // The unique key is the DOI URL (https://doi.org/<doi>)
     const existingMetadata = mapped.doi
@@ -322,6 +340,7 @@ async function main() {
               description: mapped.posterDescription,
               publishedAt: mapped.issuedAt,
               updated: mapped.issuedAt,
+              ...(imageUrl ? { imageUrl } : {}),
             },
           });
 
@@ -333,7 +352,7 @@ async function main() {
 
         updated++;
         console.log(
-          `   🔄 [updated] ${existingMetadata.posterId} — ${mapped.posterTitle.slice(0, 60)}`,
+          `   🔄 [updated] ${existingMetadata.posterId} — ${mapped.posterTitle.slice(0, 60)}\n      imageUrl: ${imageUrl || "(none)"}`,
         );
       } else {
         // Create new poster and metadata
@@ -343,7 +362,7 @@ async function main() {
               userId,
               title: mapped.posterTitle,
               description: mapped.posterDescription,
-              imageUrl: "",
+              imageUrl,
               automated: true,
               status: "published",
               publishedAt: mapped.issuedAt,
@@ -364,7 +383,7 @@ async function main() {
 
         created++;
         console.log(
-          `   ✅ [created] ${poster.id} — ${poster.title.slice(0, 60)}`,
+          `   ✅ [created] ${poster.id} — ${poster.title.slice(0, 60)}\n      imageUrl: ${imageUrl || "(none)"}`,
         );
       }
     } catch (err: any) {
