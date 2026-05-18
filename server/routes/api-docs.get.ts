@@ -16,7 +16,7 @@ export default defineEventHandler((event) => {
   <body>
     <script
       id="api-reference"
-      data-url="/_docs/openapi.json"
+      data-url="/api-docs/openapi.json"
     ></script>
     <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
   </body>

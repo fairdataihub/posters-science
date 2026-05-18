@@ -79,9 +79,7 @@ export default defineNuxtConfig({
       siteEnv: "",
     },
   },
-  routeRules: {
-    "/api-docs": { ssr: false },
-  },
+
   eslint: {},
   echarts: {
     charts: ["BarChart", "PieChart", "LineChart"],
@@ -108,14 +106,6 @@ export default defineNuxtConfig({
         description: "API Documentation for Posters.science",
       },
       route: "/_docs/openapi.json",
-      ui: {
-        scalar: {
-          route: "/_docs/scalar",
-        },
-        swagger: {
-          route: "/_docs/swagger",
-        },
-      },
     },
   },
   image: {
