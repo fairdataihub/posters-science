@@ -30,6 +30,8 @@ model User {
     emailVerificationToken        String?   @unique
     emailVerificationTokenExpires DateTime?
 
+    role String @default("user") // user | admin
+
     created DateTime @default(now())
     updated DateTime @updatedAt
     Poster  Poster[]
@@ -41,6 +43,8 @@ model User {
 
     userEmailVerifications UserEmailVerification[]
     userForgotPasswords    UserForgotPassword[]
+
+    adminAuditLogs AdminAuditLog[] @relation("AdminActions")
 
     @@index([emailAddress])
 }
@@ -201,6 +205,25 @@ model ZenodoDeposition {
 
     created DateTime @default(now())
     updated DateTime @updatedAt
+}
+
+model AdminAuditLog {
+    id String @id @default(cuid(2))
+
+    adminUser   User   @relation("AdminActions", fields: [adminUserId], references: [id])
+    adminUserId String
+
+    action     String // e.g. DELETE_POSTER, UPDATE_USER_ROLE
+    entityType String // user | poster
+    entityId   String
+
+    details Json?
+
+    created DateTime @default(now())
+
+    @@index([adminUserId])
+    @@index([entityType])
+    @@index([created])
 }
 
 model ExtractionJob {
