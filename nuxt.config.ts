@@ -16,7 +16,6 @@ export default defineNuxtConfig({
     "@nuxt/image",
     "nuxt-echarts",
     "@nuxt/content",
-    // "@scalar/nuxt",
   ],
   icon: {
     collections: [
@@ -79,6 +78,9 @@ export default defineNuxtConfig({
       baseUrl: "",
       siteEnv: "",
     },
+  },
+  routeRules: {
+    "/api-docs": { ssr: false },
   },
   eslint: {},
   echarts: {
