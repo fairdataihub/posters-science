@@ -62,6 +62,7 @@ type JsonPoster = {
   fundingReferences?: any[];
   ethicsApprovals?: any[];
   domain?: string;
+  _license_blocked?: boolean;
 };
 
 function mapToDbFields(data: JsonPoster) {
@@ -220,7 +221,18 @@ function mapToDbFields(data: JsonPoster) {
   };
 }
 
-function getImageUrl(filePath: string, doi: string | null): string {
+function getImageUrl(
+  filePath: string,
+  doi: string | null,
+  licenseBlocked?: boolean,
+): string {
+  const basename = path.basename(filePath); // e.g. "12345678_complete.json"
+  const id = basename.replace(/_complete\.json$/, "");
+
+  if (licenseBlocked) {
+    return `https://api.dicebear.com/9.x/shapes/svg?seed=${id}`;
+  }
+
   if (!doi) return "";
 
   const lower = doi.toLowerCase();
@@ -229,9 +241,6 @@ function getImageUrl(filePath: string, doi: string | null): string {
   if (lower.includes("zenodo")) source = "zenodo";
   else if (lower.includes("figshare")) source = "figshare";
   if (!source) return "";
-
-  const basename = path.basename(filePath); // e.g. "12345678_complete.json"
-  const id = basename.replace(/_complete\.json$/, "");
 
   return `https://cdn.posters.science/thumbnails/a/${source}_${id}.jpeg`;
 }
@@ -270,8 +279,12 @@ async function main() {
   let updated = 0;
   let errored = 0;
 
-  for (const filePath of allFiles) {
+  for (let i = 0; i < allFiles.length; i++) {
+    const filePath = allFiles[i];
     if (created + updated >= limit) break;
+
+    const progress = ((i + 1) / allFiles.length) * 100;
+    console.log(`Progress: ${progress.toFixed(2)}%`);
 
     const raw = fs.readFileSync(filePath, "utf-8");
     let data: JsonPoster;
@@ -284,7 +297,7 @@ async function main() {
     }
 
     const mapped = mapToDbFields(data);
-    const imageUrl = getImageUrl(filePath, mapped.doi);
+    const imageUrl = getImageUrl(filePath, mapped.doi, data._license_blocked);
 
     // The unique key is the DOI URL (https://doi.org/<doi>)
     const existingMetadata = mapped.doi

@@ -22,7 +22,6 @@ type Poster = {
   title: string;
   description: string;
   imageUrl: string;
-  _license_blocked?: boolean;
   status: "draft" | "downloaded" | "published";
   publishedAt: Date | null;
   created: Date;
@@ -198,10 +197,6 @@ async function savePublicationInfo() {
 }
 
 const getImage = (poster: Poster) => {
-  if (poster._license_blocked) {
-    return `https://api.dicebear.com/9.x/shapes/svg?seed=${poster.id}`;
-  }
-
   if (poster.status === "published") {
     return poster.imageUrl;
   }
