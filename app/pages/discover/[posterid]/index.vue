@@ -229,7 +229,7 @@ const tabItems = [
               {{ poster.domain }}
             </UBadge>
 
-            <UPopover v-if="poster.conference.name" arrow mode="hover">
+            <UPopover v-if="poster.conference.acronym" arrow mode="hover">
               <UBadge
                 color="primary"
                 variant="soft"
