@@ -254,7 +254,7 @@ function cleanCreators(raw: unknown): unknown[] {
       ? c.affiliation.filter((aff: unknown) => {
           if (typeof aff === "string") return aff.trim() !== "";
           if (typeof aff === "object" && aff !== null) {
-            const name = (aff as Record<string, unknown>).name;
+            const { name } = aff as Record<string, unknown>;
 
             return typeof name === "string" && name.trim() !== "";
           }
