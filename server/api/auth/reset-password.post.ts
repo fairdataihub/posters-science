@@ -4,7 +4,10 @@ import { createHash } from "node:crypto";
 
 const schema = z.object({
   token: z.string().min(1, "Token is required"),
-  password: z.string().min(8, "Password must be at least 8 characters"),
+  password: z
+    .string()
+    .min(12, "Must be at least 12 characters")
+    .max(128, "Must be at most 128 characters"),
 });
 
 export default defineEventHandler(async (event) => {

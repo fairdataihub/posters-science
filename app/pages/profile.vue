@@ -27,8 +27,14 @@ const passwordLoading = ref(false);
 const passwordSchema = z
   .object({
     currentPassword: z.string().min(8, "Must be at least 8 characters"),
-    newPassword: z.string().min(8, "Must be at least 8 characters"),
-    confirmPassword: z.string().min(8, "Must be at least 8 characters"),
+    newPassword: z
+      .string()
+      .min(12, "Must be at least 12 characters")
+      .max(128, "Must be at most 128 characters"),
+    confirmPassword: z
+      .string()
+      .min(12, "Must be at least 12 characters")
+      .max(128, "Must be at most 128 characters"),
   })
   .refine((d) => d.newPassword === d.confirmPassword, {
     message: "Passwords do not match",

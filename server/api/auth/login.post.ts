@@ -2,7 +2,7 @@ import { z } from "zod";
 import { compare } from "bcrypt";
 
 const loginSchema = z.object({
-  emailAddress: z.string().email(),
+  emailAddress: z.email(),
   password: z.string().min(8),
 });
 

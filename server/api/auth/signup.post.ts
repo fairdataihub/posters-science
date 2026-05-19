@@ -6,10 +6,13 @@ import dayjs from "dayjs";
 import { sendEmail } from "../../utils/sendEmail";
 
 const signupSchema = z.object({
-  emailAddress: z.string().email(),
+  emailAddress: z.email(),
   familyName: z.string(),
   givenName: z.string(),
-  password: z.string().min(8),
+  password: z
+    .string()
+    .min(12, "Must be at least 12 characters")
+    .max(128, "Must be at most 128 characters"),
 });
 
 export default defineEventHandler(async (event) => {
