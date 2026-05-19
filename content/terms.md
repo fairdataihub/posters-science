@@ -113,4 +113,4 @@ _Last updated: March 30, 2026_
 
 ## 15. Contact
 
-If you have questions about these Terms or about Posters.science, please contact us through our [Contact page](/contact). You may also report technical issues or feature requests via our GitHub issues at [github.com/fairdataihub/posters-science/issues](https://github.com/fairdataihub/posters-science/issues).
+If you have questions about these Terms or about Posters.science, please contact us through our [feedback form](https://tally.so/r/XxEBYP). You may also report technical issues or feature requests via our GitHub issues at [github.com/fairdataihub/posters-science/issues](https://github.com/fairdataihub/posters-science/issues).

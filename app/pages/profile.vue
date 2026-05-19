@@ -87,7 +87,7 @@ async function onDeleteAccount() {
   toast.add({
     title: "Unavailable",
     description:
-      "Account deletion is not available yet. Please contact support if you wish to delete your account.",
+      "Account deletion is not available yet. Please contact us at https://tally.so/r/XxEBYP if you wish to delete your account.",
     color: "info",
     icon: "i-heroicons-information-circle",
   });
@@ -376,7 +376,7 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
                   description="Delete profile and all associated data"
                 >
                   <UTooltip
-                    text="This function is not yet available. Please contact support if you wish to delete your account."
+                    text="This function is not yet available. Please contact us at https://tally.so/r/XxEBYP if you wish to delete your account."
                   >
                     <UButton
                       color="error"

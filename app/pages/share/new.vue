@@ -120,7 +120,7 @@ const uploadFile = async () => {
 
     if (!uploadResponse.posterId) {
       error.value =
-        "Upload failed. Please try again. If the problem persists, please contact support.";
+        "Upload failed. Please try again. If the problem persists, please contact us at https://tally.so/r/XxEBYP";
       status.value = 0;
       isUploading.value = false;
 
@@ -132,7 +132,7 @@ const uploadFile = async () => {
       pollJobStatus(uploadResponse.extractionJobId);
     } else {
       error.value =
-        "Upload failed. Please try again. If the problem persists, please contact support.";
+        "Upload failed. Please try again. If the problem persists, please contact us at https://tally.so/r/XxEBYP";
       status.value = 0;
       isUploading.value = false;
     }
