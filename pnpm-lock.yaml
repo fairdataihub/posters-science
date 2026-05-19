@@ -95,13 +95,13 @@ importers:
         version: 1.9.0(@typescript-eslint/utils@8.58.0(eslint@9.36.0(jiti@2.6.1))(typescript@5.9.3))(@vue/compiler-sfc@3.5.34)(eslint-import-resolver-node@0.3.9)(eslint@9.36.0(jiti@2.6.1))(magicast@0.5.2)(typescript@5.9.3)(vite@7.3.1(@types/node@25.5.0)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.1)(tsx@4.21.0)(yaml@2.8.3))
       '@nuxt/ui':
         specifier: 4.2.1
-        version: 4.2.1(@babel/parser@7.29.3)(@nuxt/content@3.12.0(@electric-sql/pglite@0.4.1)(better-sqlite3@12.8.0)(magicast@0.5.2)(mysql2@3.15.3)(valibot@1.2.0(typescript@5.9.3)))(change-case@5.4.4)(db0@0.3.4(@electric-sql/pglite@0.4.1)(better-sqlite3@12.8.0)(mysql2@3.15.3))(embla-carousel@8.6.0)(focus-trap@7.8.0)(ioredis@5.10.1)(magicast@0.5.2)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(typescript@5.9.3)(valibot@1.2.0(typescript@5.9.3))(vite@7.3.1(@types/node@25.5.0)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.1)(tsx@4.21.0)(yaml@2.8.3))(vue-router@4.6.4(vue@3.5.31(typescript@5.9.3)))(vue@3.5.31(typescript@5.9.3))(zod@4.3.6)
+        version: 4.2.1(@babel/parser@7.29.3)(@nuxt/content@3.12.0(@electric-sql/pglite@0.4.1)(better-sqlite3@12.8.0)(magicast@0.5.2)(mysql2@3.15.3)(valibot@1.2.0(typescript@5.9.3)))(change-case@5.4.4)(db0@0.3.4(@electric-sql/pglite@0.4.1)(better-sqlite3@12.8.0)(mysql2@3.15.3))(embla-carousel@8.6.0)(focus-trap@7.8.0)(ioredis@5.10.1)(magicast@0.5.2)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(typescript@5.9.3)(valibot@1.2.0(typescript@5.9.3))(vite@7.3.1(@types/node@25.5.0)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.1)(tsx@4.21.0)(yaml@2.8.3))(vue-router@4.6.4(vue@3.5.31(typescript@5.9.3)))(vue@3.5.31(typescript@5.9.3))(zod@4.4.3)
       '@prisma/client':
         specifier: 7.6.0
         version: 7.6.0(prisma@7.6.0(@types/react@19.2.14)(better-sqlite3@12.8.0)(magicast@0.5.2)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(typescript@5.9.3))(typescript@5.9.3)
       '@scalar/nuxt':
         specifier: 0.6.38
-        version: 0.6.38(change-case@5.4.4)(magicast@0.5.2)(tailwindcss@4.2.2)(typescript@5.9.3)(zod@4.3.6)
+        version: 0.6.38(change-case@5.4.4)(magicast@0.5.2)(tailwindcss@4.2.2)(typescript@5.9.3)(zod@4.4.3)
       '@stylistic/eslint-plugin':
         specifier: 5.4.0
         version: 5.4.0(eslint@9.36.0(jiti@2.6.1))
@@ -190,8 +190,8 @@ importers:
         specifier: 8.0.1
         version: 8.0.1(echarts@6.0.0)(vue@3.5.31(typescript@5.9.3))
       zod:
-        specifier: 4.3.6
-        version: 4.3.6
+        specifier: 4.4.3
+        version: 4.4.3
 
 packages:
 
@@ -7556,8 +7556,8 @@ packages:
   zod@3.25.76:
     resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
 
-  zod@4.3.6:
-    resolution: {integrity: sha512-rftlrkhHZOcjDwkGlnUtZZkvaPHCsDATp4pGpuOOMDaTdDDXF91wuVDJoWoPsKX/3YPQ5fHuF3STjcYyKr+Qhg==}
+  zod@4.4.3:
+    resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}
 
   zrender@6.0.0:
     resolution: {integrity: sha512-41dFXEEXuJpNecuUQq6JlbybmnHaqqpGlbH1yxnA5V9MMP4SbohSVZsJIwz+zdjQXSSlR1Vc34EgH1zxyTDvhg==}
@@ -7574,28 +7574,28 @@ snapshots:
     optionalDependencies:
       bcrypt: 5.1.1
 
-  '@ai-sdk/gateway@3.0.13(zod@4.3.6)':
+  '@ai-sdk/gateway@3.0.13(zod@4.4.3)':
     dependencies:
       '@ai-sdk/provider': 3.0.2
-      '@ai-sdk/provider-utils': 4.0.5(zod@4.3.6)
+      '@ai-sdk/provider-utils': 4.0.5(zod@4.4.3)
       '@vercel/oidc': 3.1.0
-      zod: 4.3.6
+      zod: 4.4.3
 
-  '@ai-sdk/provider-utils@4.0.5(zod@4.3.6)':
+  '@ai-sdk/provider-utils@4.0.5(zod@4.4.3)':
     dependencies:
       '@ai-sdk/provider': 3.0.2
       '@standard-schema/spec': 1.1.0
       eventsource-parser: 3.0.6
-      zod: 4.3.6
+      zod: 4.4.3
 
   '@ai-sdk/provider@3.0.2':
     dependencies:
       json-schema: 0.4.0
 
-  '@ai-sdk/vue@3.0.33(vue@3.5.34(typescript@5.9.3))(zod@4.3.6)':
+  '@ai-sdk/vue@3.0.33(vue@3.5.34(typescript@5.9.3))(zod@4.4.3)':
     dependencies:
-      '@ai-sdk/provider-utils': 4.0.5(zod@4.3.6)
-      ai: 6.0.33(zod@4.3.6)
+      '@ai-sdk/provider-utils': 4.0.5(zod@4.4.3)
+      ai: 6.0.33(zod@4.4.3)
       swrv: 1.2.0(vue@3.5.34(typescript@5.9.3))
       vue: 3.5.34(typescript@5.9.3)
     transitivePeerDependencies:
@@ -9140,7 +9140,7 @@ snapshots:
       rc9: 3.0.0
       std-env: 4.0.0
 
-  '@nuxt/ui@4.2.1(@babel/parser@7.29.3)(@nuxt/content@3.12.0(@electric-sql/pglite@0.4.1)(better-sqlite3@12.8.0)(magicast@0.5.2)(mysql2@3.15.3)(valibot@1.2.0(typescript@5.9.3)))(change-case@5.4.4)(db0@0.3.4(@electric-sql/pglite@0.4.1)(better-sqlite3@12.8.0)(mysql2@3.15.3))(embla-carousel@8.6.0)(focus-trap@7.8.0)(ioredis@5.10.1)(magicast@0.5.2)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(typescript@5.9.3)(valibot@1.2.0(typescript@5.9.3))(vite@7.3.1(@types/node@25.5.0)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.1)(tsx@4.21.0)(yaml@2.8.3))(vue-router@4.6.4(vue@3.5.31(typescript@5.9.3)))(vue@3.5.31(typescript@5.9.3))(zod@4.3.6)':
+  '@nuxt/ui@4.2.1(@babel/parser@7.29.3)(@nuxt/content@3.12.0(@electric-sql/pglite@0.4.1)(better-sqlite3@12.8.0)(magicast@0.5.2)(mysql2@3.15.3)(valibot@1.2.0(typescript@5.9.3)))(change-case@5.4.4)(db0@0.3.4(@electric-sql/pglite@0.4.1)(better-sqlite3@12.8.0)(mysql2@3.15.3))(embla-carousel@8.6.0)(focus-trap@7.8.0)(ioredis@5.10.1)(magicast@0.5.2)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(typescript@5.9.3)(valibot@1.2.0(typescript@5.9.3))(vite@7.3.1(@types/node@25.5.0)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.1)(tsx@4.21.0)(yaml@2.8.3))(vue-router@4.6.4(vue@3.5.31(typescript@5.9.3)))(vue@3.5.31(typescript@5.9.3))(zod@4.4.3)':
     dependencies:
       '@iconify/vue': 5.0.0(vue@3.5.31(typescript@5.9.3))
       '@internationalized/date': 3.10.0
@@ -9192,7 +9192,7 @@ snapshots:
       '@nuxt/content': 3.12.0(@electric-sql/pglite@0.4.1)(better-sqlite3@12.8.0)(magicast@0.5.2)(mysql2@3.15.3)(valibot@1.2.0(typescript@5.9.3))
       valibot: 1.2.0(typescript@5.9.3)
       vue-router: 4.6.4(vue@3.5.31(typescript@5.9.3))
-      zod: 4.3.6
+      zod: 4.4.3
     transitivePeerDependencies:
       - '@azure/app-configuration'
       - '@azure/cosmos'
@@ -9966,9 +9966,9 @@ snapshots:
   '@rollup/rollup-win32-x64-msvc@4.60.1':
     optional: true
 
-  '@scalar/agent-chat@0.12.2(change-case@5.4.4)(tailwindcss@4.2.2)(typescript@5.9.3)(zod@4.3.6)':
+  '@scalar/agent-chat@0.12.2(change-case@5.4.4)(tailwindcss@4.2.2)(typescript@5.9.3)(zod@4.4.3)':
     dependencies:
-      '@ai-sdk/vue': 3.0.33(vue@3.5.34(typescript@5.9.3))(zod@4.3.6)
+      '@ai-sdk/vue': 3.0.33(vue@3.5.34(typescript@5.9.3))(zod@4.4.3)
       '@scalar/api-client': 3.8.2(change-case@5.4.4)(tailwindcss@4.2.2)(typescript@5.9.3)
       '@scalar/components': 0.25.0(tailwindcss@4.2.2)(typescript@5.9.3)
       '@scalar/helpers': 0.8.0
@@ -9982,7 +9982,7 @@ snapshots:
       '@scalar/validation': 0.5.0
       '@scalar/workspace-store': 0.51.0(typescript@5.9.3)
       '@vueuse/core': 13.9.0(vue@3.5.34(typescript@5.9.3))
-      ai: 6.0.33(zod@4.3.6)
+      ai: 6.0.33(zod@4.4.3)
       js-base64: 3.7.8
       neverpanic: 0.0.7(typescript@5.9.3)
       truncate-json: 3.0.1
@@ -10037,7 +10037,7 @@ snapshots:
       set-cookie-parser: 3.1.0
       vue: 3.5.34(typescript@5.9.3)
       yaml: 2.8.3
-      zod: 4.3.6
+      zod: 4.4.3
     transitivePeerDependencies:
       - '@vue/composition-api'
       - async-validator
@@ -10054,10 +10054,10 @@ snapshots:
       - typescript
       - universal-cookie
 
-  '@scalar/api-reference@1.57.2(change-case@5.4.4)(tailwindcss@4.2.2)(typescript@5.9.3)(zod@4.3.6)':
+  '@scalar/api-reference@1.57.2(change-case@5.4.4)(tailwindcss@4.2.2)(typescript@5.9.3)(zod@4.4.3)':
     dependencies:
       '@headlessui/vue': 1.7.23(vue@3.5.34(typescript@5.9.3))
-      '@scalar/agent-chat': 0.12.2(change-case@5.4.4)(tailwindcss@4.2.2)(typescript@5.9.3)(zod@4.3.6)
+      '@scalar/agent-chat': 0.12.2(change-case@5.4.4)(tailwindcss@4.2.2)(typescript@5.9.3)(zod@4.4.3)
       '@scalar/api-client': 3.8.2(change-case@5.4.4)(tailwindcss@4.2.2)(typescript@5.9.3)
       '@scalar/code-highlight': 0.3.4
       '@scalar/components': 0.25.0(tailwindcss@4.2.2)(typescript@5.9.3)
@@ -10157,11 +10157,11 @@ snapshots:
       pathe: 2.0.3
       yaml: 2.8.3
 
-  '@scalar/nuxt@0.6.38(change-case@5.4.4)(magicast@0.5.2)(tailwindcss@4.2.2)(typescript@5.9.3)(zod@4.3.6)':
+  '@scalar/nuxt@0.6.38(change-case@5.4.4)(magicast@0.5.2)(tailwindcss@4.2.2)(typescript@5.9.3)(zod@4.4.3)':
     dependencies:
       '@nuxt/kit': 4.4.2(magicast@0.5.2)
       '@scalar/api-client': 3.8.2(change-case@5.4.4)(tailwindcss@4.2.2)(typescript@5.9.3)
-      '@scalar/api-reference': 1.57.2(change-case@5.4.4)(tailwindcss@4.2.2)(typescript@5.9.3)(zod@4.3.6)
+      '@scalar/api-reference': 1.57.2(change-case@5.4.4)(tailwindcss@4.2.2)(typescript@5.9.3)(zod@4.4.3)
       '@scalar/types': 0.11.0
       '@scalar/use-hooks': 0.4.5(typescript@5.9.3)
       vue: 3.5.34(typescript@5.9.3)
@@ -10237,7 +10237,7 @@ snapshots:
       '@scalar/helpers': 0.8.0
       nanoid: 5.1.7
       type-fest: 5.5.0
-      zod: 4.3.6
+      zod: 4.4.3
 
   '@scalar/use-codemirror@0.14.11(typescript@5.9.3)':
     dependencies:
@@ -11186,13 +11186,13 @@ snapshots:
 
   agent-base@7.1.4: {}
 
-  ai@6.0.33(zod@4.3.6):
+  ai@6.0.33(zod@4.4.3):
     dependencies:
-      '@ai-sdk/gateway': 3.0.13(zod@4.3.6)
+      '@ai-sdk/gateway': 3.0.13(zod@4.4.3)
       '@ai-sdk/provider': 3.0.2
-      '@ai-sdk/provider-utils': 4.0.5(zod@4.3.6)
+      '@ai-sdk/provider-utils': 4.0.5(zod@4.4.3)
       '@opentelemetry/api': 1.9.0
-      zod: 4.3.6
+      zod: 4.4.3
 
   ajv@6.14.0:
     dependencies:
@@ -16325,7 +16325,7 @@ snapshots:
 
   zod@3.25.76: {}
 
-  zod@4.3.6: {}
+  zod@4.4.3: {}
 
   zrender@6.0.0:
     dependencies:
