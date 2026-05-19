@@ -124,14 +124,14 @@ export function buildPosterJson(
       )
     : [];
 
-  const hasSubmitted = existingDates.some((d) => d.dateType === "Submitted");
+  const hasIssued = existingDates.some((d) => d.dateType === "Issued");
 
   const dates =
-    options?.publishedAt && !hasSubmitted
+    options?.publishedAt && !hasIssued
       ? [
           {
             date: formatDateISO(options.publishedAt),
-            dateType: "Submitted",
+            dateType: "Issued",
           },
           ...existingDates,
         ]
