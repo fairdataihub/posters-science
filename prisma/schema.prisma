@@ -151,6 +151,8 @@ model PosterMetadata {
     conferenceAcronym        String?
     conferenceSeries         String?
 
+    dates Json @default("[]") // [{ date: string, dateType: string }] primarily for autoindexed posters
+
     relatedIdentifiers Json @default("[]") // [{ relatedIdentifier: string, relatedIdentifierType: string, relationType: string }]
 
     posterContent Json @default("[]") // { sections: [{ sectionTitle: string, sectionContent: string }], unstructuredContent: string }
