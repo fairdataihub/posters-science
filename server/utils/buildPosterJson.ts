@@ -7,7 +7,12 @@ import licenses from "../../app/assets/data/licenses.json";
  */
 export function buildPosterJson(
   meta: PosterMetadata,
-  options?: { title?: string; description?: string; zenodoDoi?: string },
+  options?: {
+    title?: string;
+    description?: string;
+    zenodoDoi?: string;
+    publishedAt?: Date;
+  },
 ) {
   const doi = meta.doi ?? undefined;
   let prefix: string | undefined;
@@ -112,6 +117,28 @@ export function buildPosterJson(
   const validTableCaptions = filterCaptions(meta.tableCaptions);
   const validImageCaptions = filterCaptions(meta.imageCaptions);
 
+  const existingDates = Array.isArray(meta.dates)
+    ? (meta.dates as unknown[]).filter(
+        (d): d is Record<string, unknown> =>
+          typeof d === "object" && d !== null,
+      )
+    : [];
+
+  const hasSubmitted = existingDates.some((d) => d.dateType === "Submitted");
+
+  const dates =
+    options?.publishedAt && !hasSubmitted
+      ? [
+          {
+            date: formatDateISO(options.publishedAt),
+            dateType: "Submitted",
+          },
+          ...existingDates,
+        ]
+      : existingDates.length > 0
+        ? existingDates
+        : undefined;
+
   const posterJson: Record<string, unknown> = {
     $schema: "https://posters.science/schema/v0.2/poster_schema.json",
     ...(doi && { doi }),
@@ -119,6 +146,7 @@ export function buildPosterJson(
     ...(suffix && { suffix }),
     ...(titles && { titles }),
     ...(descriptions && { descriptions }),
+    ...(dates && { dates }),
     ...(mergedIdentifiers && { identifiers: mergedIdentifiers }),
     creators: cleanCreators(meta.creators),
     ...(publisher && { publisher }),
@@ -153,6 +181,10 @@ export function buildPosterJson(
   };
 
   return stripEmptyStrings(posterJson) as Record<string, unknown>;
+}
+
+function formatDateISO(d: Date): string {
+  return d.toISOString().slice(0, 10);
 }
 
 function stripEmptyStrings(value: unknown): unknown {
