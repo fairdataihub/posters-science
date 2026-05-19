@@ -16,7 +16,7 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  const { email } = body.data;
+  const email = body.data.email.trim().toLowerCase();
 
   const user = await prisma.user.findUnique({
     where: { emailAddress: email },

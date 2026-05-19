@@ -34,8 +34,10 @@ export default defineEventHandler(async (event) => {
     });
   }
 
+  const emailAddress = body.data.emailAddress.trim().toLowerCase();
+
   const existingUser = await prisma.user.findUnique({
-    where: { emailAddress: body.data.emailAddress },
+    where: { emailAddress },
   });
 
   if (existingUser) {
@@ -56,7 +58,7 @@ export default defineEventHandler(async (event) => {
 
   await prisma.user.create({
     data: {
-      emailAddress: body.data.emailAddress,
+      emailAddress,
       emailVerificationToken: isDev ? null : verificationTokenHash,
       emailVerificationTokenExpires: isDev ? null : tokenExpiry,
       emailVerified: isDev,
@@ -71,7 +73,7 @@ export default defineEventHandler(async (event) => {
     const verificationLink = `${config.siteUrl}/verify-email?token=${rawVerificationToken}`;
 
     await sendEmail({
-      to: body.data.emailAddress,
+      to: emailAddress,
       subject: "Verify your email address - Posters.science",
       html: `
 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; color: #333;">

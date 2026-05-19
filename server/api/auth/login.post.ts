@@ -22,10 +22,12 @@ export default defineEventHandler(async (event) => {
     });
   }
 
+  const emailAddress = body.data.emailAddress.trim().toLowerCase();
+
   // Get the user from the database
   const user = await prisma.user.findUnique({
     where: {
-      emailAddress: body.data.emailAddress,
+      emailAddress,
     },
   });
 
