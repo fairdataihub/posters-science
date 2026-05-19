@@ -70,7 +70,7 @@ export default defineEventHandler(async (event) => {
   });
 
   if (!isDev) {
-    const verificationLink = `${config.siteUrl}/verify-email?token=${rawVerificationToken}`;
+    const verificationLink = `${config.siteUrl}/verify-email?token=${encodeURIComponent(rawVerificationToken)}`;
 
     await sendEmail({
       to: emailAddress,

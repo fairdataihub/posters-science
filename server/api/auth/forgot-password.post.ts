@@ -48,7 +48,7 @@ export default defineEventHandler(async (event) => {
   });
 
   const config = useRuntimeConfig();
-  const resetUrl = `${config.siteUrl}/reset-password?token=${rawResetToken}`;
+  const resetUrl = `${config.siteUrl}/reset-password?token=${encodeURIComponent(rawResetToken)}`;
 
   await sendEmail({
     to: email,
