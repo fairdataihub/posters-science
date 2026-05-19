@@ -362,7 +362,7 @@ async function main() {
             data: {
               title: mapped.posterTitle,
               description: mapped.posterDescription,
-              publishedAt: mapped.issuedAt,
+              publishedAt: mapped.submittedAt,
               updated: mapped.submittedAt,
               created: mapped.submittedAt,
               ...(imageUrl ? { imageUrl } : {}),
