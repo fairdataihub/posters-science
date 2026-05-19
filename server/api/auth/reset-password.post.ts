@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { hash } from "bcrypt";
+import { createHash } from "node:crypto";
 
 const schema = z.object({
   token: z.string().min(1, "Token is required"),
@@ -17,9 +18,10 @@ export default defineEventHandler(async (event) => {
   }
 
   const { token, password } = body.data;
+  const tokenHash = createHash("sha256").update(token).digest("hex");
 
   const record = await prisma.userForgotPassword.findUnique({
-    where: { resetToken: token },
+    where: { resetToken: tokenHash },
     select: { userId: true, expiresAt: true },
   });
 
@@ -31,7 +33,9 @@ export default defineEventHandler(async (event) => {
   }
 
   if (record.expiresAt < new Date()) {
-    await prisma.userForgotPassword.delete({ where: { resetToken: token } });
+    await prisma.userForgotPassword.delete({
+      where: { resetToken: tokenHash },
+    });
     throw createError({
       statusCode: 400,
       statusMessage: "This reset link has expired. Please request a new one.",
@@ -45,7 +49,7 @@ export default defineEventHandler(async (event) => {
     data: { password: hashed },
   });
 
-  await prisma.userForgotPassword.delete({ where: { resetToken: token } });
+  await prisma.userForgotPassword.delete({ where: { resetToken: tokenHash } });
 
   return { success: true };
 });

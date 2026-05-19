@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { hash } from "bcrypt";
 import { nanoid } from "nanoid";
+import { createHash } from "node:crypto";
 import dayjs from "dayjs";
 import { sendEmail } from "../../utils/sendEmail";
 
@@ -44,13 +45,16 @@ export default defineEventHandler(async (event) => {
   const isDev = siteEnv === "development" || siteEnv === "dev";
 
   const hashedPassword = await hash(body.data.password, 10);
-  const verificationToken = nanoid();
+  const rawVerificationToken = nanoid();
+  const verificationTokenHash = createHash("sha256")
+    .update(rawVerificationToken)
+    .digest("hex");
   const tokenExpiry = dayjs().add(30, "minute").toDate();
 
   await prisma.user.create({
     data: {
       emailAddress: body.data.emailAddress,
-      emailVerificationToken: isDev ? null : verificationToken,
+      emailVerificationToken: isDev ? null : verificationTokenHash,
       emailVerificationTokenExpires: isDev ? null : tokenExpiry,
       emailVerified: isDev,
       emailVerifiedAt: isDev ? new Date() : null,
@@ -61,7 +65,7 @@ export default defineEventHandler(async (event) => {
   });
 
   if (!isDev) {
-    const verificationLink = `${config.siteUrl}/verify-email?token=${verificationToken}`;
+    const verificationLink = `${config.siteUrl}/verify-email?token=${rawVerificationToken}`;
 
     await sendEmail({
       to: body.data.emailAddress,
