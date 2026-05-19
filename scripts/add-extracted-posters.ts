@@ -364,6 +364,7 @@ async function main() {
               description: mapped.posterDescription,
               publishedAt: mapped.issuedAt,
               updated: mapped.submittedAt,
+              created: mapped.submittedAt,
               ...(imageUrl ? { imageUrl } : {}),
             },
           });
