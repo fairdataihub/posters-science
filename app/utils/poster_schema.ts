@@ -3,6 +3,7 @@ import isoLanguages from "@/assets/data/iso-639-1.json";
 import licenses from "@/assets/data/licenses.json";
 import identifierTypes from "@/assets/data/identifier-types.json";
 import relationTypes from "@/assets/data/relation-types.json";
+import resourceTypes from "@/assets/data/resource-types.json";
 
 // ORCID checksum validation (ISO 7064 mod 11,2).
 // Assumes the caller has already confirmed the value is an ORCID (via scheme or URL prefix).
@@ -261,47 +262,16 @@ export const IDENTIFIER_TYPE_PLACEHOLDER_OPTIONS = identifierTypes.map(
 );
 
 export const RELATION_TYPE_OPTIONS = relationTypes.map((rt) => ({
-  label: rt.const,
+  label: rt.label,
   value: rt.const,
   description: rt.description,
 }));
 
-const RESOURCE_TYPE_VALUES = [
-  "Audiovisual",
-  "Award",
-  "Book",
-  "BookChapter",
-  "Collection",
-  "ComputationalNotebook",
-  "ConferencePaper",
-  "ConferenceProceeding",
-  "DataPaper",
-  "Dataset",
-  "Dissertation",
-  "Event",
-  "Image",
-  "InteractiveResource",
-  "Journal",
-  "JournalArticle",
-  "Model",
-  "OutputManagementPlan",
-  "PeerReview",
-  "PhysicalObject",
-  "Preprint",
-  "Project",
-  "Report",
-  "Software",
-  "Sound",
-  "Standard",
-  "StudyRegistration",
-  "Text",
-  "Workflow",
-  "Other",
-] as const;
+const RESOURCE_TYPE_VALUES = [...resourceTypes.map((rt) => rt.value)] as const;
 
-export const RESOURCE_TYPE_OPTIONS = RESOURCE_TYPE_VALUES.map((v) => ({
-  label: v,
-  value: v,
+export const RESOURCE_TYPE_OPTIONS = resourceTypes.map((rt) => ({
+  label: rt.label,
+  value: rt.value,
 }));
 
 const NAME_TYPE_VALUES = ["Personal", "Organizational"] as const;

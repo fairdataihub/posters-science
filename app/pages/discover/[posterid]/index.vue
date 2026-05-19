@@ -2,6 +2,10 @@
 <script setup lang="ts">
 import dayjs from "dayjs";
 import licenses from "@/assets/data/licenses.json";
+import {
+  RESOURCE_TYPE_OPTIONS,
+  RELATION_TYPE_OPTIONS,
+} from "@/utils/poster_schema";
 
 const route = useRoute();
 const posterId = route.params.posterid as string;
@@ -72,7 +76,13 @@ const poster = ref({
   references: (api?.relatedIdentifiers ?? []).map((ri: any, index: number) => ({
     id: `ref-${index}`,
     title: ri.relatedIdentifier ?? `Related Resource ${index + 1}`,
-    relationType: ri.relationType ?? "References",
+    resourceType:
+      RESOURCE_TYPE_OPTIONS.find((rt) => rt.value === ri.resourceTypeGeneral)
+        ?.label ?? "Other",
+    relationType:
+      RELATION_TYPE_OPTIONS.find((rt) => rt.value === ri.relationType)?.label ??
+      ri.relationType ??
+      "References",
     doi: ri.relatedIdentifier ?? "",
     url: ri.relatedIdentifier?.startsWith("http")
       ? ri.relatedIdentifier
@@ -219,6 +229,25 @@ const tabItems = [
       <UContainer class="py-6">
         <div class="flex flex-col items-start justify-between">
           <div class="mb-2 flex flex-wrap items-center gap-2">
+            <UTooltip
+              v-if="poster.publishedAt"
+              :text="`Published on ${new Intl.DateTimeFormat('en-US', { dateStyle: 'long' }).format(new Date(poster.publishedAt))}`"
+            >
+              <UBadge
+                color="secondary"
+                variant="soft"
+                size="md"
+                class="cursor-help"
+                icon="material-symbols:publish"
+              >
+                {{
+                  new Intl.DateTimeFormat("en-US", {
+                    dateStyle: "medium",
+                  }).format(new Date(poster.publishedAt))
+                }}
+              </UBadge>
+            </UTooltip>
+
             <UBadge
               v-if="poster.domain"
               color="neutral"
@@ -235,6 +264,7 @@ const tabItems = [
                 variant="soft"
                 size="lg"
                 icon="heroicons:academic-cap"
+                class="cursor-help"
               >
                 {{ poster.conference.acronym }}
                 {{ poster.conference.year ? poster.conference.year : "" }}
@@ -588,6 +618,10 @@ const tabItems = [
                   >
                     <UBadge color="primary" variant="soft">
                       {{ ref.relationType }}
+                    </UBadge>
+
+                    <UBadge color="secondary" variant="soft" class="ml-3">
+                      {{ ref.resourceType }}
                     </UBadge>
 
                     <p class="mt-1 text-sm">
