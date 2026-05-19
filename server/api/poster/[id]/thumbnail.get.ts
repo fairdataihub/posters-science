@@ -29,7 +29,7 @@ export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig();
   const { bunnyPrivateStorage, bunnyPrivateStorageKey } = config;
 
-  // Private storage — proxy the image with the access key so the client never needs credentials
+  // Private storage - proxy the image with the access key so the client never needs credentials
   if (bunnyPrivateStorage && poster.imageUrl.startsWith(bunnyPrivateStorage)) {
     const res = await fetch(poster.imageUrl, {
       headers: { AccessKey: bunnyPrivateStorageKey },
@@ -56,6 +56,6 @@ export default defineEventHandler(async (event) => {
     return sendStream(event, res.body);
   }
 
-  // Public URL (published poster or external) — redirect the client directly
+  // Public URL (published poster or external) - redirect the client directly
   return sendRedirect(event, poster.imageUrl, 302);
 });

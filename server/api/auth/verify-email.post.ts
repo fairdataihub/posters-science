@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { createHash } from "node:crypto";
 
 const verifySchema = z.object({
   token: z.string(),
@@ -14,10 +15,12 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  // Find the user by verification token
+  const tokenHash = createHash("sha256").update(body.data.token).digest("hex");
+
+  // Find the user by hashed verification token.
   const user = await prisma.user.findUnique({
     where: {
-      emailVerificationToken: body.data.token,
+      emailVerificationToken: tokenHash,
     },
   });
 

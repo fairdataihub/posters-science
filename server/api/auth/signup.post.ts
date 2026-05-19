@@ -1,19 +1,23 @@
 import { z } from "zod";
 import { hash } from "bcrypt";
 import { nanoid } from "nanoid";
+import { createHash } from "node:crypto";
 import dayjs from "dayjs";
 import { sendEmail } from "../../utils/sendEmail";
 
 const signupSchema = z.object({
-  emailAddress: z.string().email(),
+  emailAddress: z.email(),
   familyName: z.string(),
   givenName: z.string(),
-  password: z.string().min(8),
+  password: z
+    .string()
+    .min(12, "Must be at least 12 characters")
+    .max(128, "Must be at most 128 characters"),
 });
 
 export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig();
-  const { siteEnv } = config.public;
+  const siteEnv = config.siteEnv || config.public.siteEnv;
 
   const session = await getUserSession(event);
 
@@ -30,8 +34,10 @@ export default defineEventHandler(async (event) => {
     });
   }
 
+  const emailAddress = body.data.emailAddress.trim().toLowerCase();
+
   const existingUser = await prisma.user.findUnique({
-    where: { emailAddress: body.data.emailAddress },
+    where: { emailAddress },
   });
 
   if (existingUser) {
@@ -44,13 +50,16 @@ export default defineEventHandler(async (event) => {
   const isDev = siteEnv === "development" || siteEnv === "dev";
 
   const hashedPassword = await hash(body.data.password, 10);
-  const verificationToken = nanoid();
+  const rawVerificationToken = nanoid();
+  const verificationTokenHash = createHash("sha256")
+    .update(rawVerificationToken)
+    .digest("hex");
   const tokenExpiry = dayjs().add(30, "minute").toDate();
 
   await prisma.user.create({
     data: {
-      emailAddress: body.data.emailAddress,
-      emailVerificationToken: isDev ? null : verificationToken,
+      emailAddress,
+      emailVerificationToken: isDev ? null : verificationTokenHash,
       emailVerificationTokenExpires: isDev ? null : tokenExpiry,
       emailVerified: isDev,
       emailVerifiedAt: isDev ? new Date() : null,
@@ -61,11 +70,11 @@ export default defineEventHandler(async (event) => {
   });
 
   if (!isDev) {
-    const verificationLink = `${config.siteUrl}/verify-email?token=${verificationToken}`;
+    const verificationLink = `${config.siteUrl}/verify-email?token=${encodeURIComponent(rawVerificationToken)}`;
 
     await sendEmail({
-      to: body.data.emailAddress,
-      subject: "Verify your email address — Posters.science",
+      to: emailAddress,
+      subject: "Verify your email address - Posters.science",
       html: `
 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; color: #333;">
   <h2 style="color: #1a1a1a;">Confirm Your Email Address</h2>

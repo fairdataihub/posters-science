@@ -153,7 +153,7 @@ const hasActiveFilters = computed(() => !!dateFilterValue.value.start);
       </div>
 
       <div class="min-w-0 flex-1">
-        <!-- Mobile filter toggle — hidden on md+ -->
+        <!-- Mobile filter toggle - hidden on md+ -->
         <div class="mb-4 md:hidden">
           <UButton
             color="neutral"

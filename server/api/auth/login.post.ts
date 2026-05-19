@@ -2,7 +2,7 @@ import { z } from "zod";
 import { compare } from "bcrypt";
 
 const loginSchema = z.object({
-  emailAddress: z.string().email(),
+  emailAddress: z.email(),
   password: z.string().min(8),
 });
 
@@ -22,10 +22,12 @@ export default defineEventHandler(async (event) => {
     });
   }
 
+  const emailAddress = body.data.emailAddress.trim().toLowerCase();
+
   // Get the user from the database
   const user = await prisma.user.findUnique({
     where: {
-      emailAddress: body.data.emailAddress,
+      emailAddress,
     },
   });
 
@@ -38,8 +40,8 @@ export default defineEventHandler(async (event) => {
 
   // Check if the user has verified their email (skipped in development)
   const config = useRuntimeConfig();
-  const isDev =
-    config.public.siteEnv === "development" || config.public.siteEnv === "dev";
+  const siteEnv = config.siteEnv || config.public.siteEnv;
+  const isDev = siteEnv === "development" || siteEnv === "dev";
 
   if (!isDev && !user.emailVerified) {
     throw createError({
@@ -64,6 +66,7 @@ export default defineEventHandler(async (event) => {
     emailVerified: user.emailVerified,
     familyName: user.familyName,
     givenName: user.givenName,
+    role: user.role,
   };
 
   await setUserSession(event, {

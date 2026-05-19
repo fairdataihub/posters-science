@@ -9,8 +9,16 @@ definePageMeta({
   layout: "auth",
 });
 
+const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Email Verification - Posters.science")}&description=${encodeURIComponent("Verify your email address to activate your Posters.science account")}&app=posters-science&org=fairdataihub`;
+
 useSeoMeta({
   title: "Email Verification",
+  description:
+    "Verify your email address to activate your Posters.science account.",
+  ogTitle: "Email Verification - Posters.science",
+  ogDescription:
+    "Verify your email address to activate your Posters.science account.",
+  ogImage,
 });
 
 const route = useRoute();

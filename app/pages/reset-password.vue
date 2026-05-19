@@ -6,9 +6,14 @@ definePageMeta({
   layout: "auth",
 });
 
+const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Reset Password - Posters.science")}&description=${encodeURIComponent("Set a new password for your Posters.science account")}&app=posters-science&org=fairdataihub`;
+
 useSeoMeta({
   title: "Reset Password",
   description: "Choose a new password for your account.",
+  ogTitle: "Reset Password - Posters.science",
+  ogDescription: "Set a new password for your Posters.science account.",
+  ogImage,
 });
 
 const route = useRoute();
@@ -20,8 +25,14 @@ const token = computed(() => route.query.token as string | undefined);
 
 const schema = z
   .object({
-    password: z.string().min(8, "Must be at least 8 characters"),
-    confirmPassword: z.string().min(8, "Must be at least 8 characters"),
+    password: z
+      .string()
+      .min(12, "Must be at least 12 characters")
+      .max(128, "Must be at most 128 characters"),
+    confirmPassword: z
+      .string()
+      .min(12, "Must be at least 12 characters")
+      .max(128, "Must be at most 128 characters"),
   })
   .refine((data) => data.password === data.confirmPassword, {
     message: "Passwords do not match",

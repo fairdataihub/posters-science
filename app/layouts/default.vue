@@ -33,6 +33,11 @@ const headerItems = computed<NavigationMenuItem[]>(() => [
     to: "/share/new",
     active: route.path.startsWith("/share"),
   },
+  {
+    label: "Documentation",
+    to: "https://dev.posters.science",
+    target: "_blank",
+  },
   // {
   //   label: "Learn More",
   //   to: "/about",
@@ -45,7 +50,7 @@ const headerItems = computed<NavigationMenuItem[]>(() => [
   // },
 ]);
 
-const profileDropdownItems = ref([
+const profileDropdownItems = computed(() => [
   [
     {
       label: `${user?.value?.givenName} ${user?.value?.familyName}`,
@@ -64,6 +69,15 @@ const profileDropdownItems = ref([
       label: "Liked posters",
       to: "/liked",
     },
+    ...(user?.value?.role === "admin"
+      ? [
+          {
+            icon: "material-symbols:admin-panel-settings",
+            label: "Admin",
+            to: "/admin",
+          },
+        ]
+      : []),
   ],
   [
     {
@@ -154,22 +168,30 @@ const footerItems: NavigationMenuItem[] = [
             <UDropdownMenu
               :items="profileDropdownItems"
               arrow
-              :content="{
-                align: 'end',
-              }"
-              :ui="{
-                content: 'w-48',
-              }"
+              :content="{ align: 'end' }"
+              :ui="{ content: 'w-48' }"
             >
-              <UButton
-                v-if="loggedIn"
-                :avatar="{
-                  src: `https://api.dicebear.com/9.x/shapes/svg?seed=${user?.id}`,
-                }"
-                size="xl"
-                color="neutral"
-                variant="ghost"
-              />
+              <div v-if="loggedIn" class="relative inline-flex">
+                <UButton
+                  :avatar="{
+                    src: `https://api.dicebear.com/9.x/shapes/svg?seed=${user?.id}`,
+                  }"
+                  size="xl"
+                  color="neutral"
+                  variant="ghost"
+                />
+
+                <span
+                  v-if="user?.role === 'admin'"
+                  class="bg-primary absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full"
+                >
+                  <Icon
+                    name="material-symbols:crown"
+                    size="10"
+                    class="text-white"
+                  />
+                </span>
+              </div>
             </UDropdownMenu>
           </template>
 

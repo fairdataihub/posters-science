@@ -3,6 +3,177 @@ import isoLanguages from "@/assets/data/iso-639-1.json";
 import licenses from "@/assets/data/licenses.json";
 import identifierTypes from "@/assets/data/identifier-types.json";
 import relationTypes from "@/assets/data/relation-types.json";
+
+// ORCID checksum validation (ISO 7064 mod 11,2).
+// Assumes the caller has already confirmed the value is an ORCID (via scheme or URL prefix).
+// Validates two input forms: full URL (https://orcid.org/XXXX-...) or bare XXXX-XXXX-XXXX-XXXX.
+function isValidOrcidChecksum(value: string): boolean {
+  const bare = value.replace(/.*orcid\.org\//i, "").trim();
+  if (!/^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$/.test(bare)) return false;
+  const digits = bare.replace(/-/g, "");
+  let total = 0;
+  for (let i = 0; i < 15; i++) {
+    total = (total + parseInt(digits[i]!, 10)) * 2;
+  }
+  const remainder = total % 11;
+  const result = (12 - remainder) % 11;
+  const checkChar = result === 10 ? "X" : String(result);
+
+  return digits[15] === checkChar;
+}
+
+// ROR ID validation using ISO 7064 MOD 97-10 checksum (same algorithm as IBAN).
+// Format: leading 0 + 6 Crockford base32 chars + 2 decimal check digits.
+// Assumes the caller has already confirmed the value is a ROR ID (via scheme or URL prefix).
+// Handles two input forms: full URL (https://ror.org/XXXXXXXXX) or bare XXXXXXXXX.
+// Algorithm sourced from https://github.com/ror-community/ror-api/blob/master/rorapi/management/commands/generaterorid.py
+function isValidRorIdFormat(value: string): boolean {
+  const bare = value
+    .replace(/.*ror\.org\//i, "")
+    .trim()
+    .toLowerCase();
+
+  if (!/^0[0-9a-hj-km-np-tv-z]{6}[0-9]{2}$/.test(bare)) return false;
+
+  const alphabet = "0123456789abcdefghjkmnpqrstvwxyz";
+  let n = 0;
+
+  for (const char of bare.substring(0, 7)) {
+    n = n * 32 + alphabet.indexOf(char);
+  }
+
+  const checksum = (98 - ((n * 100) % 97)).toString().padStart(2, "0");
+
+  return bare.substring(7) === checksum;
+}
+
+// Generic URL validator for optional URI fields. Accepts undefined/empty (optional fields)
+// and requires http:// or https:// scheme
+function isValidUrl(value: string | undefined): boolean {
+  if (!value) return true;
+
+  try {
+    return ["http:", "https:"].includes(new URL(value).protocol);
+  } catch {
+    return false;
+  }
+}
+
+// Format rules for each relatedIdentifierType. Used for both validation and type inference.
+const RELATED_ID_PATTERNS: Record<
+  string,
+  { pattern: RegExp; example: string; inferCheck?: RegExp }
+> = {
+  DOI: {
+    pattern: /^10\.\d{4,}\//,
+    example: "10.5072/posters.2025.001234",
+    inferCheck: /^10\.\d{4,}\//,
+  },
+  arXiv: {
+    pattern: /^(arXiv:)?\d{4}\.\d{4,}(v\d+)?$|^(arXiv:)?[a-z-]+\/\d{7}$/i,
+    example: "2501.12345",
+    inferCheck: /^(arXiv:)?\d{4}\.\d{4,}(v\d+)?$|^(arXiv:)?[a-z-]+\/\d{7}$/i,
+  },
+  ISSN: {
+    pattern: /^\d{4}-\d{3}[\dX]$/,
+    example: "1234-5678",
+    inferCheck: /^\d{4}-\d{3}[\dX]$/,
+  },
+  EISSN: { pattern: /^\d{4}-\d{3}[\dX]$/, example: "1234-5678" },
+  LISSN: { pattern: /^\d{4}-\d{3}[\dX]$/, example: "1234-5678" },
+  ISBN: {
+    pattern: /^(?:97[89]\d{10}|\d{9}[\dX])$/,
+    example: "9783161484100",
+  },
+  PMID: {
+    pattern: /^\d{1,8}$/,
+    example: "12345678",
+    inferCheck: /^\d{5,8}$/,
+  },
+  URN: {
+    pattern: /^urn:/i,
+    example: "urn:namespace:identifier",
+    inferCheck: /^urn:[^:]+:/i,
+  },
+  LSID: {
+    pattern: /^urn:lsid:/i,
+    example: "urn:lsid:authority:namespace:identifier",
+    inferCheck: /^urn:lsid:/i,
+  },
+  ARK: {
+    pattern: /^(https?:\/\/[^/]+\/)?ark:\/\d+\//,
+    example: "ark:/12345/67890",
+    inferCheck: /^(https?:\/\/[^/]+\/)?ark:\/\d+\//,
+  },
+  URL: { pattern: /^https?:\/\//, example: "https://example.com/resource" },
+  PURL: { pattern: /^https?:\/\//, example: "https://purl.org/example" },
+  w3id: { pattern: /^https?:\/\//, example: "https://w3id.org/example" },
+};
+
+// Infers the most likely identifier type from a value.
+// Returns a type string or undefined if no confident match is found.
+export function inferRelatedIdentifierType(value: string): string | undefined {
+  if (!value.trim()) return undefined;
+  // Highest specificity first
+  if (/^10\.\d{4,}\//.test(value)) return "DOI";
+  if (/^urn:lsid:/i.test(value)) return "LSID";
+  if (/^urn:/i.test(value)) return "URN";
+  if (/^(https?:\/\/[^/]+\/)?ark:\/\d+\//i.test(value)) return "ARK";
+  if (
+    /^(arXiv:)?\d{4}\.\d{4,}(v\d+)?$/i.test(value) ||
+    /^(arXiv:)?[a-z-]+\/\d{7}$/i.test(value)
+  )
+    return "arXiv";
+  if (/^\d{4}-\d{3}[\dX]$/.test(value)) return "ISSN";
+  if (/^https?:\/\//.test(value)) return "URL";
+
+  return undefined;
+}
+
+// Infers funder identifier type from a value for the dropdown
+// ("Crossref Funder ID" | "GRID" | "ISNI" | "ROR" | undefined).
+export function inferFunderIdentifierType(
+  value: string,
+): "Crossref Funder ID" | "GRID" | "ISNI" | "ROR" | undefined {
+  if (!value.trim()) return undefined;
+  if (/ror\.org/i.test(value) || /^0[0-9a-hj-km-np-tv-z]{6}\d{2}$/i.test(value))
+    return "ROR";
+  if (/doi\.org\/10\.13039\//i.test(value)) return "Crossref Funder ID";
+  if (/^grid\.\d+\.[a-z]\d+$/i.test(value)) return "GRID";
+  // ISNI: 16 digits optionally grouped with spaces or hyphens
+  if (/^\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}$/.test(value)) return "ISNI";
+
+  return undefined;
+}
+
+// Returns inferred scheme + schemeURI for a creator name identifier free-text field.
+export function inferNameIdentifierScheme(
+  value: string,
+): { scheme: string; schemeURI: string } | undefined {
+  if (!value.trim()) return undefined;
+  if (/orcid\.org/i.test(value) || /^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$/.test(value))
+    return { scheme: "ORCID", schemeURI: "https://orcid.org" };
+  if (/^\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}$/.test(value))
+    return { scheme: "ISNI", schemeURI: "https://isni.org" };
+
+  return undefined;
+}
+
+// Returns inferred scheme + schemeURI for a creator affiliation identifier free-text field.
+export function inferAffiliationIdentifierScheme(
+  value: string,
+): { scheme: string; schemeURI: string } | undefined {
+  if (!value.trim()) return undefined;
+  if (/ror\.org/i.test(value) || /^0[0-9a-hj-km-np-tv-z]{6}\d{2}$/i.test(value))
+    return { scheme: "ROR", schemeURI: "https://ror.org" };
+  if (/^grid\.\d+\.[a-z]\d+$/i.test(value))
+    return { scheme: "GRID", schemeURI: "https://www.grid.ac" };
+  if (/^\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}$/.test(value))
+    return { scheme: "ISNI", schemeURI: "https://isni.org" };
+
+  return undefined;
+}
+
 // Constants and options for select fields
 const DATE_TYPE_VALUES = [
   "Accepted",
@@ -209,10 +380,32 @@ const RelatedIdentifierSchema = z.object({
     .min(1, { message: "Related identifier type is required" }),
   relationType: z.string().min(1, { message: "Relation type is required" }),
   relatedMetadataScheme: z.string().optional(),
-  schemeURI: z.string().optional(),
+  schemeURI: z.string().optional().refine(isValidUrl, {
+    message: "Must be a valid URL (e.g. https://example.com)",
+  }),
   schemeType: z.string().optional(),
-  resourceTypeGeneral: TypesSchema.shape.resourceTypeGeneral.optional(),
+  resourceTypeGeneral: z.enum(RESOURCE_TYPE_VALUES).optional(),
 });
+
+// Validates identifier format against the selected type when both are present.
+const StrictRelatedIdentifierSchema =
+  RelatedIdentifierSchema.partial().superRefine((data, ctx) => {
+    const type = data.relatedIdentifierType;
+    const id = data.relatedIdentifier;
+    if (!id || !type) return;
+
+    const rule = RELATED_ID_PATTERNS[type];
+    if (!rule) return;
+
+    const normalized = type === "ISBN" ? id.replace(/[-\s]/g, "") : id;
+    if (!rule.pattern.test(normalized)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Invalid ${type} format. Expected: ${rule.example}`,
+        path: ["relatedIdentifier"],
+      });
+    }
+  });
 
 const RightsSchema = z.object({
   rights: z.string().min(1, { message: "Rights statement is required" }),
@@ -421,25 +614,61 @@ export type FormSchema = z.infer<typeof formSchema>;
 // STRICT FORM SCHEMA
 // Used for PUT endpoint validation
 // enforces all required fields from poster_schema.json
-const StrictAffiliationSchema = z.object({
-  name: z.string().min(1, { message: "Affiliation name is required" }),
-  affiliationIdentifier: z.string().optional(),
-  affiliationIdentifierScheme: z.string().optional(),
-  schemeURI: z.string().optional(),
-});
-// .refine(
-//   (data) => !data.affiliationIdentifier || data.affiliationIdentifierScheme,
-//   {
-//     message: "Scheme is required when identifier is provided",
-//     path: ["affiliationIdentifierScheme"],
-//   },
-// );
+const StrictAffiliationSchema = z
+  .object({
+    name: z.string().min(1, { message: "Affiliation name is required" }),
+    affiliationIdentifier: z.string().optional(),
+    affiliationIdentifierScheme: z.string().optional(),
+    schemeURI: z.string().optional().refine(isValidUrl, {
+      message: "Must be a valid URL (e.g. https://ror.org)",
+    }),
+  })
+  .refine(
+    (data) => {
+      const id = data.affiliationIdentifier;
+      if (!id) return true;
+      const scheme = data.affiliationIdentifierScheme?.toLowerCase() ?? "";
+      const isRor = scheme === "ror" || id.toLowerCase().includes("ror.org");
+
+      return isRor ? isValidRorIdFormat(id) : true;
+    },
+    {
+      message:
+        "Invalid ROR ID format. Use the full URL (https://ror.org/XXXXXXXXX) with a 9-character alphanumeric ID.",
+      path: ["affiliationIdentifier"],
+    },
+  );
+
+const StrictNameIdentifierSchema = z
+  .object({
+    nameIdentifier: z.string().min(1, { message: "Identifier is required" }),
+    nameIdentifierScheme: z.string().optional(),
+    schemeURI: z.string().optional().refine(isValidUrl, {
+      message: "Must be a valid URL (e.g. https://orcid.org)",
+    }),
+  })
+  .refine(
+    (data) => {
+      const value = data.nameIdentifier;
+      if (!value) return true;
+      const scheme = data.nameIdentifierScheme?.toLowerCase() ?? "";
+      const isOrcid =
+        scheme === "orcid" || value.toLowerCase().includes("orcid.org");
+
+      return isOrcid ? isValidOrcidChecksum(value) : true;
+    },
+    {
+      message:
+        "Invalid ORCID. Verify the ID at orcid.org (expected format: 0000-0000-0000-0000).",
+      path: ["nameIdentifier"],
+    },
+  );
 
 const StrictCreatorSchema = z.object({
   givenName: z.string().min(1, { message: "Given name is required" }),
   familyName: z.string().min(1, { message: "Family name is required" }),
   nameType: z.enum(NAME_TYPE_VALUES).optional(),
-  nameIdentifiers: z.array(NameIdentifierSchema.partial()).optional(),
+  nameIdentifiers: z.array(StrictNameIdentifierSchema).optional(),
   affiliation: z.array(StrictAffiliationSchema).optional(),
 });
 
@@ -464,9 +693,13 @@ const StrictFundingSchema = z
     funderIdentifierType: z
       .enum(["Crossref Funder ID", "GRID", "ISNI", "ROR", "Other"])
       .optional(),
-    schemeUri: z.string().optional(),
+    schemeUri: z.string().optional().refine(isValidUrl, {
+      message: "Must be a valid URL (e.g. https://ror.org)",
+    }),
     awardNumber: z.string().optional(),
-    awardUri: z.string().optional(),
+    awardUri: z.string().optional().refine(isValidUrl, {
+      message: "Must be a valid URL (e.g. https://reporter.nih.gov/...)",
+    }),
     awardTitle: z.string().optional(),
   })
   .refine((data) => !data.funderIdentifier || data.funderIdentifierType, {
@@ -477,7 +710,9 @@ const StrictFundingSchema = z
 const StrictConferenceSchema = z.object({
   conferenceName: z.string().min(1, { message: "Conference name is required" }),
   conferenceLocation: z.string().optional(),
-  conferenceUri: z.string().optional(),
+  conferenceUri: z.string().optional().refine(isValidUrl, {
+    message: "Must be a valid URL (e.g. https://example.com)",
+  }),
   conferenceIdentifier: z.string().optional(),
   conferenceIdentifierType: z.string().optional(),
   conferenceYear: z
@@ -511,7 +746,7 @@ export const strictFormSchema = z.object({
   publicationYear: z.number().int().min(1000).max(9999).optional(),
   version: z.string(),
   conference: StrictConferenceSchema,
-  relatedIdentifiers: z.array(RelatedIdentifierSchema.partial()),
+  relatedIdentifiers: z.array(StrictRelatedIdentifierSchema),
   size: z.string().optional(),
   posterContent: PosterContentSchema.optional(),
   tableCaptions: z.array(CaptionSchema).optional(),

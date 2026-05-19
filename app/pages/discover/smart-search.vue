@@ -1,7 +1,13 @@
 <script setup lang="ts">
+const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Smart Search - Posters.science")}&description=${encodeURIComponent("Explore upcoming AI-powered semantic search for scientific posters")}&app=posters-science&org=fairdataihub`;
+
 useSeoMeta({
   title: "Smart Search",
   description: "Smart search for posters",
+  ogTitle: "Smart Search - Posters.science",
+  ogDescription:
+    "Explore upcoming AI-powered semantic search for scientific posters.",
+  ogImage,
 });
 </script>
 

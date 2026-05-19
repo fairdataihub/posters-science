@@ -4,7 +4,7 @@ import { Resend } from "resend";
  * Send a transactional email via Resend.
  *
  * To swap to a different provider (e.g. Azure Communication Services),
- * replace the implementation of this function only — all callers stay the same.
+ * replace the implementation of this function only - all callers stay the same.
  */
 export const sendEmail = async (options: {
   to: string;

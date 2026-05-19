@@ -5,11 +5,14 @@ definePageMeta({
   middleware: ["auth"],
 });
 
+const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Liked Posters - Posters.science")}&description=${encodeURIComponent("View and revisit the posters you liked on Posters.science")}&app=posters-science&org=fairdataihub`;
+
 useSeoMeta({
   title: "Liked Posters - Posters.science",
   description: "Posters you have liked on Posters.science.",
   ogTitle: "Liked Posters - Posters.science",
   ogDescription: "Posters you have liked on Posters.science.",
+  ogImage,
 });
 
 type LikedPoster = {

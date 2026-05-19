@@ -6,9 +6,15 @@ definePageMeta({
   layout: "auth",
 });
 
+const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Forgot Password - Posters.science")}&description=${encodeURIComponent("Request a password reset link for your Posters.science account")}&app=posters-science&org=fairdataihub`;
+
 useSeoMeta({
   title: "Forgot Password",
   description: "Reset your password.",
+  ogTitle: "Forgot Password - Posters.science",
+  ogDescription:
+    "Request a password reset link for your Posters.science account.",
+  ogImage,
 });
 
 const toast = useToast();
