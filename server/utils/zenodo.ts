@@ -383,6 +383,7 @@ export async function beginZenodoPublication(
       : meta.conferenceStartDate ||
         meta.conferenceEndDate ||
         (meta.conferenceYear ? String(meta.conferenceYear) : undefined);
+  const currentPublicationYear = new Date().getFullYear();
 
   // Validate grants against Zenodo's OpenAIRE awards database
   const candidateGrants = Array.isArray(rawFunding)
@@ -454,9 +455,7 @@ export async function beginZenodoPublication(
       ...(meta.conferenceUri && { conference_url: meta.conferenceUri }),
       ...(conferenceDates && { conference_dates: conferenceDates }),
       ...(meta.version && { version: meta.version }),
-      ...(meta.publicationYear && {
-        publication_date: `${meta.publicationYear}`,
-      }),
+      publication_date: `${currentPublicationYear}`,
       ...(zenodoGrants.length > 0 && { grants: zenodoGrants }),
     },
   };
