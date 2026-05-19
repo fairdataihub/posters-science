@@ -299,7 +299,7 @@ const auditColumns: ColumnDef<AuditLogRow>[] = [
     accessorFn: (r) => actionLabels[r.action] ?? r.action,
     header: "Action",
   },
-  { accessorKey: "entityId", header: "Poster ID" },
+  { accessorKey: "entityId", header: "Entity ID" },
   { accessorKey: "created", header: "Date" },
 ];
 
