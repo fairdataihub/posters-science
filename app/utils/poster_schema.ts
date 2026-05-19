@@ -384,7 +384,7 @@ const RelatedIdentifierSchema = z.object({
     message: "Must be a valid URL (e.g. https://example.com)",
   }),
   schemeType: z.string().optional(),
-  resourceTypeGeneral: TypesSchema.shape.resourceTypeGeneral.optional(),
+  resourceTypeGeneral: z.enum(RESOURCE_TYPE_VALUES).optional(),
 });
 
 // Validates identifier format against the selected type when both are present.

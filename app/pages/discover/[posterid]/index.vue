@@ -206,7 +206,7 @@ const tabItems = [
     slot: "overview",
   },
   {
-    label: "References",
+    label: "Related resources",
     icon: "ooui:reference",
     slot: "references",
   },

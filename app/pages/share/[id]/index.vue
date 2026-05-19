@@ -9,6 +9,7 @@ import {
   IDENTIFIER_TYPE_OPTIONS,
   IDENTIFIER_TYPE_PLACEHOLDER_OPTIONS,
   RELATION_TYPE_OPTIONS,
+  RESOURCE_TYPE_OPTIONS,
   FUNDER_IDENTIFIER_TYPE_OPTIONS,
   inferRelatedIdentifierType,
   inferFunderIdentifierType,
@@ -1459,6 +1460,19 @@ async function addSubjectAndFocus() {
                       placeholder="Select a relation type"
                     />
                   </UFormField>
+
+                  <UFormField
+                    :name="`relatedIdentifiers.${iIndex}.resourceTypeGeneral`"
+                    label="Resource Type"
+                    description="The general type of the related resource"
+                  >
+                    <USelect
+                      v-model="relatedIdentifier.resourceTypeGeneral"
+                      class="w-full"
+                      :items="RESOURCE_TYPE_OPTIONS"
+                      placeholder="Select a resource type (optional)"
+                    />
+                  </UFormField>
                 </div>
 
                 <UButton
@@ -1472,6 +1486,7 @@ async function addSubjectAndFocus() {
                       relatedIdentifier: '',
                       relatedIdentifierType: '',
                       relationType: '',
+                      resourceTypeGeneral: undefined,
                     })
                   "
                 />
