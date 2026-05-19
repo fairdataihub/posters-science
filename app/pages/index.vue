@@ -361,8 +361,8 @@ const links = ref([
               <h3 class="text-xl font-semibold">Poster detail pages</h3>
 
               <p class="text-muted text-sm leading-relaxed">
-                Each poster has a dedicated page that includes full metadata, a
-                preview, and a direct link to the original archived file.
+                Each poster has a dedicated page that includes full metadata
+                and a direct link to the original archived file.
               </p>
             </div>
           </UCard>
