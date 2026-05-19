@@ -1390,7 +1390,7 @@ async function patchCreatorAffiliationsRdm(
           );
         }
       } catch {
-        // not JSON — fall through to substring check
+        // not JSON - fall through to substring check
       }
 
       return /invalid value/i.test(res.body);

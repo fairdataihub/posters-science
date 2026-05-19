@@ -65,7 +65,7 @@ export default defineEventHandler(async (event) => {
 
     await sendEmail({
       to: body.data.emailAddress,
-      subject: "Verify your email address — Posters.science",
+      subject: "Verify your email address - Posters.science",
       html: `
 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; color: #333;">
   <h2 style="color: #1a1a1a;">Confirm Your Email Address</h2>

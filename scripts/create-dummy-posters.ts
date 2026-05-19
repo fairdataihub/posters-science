@@ -468,7 +468,7 @@ async function main() {
     });
 
     console.log(
-      `   ✅ [${i + 1}/${count}] Created: ${created.id} — ${created.title}`,
+      `   ✅ [${i + 1}/${count}] Created: ${created.id} - ${created.title}`,
     );
   }
 

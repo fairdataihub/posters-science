@@ -49,7 +49,7 @@ export default defineEventHandler(async (event) => {
 
   await sendEmail({
     to: email,
-    subject: "Reset your password — Posters.science",
+    subject: "Reset your password - Posters.science",
     html: `
 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; color: #333;">
   <h2 style="color: #1a1a1a;">Reset Your Password</h2>
@@ -67,7 +67,7 @@ export default defineEventHandler(async (event) => {
   </p>
   <hr style="border: none; border-top: 1px solid #eee; margin: 24px 0;" />
   <p style="font-size: 12px; color: #999;">
-    This link will expire in <strong>1 hour</strong>. If you didn't request a password reset, you can safely ignore this email — your account remains secure.
+    This link will expire in <strong>1 hour</strong>. If you didn't request a password reset, you can safely ignore this email - your account remains secure.
   </p>
   <p style="font-size: 13px; color: #555;">~ Posters.science</p>
 </div>

@@ -6,9 +6,14 @@ definePageMeta({
   layout: "auth",
 });
 
+const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Reset Password - Posters.science")}&description=${encodeURIComponent("Set a new password for your Posters.science account")}&app=posters-science&org=fairdataihub`;
+
 useSeoMeta({
   title: "Reset Password",
   description: "Choose a new password for your account.",
+  ogTitle: "Reset Password - Posters.science",
+  ogDescription: "Set a new password for your Posters.science account.",
+  ogImage,
 });
 
 const route = useRoute();

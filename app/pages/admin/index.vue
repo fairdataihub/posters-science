@@ -7,7 +7,15 @@ definePageMeta({
   layout: "default",
 });
 
-useSeoMeta({ title: "Admin - Posters.science" });
+const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Admin - Posters.science")}&description=${encodeURIComponent("Administrative dashboard for managing Posters.science")}&app=posters-science&org=fairdataihub`;
+
+useSeoMeta({
+  title: "Admin - Posters.science",
+  description: "Administrative dashboard for managing Posters.science.",
+  ogTitle: "Admin - Posters.science",
+  ogDescription: "Administrative dashboard for managing Posters.science.",
+  ogImage,
+});
 
 // Types
 
@@ -355,7 +363,7 @@ const tabs = [
         <USpinner v-if="statsStatus === 'pending'" size="sm" class="mt-1" />
 
         <p v-else class="mt-1 text-2xl font-bold">
-          {{ stats?.totalUsers ?? "—" }}
+          {{ stats?.totalUsers ?? "-" }}
         </p>
       </UCard>
 
@@ -365,7 +373,7 @@ const tabs = [
         <USpinner v-if="statsStatus === 'pending'" size="sm" class="mt-1" />
 
         <p v-else class="mt-1 text-2xl font-bold">
-          {{ stats?.posters.published ?? "—" }}
+          {{ stats?.posters.published ?? "-" }}
         </p>
       </UCard>
 
@@ -375,7 +383,7 @@ const tabs = [
         <USpinner v-if="statsStatus === 'pending'" size="sm" class="mt-1" />
 
         <p v-else class="mt-1 text-2xl font-bold">
-          {{ stats?.posters.total ?? "—" }}
+          {{ stats?.posters.total ?? "-" }}
         </p>
       </UCard>
     </div>
@@ -582,7 +590,7 @@ const tabs = [
               {{ row.original.zenodoDepositions?.lastPublishedZenodoDoi }}
             </a>
 
-            <span v-else class="text-muted text-xs">—</span>
+            <span v-else class="text-muted text-xs">-</span>
           </template>
 
           <template #created-cell="{ row }">

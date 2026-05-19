@@ -270,10 +270,10 @@ async function main() {
   const limit = limitArg ? Number(limitArg) : Infinity;
   const mergedDir = getArg("dir") ?? path.join(process.cwd(), "merged");
 
-  console.log(`\n👤 Importing posters for userId: ${userId}`);
+  console.log(`\n Importing posters for userId: ${userId}`);
 
   const allFiles = collectJsonFiles(mergedDir);
-  console.log(`📂 Found ${allFiles.length} JSON files in ${mergedDir}`);
+  console.log(` Found ${allFiles.length} JSON files in ${mergedDir}`);
 
   let created = 0;
   let updated = 0;
@@ -291,7 +291,7 @@ async function main() {
     try {
       data = JSON.parse(raw) as JsonPoster;
     } catch {
-      console.warn(`   ⚠️  Could not parse ${filePath}`);
+      console.warn(`     Could not parse ${filePath}`);
       errored++;
       continue;
     }
@@ -365,7 +365,7 @@ async function main() {
 
         updated++;
         console.log(
-          `   🔄 [updated] ${existingMetadata.posterId} — ${mapped.posterTitle.slice(0, 60)}\n      imageUrl: ${imageUrl || "(none)"}`,
+          `    [updated] ${existingMetadata.posterId} - ${mapped.posterTitle.slice(0, 60)}\n      imageUrl: ${imageUrl || "(none)"}`,
         );
       } else {
         // Create new poster and metadata
@@ -396,11 +396,11 @@ async function main() {
 
         created++;
         console.log(
-          `   ✅ [created] ${poster.id} — ${poster.title.slice(0, 60)}\n      imageUrl: ${imageUrl || "(none)"}`,
+          `    [created] ${poster.id} - ${poster.title.slice(0, 60)}\n      imageUrl: ${imageUrl || "(none)"}`,
         );
       }
     } catch (err: any) {
-      console.warn(`   ❌ Failed: ${filePath}\n      ${err?.message}`);
+      console.warn(`    Failed: ${filePath}\n      ${err?.message}`);
       errored++;
     }
   }
@@ -412,7 +412,7 @@ async function main() {
 
 main()
   .catch((err) => {
-    console.error("\n❌ Import failed:");
+    console.error("\n Import failed:");
     console.error(err);
     process.exitCode = 1;
   })

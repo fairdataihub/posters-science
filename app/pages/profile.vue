@@ -8,9 +8,15 @@ definePageMeta({
 
 const { clear, user } = useUserSession();
 
+const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Profile - Posters.science")}&description=${encodeURIComponent("Manage your account profile and preferences on Posters.science")}&app=posters-science&org=fairdataihub`;
+
 useSeoMeta({
   title: "Profile",
   description: "Manage your Scholar Data profile and preferences.",
+  ogTitle: "Profile - Posters.science",
+  ogDescription:
+    "Manage your account profile and preferences on Posters.science.",
+  ogImage,
 });
 
 const toast = useToast();
@@ -260,7 +266,7 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
                     {{
                       userData?.updated
                         ? new Date(userData.updated).toLocaleString()
-                        : "—"
+                        : "-"
                     }}
                   </p>
                 </div>
@@ -295,7 +301,7 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
                     {{
                       userData?.created
                         ? new Date(userData.created).toLocaleDateString()
-                        : "—"
+                        : "-"
                     }}
                   </p>
                 </div>

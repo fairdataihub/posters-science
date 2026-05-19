@@ -14,8 +14,16 @@ definePageMeta({
   layout: "auth",
 });
 
+const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Signup - Posters.science")}&description=${encodeURIComponent("Create a Posters.science account to share and discover scientific posters")}&app=posters-science&org=fairdataihub`;
+
 useSeoMeta({
   title: "Signup",
+  description:
+    "Create a Posters.science account to share and discover scientific posters.",
+  ogTitle: "Signup - Posters.science",
+  ogDescription:
+    "Create a Posters.science account to share and discover scientific posters.",
+  ogImage,
 });
 
 const toast = useToast();

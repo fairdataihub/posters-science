@@ -3,9 +3,14 @@ definePageMeta({
   middleware: ["auth"],
 });
 
+const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Share a Poster - Posters.science")}&description=${encodeURIComponent("Upload and share your scientific poster with the community")}&app=posters-science&org=fairdataihub`;
+
 useSeoMeta({
   title: "Share a Poster",
   description: "Upload and share your poster with the community",
+  ogTitle: "Share a Poster - Posters.science",
+  ogDescription: "Upload and share your scientific poster with the community.",
+  ogImage,
 });
 
 const status = ref(0);
