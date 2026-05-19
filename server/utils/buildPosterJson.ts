@@ -14,6 +14,8 @@ export function buildPosterJson(
     publishedAt?: Date;
   },
 ) {
+  const currentPublicationYear = new Date().getFullYear();
+
   const doi = meta.doi ?? undefined;
   let prefix: string | undefined;
   let suffix: string | undefined;
@@ -150,7 +152,7 @@ export function buildPosterJson(
     ...(mergedIdentifiers && { identifiers: mergedIdentifiers }),
     creators: cleanCreators(meta.creators),
     ...(publisher && { publisher }),
-    ...(meta.publicationYear && { publicationYear: meta.publicationYear }),
+    publicationYear: currentPublicationYear,
     subjects: (meta.subjects ?? [])
       .filter((s) => s !== "")
       .map((s) => ({ subject: s })),
