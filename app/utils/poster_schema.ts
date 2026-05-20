@@ -175,6 +175,26 @@ export function inferAffiliationIdentifierScheme(
   return undefined;
 }
 
+// Converts a bare affiliation identifier to its full URL form per DataCite 4.7.
+// If the value is already a URL, returns it unchanged.
+export function normalizeAffiliationIdentifierToUrl(
+  value: string,
+  scheme: string,
+): string | undefined {
+  const trimmed = value.trim();
+  if (trimmed.startsWith("http")) return trimmed;
+  switch (scheme.toUpperCase()) {
+    case "ROR":
+      return `https://ror.org/${trimmed}`;
+    case "GRID":
+      return `https://www.grid.ac/institutes/${trimmed}`;
+    case "ISNI":
+      return `https://isni.org/isni/${trimmed.replace(/[\s-]/g, "")}`;
+    default:
+      return undefined;
+  }
+}
+
 // Constants and options for select fields
 const DATE_TYPE_VALUES = [
   "Accepted",
@@ -587,7 +607,9 @@ export type FormSchema = z.infer<typeof formSchema>;
 const StrictAffiliationSchema = z
   .object({
     name: z.string().min(1, { message: "Affiliation name is required" }),
-    affiliationIdentifier: z.string().optional(),
+    affiliationIdentifier: z.string().optional().refine(isValidUrl, {
+      message: "Must be a valid URL (e.g. https://ror.org/0168r3w48)",
+    }),
     affiliationIdentifierScheme: z.string().optional(),
     schemeURI: z.string().optional().refine(isValidUrl, {
       message: "Must be a valid URL (e.g. https://ror.org)",

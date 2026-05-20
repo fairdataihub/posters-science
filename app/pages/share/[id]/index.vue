@@ -15,6 +15,7 @@ import {
   inferFunderIdentifierType,
   inferNameIdentifierScheme,
   inferAffiliationIdentifierScheme,
+  normalizeAffiliationIdentifierToUrl,
 } from "@/utils/poster_schema";
 import {
   CalendarDate,
@@ -585,6 +586,13 @@ function handleAffiliationIdentifierInput(
   if (inferred) {
     aff.affiliationIdentifierScheme ||= inferred.scheme;
     aff.schemeURI ||= inferred.schemeURI;
+    if (!value.trim().startsWith("http")) {
+      const normalized = normalizeAffiliationIdentifierToUrl(
+        value,
+        inferred.scheme,
+      );
+      if (normalized) aff.affiliationIdentifier = normalized;
+    }
   }
 }
 
