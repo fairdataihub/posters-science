@@ -91,6 +91,8 @@ const state = reactive<StrictFormSchema>({
     conferenceEndDate: "",
     conferenceAcronym: "",
     conferenceSeries: "",
+    presentedStartDate: "",
+    presentedEndDate: "",
   },
   posterContent: {
     sections: [],
@@ -320,6 +322,8 @@ if (data.value) {
         conferenceEndDate: meta.conference.conferenceEndDate ?? "",
         conferenceAcronym: meta.conference.conferenceAcronym || "",
         conferenceSeries: meta.conference.conferenceSeries || "",
+        presentedStartDate: meta.conference.presentedStartDate ?? "",
+        presentedEndDate: meta.conference.presentedEndDate ?? "",
       };
     }
 
@@ -413,6 +417,39 @@ const conferenceDateRange = computed<DateRange>({
     }
   },
 });
+
+const presentedDateRange = computed<DateRange>({
+  get() {
+    const startStr = state.conference?.presentedStartDate ?? "";
+    const endStr = state.conference?.presentedEndDate ?? "";
+    const today = todayCalendarDate();
+    let start: CalendarDate;
+    let end: CalendarDate;
+    try {
+      start = startStr ? parseDate(startStr) : today;
+      end = endStr ? parseDate(endStr) : start;
+    } catch {
+      start = today;
+      end = today;
+    }
+    if (start.compare(end) > 0) end = start;
+
+    return { start, end };
+  },
+  set(value: DateRange) {
+    if (state.conference) {
+      state.conference.presentedStartDate = toW3CDate(value.start);
+      state.conference.presentedEndDate = toW3CDate(value.end);
+    }
+  },
+});
+
+function clearPresentedDate() {
+  if (state.conference) {
+    state.conference.presentedStartDate = "";
+    state.conference.presentedEndDate = "";
+  }
+}
 
 const currentYear = new Date().getFullYear();
 const conferenceYearOptions = Array.from(
@@ -1141,7 +1178,7 @@ async function addSubjectAndFocus() {
                 />
               </UFormField>
 
-              <div class="grid gap-3 md:grid-cols-3">
+              <div class="grid gap-3 md:grid-cols-2">
                 <UFormField name="conference.conferenceAcronym" label="Acronym">
                   <UInput
                     v-model="state.conference.conferenceAcronym"
@@ -1159,10 +1196,13 @@ async function addSubjectAndFocus() {
                     type="url"
                   />
                 </UFormField>
+              </div>
 
+              <div class="grid gap-3 md:grid-cols-2">
                 <UFormField
                   name="conference.conferenceStartDate"
                   label="Conference dates"
+                  description="The full date range of the conference or event"
                 >
                   <UPopover>
                     <UButton
@@ -1197,6 +1237,54 @@ async function addSubjectAndFocus() {
 
                     <template #content>
                       <UCalendar v-model="conferenceDateRange" range />
+                    </template>
+                  </UPopover>
+                </UFormField>
+
+                <UFormField
+                  name="conference.presentedStartDate"
+                  label="Presentation dates"
+                  description="When the poster was presented"
+                >
+                  <UPopover>
+                    <UButton
+                      color="neutral"
+                      variant="subtle"
+                      icon="i-lucide-presentation"
+                      class="w-full"
+                    >
+                      <template
+                        v-if="
+                          state.conference?.presentedStartDate &&
+                          state.conference?.presentedEndDate
+                        "
+                      >
+                        {{
+                          df.format(
+                            presentedDateRange.start.toDate(getLocalTimeZone()),
+                          )
+                        }}
+                        –
+                        {{
+                          df.format(
+                            presentedDateRange.end.toDate(getLocalTimeZone()),
+                          )
+                        }}
+                        <UButton
+                          size="xs"
+                          color="neutral"
+                          variant="ghost"
+                          icon="i-lucide-x"
+                          class="-mr-1 ml-1"
+                          @click.stop="clearPresentedDate()"
+                        />
+                      </template>
+
+                      <template v-else>Pick a date range</template>
+                    </UButton>
+
+                    <template #content>
+                      <UCalendar v-model="presentedDateRange" range />
                     </template>
                   </UPopover>
                 </UFormField>
