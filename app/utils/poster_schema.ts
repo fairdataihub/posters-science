@@ -478,6 +478,8 @@ const ConferenceSchema = z.object({
   conferenceEndDate: z.string().optional(),
   conferenceAcronym: z.string().optional(),
   conferenceSeries: z.string().optional(),
+  presentedStartDate: z.string().optional(),
+  presentedEndDate: z.string().optional(),
 });
 
 // Poster content schema
@@ -715,6 +717,8 @@ const StrictConferenceSchema = z.object({
   conferenceEndDate: z.string(),
   conferenceAcronym: z.string().optional(),
   conferenceSeries: z.string().optional(),
+  presentedStartDate: z.string().optional(),
+  presentedEndDate: z.string().optional(),
 });
 
 export const strictFormSchema = z.object({

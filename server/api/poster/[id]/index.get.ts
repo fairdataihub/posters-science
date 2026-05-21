@@ -53,6 +53,19 @@ export default defineEventHandler(async (event) => {
     ? { sections: rawPosterContent, unstructuredContent: "" }
     : (rawPosterContent ?? { sections: [], unstructuredContent: "" });
 
+  // Extract presented dates from the dates JSON array
+  const datesArr = Array.isArray(meta.dates)
+    ? (meta.dates as Array<{ date?: string; dateType?: string }>)
+    : [];
+  const presentedEntry = datesArr.find((d) => d.dateType === "Presented");
+  let presentedStartDate = "";
+  let presentedEndDate = "";
+  if (presentedEntry?.date) {
+    const parts = presentedEntry.date.split("/");
+    presentedStartDate = parts[0] ?? "";
+    presentedEndDate = parts[1] ?? parts[0] ?? "";
+  }
+
   // Nested conference object from flat DB fields (for form convenience)
   const conference = {
     conferenceName: meta.conferenceName,
@@ -65,6 +78,8 @@ export default defineEventHandler(async (event) => {
     conferenceEndDate: meta.conferenceEndDate,
     conferenceAcronym: meta.conferenceAcronym,
     conferenceSeries: meta.conferenceSeries,
+    presentedStartDate,
+    presentedEndDate,
   };
 
   return {
