@@ -365,20 +365,44 @@ export async function beginZenodoPublication(
     awardTitle?: string;
   }[];
 
-  const presentedEntry = Array.isArray(meta.dates)
-    ? (meta.dates as Array<{ date?: string; dateType?: string }>).find(
-        (d) => d.dateType === "Presented",
-      )
-    : undefined;
-  const zenodoDates = presentedEntry?.date
-    ? [
-        {
-          date: presentedEntry.date,
-          type: { id: "other" },
-          description: "Presented",
-        },
-      ]
-    : undefined;
+  const datesArr = Array.isArray(meta.dates)
+    ? (meta.dates as Array<{ date?: string; dateType?: string }>)
+    : [];
+
+  const hasSubmittedInMeta = datesArr.some((d) => d.dateType === "Submitted");
+
+  const zenodoDates: {
+    date: string;
+    type: { id: string };
+    description?: string;
+  }[] = [];
+
+  // Inject submitted date from poster.created if not already in meta.dates
+  if (!hasSubmittedInMeta) {
+    zenodoDates.push({
+      date: poster.created.toISOString().slice(0, 10),
+      type: { id: "submitted" },
+    });
+  }
+
+  // Map all meta.dates to InvenioRDM format. DataCite dateType values map
+  // 1:1 to InvenioRDM type.id by lowercasing. "Presented" is our custom type
+  // stored in meta.dates; it maps to type "other" with a description.
+  for (const entry of datesArr) {
+    if (!entry.date || !entry.dateType) continue;
+    if (entry.dateType === "Presented") {
+      zenodoDates.push({
+        date: entry.date,
+        type: { id: "other" },
+        description: "Presented",
+      });
+    } else {
+      zenodoDates.push({
+        date: entry.date,
+        type: { id: entry.dateType.toLowerCase() },
+      });
+    }
+  }
 
   const posterContentObj = meta.posterContent as {
     submissionAbstract?: string;
@@ -1003,7 +1027,7 @@ type RdmExtras = {
   presentedDates?: {
     date: string;
     type: { id: string };
-    description: string;
+    description?: string;
   }[];
 };
 
