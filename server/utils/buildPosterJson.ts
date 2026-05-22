@@ -134,6 +134,7 @@ export function buildPosterJson(
           {
             date: formatDateISO(options.publishedAt),
             dateType: "Submitted",
+            dateInformation: "Submitted to Zenodo through posters.science",
           },
           ...existingDates,
         ]
@@ -149,6 +150,10 @@ export function buildPosterJson(
     ...(titles && { titles }),
     ...(descriptions && { descriptions }),
     ...(dates && { dates }),
+    types: {
+      resourceType: "Conference Poster",
+      resourceTypeGeneral: "Poster",
+    },
     ...(mergedIdentifiers && { identifiers: mergedIdentifiers }),
     creators: cleanCreators(meta.creators),
     ...(publisher && { publisher }),
@@ -263,12 +268,26 @@ function cleanCreators(raw: unknown): unknown[] {
         })
       : undefined;
 
-    const { nameIdentifiers: _ni, affiliation: _aff, ...rest } = c;
-    void _ni;
-    void _aff;
+    const name =
+      typeof c.name === "string" && c.name.trim() ? c.name.trim() : undefined;
+    const givenName =
+      typeof c.givenName === "string" && c.givenName.trim()
+        ? c.givenName.trim()
+        : undefined;
+    const familyName =
+      typeof c.familyName === "string" && c.familyName.trim()
+        ? c.familyName.trim()
+        : undefined;
+    const nameType =
+      typeof c.nameType === "string" && c.nameType.trim()
+        ? c.nameType.trim()
+        : undefined;
 
     return {
-      ...rest,
+      ...(name && { name }),
+      ...(givenName && { givenName }),
+      ...(familyName && { familyName }),
+      ...(nameType && { nameType }),
       ...(nameIdentifiers && nameIdentifiers.length > 0 && { nameIdentifiers }),
       ...(affiliation && affiliation.length > 0 && { affiliation }),
     };

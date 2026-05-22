@@ -142,7 +142,14 @@ export async function processExtraction(
       typeof s === "string" ? s : (s?.subject ?? ""),
     );
     const language = extractedData.language ?? null;
-    const relatedIdentifiers = extractedData.relatedIdentifiers ?? [];
+    const relatedIdentifiers = [
+      ...(extractedData.relatedIdentifiers ?? []),
+      {
+        relatedIdentifier: "https://posters.science",
+        relatedIdentifierType: "URL",
+        relationType: "isDescribedBy",
+      },
+    ];
     const size =
       extractedData.size ??
       (extractedData.sizes as string[] | undefined)?.[0] ??

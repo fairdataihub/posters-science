@@ -377,11 +377,14 @@ export async function beginZenodoPublication(
     description?: string;
   }[] = [];
 
-  // Inject submitted date from poster.created if not already in meta.dates
+  const zenodoSharedAt = new Date();
+
+  // Inject submitted date from when the poster is shared to Zenodo
   if (!hasSubmittedInMeta) {
     zenodoDates.push({
-      date: poster.created.toISOString().slice(0, 10),
+      date: zenodoSharedAt.toISOString().slice(0, 10),
       type: { id: "submitted" },
+      description: "Submitted to Zenodo through posters.science",
     });
   }
 
@@ -472,7 +475,7 @@ export async function beginZenodoPublication(
     title: poster.title,
     description: poster.description,
     zenodoDoi: doi,
-    publishedAt: poster.created,
+    publishedAt: zenodoSharedAt,
   });
   const posterJsonBlob = new Blob([JSON.stringify(posterJson, null, 2)], {
     type: "application/json",

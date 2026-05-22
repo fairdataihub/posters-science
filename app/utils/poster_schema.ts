@@ -154,6 +154,10 @@ export function inferNameIdentifierScheme(
   if (!value.trim()) return undefined;
   if (/orcid\.org/i.test(value) || /^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$/.test(value))
     return { scheme: "ORCID", schemeURI: "https://orcid.org" };
+  if (/ror\.org/i.test(value) || /^0[0-9a-hj-km-np-tv-z]{6}\d{2}$/i.test(value))
+    return { scheme: "ROR", schemeURI: "https://ror.org" };
+  if (/^grid\.\d+\.[a-z]\d+$/i.test(value))
+    return { scheme: "GRID", schemeURI: "https://www.grid.ac" };
   if (/^\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}$/.test(value))
     return { scheme: "ISNI", schemeURI: "https://isni.org" };
 
@@ -173,6 +177,46 @@ export function inferAffiliationIdentifierScheme(
     return { scheme: "ISNI", schemeURI: "https://isni.org" };
 
   return undefined;
+}
+
+// Returns the canonical schemeURI for a known scheme/type name (case-insensitive).
+export function schemeUriForScheme(scheme: string): string | undefined {
+  switch (scheme.trim().toUpperCase()) {
+    case "ORCID":
+      return "https://orcid.org";
+    case "ISNI":
+      return "https://isni.org";
+    case "ROR":
+      return "https://ror.org";
+    case "GRID":
+      return "https://www.grid.ac";
+    case "CROSSREF FUNDER ID":
+      return "https://doi.org/10.13039/";
+    default:
+      return undefined;
+  }
+}
+
+// Converts a bare name identifier (ORCID, ISNI) to its full URL form per DataCite 4.7.
+// If the value is already a URL, returns it unchanged.
+export function normalizeNameIdentifierToUrl(
+  value: string,
+  scheme: string,
+): string | undefined {
+  const trimmed = value.trim();
+  if (trimmed.startsWith("http")) return trimmed;
+  switch (scheme.toUpperCase()) {
+    case "ORCID":
+      return `https://orcid.org/${trimmed}`;
+    case "ROR":
+      return `https://ror.org/${trimmed}`;
+    case "GRID":
+      return `https://www.grid.ac/institutes/${trimmed}`;
+    case "ISNI":
+      return `https://isni.org/isni/${trimmed.replace(/[\s-]/g, "")}`;
+    default:
+      return undefined;
+  }
 }
 
 // Converts a bare affiliation identifier to its full URL form per DataCite 4.7.
@@ -635,7 +679,13 @@ const StrictAffiliationSchema = z
 
 const StrictNameIdentifierSchema = z
   .object({
-    nameIdentifier: z.string().min(1, { message: "Identifier is required" }),
+    nameIdentifier: z
+      .string()
+      .min(1, { message: "Identifier is required" })
+      .refine(isValidUrl, {
+        message:
+          "Must be a valid URL (e.g. https://orcid.org/0000-0002-1825-0097)",
+      }),
     nameIdentifierScheme: z.string().optional(),
     schemeURI: z.string().optional().refine(isValidUrl, {
       message: "Must be a valid URL (e.g. https://orcid.org)",
@@ -653,7 +703,7 @@ const StrictNameIdentifierSchema = z
     },
     {
       message:
-        "Invalid ORCID. Verify the ID at orcid.org (expected format: 0000-0000-0000-0000).",
+        "Invalid ORCID. Verify the ID at orcid.org (e.g. https://orcid.org/0000-0002-1825-0097).",
       path: ["nameIdentifier"],
     },
   );
