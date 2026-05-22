@@ -397,7 +397,7 @@ export async function beginZenodoPublication(
       zenodoDates.push({
         date: entry.date,
         type: { id: "other" },
-        description: "Presented",
+        description: "Poster presentation date",
       });
     } else {
       zenodoDates.push({
