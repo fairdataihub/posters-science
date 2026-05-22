@@ -18,16 +18,11 @@ import {
   normalizeAffiliationIdentifierToUrl,
 } from "@/utils/poster_schema";
 import {
-  CalendarDate,
-  DateFormatter,
+  type CalendarDate,
   getLocalTimeZone,
   parseDate,
 } from "@internationalized/date";
-
-const df = new DateFormatter("en-US", {
-  dateStyle: "medium",
-  timeZone: getLocalTimeZone(),
-});
+import DateRangePicker from "~/components/ui/DateRangePicker.vue";
 
 definePageMeta({
   middleware: ["auth"],
@@ -383,37 +378,39 @@ const toW3CDate = (cd: CalendarDate) => {
 };
 
 // Conference dates as a range for UCalendar (range); state keeps conferenceStartDate/conferenceEndDate strings
-type DateRange = { start: CalendarDate; end: CalendarDate };
-
-function todayCalendarDate(): CalendarDate {
-  const now = new Date();
-
-  return new CalendarDate(now.getFullYear(), now.getMonth() + 1, now.getDate());
-}
+type DateRange = {
+  start: CalendarDate | undefined;
+  end: CalendarDate | undefined;
+};
 
 const conferenceDateRange = computed<DateRange>({
   get() {
     const startStr = state.conference?.conferenceStartDate ?? "";
     const endStr = state.conference?.conferenceEndDate ?? "";
 
-    const today = todayCalendarDate();
-    let start: CalendarDate;
-    let end: CalendarDate;
+    if (!startStr && !endStr) return { start: undefined, end: undefined };
+
+    let start: CalendarDate | undefined;
+    let end: CalendarDate | undefined;
     try {
-      start = startStr ? parseDate(startStr) : today;
-      end = endStr ? parseDate(endStr) : today;
+      start = startStr ? parseDate(startStr) : undefined;
+      end = endStr ? parseDate(endStr) : undefined;
     } catch {
-      start = today;
-      end = today;
+      start = undefined;
+      end = undefined;
     }
-    if (start.compare(end) > 0) end = start;
+    if (start && end && start.compare(end) > 0) end = start;
 
     return { start, end };
   },
   set(value: DateRange) {
     if (state.conference) {
-      state.conference.conferenceStartDate = toW3CDate(value.start);
-      state.conference.conferenceEndDate = toW3CDate(value.end);
+      state.conference.conferenceStartDate = value.start
+        ? toW3CDate(value.start)
+        : "";
+      state.conference.conferenceEndDate = value.end
+        ? toW3CDate(value.end)
+        : "";
     }
   },
 });
@@ -422,24 +419,28 @@ const presentedDateRange = computed<DateRange>({
   get() {
     const startStr = state.conference?.presentedStartDate ?? "";
     const endStr = state.conference?.presentedEndDate ?? "";
-    const today = todayCalendarDate();
-    let start: CalendarDate;
-    let end: CalendarDate;
+
+    if (!startStr && !endStr) return { start: undefined, end: undefined };
+
+    let start: CalendarDate | undefined;
+    let end: CalendarDate | undefined;
     try {
-      start = startStr ? parseDate(startStr) : today;
+      start = startStr ? parseDate(startStr) : undefined;
       end = endStr ? parseDate(endStr) : start;
     } catch {
-      start = today;
-      end = today;
+      start = undefined;
+      end = undefined;
     }
-    if (start.compare(end) > 0) end = start;
+    if (start && end && start.compare(end) > 0) end = start;
 
     return { start, end };
   },
   set(value: DateRange) {
     if (state.conference) {
-      state.conference.presentedStartDate = toW3CDate(value.start);
-      state.conference.presentedEndDate = toW3CDate(value.end);
+      state.conference.presentedStartDate = value.start
+        ? toW3CDate(value.start)
+        : "";
+      state.conference.presentedEndDate = value.end ? toW3CDate(value.end) : "";
     }
   },
 });
@@ -1204,41 +1205,12 @@ async function addSubjectAndFocus() {
                   label="Conference dates"
                   description="The full date range of the conference or event"
                 >
-                  <UPopover>
-                    <UButton
-                      color="neutral"
-                      variant="subtle"
-                      icon="i-lucide-calendar"
-                      class="w-full"
-                    >
-                      <template
-                        v-if="
-                          state.conference?.conferenceStartDate &&
-                          state.conference?.conferenceEndDate
-                        "
-                      >
-                        {{
-                          df.format(
-                            conferenceDateRange.start.toDate(
-                              getLocalTimeZone(),
-                            ),
-                          )
-                        }}
-                        –
-                        {{
-                          df.format(
-                            conferenceDateRange.end.toDate(getLocalTimeZone()),
-                          )
-                        }}
-                      </template>
-
-                      <template v-else>Pick a date range</template>
-                    </UButton>
-
-                    <template #content>
-                      <UCalendar v-model="conferenceDateRange" range />
-                    </template>
-                  </UPopover>
+                  <DateRangePicker
+                    v-model="conferenceDateRange"
+                    variant="subtle"
+                    placeholder="Pick a date range"
+                    class="w-full"
+                  />
                 </UFormField>
 
                 <UFormField
@@ -1246,47 +1218,15 @@ async function addSubjectAndFocus() {
                   label="Presentation dates"
                   description="When the poster was presented"
                 >
-                  <UPopover>
-                    <UButton
-                      color="neutral"
-                      variant="subtle"
-                      icon="i-lucide-presentation"
-                      class="w-full"
-                    >
-                      <template
-                        v-if="
-                          state.conference?.presentedStartDate &&
-                          state.conference?.presentedEndDate
-                        "
-                      >
-                        {{
-                          df.format(
-                            presentedDateRange.start.toDate(getLocalTimeZone()),
-                          )
-                        }}
-                        –
-                        {{
-                          df.format(
-                            presentedDateRange.end.toDate(getLocalTimeZone()),
-                          )
-                        }}
-                        <UButton
-                          size="xs"
-                          color="neutral"
-                          variant="ghost"
-                          icon="i-lucide-x"
-                          class="-mr-1 ml-1"
-                          @click.stop="clearPresentedDate()"
-                        />
-                      </template>
-
-                      <template v-else>Pick a date range</template>
-                    </UButton>
-
-                    <template #content>
-                      <UCalendar v-model="presentedDateRange" range />
-                    </template>
-                  </UPopover>
+                  <DateRangePicker
+                    v-model="presentedDateRange"
+                    icon="i-lucide-presentation"
+                    variant="subtle"
+                    placeholder="Pick a date range"
+                    clearable
+                    class="w-full"
+                    @clear="clearPresentedDate"
+                  />
                 </UFormField>
               </div>
             </div>
