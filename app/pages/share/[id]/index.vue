@@ -1269,7 +1269,7 @@ async function addSubjectAndFocus() {
 
                 <UFormField
                   name="conference.presentedStartDate"
-                  label="First presentation date"
+                  label="Poster presentation date"
                   description="When the poster was first presented"
                 >
                   <DatePicker
