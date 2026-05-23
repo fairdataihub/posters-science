@@ -36,7 +36,9 @@ export default defineEventHandler(async (event) => {
         ? (meta.relatedIdentifiers as Array<{ relatedIdentifier?: string }>)
         : [];
       const alreadyPresent = existing.some(
-        (r) => r.relatedIdentifier === "https://posters.science",
+        (r) =>
+          r.relatedIdentifier ===
+          `https://posters.science/discover/${job.posterId}`,
       );
 
       if (!alreadyPresent) {
@@ -46,7 +48,7 @@ export default defineEventHandler(async (event) => {
             relatedIdentifiers: [
               ...existing,
               {
-                relatedIdentifier: "https://posters.science",
+                relatedIdentifier: `https://posters.science/discover/${job.posterId}`,
                 relatedIdentifierType: "URL",
                 relationType: "IsDescribedBy",
                 resourceTypeGeneral: "Software",
