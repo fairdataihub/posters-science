@@ -384,7 +384,7 @@ export async function beginZenodoPublication(
     zenodoDates.push({
       date: zenodoSharedAt.toISOString().slice(0, 10),
       type: { id: "submitted" },
-      description: "Submitted to Zenodo through posters.science",
+      description: "Submitted to Zenodo through Posters.science",
     });
   }
 
