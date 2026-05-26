@@ -72,6 +72,8 @@ export default defineEventHandler(async (event) => {
     name:
       [creator.givenName, creator.familyName].filter(Boolean).join(" ") ||
       "Unknown Creator",
+    ...(creator.givenName && { givenName: creator.givenName }),
+    ...(creator.familyName && { familyName: creator.familyName }),
     ...(creator.nameType && { nameType: creator.nameType }),
     ...(creator.nameIdentifiers && {
       nameIdentifiers: creator.nameIdentifiers.map((ni) => ({
@@ -128,6 +130,29 @@ export default defineEventHandler(async (event) => {
   const conferenceAcronym = conference?.conferenceAcronym ?? null;
   const conferenceSeries = conference?.conferenceSeries ?? null;
 
+  const presentedStartDate = conference?.presentedStartDate ?? "";
+  const presentedEndDate = conference?.presentedEndDate ?? "";
+  const existingDates = Array.isArray(existingPoster.posterMetadata?.dates)
+    ? (
+        existingPoster.posterMetadata.dates as Array<{
+          date?: string;
+          dateType?: string;
+        }>
+      ).filter((d) => d.dateType !== "Presented")
+    : [];
+  const presentedEntry = presentedStartDate
+    ? [
+        {
+          date:
+            presentedEndDate && presentedEndDate !== presentedStartDate
+              ? `${presentedStartDate}/${presentedEndDate}`
+              : presentedStartDate,
+          dateType: "Presented",
+        },
+      ]
+    : [];
+  const dates = [...presentedEntry, ...existingDates];
+
   const posterContent = {
     ...(data.posterContent ?? { sections: [], unstructuredContent: "" }),
     ...(data.submissionAbstract && {
@@ -170,6 +195,7 @@ export default defineEventHandler(async (event) => {
           conferenceEndDate,
           conferenceAcronym,
           conferenceSeries,
+          dates,
           posterContent,
           tableCaptions,
           imageCaptions,

@@ -10,6 +10,7 @@ export function normalizeDoi(input: string): string {
   } catch {
     // not a URL, use as-is
   }
+
   return trimmed;
 }
 
@@ -19,5 +20,6 @@ export function validateDoi(input: string): string {
   if (!DOI_REGEX.test(normalized)) {
     return "Please enter a valid DOI (e.g. 10.5281/zenodo.1234567) or a doi.org URL.";
   }
+
   return "";
 }

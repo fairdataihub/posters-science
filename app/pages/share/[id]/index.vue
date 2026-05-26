@@ -15,18 +15,17 @@ import {
   inferFunderIdentifierType,
   inferNameIdentifierScheme,
   inferAffiliationIdentifierScheme,
+  normalizeNameIdentifierToUrl,
+  normalizeAffiliationIdentifierToUrl,
+  schemeUriForScheme,
 } from "@/utils/poster_schema";
 import {
-  CalendarDate,
-  DateFormatter,
+  type CalendarDate,
   getLocalTimeZone,
   parseDate,
 } from "@internationalized/date";
-
-const df = new DateFormatter("en-US", {
-  dateStyle: "medium",
-  timeZone: getLocalTimeZone(),
-});
+import DatePicker from "~/components/ui/DatePicker.vue";
+import DateRangePicker from "~/components/ui/DateRangePicker.vue";
 
 definePageMeta({
   middleware: ["auth"],
@@ -90,6 +89,8 @@ const state = reactive<StrictFormSchema>({
     conferenceEndDate: "",
     conferenceAcronym: "",
     conferenceSeries: "",
+    presentedStartDate: "",
+    presentedEndDate: "",
   },
   posterContent: {
     sections: [],
@@ -229,11 +230,18 @@ if (data.value) {
       // Back-fill scheme/schemeURI for data loaded from the API
       state.creators.forEach((creator) => {
         creator.nameIdentifiers?.forEach((ni) => {
-          if (!ni.schemeURI && ni.nameIdentifier) {
+          if (ni.nameIdentifier) {
             const inferred = inferNameIdentifierScheme(ni.nameIdentifier);
             if (inferred) {
               ni.nameIdentifierScheme ||= inferred.scheme;
-              ni.schemeURI = inferred.schemeURI;
+              ni.schemeURI ||= inferred.schemeURI;
+              if (!ni.nameIdentifier.trim().startsWith("http")) {
+                const normalized = normalizeNameIdentifierToUrl(
+                  ni.nameIdentifier,
+                  inferred.scheme,
+                );
+                if (normalized) ni.nameIdentifier = normalized;
+              }
             }
           }
         });
@@ -319,6 +327,8 @@ if (data.value) {
         conferenceEndDate: meta.conference.conferenceEndDate ?? "",
         conferenceAcronym: meta.conference.conferenceAcronym || "",
         conferenceSeries: meta.conference.conferenceSeries || "",
+        presentedStartDate: meta.conference.presentedStartDate ?? "",
+        presentedEndDate: meta.conference.presentedEndDate ?? "",
       };
     }
 
@@ -378,40 +388,72 @@ const toW3CDate = (cd: CalendarDate) => {
 };
 
 // Conference dates as a range for UCalendar (range); state keeps conferenceStartDate/conferenceEndDate strings
-type DateRange = { start: CalendarDate; end: CalendarDate };
-
-function todayCalendarDate(): CalendarDate {
-  const now = new Date();
-
-  return new CalendarDate(now.getFullYear(), now.getMonth() + 1, now.getDate());
-}
+type DateRange = {
+  start: CalendarDate | undefined;
+  end: CalendarDate | undefined;
+};
 
 const conferenceDateRange = computed<DateRange>({
   get() {
     const startStr = state.conference?.conferenceStartDate ?? "";
     const endStr = state.conference?.conferenceEndDate ?? "";
 
-    const today = todayCalendarDate();
-    let start: CalendarDate;
-    let end: CalendarDate;
+    if (!startStr && !endStr) return { start: undefined, end: undefined };
+
+    let start: CalendarDate | undefined;
+    let end: CalendarDate | undefined;
     try {
-      start = startStr ? parseDate(startStr) : today;
-      end = endStr ? parseDate(endStr) : today;
+      start = startStr ? parseDate(startStr) : undefined;
+      end = endStr ? parseDate(endStr) : undefined;
     } catch {
-      start = today;
-      end = today;
+      start = undefined;
+      end = undefined;
     }
-    if (start.compare(end) > 0) end = start;
+    if (start && end && start.compare(end) > 0) end = start;
 
     return { start, end };
   },
   set(value: DateRange) {
     if (state.conference) {
-      state.conference.conferenceStartDate = toW3CDate(value.start);
-      state.conference.conferenceEndDate = toW3CDate(value.end);
+      state.conference.conferenceStartDate = value.start
+        ? toW3CDate(value.start)
+        : "";
+      state.conference.conferenceEndDate = value.end
+        ? toW3CDate(value.end)
+        : "";
     }
   },
 });
+
+function clearConferenceDates() {
+  if (state.conference) {
+    state.conference.conferenceStartDate = "";
+    state.conference.conferenceEndDate = "";
+  }
+}
+
+const presentedDate = computed<CalendarDate | undefined>({
+  get() {
+    const str = state.conference?.presentedStartDate ?? "";
+    if (!str) return undefined;
+    try {
+      return parseDate(str);
+    } catch {
+      return undefined;
+    }
+  },
+  set(value: CalendarDate | undefined) {
+    if (state.conference) {
+      state.conference.presentedStartDate = value ? toW3CDate(value) : "";
+    }
+  },
+});
+
+function clearPresentedDate() {
+  if (state.conference) {
+    state.conference.presentedStartDate = "";
+  }
+}
 
 const currentYear = new Date().getFullYear();
 const conferenceYearOptions = Array.from(
@@ -585,6 +627,13 @@ function handleAffiliationIdentifierInput(
   if (inferred) {
     aff.affiliationIdentifierScheme ||= inferred.scheme;
     aff.schemeURI ||= inferred.schemeURI;
+    if (!value.trim().startsWith("http")) {
+      const normalized = normalizeAffiliationIdentifierToUrl(
+        value,
+        inferred.scheme,
+      );
+      if (normalized) aff.affiliationIdentifier = normalized;
+    }
   }
 }
 
@@ -599,7 +648,40 @@ function handleNameIdentifierInput(
   if (inferred) {
     ni.nameIdentifierScheme ||= inferred.scheme;
     ni.schemeURI ||= inferred.schemeURI;
+    if (!value.trim().startsWith("http")) {
+      const normalized = normalizeNameIdentifierToUrl(value, inferred.scheme);
+      if (normalized) ni.nameIdentifier = normalized;
+    }
   }
+}
+
+function handleNameIdentifierSchemeInput(
+  value: string,
+  cIndex: number,
+  niIndex: number,
+) {
+  const ni = state.creators[cIndex]?.nameIdentifiers?.[niIndex];
+  if (!ni) return;
+  const uri = schemeUriForScheme(value);
+  if (uri) ni.schemeURI ||= uri;
+}
+
+function handleAffiliationSchemeInput(
+  value: string,
+  cIndex: number,
+  aIndex: number,
+) {
+  const aff = state.creators[cIndex]?.affiliation?.[aIndex];
+  if (!aff) return;
+  const uri = schemeUriForScheme(value);
+  if (uri) aff.schemeURI ||= uri;
+}
+
+function handleFunderIdentifierTypeChange(value: string, fIndex: number) {
+  const funder = state.fundingReferences[fIndex];
+  if (!funder) return;
+  const uri = schemeUriForScheme(value);
+  if (uri) funder.schemeUri ||= uri;
 }
 
 function handleFunderIdentifierInput(value: string, fIndex: number) {
@@ -871,6 +953,14 @@ async function addSubjectAndFocus() {
                           <UInput
                             v-model="ni.nameIdentifierScheme"
                             placeholder="e.g., ORCID"
+                            @update:model-value="
+                              (v) =>
+                                handleNameIdentifierSchemeInput(
+                                  String(v),
+                                  cIndex,
+                                  niIndex,
+                                )
+                            "
                           />
                         </UFormField>
 
@@ -1020,6 +1110,14 @@ async function addSubjectAndFocus() {
                           <UInput
                             v-model="affiliation.affiliationIdentifierScheme"
                             placeholder="ROR"
+                            @update:model-value="
+                              (v) =>
+                                handleAffiliationSchemeInput(
+                                  String(v),
+                                  cIndex,
+                                  aIndex,
+                                )
+                            "
                           />
                         </UFormField>
                       </div>
@@ -1133,7 +1231,7 @@ async function addSubjectAndFocus() {
                 />
               </UFormField>
 
-              <div class="grid gap-3 md:grid-cols-3">
+              <div class="grid gap-3 md:grid-cols-2">
                 <UFormField name="conference.conferenceAcronym" label="Acronym">
                   <UInput
                     v-model="state.conference.conferenceAcronym"
@@ -1151,46 +1249,38 @@ async function addSubjectAndFocus() {
                     type="url"
                   />
                 </UFormField>
+              </div>
 
+              <div class="grid gap-3 md:grid-cols-2">
                 <UFormField
                   name="conference.conferenceStartDate"
                   label="Conference dates"
+                  description="The full date range of the conference or event"
                 >
-                  <UPopover>
-                    <UButton
-                      color="neutral"
-                      variant="subtle"
-                      icon="i-lucide-calendar"
-                      class="w-full"
-                    >
-                      <template
-                        v-if="
-                          state.conference?.conferenceStartDate &&
-                          state.conference?.conferenceEndDate
-                        "
-                      >
-                        {{
-                          df.format(
-                            conferenceDateRange.start.toDate(
-                              getLocalTimeZone(),
-                            ),
-                          )
-                        }}
-                        –
-                        {{
-                          df.format(
-                            conferenceDateRange.end.toDate(getLocalTimeZone()),
-                          )
-                        }}
-                      </template>
+                  <DateRangePicker
+                    v-model="conferenceDateRange"
+                    variant="subtle"
+                    placeholder="Pick a date range"
+                    clearable
+                    class="w-full"
+                    @clear="clearConferenceDates"
+                  />
+                </UFormField>
 
-                      <template v-else>Pick a date range</template>
-                    </UButton>
-
-                    <template #content>
-                      <UCalendar v-model="conferenceDateRange" range />
-                    </template>
-                  </UPopover>
+                <UFormField
+                  name="conference.presentedStartDate"
+                  label="Poster presentation date"
+                  description="When the poster was first presented"
+                >
+                  <DatePicker
+                    v-model="presentedDate"
+                    icon="i-lucide-presentation"
+                    variant="subtle"
+                    placeholder="Pick a date"
+                    clearable
+                    class="w-full"
+                    @clear="clearPresentedDate"
+                  />
                 </UFormField>
               </div>
             </div>
@@ -1550,6 +1640,10 @@ async function addSubjectAndFocus() {
                         :items="FUNDER_IDENTIFIER_TYPE_OPTIONS"
                         placeholder="Select a type"
                         class="w-full"
+                        @update:model-value="
+                          (v) =>
+                            handleFunderIdentifierTypeChange(String(v), fIndex)
+                        "
                       />
                     </UFormField>
                   </div>

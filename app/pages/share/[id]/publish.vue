@@ -8,12 +8,42 @@ definePageMeta({
 const route = useRoute();
 const toast = useToast();
 const { id } = route.params as { id: string };
+const { siteEnv } = useRuntimeConfig().public;
+
+const isProductionEnv = siteEnv === "production";
 
 // Shared license selection (used by Zenodo and simulated flows)
 const selectedLicense = ref("");
 
 // Download completion state
 const downloadComplete = ref(false);
+
+// Poster JSON preview drawer
+const posterJsonDrawerOpen = ref(false);
+const posterJsonData = ref<Record<string, unknown> | null>(null);
+const posterJsonLoading = ref(false);
+
+async function openPosterJsonPreview() {
+  posterJsonDrawerOpen.value = true;
+  if (posterJsonData.value) return;
+  posterJsonLoading.value = true;
+  try {
+    posterJsonData.value = await $fetch<Record<string, unknown>>(
+      `/api/poster/${id}/poster-json`,
+      { credentials: "include" },
+    );
+  } catch (err) {
+    toast.add({
+      title: "Preview Failed",
+      description:
+        err instanceof Error ? err.message : "Could not load poster.json",
+      color: "error",
+    });
+    posterJsonDrawerOpen.value = false;
+  } finally {
+    posterJsonLoading.value = false;
+  }
+}
 
 const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Submit Poster - Posters.science")}&description=${encodeURIComponent("Archive your scientific poster on a trusted open repository")}&app=posters-science&org=fairdataihub`;
 
@@ -486,18 +516,37 @@ async function handleArchive() {
     <div class="border-default mb-6 rounded-xl border p-6">
       <h3 class="mb-3 text-lg font-semibold">Submission Files</h3>
 
-      <UTree
-        :items="[
-          {
-            label: 'poster.json',
-            icon: 'i-vscode-icons-file-type-json',
-          },
-          {
-            label: posterData?.extractionJob?.fileName || 'poster.pdf',
-            icon: 'i-vscode-icons-file-type-pdf2',
-          },
-        ]"
-      />
+      <div class="flex flex-col">
+        <div
+          class="flex items-center justify-between gap-2 rounded-md px-2 py-1 hover:bg-gray-50"
+        >
+          <div class="flex items-center gap-2">
+            <UIcon name="i-vscode-icons-file-type-json" class="size-4" />
+
+            <span class="text-sm">poster.json</span>
+          </div>
+
+          <UButton
+            v-if="!isProductionEnv"
+            variant="subtle"
+            size="xs"
+            icon="i-lucide-eye"
+            @click="openPosterJsonPreview"
+          >
+            Preview file
+          </UButton>
+        </div>
+
+        <div
+          class="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-gray-50"
+        >
+          <UIcon name="i-vscode-icons-file-type-pdf2" class="size-4" />
+
+          <span class="text-sm">{{
+            posterData?.extractionJob?.fileName || "poster.pdf"
+          }}</span>
+        </div>
+      </div>
     </div>
 
     <!-- Repository selection -->
@@ -918,5 +967,29 @@ async function handleArchive() {
         </UButton>
       </template>
     </div>
+
+    <UDrawer
+      v-model:open="posterJsonDrawerOpen"
+      direction="right"
+      :ui="{ content: 'w-[600px] max-w-full' }"
+    >
+      <template #content>
+        <div class="flex h-full flex-col gap-4 p-6">
+          <div class="flex items-center gap-2">
+            <UIcon name="i-vscode-icons-file-type-json" class="size-5" />
+
+            <h3 class="text-lg font-semibold">poster.json preview</h3>
+          </div>
+
+          <UiSpinner v-if="posterJsonLoading" />
+
+          <pre
+            v-else-if="posterJsonData"
+            class="bg-muted overflow-auto rounded-lg p-4 text-xs"
+            >{{ JSON.stringify(posterJsonData, null, 2) }}</pre
+          >
+        </div>
+      </template>
+    </UDrawer>
   </div>
 </template>

@@ -168,11 +168,19 @@ function mapToDbFields(data: JsonPoster) {
 
   const domain = data.domain ?? "Other";
 
-  const issuedDateRaw = (data.dates ?? []).find(
+  const datesArr = data.dates ?? [];
+
+  const issuedDateRaw = datesArr.find(
     (d: any) => d?.dateType === "Issued",
   )?.date;
   const issuedDateStr = issuedDateRaw?.split("/")[0] ?? null;
   const issuedAt = issuedDateStr ? new Date(issuedDateStr) : new Date();
+
+  const submittedDateRaw = datesArr.find(
+    (d: any) => d?.dateType === "Submitted",
+  )?.date;
+  const submittedDateStr = submittedDateRaw?.split("/")[0] ?? null;
+  const submittedAt = submittedDateStr ? new Date(submittedDateStr) : issuedAt;
 
   // Real JSON uses "content" field; fall back to empty sections
   const posterContent = data.content ?? {};
@@ -198,6 +206,8 @@ function mapToDbFields(data: JsonPoster) {
     identifiers,
     publisher,
     issuedAt,
+    submittedAt,
+    dates: datesArr,
     publicationYear,
     subjects,
     language,
@@ -340,6 +350,7 @@ async function main() {
       tableCaptions: mapped.tableCaptions,
       imageCaptions: mapped.imageCaptions,
       domain: mapped.domain,
+      dates: mapped.dates,
     };
 
     try {
@@ -351,8 +362,9 @@ async function main() {
             data: {
               title: mapped.posterTitle,
               description: mapped.posterDescription,
-              publishedAt: mapped.issuedAt,
-              updated: mapped.issuedAt,
+              publishedAt: mapped.submittedAt,
+              updated: mapped.submittedAt,
+              created: mapped.submittedAt,
               ...(imageUrl ? { imageUrl } : {}),
             },
           });
@@ -379,8 +391,8 @@ async function main() {
               automated: true,
               status: "published",
               publishedAt: mapped.issuedAt,
-              created: mapped.issuedAt,
-              updated: mapped.issuedAt,
+              created: mapped.submittedAt,
+              updated: mapped.submittedAt,
               randomInt: Math.floor(Math.random() * 1000000),
             },
             select: { id: true, title: true },
