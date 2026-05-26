@@ -141,11 +141,8 @@ function mapToDbFields(data: JsonPoster) {
   const relatedIdentifiers = data.relatedIdentifiers ?? [];
 
   const sizesArr = (data.sizes ?? []).filter((s: any) => typeof s === "string");
-  const formatsArr = (data.formats ?? []).filter(
-    (f: any) => typeof f === "string",
-  );
   const size = sizesArr[0] ?? null;
-  const format = formatsArr[0] ?? null;
+  const format = "application/pdf";
   const version = data.version ?? null;
 
   const rightsList = data.rightsList ?? [];
