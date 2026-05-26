@@ -51,7 +51,7 @@ export default defineEventHandler(async (event) => {
                 relatedIdentifier: `https://posters.science/discover/${job.posterId}`,
                 relatedIdentifierType: "URL",
                 relationType: "IsDescribedBy",
-                resourceTypeGeneral: "Software",
+                resourceTypeGeneral: "Other",
               },
             ] as never,
           },

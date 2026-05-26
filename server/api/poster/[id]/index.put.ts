@@ -72,6 +72,8 @@ export default defineEventHandler(async (event) => {
     name:
       [creator.givenName, creator.familyName].filter(Boolean).join(" ") ||
       "Unknown Creator",
+    ...(creator.givenName && { givenName: creator.givenName }),
+    ...(creator.familyName && { familyName: creator.familyName }),
     ...(creator.nameType && { nameType: creator.nameType }),
     ...(creator.nameIdentifiers && {
       nameIdentifiers: creator.nameIdentifiers.map((ni) => ({
