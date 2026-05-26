@@ -195,7 +195,7 @@ onUnmounted(() => {
     </UPageHeader>
 
     <div class="lg:col-span-2">
-      <UiSpinner :loading="status === 2 || isUploading" overlay>
+      <UiSpinner :loading="status === 2 || isUploading" overlay subtle>
         <UCard>
           <div class="space-y-6">
             <UiFileUpload @on-change="selectedFiles = $event">

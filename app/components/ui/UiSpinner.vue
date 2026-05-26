@@ -5,6 +5,7 @@ interface UiSpinnerProps {
   loading?: boolean;
   size?: "sm" | "md" | "lg";
   overlay?: boolean;
+  subtle?: boolean;
   overlayClass?: string;
   spinnerClass?: string;
   class?: string;
@@ -14,6 +15,7 @@ const props = withDefaults(defineProps<UiSpinnerProps>(), {
   loading: true,
   size: "md",
   overlay: false,
+  subtle: false,
   overlayClass: "",
   spinnerClass: "",
   class: "",
@@ -36,7 +38,10 @@ const sizeClasses = {
       :class="
         cn(
           'transition-[filter,opacity] duration-300 ease-in-out',
-          props.loading && 'pointer-events-none opacity-70 blur-sm',
+          props.loading &&
+            !props.subtle &&
+            'pointer-events-none opacity-70 blur-sm',
+          props.loading && props.subtle && 'pointer-events-none',
         )
       "
     >
@@ -56,6 +61,7 @@ const sizeClasses = {
         :class="
           cn(
             'absolute inset-0 z-50 flex items-center justify-center',
+            props.subtle && 'bg-white/40 dark:bg-black/40',
             props.overlayClass,
           )
         "
