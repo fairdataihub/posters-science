@@ -134,7 +134,7 @@ export function buildPosterJson(
           {
             date: formatDateISO(options.publishedAt),
             dateType: "Submitted",
-            dateInformation: "Submitted to Zenodo through posters.science",
+            dateInformation: "Submitted to Zenodo through Posters.science",
           },
           ...existingDates,
         ]
