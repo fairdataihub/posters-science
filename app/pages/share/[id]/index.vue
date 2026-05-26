@@ -942,7 +942,7 @@ async function addSubjectAndFocus() {
                       v-for="(ni, niIndex) in state.creators[cIndex]
                         ?.nameIdentifiers"
                       :key="niIndex"
-                      class="mb-2 space-y-2 rounded-xl border border-l-4 border-gray-200 border-l-pink-300 p-3 dark:border-l-pink-700"
+                      class="mb-2 space-y-2 rounded-r-xl border border-l-4 border-gray-200 border-l-pink-300 p-3 dark:border-l-pink-700"
                     >
                       <div class="flex gap-2">
                         <UFormField
@@ -1054,7 +1054,7 @@ async function addSubjectAndFocus() {
                       v-for="(affiliation, aIndex) in state.creators[cIndex]
                         ?.affiliation"
                       :key="aIndex"
-                      class="mb-2 space-y-2 rounded-xl border border-l-4 border-gray-200 border-l-pink-300 p-3 dark:border-l-pink-700"
+                      class="mb-2 space-y-2 rounded-r-xl border border-l-4 border-gray-200 border-l-pink-300 p-3 dark:border-l-pink-700"
                     >
                       <div class="flex gap-2">
                         <UFormField
@@ -1480,7 +1480,7 @@ async function addSubjectAndFocus() {
                     relatedIdentifier, iIndex
                   ) in state.relatedIdentifiers"
                   :key="iIndex"
-                  class="space-y-2 rounded-xl border border-l-4 border-gray-200 border-l-pink-300 p-4 dark:border-l-pink-700"
+                  class="space-y-2 rounded-r-xl border border-l-4 border-gray-200 border-l-pink-300 p-4 dark:border-l-pink-700"
                 >
                   <div class="flex items-start gap-3">
                     <UFormField
