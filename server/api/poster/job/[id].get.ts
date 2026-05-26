@@ -26,6 +26,13 @@ export default defineEventHandler(async (event) => {
   // before the user ever sees the form. The UI navigates away after this, so this
   // runs once; if the user later removes the entry via PUT it stays gone.
   if (job.completed && job.posterId) {
+    const config = useRuntimeConfig(event);
+    const siteEnv = config.siteEnv || config.public.siteEnv;
+    const baseUrl =
+      siteEnv === "staging"
+        ? "https://sandbox.posters.science"
+        : "https://posters.science";
+
     const meta = await prisma.posterMetadata.findUnique({
       where: { posterId: job.posterId },
       select: { relatedIdentifiers: true },
@@ -36,9 +43,7 @@ export default defineEventHandler(async (event) => {
         ? (meta.relatedIdentifiers as Array<{ relatedIdentifier?: string }>)
         : [];
       const alreadyPresent = existing.some(
-        (r) =>
-          r.relatedIdentifier ===
-          `https://posters.science/discover/${job.posterId}`,
+        (r) => r.relatedIdentifier === `${baseUrl}/discover/${job.posterId}`,
       );
 
       if (!alreadyPresent) {
@@ -48,7 +53,7 @@ export default defineEventHandler(async (event) => {
             relatedIdentifiers: [
               ...existing,
               {
-                relatedIdentifier: `https://posters.science/discover/${job.posterId}`,
+                relatedIdentifier: `${baseUrl}/discover/${job.posterId}`,
                 relatedIdentifierType: "URL",
                 relationType: "IsDescribedBy",
                 resourceTypeGeneral: "Other",
