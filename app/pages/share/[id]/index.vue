@@ -1304,6 +1304,7 @@ async function addSubjectAndFocus() {
                 >
                   <DateRangePicker
                     v-model="conferenceDateRange"
+                    label="Conference dates"
                     variant="subtle"
                     placeholder="Pick a date range"
                     clearable

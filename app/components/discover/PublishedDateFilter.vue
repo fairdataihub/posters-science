@@ -18,6 +18,7 @@ const props = defineProps<{
 
     <DateRangePicker
       v-model="modelValue"
+      label="Published"
       :number-of-months="props.numberOfMonths ?? 2"
       clearable
     />

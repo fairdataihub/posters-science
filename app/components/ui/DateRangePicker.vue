@@ -18,6 +18,7 @@ const props = defineProps<{
   variant?: string;
   placeholder?: string;
   clearable?: boolean;
+  label?: string;
 }>();
 
 const df = new DateFormatter("en-US", { dateStyle: "medium" });
@@ -39,6 +40,33 @@ watch(
 );
 
 const isOpen = ref(false);
+const toast = useToast();
+let closedViaConfirm = false;
+
+function rangesMatch() {
+  return (
+    localRange.value.start?.toString() === modelValue.value.start?.toString() &&
+    localRange.value.end?.toString() === modelValue.value.end?.toString()
+  );
+}
+
+watch(isOpen, (open) => {
+  if (!open) {
+    if (!closedViaConfirm && localRange.value.start && !rangesMatch()) {
+      const fieldLabel = props.label ?? "Date range";
+      toast.add({
+        title: `${fieldLabel} not saved`,
+        description: "Click Confirm to apply your selection.",
+        color: "warning",
+      });
+      localRange.value = {
+        start: modelValue.value.start,
+        end: modelValue.value.end,
+      };
+    }
+    closedViaConfirm = false;
+  }
+});
 
 function onCalendarChange(value: {
   start: CalendarDate | undefined;
@@ -48,6 +76,7 @@ function onCalendarChange(value: {
 }
 
 function confirm() {
+  closedViaConfirm = true;
   const { start, end } = localRange.value;
   if (!start) return;
   modelValue.value = { start, end: end ?? start };
