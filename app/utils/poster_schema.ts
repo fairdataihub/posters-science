@@ -239,6 +239,27 @@ export function normalizeAffiliationIdentifierToUrl(
   }
 }
 
+// Extracts the bare ORCID ID (XXXX-XXXX-XXXX-XXXX) from a full URL or bare value.
+export function extractOrcidId(value: string): string | null {
+  const match = value.match(/(\d{4}-\d{4}-\d{4}-\d{3}[\dX])/i);
+
+  return match?.[1] ?? null;
+}
+
+// Checks whether an ORCID ID actually exists in the ORCID registry.
+// Returns true on network failure so users are never blocked by connectivity issues.
+export async function validateOrcidExists(orcidId: string): Promise<boolean> {
+  try {
+    const res = await fetch(`https://pub.orcid.org/v3.0/${orcidId}`, {
+      headers: { Accept: "application/json" },
+    });
+
+    return res.ok;
+  } catch {
+    return true;
+  }
+}
+
 // Constants and options for select fields
 const DATE_TYPE_VALUES = [
   "Accepted",

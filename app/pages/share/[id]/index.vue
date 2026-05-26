@@ -18,6 +18,8 @@ import {
   normalizeNameIdentifierToUrl,
   normalizeAffiliationIdentifierToUrl,
   schemeUriForScheme,
+  extractOrcidId,
+  validateOrcidExists,
 } from "@/utils/poster_schema";
 import {
   type CalendarDate,
@@ -47,6 +49,8 @@ useSeoMeta({
 });
 
 const loading = ref(false);
+const orcidErrors = ref<Record<string, string | undefined>>({});
+const orcidChecking = ref<Record<string, boolean | undefined>>({});
 const additionalInfoCollapsed = ref(true);
 const posterContentCollapsed = ref(true);
 const mandatoryCollapsed = ref(false);
@@ -526,6 +530,18 @@ async function saveDraft() {
 }
 
 async function onSubmit(event: FormSubmitEvent<StrictFormSchema>) {
+  if (Object.values(orcidErrors.value).some(Boolean)) {
+    toast.add({
+      title: "ORCID Validation Error",
+      description:
+        "One or more creator ORCIDs could not be found. Verify or remove them before saving.",
+      color: "error",
+      icon: "material-symbols:error",
+    });
+
+    return;
+  }
+
   console.log("Submitting poster metadata");
   loading.value = true;
 
@@ -642,6 +658,7 @@ function handleNameIdentifierInput(
   cIndex: number,
   niIndex: number,
 ) {
+  orcidErrors.value[`${cIndex}-${niIndex}`] = undefined;
   const ni = state.creators[cIndex]?.nameIdentifiers?.[niIndex];
   if (!ni) return;
   const inferred = inferNameIdentifierScheme(value);
@@ -652,6 +669,31 @@ function handleNameIdentifierInput(
       const normalized = normalizeNameIdentifierToUrl(value, inferred.scheme);
       if (normalized) ni.nameIdentifier = normalized;
     }
+  }
+}
+
+async function handleOrcidBlur(cIndex: number, niIndex: number) {
+  const ni = state.creators[cIndex]?.nameIdentifiers?.[niIndex];
+  if (!ni?.nameIdentifier) return;
+
+  const isOrcid =
+    ni.nameIdentifierScheme?.toLowerCase() === "orcid" ||
+    ni.nameIdentifier.toLowerCase().includes("orcid.org");
+  if (!isOrcid) return;
+
+  const orcidId = extractOrcidId(ni.nameIdentifier);
+  if (!orcidId) return;
+
+  const key = `${cIndex}-${niIndex}`;
+  orcidErrors.value[key] = undefined;
+  orcidChecking.value[key] = true;
+
+  const exists = await validateOrcidExists(orcidId);
+  orcidChecking.value[key] = false;
+
+  if (!exists) {
+    orcidErrors.value[key] =
+      "ORCID not found. Verify the ID at orcid.org or remove it.";
   }
 }
 
@@ -969,14 +1011,17 @@ async function addSubjectAndFocus() {
                           :name="`creators.${cIndex}.nameIdentifiers.${niIndex}.nameIdentifier`"
                           label="Identifier"
                           required
+                          :error="orcidErrors[`${cIndex}-${niIndex}`]"
                         >
                           <UInput
                             v-model="ni.nameIdentifier"
                             placeholder="https://orcid.org/0000-0000-0000-0000"
+                            :loading="orcidChecking[`${cIndex}-${niIndex}`]"
                             @update:model-value="
                               (v) =>
                                 handleNameIdentifierInput(v, cIndex, niIndex)
                             "
+                            @blur="() => handleOrcidBlur(cIndex, niIndex)"
                           />
                         </UFormField>
 
