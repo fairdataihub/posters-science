@@ -387,7 +387,7 @@ async function main() {
               imageUrl,
               automated: true,
               status: "published",
-              publishedAt: mapped.issuedAt,
+              publishedAt: mapped.submittedAt,
               created: mapped.submittedAt,
               updated: mapped.submittedAt,
               randomInt: Math.floor(Math.random() * 1000000),
