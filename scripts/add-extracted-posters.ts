@@ -125,10 +125,7 @@ function mapToDbFields(data: JsonPoster) {
   const doiRaw = doiEntry?.identifier;
   const doi = typeof doiRaw === "string" ? doiRaw.toLowerCase() : null;
 
-  const publisher =
-    typeof data.publisher === "string"
-      ? data.publisher
-      : (data.publisher?.name ?? null);
+  const publisher = "Zenodo";
 
   const publicationYear = data.publicationYear ?? null;
 
