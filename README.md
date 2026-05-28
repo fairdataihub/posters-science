@@ -30,6 +30,8 @@ A free, open-source platform for sharing, discovering, and citing scientific pos
 <h4>
     <a href="https://posters.science">Website</a>
   <span> · </span>
+    <a href="https://docs.posters.science">User Docs</a>
+  <span> · </span>
     <a href="https://dev.posters.science">Developer Docs</a>
   <span> · </span>
     <a href="https://github.com/fairdataihub/posters-science/issues/">Report Bug</a>
@@ -60,6 +62,7 @@ Posters.science is developed by the [FAIR Data Innovations Hub](https://fairdata
 | [posters-science-extraction-api](https://github.com/fairdataihub/posters-science-extraction-api)   | Extraction API service used by the platform                                                                 |
 | [poster-sentry](https://github.com/fairdataihub/poster-sentry)                                     | Lightweight multimodal scientific poster classifier                                                         |
 | [poster-sentry-training](https://github.com/fairdataihub/poster-sentry-training)                   | Training data and scripts for the poster-sentry classifier                                                  |
+| [posters-science-user-docs](https://docs.posters.science)                                           | User documentation site                                                                                     |
 | [posters-science-dev-docs](https://github.com/fairdataihub/posters-science-dev-docs)               | Developer documentation site ([live](https://dev.posters.science))                                          |
 | [posters-science-survey](https://github.com/fairdataihub/posters-science-survey)                   | Community survey on scientific poster sharing practices                                                     |
 | [poster-sharing-reuse-paper-code](https://github.com/fairdataihub/poster-sharing-reuse-paper-code) | Analysis code for the poster sharing and reuse study                                                        |
@@ -171,7 +174,7 @@ The application uses [Prisma](https://www.prisma.io/) to interact with the datab
 
 The application uses [Nuxt UI](https://ui.nuxt.com/) for components and [Tailwind CSS](https://tailwindcss.com/) for styling.
 
-For architecture details, see the [Developer Documentation](https://dev.posters.science).
+For user guides, see the [User Documentation](https://docs.posters.science). For architecture details, see the [Developer Documentation](https://dev.posters.science).
 
 ## Citation
 

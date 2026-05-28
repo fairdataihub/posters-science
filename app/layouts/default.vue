@@ -35,7 +35,7 @@ const headerItems = computed<NavigationMenuItem[]>(() => [
   },
   {
     label: "Documentation",
-    to: "https://dev.posters.science",
+    to: "https://docs.posters.science",
     target: "_blank",
   },
   // {
