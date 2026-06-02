@@ -26,17 +26,22 @@ export default defineNuxtConfig({
       "vscode-icons",
     ],
   },
-  vite: {
+ vite: {
     optimizeDeps: {
       include: [
-        "@inspira-ui/plugins",
-        "@internationalized/date",
-        "clsx",
-        "motion-v",
-        "vue3-lottie",
-        "zod",
-      ],
-    },
+        '@inspira-ui/plugins', // CJS
+        '@internationalized/date',
+        'clsx',
+        'dayjs', // CJS
+        'dayjs/plugin/relativeTime', // CJS
+        'dayjs/plugin/timezone', // CJS
+        'dayjs/plugin/updateLocale', // CJS
+        'dayjs/plugin/utc', // CJS
+        'motion-v',
+        'vue3-lottie',
+        'zod',
+      ]
+    }
   },
   // Runtime config values can be overridden at container startup using NUXT_ prefixed env vars.
   // This works because Nuxt scans for NUXT_* env vars when the app starts (not at build time)

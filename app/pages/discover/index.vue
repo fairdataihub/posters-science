@@ -242,8 +242,8 @@ const hasActiveFilters = computed(() => !!dateFilterValue.value.start);
                     >
                       <UBadge
                         color="primary"
-                        variant="soft"
-                        size="sm"
+                        variant="solid"
+                        size="xs"
                         icon="i-lucide-sparkles"
                         class="absolute top-2 left-2 z-10 cursor-help"
                       >
