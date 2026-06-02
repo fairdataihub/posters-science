@@ -172,6 +172,9 @@ const NuxtSchemaPoster: WithContext<Poster> = {
   "@context": "https://schema.org",
   "@id": `https://doi.org/${poster.value?.doi}`,
   "@type": "Poster",
+  abstract: poster.value?.description || "No description available.",
+  sameAs: poster.value?.doi ? `https://doi.org/${poster.value.doi}` : undefined,
+  url: `https://posters.science/discover/${poster.value.id}`,
 };
 
 useSchemaOrg([NuxtSchemaPoster]);
