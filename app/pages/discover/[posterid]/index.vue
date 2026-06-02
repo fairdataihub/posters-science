@@ -227,144 +227,161 @@ const tabItems = [
   <div>
     <div class="border-b border-gray-200">
       <UContainer class="py-6">
-        <div class="flex flex-col items-start justify-between">
-          <div class="mb-2 flex flex-wrap items-center gap-2">
-            <UTooltip
-              v-if="poster.publishedAt"
-              :text="`Published on ${new Intl.DateTimeFormat('en-US', { dateStyle: 'long' }).format(new Date(poster.publishedAt))}`"
-            >
-              <UBadge
-                color="secondary"
-                variant="soft"
-                size="md"
-                class="cursor-help"
-                icon="material-symbols:publish"
+        <div class="grid w-full grid-cols-12 gap-6">
+          <div
+            class="col-span-12 flex flex-col items-start gap-3 sm:col-span-9"
+          >
+            <div class="flex flex-wrap items-center gap-2">
+              <UTooltip
+                v-if="poster.publishedAt"
+                :text="`Published on ${new Intl.DateTimeFormat('en-US', { dateStyle: 'long' }).format(new Date(poster.publishedAt))}`"
               >
-                {{
-                  new Intl.DateTimeFormat("en-US", {
-                    dateStyle: "medium",
-                  }).format(new Date(poster.publishedAt))
-                }}
-              </UBadge>
-            </UTooltip>
+                <UBadge
+                  color="secondary"
+                  variant="soft"
+                  size="md"
+                  class="cursor-help"
+                  icon="material-symbols:publish"
+                >
+                  {{
+                    new Intl.DateTimeFormat("en-US", {
+                      dateStyle: "medium",
+                    }).format(new Date(poster.publishedAt))
+                  }}
+                </UBadge>
+              </UTooltip>
 
-            <UBadge
-              v-if="poster.domain"
-              color="neutral"
-              variant="soft"
-              size="lg"
-              icon="heroicons:beaker"
-            >
-              {{ poster.domain }}
-            </UBadge>
-
-            <UPopover v-if="poster.conference.acronym" arrow mode="hover">
               <UBadge
-                color="primary"
+                v-if="poster.domain"
+                color="neutral"
                 variant="soft"
                 size="lg"
-                icon="heroicons:academic-cap"
-                class="cursor-help"
+                icon="heroicons:beaker"
               >
-                {{ poster.conference.acronym }}
-                {{ poster.conference.year ? poster.conference.year : "" }}
+                {{ poster.domain }}
               </UBadge>
 
-              <template #content>
-                <p class="px-2 py-1 text-sm">
-                  {{ poster.conference.name }}
-                  <template v-if="poster.conference.location">
-                    - {{ poster.conference.location }}
-                  </template>
-                </p>
-              </template>
-            </UPopover>
+              <UPopover v-if="poster.conference.acronym" arrow mode="hover">
+                <UBadge
+                  color="primary"
+                  variant="soft"
+                  size="lg"
+                  icon="heroicons:academic-cap"
+                  class="cursor-help"
+                >
+                  {{ poster.conference.acronym }}
+                  {{ poster.conference.year ? poster.conference.year : "" }}
+                </UBadge>
 
-            <UBadge
-              color="info"
-              variant="soft"
-              size="lg"
-              icon="heroicons:heart"
+                <template #content>
+                  <p class="px-2 py-1 text-sm">
+                    {{ poster.conference.name }}
+                    <template v-if="poster.conference.location">
+                      - {{ poster.conference.location }}
+                    </template>
+                  </p>
+                </template>
+              </UPopover>
+
+              <UBadge
+                color="info"
+                variant="soft"
+                size="lg"
+                icon="heroicons:heart"
+              >
+                {{
+                  new Intl.NumberFormat("en-US", {
+                    notation: "compact",
+                  }).format(poster.likes || 0)
+                }}
+                like{{ poster.likes === 1 ? "" : "s" }}
+              </UBadge>
+
+              <UBadge
+                v-if="poster.views > 0"
+                color="neutral"
+                variant="soft"
+                size="lg"
+                icon="heroicons:eye"
+              >
+                {{
+                  new Intl.NumberFormat("en-US", {
+                    notation: "compact",
+                  }).format(poster.views)
+                }}
+                view{{ poster.views === 1 ? "" : "s" }}
+              </UBadge>
+            </div>
+
+            <div class="flex items-baseline gap-3">
+              <h1 class="text-3xl font-bold">{{ poster.title }}</h1>
+            </div>
+
+            <div
+              v-if="poster.keywords.length > 0"
+              class="flex flex-wrap items-center gap-1.5"
             >
-              {{
-                new Intl.NumberFormat("en-US", { notation: "compact" }).format(
-                  poster.likes || 0,
-                )
-              }}
-              like{{ poster.likes === 1 ? "" : "s" }}
-            </UBadge>
+              <span class="text-sm text-gray-400">Keywords:</span>
 
-            <UBadge
-              v-if="poster.views > 0"
-              color="neutral"
-              variant="soft"
-              size="lg"
-              icon="heroicons:eye"
-            >
-              {{
-                new Intl.NumberFormat("en-US", { notation: "compact" }).format(
-                  poster.views,
-                )
-              }}
-              view{{ poster.views === 1 ? "" : "s" }}
-            </UBadge>
-          </div>
+              <UBadge
+                v-for="keyword in poster.keywords"
+                :key="keyword"
+                color="primary"
+                variant="soft"
+                size="md"
+                class="capitalize"
+              >
+                {{ keyword }}
+              </UBadge>
+            </div>
 
-          <div class="mt-1 mb-2 flex items-baseline gap-3">
-            <h1 class="text-3xl font-bold">{{ poster.title }}</h1>
+            <div class="flex items-center gap-2">
+              <NuxtLink v-if="zenodoUrl" :to="zenodoUrl" target="_blank">
+                <UButton
+                  color="primary"
+                  variant="solid"
+                  icon="heroicons:eye"
+                  size="lg"
+                >
+                  View Poster
+                </UButton>
+              </NuxtLink>
+
+              <UButton
+                :color="liked ? 'error' : 'neutral'"
+                :variant="liked ? 'solid' : 'outline'"
+                icon="heroicons:heart"
+                size="lg"
+                :disabled="!loggedIn"
+                :loading="liking"
+                @click="handleLike"
+              >
+                {{ liked ? "Liked" : "Like" }}
+              </UButton>
+
+              <UButton
+                color="neutral"
+                variant="outline"
+                icon="heroicons:share"
+                size="lg"
+                disabled
+              >
+                Share
+              </UButton>
+            </div>
           </div>
 
           <div
-            v-if="poster.keywords.length > 0"
-            class="mb-4 flex flex-wrap items-center gap-1.5"
+            v-if="poster.imageUrl && poster.imageUrl.search('dicebear') === -1"
+            class="hidden sm:col-span-3 sm:flex sm:items-start sm:justify-center"
           >
-            <span class="text-sm text-gray-400">Keywords:</span>
-
-            <UBadge
-              v-for="keyword in poster.keywords"
-              :key="keyword"
-              color="primary"
-              variant="soft"
-              size="md"
-              class="capitalize"
-            >
-              {{ keyword }}
-            </UBadge>
-          </div>
-
-          <div class="flex items-center gap-2">
             <NuxtLink v-if="zenodoUrl" :to="zenodoUrl" target="_blank">
-              <UButton
-                color="primary"
-                variant="solid"
-                icon="heroicons:eye"
-                size="lg"
-              >
-                View Poster
-              </UButton>
+              <img
+                :src="poster.imageUrl"
+                alt="Poster thumbnail"
+                class="max-h-64 w-full rounded-lg object-contain shadow-sm transition-all hover:shadow-lg"
+              />
             </NuxtLink>
-
-            <UButton
-              :color="liked ? 'error' : 'neutral'"
-              :variant="liked ? 'solid' : 'outline'"
-              icon="heroicons:heart"
-              size="lg"
-              :disabled="!loggedIn"
-              :loading="liking"
-              @click="handleLike"
-            >
-              {{ liked ? "Liked" : "Like" }}
-            </UButton>
-
-            <UButton
-              color="neutral"
-              variant="outline"
-              icon="heroicons:share"
-              size="lg"
-              disabled
-            >
-              Share
-            </UButton>
           </div>
         </div>
       </UContainer>
