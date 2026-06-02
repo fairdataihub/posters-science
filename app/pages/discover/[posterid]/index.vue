@@ -6,6 +6,7 @@ import {
   RESOURCE_TYPE_OPTIONS,
   RELATION_TYPE_OPTIONS,
 } from "@/utils/poster_schema";
+import type { WithContext, Poster } from "schema-dts";
 
 const route = useRoute();
 const posterId = route.params.posterid as string;
@@ -166,6 +167,15 @@ useSeoMeta({
   ogImage,
 });
 
+const NuxtSchemaPoster: WithContext<Poster> = {
+  name: poster.value?.title,
+  "@context": "https://schema.org",
+  "@id": `https://doi.org/${poster.value?.doi}`,
+  "@type": "Poster",
+};
+
+useSchemaOrg([NuxtSchemaPoster]);
+
 const handleLike = async () => {
   if (!loggedIn.value) {
     toast.add({
@@ -205,6 +215,7 @@ const handleLike = async () => {
     liking.value = false;
   }
 };
+
 onMounted(() => {
   window.umami?.track("poster_viewed", { posterId: poster.value.id });
 });

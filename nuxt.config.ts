@@ -17,6 +17,8 @@ export default defineNuxtConfig({
     "nuxt-echarts",
     "@nuxt/content",
     "@nuxtjs/robots",
+    "@nuxtjs/sitemap",
+    "nuxt-schema-org",
   ],
   icon: {
     collections: [
