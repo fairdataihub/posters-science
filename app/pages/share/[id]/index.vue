@@ -970,10 +970,7 @@ async function addSubjectAndFocus() {
                   </UButton>
                 </div>
 
-                <UFormField
-                  label="Creator Identifiers (e.g., ORCID)"
-                  name="nameIdentifiers"
-                >
+                <UFormField label="Creator Identifiers" name="nameIdentifiers">
                   <div
                     v-if="
                       state.creators[cIndex]?.nameIdentifiers &&
