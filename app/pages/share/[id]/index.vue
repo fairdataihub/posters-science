@@ -738,6 +738,7 @@ function handleNameTypeChange(nameType: string, cIndex: number) {
     const key = `${cIndex}-${niIndex}`;
     if (!ni.nameIdentifier?.trim()) {
       identifierTypeErrors.value[key] = undefined;
+
       return;
     }
     const inferred = inferNameIdentifierScheme(ni.nameIdentifier);
@@ -1128,7 +1129,7 @@ async function addSubjectAndFocus() {
                                 :href="ni.nameIdentifier"
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                class="text-gray-400 hover:text-primary-500"
+                                class="hover:text-primary-500 text-gray-400"
                               >
                                 <UIcon
                                   name="i-lucide-external-link"
@@ -1204,75 +1205,31 @@ async function addSubjectAndFocus() {
                       :key="aIndex"
                       class="mb-2 space-y-2 rounded-r-xl border border-l-4 border-gray-200 border-l-pink-300 p-3 dark:border-l-pink-700"
                     >
-                      <div class="flex gap-2">
-                        <UFormField
-                          class="w-full"
-                          :name="`creators.${cIndex}.affiliation.${aIndex}.name`"
-                          label="Name"
-                          required
-                        >
-                          <UInput
-                            v-model="affiliation.name"
-                            placeholder="University of California, San Diego"
-                          />
-                        </UFormField>
-
-                        <UButton
-                          class="mt-6"
-                          size="sm"
-                          color="error"
-                          variant="outline"
-                          icon="i-lucide-trash"
-                          @click="
-                            removeRow(
-                              state.creators[cIndex]?.affiliation!,
-                              aIndex,
+                      <AffiliationRorSearch
+                        :model-value="affiliation"
+                        :name-field-name="`creators.${cIndex}.affiliation.${aIndex}.name`"
+                        :identifier-field-name="`creators.${cIndex}.affiliation.${aIndex}.affiliationIdentifier`"
+                        :identifier-error="
+                          affiliationIdentifierErrors[`${cIndex}-${aIndex}`]
+                        "
+                        @update:model-value="
+                          (v) =>
+                            Object.assign(
+                              state.creators[cIndex].affiliation![aIndex]!,
+                              v,
                             )
-                          "
-                        />
-                      </div>
-
-                      <UFormField
-                        :name="`creators.${cIndex}.affiliation.${aIndex}.affiliationIdentifier`"
-                        label="ROR Identifier"
-                        :error="affiliationIdentifierErrors[`${cIndex}-${aIndex}`]"
-                      >
-                        <UInput
-                          v-model="affiliation.affiliationIdentifier"
-                          placeholder="https://ror.org/..."
-                          class="w-full"
-                          @update:model-value="
-                            (v) =>
-                              handleAffiliationIdentifierInput(
-                                v,
-                                cIndex,
-                                aIndex,
-                              )
-                          "
-                        >
-                          <template
-                            v-if="
-                              affiliation.affiliationIdentifier?.startsWith(
-                                'http',
-                              ) &&
-                              !affiliationIdentifierErrors[`${cIndex}-${aIndex}`]
-                            "
-                            #trailing
-                          >
-                            <a
-                              :href="affiliation.affiliationIdentifier"
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              class="text-gray-400 hover:text-primary-500"
-                            >
-                              <UIcon
-                                name="i-lucide-external-link"
-                                class="size-4 cursor-pointer"
-                              />
-                            </a>
-                          </template>
-                        </UInput>
-                      </UFormField>
+                        "
+                        @identifier-input="
+                          (v) =>
+                            handleAffiliationIdentifierInput(v, cIndex, aIndex)
+                        "
+                        @delete="
+                          removeRow(
+                            state.creators[cIndex]?.affiliation!,
+                            aIndex,
+                          )
+                        "
+                      />
                     </div>
 
                     <UButton
