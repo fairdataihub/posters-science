@@ -53,14 +53,9 @@ export function buildPosterJson(
   const filteredSections = Array.isArray(rawSections)
     ? rawSections.filter((s: unknown) => {
         if (typeof s !== "object" || s === null) return false;
-        const { sectionTitle, sectionContent } = s as Record<string, unknown>;
+        const { sectionContent } = s as Record<string, unknown>;
 
-        return (
-          typeof sectionTitle === "string" &&
-          sectionTitle !== "" &&
-          typeof sectionContent === "string" &&
-          sectionContent !== ""
-        );
+        return typeof sectionContent === "string" && sectionContent !== "";
       })
     : [];
 

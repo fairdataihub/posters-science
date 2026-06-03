@@ -548,10 +548,20 @@ const ConferenceSchema = z.object({
 });
 
 // Poster content schema
-const PosterSectionSchema = z.object({
-  sectionTitle: z.string().optional(),
-  sectionContent: z.string().optional(),
-});
+const PosterSectionSchema = z
+  .object({
+    sectionTitle: z.string().optional(),
+    sectionContent: z.string().optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.sectionTitle?.trim() && !data.sectionContent?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Section content is required when a section title is provided",
+        path: ["sectionContent"],
+      });
+    }
+  });
 
 const PosterContentSchema = z.object({
   sections: z.array(PosterSectionSchema).optional(),
