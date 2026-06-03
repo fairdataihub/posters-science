@@ -1,0 +1,15 @@
+allowBuilds:
+  '@parcel/watcher': true
+  '@prisma/engines': true
+  bcrypt: true
+  better-sqlite3: true
+  esbuild: true
+  prisma: true
+  sharp: true
+  unrs-resolver: true
+  vue-demi: true
+
+# setting the minimum release age to 5 days (7200 minutes) to ensure that releases are stable before being used in the workspace
+minimumReleaseAge: 7200
+blockExoticSubdeps: true
+minimumReleaseAgeStrict: true # tracked in https://github.com/pnpm/pnpm/issues/11238

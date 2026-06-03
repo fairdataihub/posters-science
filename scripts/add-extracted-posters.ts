@@ -125,10 +125,7 @@ function mapToDbFields(data: JsonPoster) {
   const doiRaw = doiEntry?.identifier;
   const doi = typeof doiRaw === "string" ? doiRaw.toLowerCase() : null;
 
-  const publisher =
-    typeof data.publisher === "string"
-      ? data.publisher
-      : (data.publisher?.name ?? null);
+  const publisher = "Zenodo";
 
   const publicationYear = data.publicationYear ?? null;
 
@@ -141,11 +138,8 @@ function mapToDbFields(data: JsonPoster) {
   const relatedIdentifiers = data.relatedIdentifiers ?? [];
 
   const sizesArr = (data.sizes ?? []).filter((s: any) => typeof s === "string");
-  const formatsArr = (data.formats ?? []).filter(
-    (f: any) => typeof f === "string",
-  );
   const size = sizesArr[0] ?? null;
-  const format = formatsArr[0] ?? null;
+  const format = "application/pdf";
   const version = data.version ?? null;
 
   const rightsList = data.rightsList ?? [];
@@ -390,7 +384,7 @@ async function main() {
               imageUrl,
               automated: true,
               status: "published",
-              publishedAt: mapped.issuedAt,
+              publishedAt: mapped.submittedAt,
               created: mapped.submittedAt,
               updated: mapped.submittedAt,
               randomInt: Math.floor(Math.random() * 1000000),

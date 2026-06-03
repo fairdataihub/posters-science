@@ -46,6 +46,7 @@ jobs:
       NUXT_BUNNY_PUBLIC_STORAGE: ${{ secrets.NUXT_BUNNY_PUBLIC_STORAGE }}
       NUXT_BUNNY_PUBLIC_STORAGE_KEY: ${{ secrets.NUXT_BUNNY_PUBLIC_STORAGE_KEY }}
       NUXT_SITE_URL: ${{ secrets.NUXT_SITE_URL }}
+      NUXT_SITE_ENV: ${{ secrets.NUXT_SITE_ENV }}
       NUXT_RESEND_API_KEY: ${{ secrets.NUXT_RESEND_API_KEY }}
       NUXT_UMAMI_USERNAME: ${{ secrets.NUXT_UMAMI_USERNAME }}
       NUXT_UMAMI_PASSWORD: ${{ secrets.NUXT_UMAMI_PASSWORD }}
@@ -107,7 +108,7 @@ jobs:
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 10
+          version: 11
 
       - uses: actions/setup-node@v4
         with:

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import dayjs from "dayjs";
-import { getLocalTimeZone } from "@internationalized/date";
+import { getLocalTimeZone, parseDate } from "@internationalized/date";
 import type { CalendarDate } from "@internationalized/date";
 
 const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Discover Posters - Posters.science")}&description=${encodeURIComponent("Find and explore scientific posters on a variety of topics.")}&app=posters-science&org=fairdataihub`;
@@ -13,12 +13,19 @@ useSeoMeta({
   ogImage,
 });
 
+const route = useRoute();
+const router = useRouter();
+
 const dateFilterValue = shallowRef<{
   start: CalendarDate | undefined;
   end: CalendarDate | undefined;
 }>({
-  start: undefined,
-  end: undefined,
+  start: route.query.dateFrom
+    ? parseDate(route.query.dateFrom as string)
+    : undefined,
+  end: route.query.dateTo
+    ? parseDate(route.query.dateTo as string)
+    : undefined,
 });
 
 const dateFrom = computed(() =>
@@ -49,13 +56,13 @@ type Poster = {
 
 const PAGE_SIZE = 9;
 
-const page = ref(1);
+const page = ref(Number(route.query.page) || 1);
 
-const sortBy = ref("Newest First");
+const sortBy = ref((route.query.sortBy as string) || "Newest First");
 const posters = ref<Poster[]>([]);
 const total = ref(0);
-const searchQuery = ref("");
-const committedSearch = ref("");
+const searchQuery = ref((route.query.search as string) || "");
+const committedSearch = ref((route.query.search as string) || "");
 
 const mapPosters = (apiPosters: Poster[]) => {
   return apiPosters.map((poster) => ({
@@ -98,6 +105,22 @@ watch(sortBy, () => {
 watch(dateFilterValue, () => {
   page.value = 1;
 });
+
+watch(
+  [page, committedSearch, sortBy, dateFilterValue],
+  () => {
+    const query: Record<string, string> = {};
+    if (page.value !== 1) query.page = String(page.value);
+    if (committedSearch.value) query.search = committedSearch.value;
+    if (sortBy.value !== "Newest First") query.sortBy = sortBy.value;
+    if (dateFilterValue.value.start)
+      query.dateFrom = dateFilterValue.value.start.toString();
+    if (dateFilterValue.value.end)
+      query.dateTo = dateFilterValue.value.end.toString();
+    router.replace({ query });
+  },
+  { deep: true },
+);
 
 watch(
   data,
@@ -242,8 +265,8 @@ const hasActiveFilters = computed(() => !!dateFilterValue.value.start);
                     >
                       <UBadge
                         color="primary"
-                        variant="soft"
-                        size="sm"
+                        variant="solid"
+                        size="xs"
                         icon="i-lucide-sparkles"
                         class="absolute top-2 left-2 z-10 cursor-help"
                       >

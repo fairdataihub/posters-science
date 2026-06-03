@@ -29,10 +29,12 @@ export function buildPosterJson(
     }
   }
 
-  const publisher =
-    meta.publisher != null && meta.publisher !== ""
-      ? { name: meta.publisher }
-      : undefined;
+  const publisher = {
+    name: "Zenodo",
+    publisherIdentifier: "https://doi.org/10.17616/R3QP53",
+    publisherIdentifierScheme: "DOI",
+    schemeURI: "https://doi.org",
+  };
 
   const conference = buildConference(meta);
 
@@ -151,7 +153,7 @@ export function buildPosterJson(
     },
     ...(mergedIdentifiers && { identifiers: mergedIdentifiers }),
     creators: cleanCreators(meta.creators),
-    ...(publisher && { publisher }),
+    publisher,
     publicationYear: currentPublicationYear,
     subjects: (meta.subjects ?? [])
       .filter((s) => s !== "")

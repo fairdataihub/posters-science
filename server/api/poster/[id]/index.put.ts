@@ -100,7 +100,7 @@ export default defineEventHandler(async (event) => {
   const posterDescription = data.description || "No description provided";
 
   const identifiers = data.identifiers ?? [];
-  const publisher = data.publisher ?? null;
+  const publisher = "Zenodo";
   const publicationYear = data.publicationYear ?? null;
   const subjects = Array.from(
     new Map(

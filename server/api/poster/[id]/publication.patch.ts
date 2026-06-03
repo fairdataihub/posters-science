@@ -39,7 +39,7 @@ export default defineEventHandler(async (event) => {
   const updateData: Record<string, unknown> = {};
   if (body.doi !== undefined) updateData.doi = body.doi;
   if (body.license !== undefined) updateData.license = body.license;
-  if (body.publisher !== undefined) updateData.publisher = body.publisher;
+  updateData.publisher = "Zenodo";
   if (body.publicationYear !== undefined)
     updateData.publicationYear = body.publicationYear;
 
