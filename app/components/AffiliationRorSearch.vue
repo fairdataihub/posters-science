@@ -7,6 +7,21 @@ interface RorResult {
   country: string;
 }
 
+interface RorName {
+  value: string;
+  types: string[];
+}
+
+interface RorOrganization {
+  id: string;
+  names?: RorName[];
+  locations?: { geonames_details?: { country_name?: string } }[];
+}
+
+interface RorItem extends RorOrganization {
+  organization?: RorOrganization;
+}
+
 interface Affiliation {
   name: string;
   affiliationIdentifier?: string;
@@ -74,11 +89,32 @@ const fetchResults = useDebounceFn(async (query: string) => {
 
   loading.value = true;
   try {
-    const data = await $fetch<RorResult[]>("/api/ror/search", {
-      query: { query },
-      signal,
-    });
-    results.value = data;
+    const advancedQuery = `names.value:(${query
+      .trim()
+      .split(/\s+/)
+      .map((w) => `+${w}`)
+      .join(" ")})`;
+
+    const data = await $fetch<{ items: RorItem[] }>(
+      "https://api.ror.org/v2/organizations",
+      { query: { "query.advanced": advancedQuery }, signal },
+    );
+
+    results.value = (data.items ?? [])
+      .map((item) => {
+        const org = item.organization ?? item;
+        const name =
+          org.names?.find((n) => n.types.includes("ror_display"))?.value ??
+          org.names?.[0]?.value ??
+          "";
+        const country =
+          org.locations?.[0]?.geonames_details?.country_name ?? "";
+
+        return { id: org.id ?? "", name, country };
+      })
+      .filter((r) => r.name)
+      .slice(0, 8);
+
     if (results.value.length > 0) {
       updateDropdownPosition();
       showDropdown.value = true;
@@ -86,8 +122,8 @@ const fetchResults = useDebounceFn(async (query: string) => {
       showDropdown.value = false;
     }
     highlighted.value = -1;
-  } catch (err: unknown) {
-    if (err instanceof Error && err.name === "AbortError") return;
+  } catch {
+    if (signal.aborted) return;
     results.value = [];
     showDropdown.value = false;
   } finally {

@@ -44,7 +44,17 @@ export default defineEventHandler(async (event) => {
 
   const response = await $fetch<RorResponse>(
     "https://api.ror.org/v2/organizations",
-    { query: { query } },
+    {
+      query: {
+        "query.advanced": `names.value:(${query
+          .trim()
+          .split(/\s+/)
+          .map((w) => `+${w}`)
+          .join(" ")})`,
+        _t: Date.now(),
+      },
+      headers: { "Cache-Control": "no-cache" },
+    },
   );
 
   return (response.items ?? [])
