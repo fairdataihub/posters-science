@@ -39,6 +39,7 @@ const liking = ref(false);
 
 const poster = ref({
   id: api?.id ?? posterId,
+  automated: api?.automated ?? false,
   title: api?.title ?? "Untitled Poster",
   description: api?.description ?? "",
   imageUrl:
@@ -140,6 +141,15 @@ const zenodoUrl = computed(() => {
   }
 
   return `https://doi.org/${poster.value.doi}`;
+});
+
+const posterSource = computed(() => {
+  if (!poster.value.automated) return null;
+  const doi = poster.value.doi ?? "";
+  const imageUrl = api?.imageUrl ?? "";
+  if (doi.startsWith("10.6084/") || imageUrl.includes("/figshare_"))
+    return "figshare";
+  return "zenodo";
 });
 
 const licenseInfo = computed(() => {
@@ -376,6 +386,21 @@ const tabItems = [
                   }}
                   view{{ poster.views === 1 ? "" : "s" }}
                 </UBadge>
+
+                <UTooltip
+                  v-if="poster.automated && posterSource"
+                  :text="`Automatically indexed from ${posterSource === 'zenodo' ? 'Zenodo' : 'Figshare'}.`"
+                >
+                  <UBadge
+                    color="primary"
+                    variant="solid"
+                    size="md"
+                    icon="i-lucide-sparkles"
+                    class="cursor-help"
+                  >
+                    Auto-indexed
+                  </UBadge>
+                </UTooltip>
               </div>
 
               <div class="flex items-baseline gap-3">
@@ -845,6 +870,28 @@ const tabItems = [
                       </UBadge>
                     </div>
                   </div>
+                </div>
+
+                <div
+                  v-if="poster.automated && posterSource"
+                  class="flex flex-col gap-0.5"
+                >
+                  <span
+                    class="text-xs font-medium tracking-wide text-gray-400 uppercase"
+                    >Indexed from</span
+                  >
+
+                  <a
+                    :href="
+                      posterSource === 'zenodo'
+                        ? 'https://zenodo.org'
+                        : 'https://figshare.com'
+                    "
+                    target="_blank"
+                    class="font-medium text-blue-600 hover:underline"
+                  >
+                    {{ posterSource === "zenodo" ? "Zenodo" : "Figshare" }}
+                  </a>
                 </div>
               </div>
             </UCard>
