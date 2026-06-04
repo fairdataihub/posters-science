@@ -40,6 +40,8 @@ export default defineEventHandler(async (event) => {
 
   const { query } = result.data;
 
+  setResponseHeader(event, "Cache-Control", "no-store");
+
   const response = await $fetch<RorResponse>(
     "https://api.ror.org/v2/organizations",
     { query: { query } },
