@@ -58,6 +58,8 @@ function updateDropdownPosition() {
   };
 }
 
+let activeController: AbortController | null = null;
+
 const fetchResults = useDebounceFn(async (query: string) => {
   if (query.length < 2) {
     results.value = [];
@@ -65,11 +67,18 @@ const fetchResults = useDebounceFn(async (query: string) => {
 
     return;
   }
+
+  activeController?.abort();
+  activeController = new AbortController();
+  const { signal } = activeController;
+
   loading.value = true;
   try {
-    results.value = await $fetch<RorResult[]>("/api/ror/search", {
+    const data = await $fetch<RorResult[]>("/api/ror/search", {
       query: { query },
+      signal,
     });
+    results.value = data;
     if (results.value.length > 0) {
       updateDropdownPosition();
       showDropdown.value = true;
@@ -77,13 +86,14 @@ const fetchResults = useDebounceFn(async (query: string) => {
       showDropdown.value = false;
     }
     highlighted.value = -1;
-  } catch {
+  } catch (err: unknown) {
+    if (err instanceof Error && err.name === "AbortError") return;
     results.value = [];
     showDropdown.value = false;
   } finally {
     loading.value = false;
   }
-}, 300);
+}, 600);
 
 function onNameInput(value: string | number) {
   const str = String(value);
@@ -211,10 +221,21 @@ function selectHighlighted() {
   </div>
 
   <UFormField
+    class="mt-3"
     :name="identifierFieldName"
     label="ROR Identifier"
     :error="identifierError"
   >
+    <template #hint>
+      <a
+        href="https://ror.org/"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="hover:text-primary-500 text-[11px] font-normal text-gray-400 hover:underline"
+        >Learn more about ROR</a
+      >
+    </template>
+
     <UInput
       :model-value="localIdentifier"
       placeholder="https://ror.org/..."

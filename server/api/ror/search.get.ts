@@ -16,10 +16,16 @@ interface RorLocation {
   };
 }
 
-interface RorItem {
+interface RorOrganization {
   id: string;
-  names: RorName[];
+  names?: RorName[];
   locations?: RorLocation[];
+}
+
+// The v2 API wraps org data in an `organization` key for `?query=` searches,
+// but returns flat items for `?affiliation=` searches. Handle both.
+interface RorItem extends RorOrganization {
+  organization?: RorOrganization;
 }
 
 interface RorResponse {
@@ -35,18 +41,21 @@ export default defineEventHandler(async (event) => {
   const { query } = result.data;
 
   const response = await $fetch<RorResponse>(
-    `https://api.ror.org/v2/organizations`,
+    "https://api.ror.org/v2/organizations",
     { query: { query } },
   );
 
-  return (response.items ?? []).slice(0, 8).map((item) => {
-    const displayName =
-      item.names.find((n) => n.types.includes("ror_display"))?.value ??
-      item.names[0]?.value ??
-      "";
-    const country =
-      item.locations?.[0]?.geonames_details?.country_name ?? "";
+  return (response.items ?? [])
+    .map((item) => {
+      const org = item.organization ?? item;
+      const displayName =
+        org.names?.find((n) => n.types.includes("ror_display"))?.value ??
+        org.names?.[0]?.value ??
+        "";
+      const country = org.locations?.[0]?.geonames_details?.country_name ?? "";
 
-    return { id: item.id, name: displayName, country };
-  });
+      return { id: org.id, name: displayName, country };
+    })
+    .filter((item) => item.name)
+    .slice(0, 8);
 });
