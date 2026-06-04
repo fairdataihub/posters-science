@@ -53,6 +53,34 @@ const orcidErrors = ref<Record<string, string | undefined>>({});
 const orcidChecking = ref<Record<string, boolean | undefined>>({});
 const identifierTypeErrors = ref<Record<string, string | undefined>>({});
 const affiliationIdentifierErrors = ref<Record<string, string | undefined>>({});
+const orcidSearchOpenIndex = ref<number | null>(null);
+const rorSearchOpenIndex = ref<number | null>(null);
+const autofillHighlight = ref<Record<string, boolean>>({});
+
+function handleOrcidSelect(orcidUrl: string, cIndex: number) {
+  const ni = state.creators[cIndex]?.nameIdentifiers?.[0];
+  if (ni) ni.nameIdentifier = orcidUrl;
+  handleNameIdentifierInput(orcidUrl, cIndex, 0);
+  orcidSearchOpenIndex.value = null;
+  const key = `${cIndex}-0`;
+  autofillHighlight.value[key] = true;
+  setTimeout(() => {
+    autofillHighlight.value[key] = false;
+  }, 1600);
+}
+
+function handleRorSelect(rorUrl: string, displayName: string, cIndex: number) {
+  const ni = state.creators[cIndex]?.nameIdentifiers?.[0];
+  if (ni) ni.nameIdentifier = rorUrl;
+  handleNameIdentifierInput(rorUrl, cIndex, 0);
+  state.creators[cIndex].givenName = displayName;
+  rorSearchOpenIndex.value = null;
+  const key = `${cIndex}-0`;
+  autofillHighlight.value[key] = true;
+  setTimeout(() => {
+    autofillHighlight.value[key] = false;
+  }, 1600);
+}
 const additionalInfoCollapsed = ref(true);
 const posterContentCollapsed = ref(true);
 const mandatoryCollapsed = ref(false);
@@ -1221,51 +1249,116 @@ async function addSubjectAndFocus() {
                           }}
                         </a>
                       </template>
-                      <UInput
-                        v-model="
-                          state.creators[cIndex].nameIdentifiers![0]
-                            .nameIdentifier
-                        "
-                        :placeholder="
-                          creator.nameType === 'Organizational'
-                            ? 'https://ror.org/...'
-                            : 'https://orcid.org/0000-0000-0000-0000'
-                        "
-                        :loading="orcidChecking[`${cIndex}-0`]"
-                        @update:model-value="
-                          (v) => handleNameIdentifierInput(v, cIndex, 0)
-                        "
-                        @blur="() => handleOrcidBlur(cIndex, 0)"
-                      >
-                        <template
-                          v-if="
-                            state.creators[
-                              cIndex
-                            ].nameIdentifiers![0].nameIdentifier?.startsWith(
-                              'http',
-                            ) && !identifierTypeErrors[`${cIndex}-0`]
+
+                      <div class="relative">
+                        <div
+                          v-if="autofillHighlight[`${cIndex}-0`]"
+                          class="orcid-autofill-ring pointer-events-none absolute inset-0 rounded-md"
+                        />
+
+                        <UInput
+                          v-model="
+                            state.creators[cIndex].nameIdentifiers![0]
+                              .nameIdentifier
                           "
-                          #trailing
+                          :placeholder="
+                            creator.nameType === 'Organizational'
+                              ? 'https://ror.org/...'
+                              : 'https://orcid.org/0000-0000-0000-0000'
+                          "
+                          :loading="orcidChecking[`${cIndex}-0`]"
+                          @update:model-value="
+                            (v) => handleNameIdentifierInput(v, cIndex, 0)
+                          "
+                          @blur="() => handleOrcidBlur(cIndex, 0)"
                         >
-                          <a
-                            :href="
-                              state.creators[cIndex].nameIdentifiers![0]
-                                .nameIdentifier
+                          <template
+                            v-if="
+                              state.creators[
+                                cIndex
+                              ].nameIdentifiers![0].nameIdentifier?.startsWith(
+                                'http',
+                              ) && !identifierTypeErrors[`${cIndex}-0`]
                             "
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            class="hover:text-primary-500 text-gray-400"
+                            #trailing
                           >
-                            <UIcon
-                              name="i-lucide-external-link"
-                              class="size-4 cursor-pointer"
-                            />
-                          </a>
-                        </template>
-                      </UInput>
+                            <a
+                              :href="
+                                state.creators[cIndex].nameIdentifiers![0]
+                                  .nameIdentifier
+                              "
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              class="hover:text-primary-500 text-gray-400"
+                            >
+                              <UIcon
+                                name="i-lucide-external-link"
+                                class="size-4 cursor-pointer"
+                              />
+                            </a>
+                          </template>
+                        </UInput>
+                      </div>
                     </UFormField>
                   </div>
                 </UFormField>
+
+                <template v-if="creator.nameType !== 'Organizational'">
+                  <UButton
+                    size="sm"
+                    variant="outline"
+                    color="primary"
+                    icon="i-lucide-search"
+                    :disabled="!creator.givenName || !creator.familyName"
+                    @click="orcidSearchOpenIndex = cIndex"
+                  >
+                    Find ORCID
+                  </UButton>
+
+                  <OrcidSearch
+                    v-if="orcidSearchOpenIndex === cIndex"
+                    :open="orcidSearchOpenIndex === cIndex"
+                    :given-name="creator.givenName"
+                    :family-name="creator.familyName"
+                    :affiliations="
+                      creator.affiliation?.map((a) => a.name).filter(Boolean) ??
+                      []
+                    "
+                    @update:open="
+                      (v) => {
+                        if (!v) orcidSearchOpenIndex = null;
+                      }
+                    "
+                    @select="(orcidUrl) => handleOrcidSelect(orcidUrl, cIndex)"
+                  />
+                </template>
+
+                <template v-else>
+                  <UButton
+                    size="sm"
+                    variant="outline"
+                    color="primary"
+                    icon="i-lucide-search"
+                    :disabled="!creator.givenName"
+                    @click="rorSearchOpenIndex = cIndex"
+                  >
+                    Find ROR
+                  </UButton>
+
+                  <RorSearch
+                    v-if="rorSearchOpenIndex === cIndex"
+                    :open="rorSearchOpenIndex === cIndex"
+                    :org-name="creator.givenName"
+                    @update:open="
+                      (v) => {
+                        if (!v) rorSearchOpenIndex = null;
+                      }
+                    "
+                    @select="
+                      (rorUrl, name) => handleRorSelect(rorUrl, name, cIndex)
+                    "
+                  />
+                </template>
               </div>
 
               <UButton
@@ -2192,3 +2285,21 @@ async function addSubjectAndFocus() {
     </UModal>
   </div>
 </template>
+
+<style scoped>
+@keyframes autofill-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgba(236, 72, 153, 0.65);
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgba(236, 72, 153, 0.2);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(236, 72, 153, 0);
+  }
+}
+
+.orcid-autofill-ring {
+  animation: autofill-ring 1.6s ease-out forwards;
+}
+</style>
