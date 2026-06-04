@@ -16,6 +16,15 @@ useSeoMeta({
 const route = useRoute();
 const router = useRouter();
 
+const sourceFilterValue = ref<string[]>(
+  route.query.source
+    ? String(route.query.source)
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : [],
+);
+
 const dateFilterValue = shallowRef<{
   start: CalendarDate | undefined;
   end: CalendarDate | undefined;
@@ -23,9 +32,7 @@ const dateFilterValue = shallowRef<{
   start: route.query.dateFrom
     ? parseDate(route.query.dateFrom as string)
     : undefined,
-  end: route.query.dateTo
-    ? parseDate(route.query.dateTo as string)
-    : undefined,
+  end: route.query.dateTo ? parseDate(route.query.dateTo as string) : undefined,
 });
 
 const dateFrom = computed(() =>
@@ -37,6 +44,12 @@ const dateFrom = computed(() =>
 const dateTo = computed(() =>
   dateFilterValue.value.end
     ? dateFilterValue.value.end.toDate(getLocalTimeZone()).toISOString()
+    : undefined,
+);
+
+const sourceParam = computed(() =>
+  sourceFilterValue.value.length > 0
+    ? sourceFilterValue.value.join(",")
     : undefined,
 );
 
@@ -90,6 +103,7 @@ const { data, error, status } = await useFetch("/api/discover", {
     sortBy,
     dateFrom,
     dateTo,
+    source: sourceParam,
   },
 });
 
@@ -106,8 +120,12 @@ watch(dateFilterValue, () => {
   page.value = 1;
 });
 
+watch(sourceFilterValue, () => {
+  page.value = 1;
+});
+
 watch(
-  [page, committedSearch, sortBy, dateFilterValue],
+  [page, committedSearch, sortBy, dateFilterValue, sourceFilterValue],
   () => {
     const query: Record<string, string> = {};
     if (page.value !== 1) query.page = String(page.value);
@@ -117,6 +135,8 @@ watch(
       query.dateFrom = dateFilterValue.value.start.toString();
     if (dateFilterValue.value.end)
       query.dateTo = dateFilterValue.value.end.toString();
+    if (sourceFilterValue.value.length > 0)
+      query.source = sourceFilterValue.value.join(",");
     router.replace({ query });
   },
   { deep: true },
@@ -140,7 +160,16 @@ if (error.value) {
 const totalFiltered = computed(() => total.value);
 
 const showMobileFilter = ref(false);
-const hasActiveFilters = computed(() => !!dateFilterValue.value.start);
+const hasActiveFilters = computed(
+  () => !!dateFilterValue.value.start || sourceFilterValue.value.length > 0,
+);
+const activeFilterCount = computed(() => {
+  let count = 0;
+  if (dateFilterValue.value.start) count++;
+  if (sourceFilterValue.value.length > 0) count++;
+
+  return count;
+});
 </script>
 
 <template>
@@ -171,6 +200,8 @@ const hasActiveFilters = computed(() => !!dateFilterValue.value.start);
 
           <div class="space-y-6">
             <DiscoverPublishedDateFilter v-model="dateFilterValue" />
+
+            <DiscoverSourceFilter v-model="sourceFilterValue" />
           </div>
         </UCard>
       </div>
@@ -190,17 +221,22 @@ const hasActiveFilters = computed(() => !!dateFilterValue.value.start);
           >
             <span class="flex items-center gap-2">
               Filters
-              <UBadge v-if="hasActiveFilters" color="primary" size="xs"
-                >1</UBadge
-              >
+              <UBadge v-if="hasActiveFilters" color="primary" size="xs">{{
+                activeFilterCount
+              }}</UBadge>
             </span>
           </UButton>
 
-          <div v-show="showMobileFilter" class="mt-2 rounded-lg border p-4">
+          <div
+            v-show="showMobileFilter"
+            class="mt-2 space-y-6 rounded-lg border p-4"
+          >
             <DiscoverPublishedDateFilter
               v-model="dateFilterValue"
               :number-of-months="1"
             />
+
+            <DiscoverSourceFilter v-model="sourceFilterValue" />
           </div>
         </div>
 
