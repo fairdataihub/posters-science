@@ -723,13 +723,30 @@ const StrictNameIdentifierSchema = z
     },
   );
 
-const StrictCreatorSchema = z.object({
-  givenName: z.string().min(1, { message: "Given name is required" }),
-  familyName: z.string().min(1, { message: "Family name is required" }),
-  nameType: z.enum(NAME_TYPE_VALUES).optional(),
-  nameIdentifiers: z.array(StrictNameIdentifierSchema).optional(),
-  affiliation: z.array(StrictAffiliationSchema).optional(),
-});
+const StrictCreatorSchema = z
+  .object({
+    givenName: z.string().min(1, { message: "Name is required" }),
+    familyName: z.string().optional(),
+    nameType: z.enum(NAME_TYPE_VALUES).optional(),
+    nameIdentifiers: z.preprocess(
+      (ids) =>
+        Array.isArray(ids)
+          ? ids.filter((ni: unknown) => {
+              if (typeof ni !== "object" || ni === null) return false;
+
+              return !!(ni as Record<string, unknown>).nameIdentifier;
+            })
+          : ids,
+      z.array(StrictNameIdentifierSchema).optional(),
+    ),
+    affiliation: z.array(StrictAffiliationSchema).optional(),
+  })
+  .refine(
+    (data) =>
+      data.nameType === "Organizational" ||
+      (data.familyName && data.familyName.length > 0),
+    { message: "Family name is required", path: ["familyName"] },
+  );
 
 const StrictPublisherSchema = z.object({
   name: z.string().min(1, { message: "Publisher name is required" }),

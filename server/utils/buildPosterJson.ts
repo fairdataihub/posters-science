@@ -267,17 +267,18 @@ function cleanCreators(raw: unknown): unknown[] {
 
     const name =
       typeof c.name === "string" && c.name.trim() ? c.name.trim() : undefined;
-    const givenName =
-      typeof c.givenName === "string" && c.givenName.trim()
-        ? c.givenName.trim()
-        : undefined;
-    const familyName =
-      typeof c.familyName === "string" && c.familyName.trim()
-        ? c.familyName.trim()
-        : undefined;
     const nameType =
       typeof c.nameType === "string" && c.nameType.trim()
         ? c.nameType.trim()
+        : undefined;
+    const isOrg = nameType?.toLowerCase() === "organizational";
+    const givenName =
+      !isOrg && typeof c.givenName === "string" && c.givenName.trim()
+        ? c.givenName.trim()
+        : undefined;
+    const familyName =
+      !isOrg && typeof c.familyName === "string" && c.familyName.trim()
+        ? c.familyName.trim()
         : undefined;
 
     return {
