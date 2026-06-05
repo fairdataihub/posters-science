@@ -181,7 +181,7 @@ function selectResult(result: OrcidResult) {
               v-for="result in results"
               :key="result.orcidId"
               type="button"
-              class="hover:border-primary-300 hover:bg-primary-50 dark:hover:border-primary-700 dark:hover:bg-primary-900/20 w-full rounded-lg border border-gray-200 p-3 text-left transition-colors dark:border-gray-700"
+              class="group hover:border-primary-300 hover:bg-primary-50 dark:hover:border-primary-700 dark:hover:bg-primary-900/20 w-full cursor-pointer rounded-lg border border-gray-200 p-3 text-left transition-colors dark:border-gray-700"
               @click="selectResult(result)"
             >
               <div class="flex flex-col gap-1">
@@ -194,7 +194,7 @@ function selectResult(result: OrcidResult) {
                     :href="`https://orcid.org/${result.orcidId}`"
                     target="_blank"
                     rel="noopener noreferrer"
-                    class="hover:text-primary-500 shrink-0 font-mono text-gray-500 hover:underline dark:text-gray-400"
+                    class="group-hover:text-primary-500 shrink-0 font-mono text-gray-500 group-hover:underline dark:text-gray-400"
                     @click.stop
                   >
                     {{ result.orcidId }}

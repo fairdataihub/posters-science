@@ -12,6 +12,7 @@ export function buildPosterJson(
     description?: string;
     zenodoDoi?: string;
     publishedAt?: Date;
+    includePublisher?: boolean;
   },
 ) {
   const currentPublicationYear = new Date().getFullYear();
@@ -29,12 +30,14 @@ export function buildPosterJson(
     }
   }
 
-  const publisher = {
-    name: "Zenodo",
-    publisherIdentifier: "https://doi.org/10.17616/R3QP53",
-    publisherIdentifierScheme: "DOI",
-    schemeURI: "https://doi.org",
-  };
+  const publisher = options?.includePublisher
+    ? {
+        name: "Zenodo",
+        publisherIdentifier: "https://doi.org/10.17616/R3QP53",
+        publisherIdentifierScheme: "DOI",
+        schemeURI: "https://doi.org",
+      }
+    : undefined;
 
   const conference = buildConference(meta);
 
@@ -153,7 +156,7 @@ export function buildPosterJson(
     },
     ...(mergedIdentifiers && { identifiers: mergedIdentifiers }),
     creators: cleanCreators(meta.creators),
-    publisher,
+    ...(publisher && { publisher }),
     publicationYear: currentPublicationYear,
     subjects: (meta.subjects ?? [])
       .filter((s) => s !== "")

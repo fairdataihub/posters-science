@@ -497,6 +497,7 @@ export async function beginZenodoPublication(
     description: poster.description,
     zenodoDoi: doi,
     publishedAt: zenodoSharedAt,
+    includePublisher: true,
   });
   const posterJsonBlob = new Blob([JSON.stringify(posterJson, null, 2)], {
     type: "application/json",

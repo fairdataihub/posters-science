@@ -71,7 +71,7 @@ function handleOrcidSelect(orcidUrl: string, cIndex: number) {
 
   setTimeout(() => {
     autofillHighlight.value[key] = false;
-  }, 1600);
+  }, 700);
 }
 
 function handleRorSelect(rorUrl: string, displayName: string, cIndex: number) {
@@ -90,7 +90,7 @@ function handleRorSelect(rorUrl: string, displayName: string, cIndex: number) {
 
   setTimeout(() => {
     autofillHighlight.value[key] = false;
-  }, 1600);
+  }, 700);
 }
 
 const additionalInfoCollapsed = ref(true);
@@ -878,15 +878,22 @@ async function handleOrcidBlur(cIndex: number, niIndex: number) {
 
 function handleAffiliationRorSelect(
   rorUrl: string,
+  displayName: string,
   cIndex: number,
   aIndex: number,
 ) {
   const aff = state.creators[cIndex]?.affiliation?.[aIndex];
   if (aff) {
     aff.affiliationIdentifier = rorUrl;
+    aff.name = displayName;
     handleAffiliationIdentifierInput(rorUrl, cIndex, aIndex);
   }
   affiliationRorSearchOpen.value = null;
+  const key = `aff-${cIndex}-${aIndex}`;
+  autofillHighlight.value[key] = true;
+  setTimeout(() => {
+    autofillHighlight.value[key] = false;
+  }, 700);
 }
 
 function handleFunderIdentifierTypeChange(value: string, fIndex: number) {
@@ -1193,10 +1200,17 @@ async function addSubjectAndFocus() {
                         label="Name"
                         required
                       >
-                        <UInput
-                          v-model="affiliation.name"
-                          placeholder="University of California, San Diego"
-                        />
+                        <div class="relative">
+                          <div
+                            v-if="autofillHighlight[`aff-${cIndex}-${aIndex}`]"
+                            class="orcid-autofill-ring pointer-events-none absolute inset-0 rounded-md"
+                          />
+
+                          <UInput
+                            v-model="affiliation.name"
+                            placeholder="University of California, San Diego"
+                          />
+                        </div>
                       </UFormField>
 
                       <UButton
@@ -1223,43 +1237,50 @@ async function addSubjectAndFocus() {
                         "
                         class="w-full"
                       >
-                        <UInput
-                          v-model="affiliation.affiliationIdentifier"
-                          placeholder="https://ror.org/..."
-                          class="w-full"
-                          @update:model-value="
-                            (v) =>
-                              handleAffiliationIdentifierInput(
-                                v,
-                                cIndex,
-                                aIndex,
-                              )
-                          "
-                        >
-                          <template
-                            v-if="
-                              affiliation.affiliationIdentifier?.startsWith(
-                                'http',
-                              ) &&
-                              !affiliationIdentifierErrors[
-                                `${cIndex}-${aIndex}`
-                              ]
+                        <div class="relative">
+                          <div
+                            v-if="autofillHighlight[`aff-${cIndex}-${aIndex}`]"
+                            class="orcid-autofill-ring pointer-events-none absolute inset-0 rounded-md"
+                          />
+
+                          <UInput
+                            v-model="affiliation.affiliationIdentifier"
+                            placeholder="https://ror.org/..."
+                            class="w-full"
+                            @update:model-value="
+                              (v) =>
+                                handleAffiliationIdentifierInput(
+                                  v,
+                                  cIndex,
+                                  aIndex,
+                                )
                             "
-                            #trailing
                           >
-                            <a
-                              :href="affiliation.affiliationIdentifier"
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              class="hover:text-primary-500 flex items-center text-gray-400"
+                            <template
+                              v-if="
+                                affiliation.affiliationIdentifier?.startsWith(
+                                  'http',
+                                ) &&
+                                !affiliationIdentifierErrors[
+                                  `${cIndex}-${aIndex}`
+                                ]
+                              "
+                              #trailing
                             >
-                              <UIcon
-                                name="i-lucide-external-link"
-                                class="size-4 cursor-pointer"
-                              />
-                            </a>
-                          </template>
-                        </UInput>
+                              <a
+                                :href="affiliation.affiliationIdentifier"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                class="hover:text-primary-500 flex items-center text-gray-400"
+                              >
+                                <UIcon
+                                  name="i-lucide-external-link"
+                                  class="size-4 cursor-pointer"
+                                />
+                              </a>
+                            </template>
+                          </UInput>
+                        </div>
                       </UFormField>
 
                       <UButton
@@ -1288,8 +1309,13 @@ async function addSubjectAndFocus() {
                           }
                         "
                         @select="
-                          (rorUrl) =>
-                            handleAffiliationRorSelect(rorUrl, cIndex, aIndex)
+                          (rorUrl, displayName) =>
+                            handleAffiliationRorSelect(
+                              rorUrl,
+                              displayName,
+                              cIndex,
+                              aIndex,
+                            )
                         "
                       />
                     </div>
@@ -2405,6 +2431,6 @@ async function addSubjectAndFocus() {
 }
 
 .orcid-autofill-ring {
-  animation: autofill-ring 1.6s ease-out forwards;
+  animation: autofill-ring 0.7s ease-out forwards;
 }
 </style>

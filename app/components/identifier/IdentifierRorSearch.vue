@@ -138,7 +138,7 @@ function selectResult(result: RorResult) {
               v-for="result in results"
               :key="result.id"
               type="button"
-              class="hover:border-primary-300 hover:bg-primary-50 dark:hover:border-primary-700 dark:hover:bg-primary-900/20 w-full rounded-lg border border-gray-200 p-3 text-left transition-colors dark:border-gray-700"
+              class="hover:border-primary-300 hover:bg-primary-50 dark:hover:border-primary-700 dark:hover:bg-primary-900/20 w-full cursor-pointer rounded-lg border border-gray-200 p-3 text-left transition-colors dark:border-gray-700"
               @click="selectResult(result)"
             >
               <div class="flex items-start justify-between gap-2">
