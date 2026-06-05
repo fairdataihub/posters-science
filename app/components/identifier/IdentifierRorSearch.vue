@@ -42,6 +42,24 @@ async function runSearch() {
   }
 }
 
+const pendingResult = ref<RorResult | null>(null);
+const confirmOpen = ref(false);
+
+function handleResultClick(result: RorResult) {
+  if (props.initialQuery && props.initialQuery !== result.name) {
+    pendingResult.value = result;
+    confirmOpen.value = true;
+  } else {
+    selectResult(result);
+  }
+}
+
+function confirmSelect() {
+  if (pendingResult.value) selectResult(pendingResult.value);
+  confirmOpen.value = false;
+  pendingResult.value = null;
+}
+
 function selectResult(result: RorResult) {
   emit("select", result.id, result.name);
   emit("update:open", false);
@@ -139,7 +157,7 @@ function selectResult(result: RorResult) {
               :key="result.id"
               type="button"
               class="hover:border-primary-300 hover:bg-primary-50 dark:hover:border-primary-700 dark:hover:bg-primary-900/20 w-full cursor-pointer rounded-lg border border-gray-200 p-3 text-left transition-colors dark:border-gray-700"
-              @click="selectResult(result)"
+              @click="handleResultClick(result)"
             >
               <div class="flex items-start justify-between gap-2">
                 <div class="min-w-0 flex-1">
@@ -171,4 +189,28 @@ function selectResult(result: RorResult) {
       </div>
     </template>
   </UDrawer>
+
+  <UModal v-model:open="confirmOpen" title="Replace affiliation name?">
+    <template #body>
+      <p class="text-sm text-gray-600 dark:text-gray-400">
+        The current name
+        <span class="font-medium text-gray-900 dark:text-white">{{
+          initialQuery
+        }}</span>
+        will be replaced with
+        <span class="font-medium text-gray-900 dark:text-white">{{
+          pendingResult?.name
+        }}</span
+        >.
+      </p>
+    </template>
+
+    <template #footer>
+      <UButton color="neutral" variant="outline" @click="confirmOpen = false">
+        Cancel
+      </UButton>
+
+      <UButton color="primary" @click="confirmSelect"> Replace </UButton>
+    </template>
+  </UModal>
 </template>
