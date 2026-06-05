@@ -52,6 +52,7 @@ function selectResult(result: RorResult) {
   <UDrawer
     :open="open"
     direction="right"
+    handle-only
     :ui="{ content: 'w-[480px] max-w-full' }"
     @update:open="$emit('update:open', $event)"
   >

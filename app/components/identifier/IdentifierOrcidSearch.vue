@@ -62,6 +62,7 @@ function selectResult(result: OrcidResult) {
   <UDrawer
     :open="open"
     direction="right"
+    handle-only
     :ui="{ content: 'w-[480px] max-w-full' }"
     title="Find ORCID Identifier"
     description="Search for the author's ORCID identifier based on their name and affiliation information."
