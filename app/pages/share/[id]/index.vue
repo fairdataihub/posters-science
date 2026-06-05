@@ -60,11 +60,15 @@ const autofillHighlight = ref<Record<string, boolean>>({});
 
 function handleOrcidSelect(orcidUrl: string, cIndex: number) {
   const ni = state.creators[cIndex]?.nameIdentifiers?.[0];
+
   if (ni) ni.nameIdentifier = orcidUrl;
   handleNameIdentifierInput(orcidUrl, cIndex, 0);
+
   orcidSearchOpenIndex.value = null;
+
   const key = `${cIndex}-0`;
   autofillHighlight.value[key] = true;
+
   setTimeout(() => {
     autofillHighlight.value[key] = false;
   }, 1600);
@@ -73,15 +77,22 @@ function handleOrcidSelect(orcidUrl: string, cIndex: number) {
 function handleRorSelect(rorUrl: string, displayName: string, cIndex: number) {
   const ni = state.creators[cIndex]?.nameIdentifiers?.[0];
   if (ni) ni.nameIdentifier = rorUrl;
+
   handleNameIdentifierInput(rorUrl, cIndex, 0);
-  state.creators[cIndex].givenName = displayName;
+
+  const creator = state.creators[cIndex];
+  if (creator) creator.givenName = displayName;
+
   rorSearchOpenIndex.value = null;
+
   const key = `${cIndex}-0`;
   autofillHighlight.value[key] = true;
+
   setTimeout(() => {
     autofillHighlight.value[key] = false;
   }, 1600);
 }
+
 const additionalInfoCollapsed = ref(true);
 const posterContentCollapsed = ref(true);
 const mandatoryCollapsed = ref(false);
@@ -1371,6 +1382,39 @@ async function addSubjectAndFocus() {
                           </UInput>
                         </div>
 
+                        <template v-if="creator.nameType !== 'Organizational'">
+                          <UButton
+                            size="sm"
+                            variant="outline"
+                            color="primary"
+                            icon="i-lucide-search"
+                            :disabled="!creator.givenName"
+                            @click="orcidSearchOpenIndex = cIndex"
+                          >
+                            Find ORCID
+                          </UButton>
+
+                          <IdentifierOrcidSearch
+                            v-if="orcidSearchOpenIndex === cIndex"
+                            :open="orcidSearchOpenIndex === cIndex"
+                            :given-name="creator.givenName"
+                            :family-name="creator.familyName || ''"
+                            :affiliations="
+                              creator.affiliation
+                                ?.map((a) => a.name)
+                                .filter(Boolean) ?? []
+                            "
+                            @update:open="
+                              (v) => {
+                                if (!v) orcidSearchOpenIndex = null;
+                              }
+                            "
+                            @select="
+                              (orcidUrl) => handleOrcidSelect(orcidUrl, cIndex)
+                            "
+                          />
+                        </template>
+
                         <template v-if="creator.nameType === 'Organizational'">
                           <UButton
                             size="sm"
@@ -1400,36 +1444,6 @@ async function addSubjectAndFocus() {
                     </UFormField>
                   </div>
                 </UFormField>
-
-                <template v-if="creator.nameType !== 'Organizational'">
-                  <UButton
-                    size="sm"
-                    variant="outline"
-                    color="primary"
-                    icon="i-lucide-search"
-                    :disabled="!creator.givenName || !creator.familyName"
-                    @click="orcidSearchOpenIndex = cIndex"
-                  >
-                    Find ORCID
-                  </UButton>
-
-                  <IdentifierOrcidSearch
-                    v-if="orcidSearchOpenIndex === cIndex"
-                    :open="orcidSearchOpenIndex === cIndex"
-                    :given-name="creator.givenName"
-                    :family-name="creator.familyName || ''"
-                    :affiliations="
-                      creator.affiliation?.map((a) => a.name).filter(Boolean) ??
-                      []
-                    "
-                    @update:open="
-                      (v) => {
-                        if (!v) orcidSearchOpenIndex = null;
-                      }
-                    "
-                    @select="(orcidUrl) => handleOrcidSelect(orcidUrl, cIndex)"
-                  />
-                </template>
               </div>
 
               <UButton

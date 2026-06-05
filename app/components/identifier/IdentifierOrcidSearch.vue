@@ -18,6 +18,9 @@ const emit = defineEmits<{
   (e: "select", orcidUrl: string): void;
 }>();
 
+const query = ref(
+  [props.givenName, props.familyName].filter(Boolean).join(" "),
+);
 const results = ref<OrcidResult[]>([]);
 const loading = ref(false);
 const searched = ref(false);
@@ -25,7 +28,7 @@ const useAffiliationFilter = ref(false);
 
 onMounted(() => {
   useAffiliationFilter.value = props.affiliations.length > 0;
-  if (props.givenName && props.familyName) runSearch();
+  if (query.value) runSearch();
 });
 
 watch(useAffiliationFilter, () => {
@@ -33,18 +36,12 @@ watch(useAffiliationFilter, () => {
 });
 
 async function runSearch() {
-  if (!props.givenName || !props.familyName) return;
+  if (!query.value.trim()) return;
   loading.value = true;
   searched.value = false;
   try {
     const data = await $fetch<OrcidResult[]>("/api/orcid/search", {
-      query: {
-        givenName: props.givenName,
-        familyName: props.familyName,
-        ...(useAffiliationFilter.value && props.affiliations[0]
-          ? { affiliation: props.affiliations[0] }
-          : {}),
-      },
+      query: { q: query.value.trim() },
     });
     results.value = data;
   } catch {
@@ -66,32 +63,15 @@ function selectResult(result: OrcidResult) {
     :open="open"
     direction="right"
     :ui="{ content: 'w-[480px] max-w-full' }"
+    title="Find ORCID Identifier"
+    description="Search for the author's ORCID identifier based on their name and affiliation information."
     @update:open="$emit('update:open', $event)"
   >
-    <template #content>
-      <div class="flex h-full w-full flex-col gap-4 p-6">
-        <div class="flex items-start justify-between gap-2">
-          <div>
-            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">
-              Find ORCID
-            </h3>
-            <p class="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
-              {{ givenName }} {{ familyName }}
-            </p>
-          </div>
-
-          <UButton
-            icon="i-lucide-x"
-            color="neutral"
-            variant="ghost"
-            size="sm"
-            @click="$emit('update:open', false)"
-          />
-        </div>
-
+    <template #body>
+      <div class="flex h-full w-full flex-col gap-4">
         <div
           v-if="affiliations.length > 0"
-          class="flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 dark:border-gray-700 dark:bg-gray-800/50"
+          class="flex hidden items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 dark:border-gray-700 dark:bg-gray-800/50"
         >
           <UToggle
             :model-value="useAffiliationFilter"
@@ -103,10 +83,29 @@ function selectResult(result: OrcidResult) {
             <p class="text-xs font-medium text-gray-700 dark:text-gray-300">
               Filter by affiliation
             </p>
+
             <p class="truncate text-xs text-gray-500 dark:text-gray-400">
               {{ affiliations[0] }}
             </p>
           </div>
+        </div>
+
+        <div class="flex gap-2">
+          <UInput
+            v-model="query"
+            placeholder="Search by name"
+            class="w-full"
+            @keydown.enter.prevent="runSearch"
+          />
+
+          <UButton
+            size="sm"
+            color="primary"
+            variant="outline"
+            icon="i-lucide-search"
+            :loading="loading"
+            @click="runSearch"
+          />
         </div>
 
         <UAlert
@@ -156,9 +155,12 @@ function selectResult(result: OrcidResult) {
             </p>
           </div>
 
-          <div v-else-if="!searched" class="flex h-full items-center justify-center py-16">
+          <div
+            v-else-if="!searched"
+            class="flex h-full items-center justify-center py-16"
+          >
             <p class="text-sm text-gray-400 dark:text-gray-500">
-              Both given and family name are required to search.
+              Enter a name to search.
             </p>
           </div>
 
@@ -167,7 +169,7 @@ function selectResult(result: OrcidResult) {
               v-for="result in results"
               :key="result.orcidId"
               type="button"
-              class="w-full rounded-lg border border-gray-200 p-3 text-left transition-colors hover:border-primary-300 hover:bg-primary-50 dark:border-gray-700 dark:hover:border-primary-700 dark:hover:bg-primary-900/20"
+              class="hover:border-primary-300 hover:bg-primary-50 dark:hover:border-primary-700 dark:hover:bg-primary-900/20 w-full rounded-lg border border-gray-200 p-3 text-left transition-colors dark:border-gray-700"
               @click="selectResult(result)"
             >
               <div class="flex items-start justify-between gap-2">
@@ -185,7 +187,7 @@ function selectResult(result: OrcidResult) {
 
                   <p
                     v-else
-                    class="mt-0.5 text-xs italic text-gray-400 dark:text-gray-500"
+                    class="mt-0.5 text-xs text-gray-400 italic dark:text-gray-500"
                   >
                     No institution info
                   </p>
@@ -195,7 +197,7 @@ function selectResult(result: OrcidResult) {
                   :href="`https://orcid.org/${result.orcidId}`"
                   target="_blank"
                   rel="noopener noreferrer"
-                  class="shrink-0 font-mono text-xs text-gray-400 hover:text-primary-500 hover:underline"
+                  class="hover:text-primary-500 shrink-0 font-mono text-xs text-gray-400 hover:underline"
                   @click.stop
                 >
                   {{ result.orcidId }}
