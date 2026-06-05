@@ -42,6 +42,7 @@
     "dayjs": "1.11.21",
     "marked": "18.0.4",
     "motion-v": "2.2.1",
+    "nanoid": "^5.1.11",
     "nodemailer": "8.0.9",
     "nuxt-schema-org": "6.0.4",
     "pg": "8.21.0",
