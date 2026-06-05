@@ -385,6 +385,7 @@ export async function beginZenodoPublication(
     funderIdentifier?: string;
     funderIdentifierType?: string;
     awardNumber?: string;
+    awardUri?: string;
     awardTitle?: string;
   }[];
 
@@ -1024,6 +1025,7 @@ type RdmExtras = {
     funderIdentifier?: string;
     funderIdentifierType?: string;
     awardNumber?: string;
+    awardUri?: string;
     awardTitle?: string;
   }[];
   dbRelated?: {
@@ -1098,10 +1100,13 @@ function buildFullRdmPayload(
       const entry: Record<string, unknown> = {
         funder: { name: f.funderName, ...(rorId && { id: rorId }) },
       };
-      if (f.awardNumber?.trim()) {
+      if (f.awardNumber?.trim() || f.awardUri?.trim()) {
         entry.award = {
-          number: f.awardNumber,
+          ...(f.awardNumber?.trim() && { number: f.awardNumber }),
           ...(f.awardTitle?.trim() && { title: { en: f.awardTitle } }),
+          ...(f.awardUri?.trim() && {
+            identifiers: [{ identifier: f.awardUri, scheme: "url" }],
+          }),
         };
       }
 
