@@ -941,7 +941,7 @@ async function addSubjectAndFocus() {
   input?.focus?.();
 }
 
-const moveAuthor = (index: number, direction: string) => {
+const moveCreator = (index: number, direction: "up" | "down") => {
   const newIndex = direction === "up" ? index - 1 : index + 1;
   if (newIndex < 0 || newIndex >= state.creators.length) return;
 
@@ -1135,7 +1135,7 @@ const moveAuthor = (index: number, direction: string) => {
                         variant="ghost"
                         icon="material-symbols-light:move-up-rounded"
                         :disabled="cIndex === 0 || state.creators.length < 2"
-                        @click="moveAuthor(cIndex, 'up')"
+                        @click="moveCreator(cIndex, 'up')"
                       />
                     </UTooltip>
 
@@ -1150,7 +1150,7 @@ const moveAuthor = (index: number, direction: string) => {
                           cIndex === state.creators.length - 1 ||
                           state.creators.length < 2
                         "
-                        @click="moveAuthor(cIndex, 'down')"
+                        @click="moveCreator(cIndex, 'down')"
                       />
                     </UTooltip>
                   </UFieldGroup>
