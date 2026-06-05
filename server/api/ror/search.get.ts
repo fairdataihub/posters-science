@@ -2,6 +2,10 @@ import { z } from "zod";
 
 const querySchema = z.object({
   query: z.string().min(2, "Query must be at least 2 characters"),
+  simple: z
+    .string()
+    .optional()
+    .transform((v) => v === "true" || v === "1"),
 });
 
 interface RorName {
@@ -38,23 +42,21 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: "Invalid query parameter" });
   }
 
-  const { query } = result.data;
+  const { query, simple } = result.data;
 
-  setResponseHeader(event, "Cache-Control", "no-store");
-
-  const response = await $fetch<RorResponse>(
-    "https://api.ror.org/v2/organizations",
-    {
-      query: {
+  const rorQuery = simple
+    ? { query }
+    : {
         "query.advanced": `names.value:(${query
           .trim()
           .split(/\s+/)
           .map((w) => `+${w}`)
           .join(" ")})`,
-        _t: Date.now(),
-      },
-      headers: { "Cache-Control": "no-cache" },
-    },
+      };
+
+  const response = await $fetch<RorResponse>(
+    "https://api.ror.org/v2/organizations",
+    { query: rorQuery },
   );
 
   return (response.items ?? [])
@@ -69,5 +71,5 @@ export default defineEventHandler(async (event) => {
       return { id: org.id, name: displayName, country };
     })
     .filter((item) => item.name)
-    .slice(0, 8);
+    .slice(0, 10);
 });

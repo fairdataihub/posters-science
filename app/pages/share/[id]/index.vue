@@ -55,6 +55,7 @@ const identifierTypeErrors = ref<Record<string, string | undefined>>({});
 const affiliationIdentifierErrors = ref<Record<string, string | undefined>>({});
 const orcidSearchOpenIndex = ref<number | null>(null);
 const rorSearchOpenIndex = ref<number | null>(null);
+const affiliationRorSearchOpen = ref<string | null>(null);
 const autofillHighlight = ref<Record<string, boolean>>({});
 
 function handleOrcidSelect(orcidUrl: string, cIndex: number) {
@@ -864,6 +865,19 @@ async function handleOrcidBlur(cIndex: number, niIndex: number) {
   }
 }
 
+function handleAffiliationRorSelect(
+  rorUrl: string,
+  cIndex: number,
+  aIndex: number,
+) {
+  const aff = state.creators[cIndex]?.affiliation?.[aIndex];
+  if (aff) {
+    aff.affiliationIdentifier = rorUrl;
+    handleAffiliationIdentifierInput(rorUrl, cIndex, aIndex);
+  }
+  affiliationRorSearchOpen.value = null;
+}
+
 function handleFunderIdentifierTypeChange(value: string, fIndex: number) {
   const funder = state.fundingReferences[fIndex];
   if (!funder) return;
@@ -1136,36 +1150,31 @@ async function addSubjectAndFocus() {
 
                 <UFormField label="Affiliations" name="affiliation">
                   <div
-                    v-if="
-                      state.creators[cIndex]?.affiliation &&
-                      state.creators[cIndex]?.affiliation?.length > 0
-                    "
+                    v-for="(affiliation, aIndex) in state.creators[cIndex]
+                      ?.affiliation"
+                    :key="aIndex"
+                    class="mb-2 space-y-2 rounded-r-xl border border-l-4 border-gray-200 border-l-pink-300 p-3 dark:border-l-pink-700"
                   >
-                    <div
-                      v-for="(affiliation, aIndex) in state.creators[cIndex]
-                        ?.affiliation"
-                      :key="aIndex"
-                      class="mb-2 space-y-2 rounded-r-xl border border-l-4 border-gray-200 border-l-pink-300 p-3 dark:border-l-pink-700"
-                    >
-                      <AffiliationRorSearch
-                        :model-value="affiliation"
-                        :name-field-name="`creators.${cIndex}.affiliation.${aIndex}.name`"
-                        :identifier-field-name="`creators.${cIndex}.affiliation.${aIndex}.affiliationIdentifier`"
-                        :identifier-error="
-                          affiliationIdentifierErrors[`${cIndex}-${aIndex}`]
-                        "
-                        @update:model-value="
-                          (v) =>
-                            Object.assign(
-                              state.creators[cIndex].affiliation![aIndex]!,
-                              v,
-                            )
-                        "
-                        @identifier-input="
-                          (v) =>
-                            handleAffiliationIdentifierInput(v, cIndex, aIndex)
-                        "
-                        @delete="
+                    <div class="flex gap-2">
+                      <UFormField
+                        class="w-full"
+                        :name="`creators.${cIndex}.affiliation.${aIndex}.name`"
+                        label="Name"
+                        required
+                      >
+                        <UInput
+                          v-model="affiliation.name"
+                          placeholder="University of California, San Diego"
+                        />
+                      </UFormField>
+
+                      <UButton
+                        class="mt-6"
+                        size="sm"
+                        color="error"
+                        variant="outline"
+                        icon="i-lucide-trash"
+                        @click="
                           removeRow(
                             state.creators[cIndex]?.affiliation!,
                             aIndex,
@@ -1174,42 +1183,103 @@ async function addSubjectAndFocus() {
                       />
                     </div>
 
-                    <UButton
-                      size="sm"
-                      class="mt-2 w-full"
-                      color="success"
-                      variant="outline"
-                      label="Add Affiliation"
-                      icon="i-lucide-plus"
-                      @click="
-                        state.creators[cIndex]?.affiliation?.push({
-                          name: '',
-                          affiliationIdentifier: '',
-                          affiliationIdentifierScheme: '',
-                          schemeURI: '',
-                        })
-                      "
-                    />
+                    <div class="flex gap-2">
+                      <UFormField
+                        :name="`creators.${cIndex}.affiliation.${aIndex}.affiliationIdentifier`"
+                        label="ROR Identifier"
+                        :error="
+                          affiliationIdentifierErrors[`${cIndex}-${aIndex}`]
+                        "
+                        class="w-full"
+                      >
+                        <UInput
+                          v-model="affiliation.affiliationIdentifier"
+                          placeholder="https://ror.org/..."
+                          class="w-full"
+                          @update:model-value="
+                            (v) =>
+                              handleAffiliationIdentifierInput(
+                                v,
+                                cIndex,
+                                aIndex,
+                              )
+                          "
+                        >
+                          <template
+                            v-if="
+                              affiliation.affiliationIdentifier?.startsWith(
+                                'http',
+                              ) &&
+                              !affiliationIdentifierErrors[
+                                `${cIndex}-${aIndex}`
+                              ]
+                            "
+                            #trailing
+                          >
+                            <a
+                              :href="affiliation.affiliationIdentifier"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              class="hover:text-primary-500 flex items-center text-gray-400"
+                            >
+                              <UIcon
+                                name="i-lucide-external-link"
+                                class="size-4 cursor-pointer"
+                              />
+                            </a>
+                          </template>
+                        </UInput>
+                      </UFormField>
+
+                      <UButton
+                        class="mt-6"
+                        size="xs"
+                        variant="outline"
+                        icon="i-lucide-search"
+                        label="Find ROR"
+                        :disabled="!affiliation.name"
+                        @click="
+                          affiliationRorSearchOpen = `${cIndex}-${aIndex}`
+                        "
+                      />
+
+                      <IdentifierRorSearch
+                        v-if="
+                          affiliationRorSearchOpen === `${cIndex}-${aIndex}`
+                        "
+                        :open="
+                          affiliationRorSearchOpen === `${cIndex}-${aIndex}`
+                        "
+                        :initial-query="affiliation.name"
+                        @update:open="
+                          (v) => {
+                            if (!v) affiliationRorSearchOpen = null;
+                          }
+                        "
+                        @select="
+                          (rorUrl) =>
+                            handleAffiliationRorSelect(rorUrl, cIndex, aIndex)
+                        "
+                      />
+                    </div>
                   </div>
 
-                  <div v-else>
-                    <UButton
-                      size="sm"
-                      class="w-full"
-                      color="success"
-                      variant="outline"
-                      label="Add Affiliation"
-                      icon="i-lucide-plus"
-                      @click="
-                        state.creators[cIndex]?.affiliation?.push({
-                          name: '',
-                          affiliationIdentifier: '',
-                          affiliationIdentifierScheme: '',
-                          schemeURI: '',
-                        })
-                      "
-                    />
-                  </div>
+                  <UButton
+                    size="sm"
+                    class="w-full"
+                    color="success"
+                    variant="outline"
+                    label="Add Affiliation"
+                    icon="i-lucide-plus"
+                    @click="
+                      state.creators[cIndex]?.affiliation?.push({
+                        name: '',
+                        affiliationIdentifier: '',
+                        affiliationIdentifierScheme: '',
+                        schemeURI: '',
+                      })
+                    "
+                  />
                 </UFormField>
 
                 <UFormField name="nameIdentifiers" class="mt-5">
@@ -1250,54 +1320,82 @@ async function addSubjectAndFocus() {
                         </a>
                       </template>
 
-                      <div class="relative">
-                        <div
-                          v-if="autofillHighlight[`${cIndex}-0`]"
-                          class="orcid-autofill-ring pointer-events-none absolute inset-0 rounded-md"
-                        />
+                      <div class="flex gap-2">
+                        <div class="relative flex-1">
+                          <div
+                            v-if="autofillHighlight[`${cIndex}-0`]"
+                            class="orcid-autofill-ring pointer-events-none absolute inset-0 rounded-md"
+                          />
 
-                        <UInput
-                          v-model="
-                            state.creators[cIndex].nameIdentifiers![0]
-                              .nameIdentifier
-                          "
-                          :placeholder="
-                            creator.nameType === 'Organizational'
-                              ? 'https://ror.org/...'
-                              : 'https://orcid.org/0000-0000-0000-0000'
-                          "
-                          :loading="orcidChecking[`${cIndex}-0`]"
-                          @update:model-value="
-                            (v) => handleNameIdentifierInput(v, cIndex, 0)
-                          "
-                          @blur="() => handleOrcidBlur(cIndex, 0)"
-                        >
-                          <template
-                            v-if="
-                              state.creators[
-                                cIndex
-                              ].nameIdentifiers![0].nameIdentifier?.startsWith(
-                                'http',
-                              ) && !identifierTypeErrors[`${cIndex}-0`]
+                          <UInput
+                            v-model="
+                              state.creators[cIndex].nameIdentifiers![0]
+                                .nameIdentifier
                             "
-                            #trailing
+                            :placeholder="
+                              creator.nameType === 'Organizational'
+                                ? 'https://ror.org/...'
+                                : 'https://orcid.org/0000-0000-0000-0000'
+                            "
+                            :loading="orcidChecking[`${cIndex}-0`]"
+                            @update:model-value="
+                              (v) => handleNameIdentifierInput(v, cIndex, 0)
+                            "
+                            @blur="() => handleOrcidBlur(cIndex, 0)"
                           >
-                            <a
-                              :href="
-                                state.creators[cIndex].nameIdentifiers![0]
-                                  .nameIdentifier
+                            <template
+                              v-if="
+                                state.creators[
+                                  cIndex
+                                ].nameIdentifiers![0].nameIdentifier?.startsWith(
+                                  'http',
+                                ) && !identifierTypeErrors[`${cIndex}-0`]
                               "
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              class="hover:text-primary-500 text-gray-400"
+                              #trailing
                             >
-                              <UIcon
-                                name="i-lucide-external-link"
-                                class="size-4 cursor-pointer"
-                              />
-                            </a>
-                          </template>
-                        </UInput>
+                              <a
+                                :href="
+                                  state.creators[cIndex].nameIdentifiers![0]
+                                    .nameIdentifier
+                                "
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                class="hover:text-primary-500 text-gray-400"
+                              >
+                                <UIcon
+                                  name="i-lucide-external-link"
+                                  class="size-4 cursor-pointer"
+                                />
+                              </a>
+                            </template>
+                          </UInput>
+                        </div>
+
+                        <template v-if="creator.nameType === 'Organizational'">
+                          <UButton
+                            size="sm"
+                            variant="outline"
+                            icon="i-lucide-search"
+                            label="Find ROR"
+                            :disabled="!creator.givenName"
+                            @click="rorSearchOpenIndex = cIndex"
+                          />
+
+                          <IdentifierRorSearch
+                            v-if="rorSearchOpenIndex === cIndex"
+                            :open="rorSearchOpenIndex === cIndex"
+                            :initial-query="creator.givenName || ''"
+                            @update:open="
+                              (v) => {
+                                if (!v) rorSearchOpenIndex = null;
+                              }
+                            "
+                            @select="
+                              (rorUrl, name) =>
+                                handleRorSelect(rorUrl, name, cIndex)
+                            "
+                          />
+                        </template>
                       </div>
                     </UFormField>
                   </div>
@@ -1315,11 +1413,11 @@ async function addSubjectAndFocus() {
                     Find ORCID
                   </UButton>
 
-                  <OrcidSearch
+                  <IdentifierOrcidSearch
                     v-if="orcidSearchOpenIndex === cIndex"
                     :open="orcidSearchOpenIndex === cIndex"
                     :given-name="creator.givenName"
-                    :family-name="creator.familyName"
+                    :family-name="creator.familyName || ''"
                     :affiliations="
                       creator.affiliation?.map((a) => a.name).filter(Boolean) ??
                       []
@@ -1330,33 +1428,6 @@ async function addSubjectAndFocus() {
                       }
                     "
                     @select="(orcidUrl) => handleOrcidSelect(orcidUrl, cIndex)"
-                  />
-                </template>
-
-                <template v-else>
-                  <UButton
-                    size="sm"
-                    variant="outline"
-                    color="primary"
-                    icon="i-lucide-search"
-                    :disabled="!creator.givenName"
-                    @click="rorSearchOpenIndex = cIndex"
-                  >
-                    Find ROR
-                  </UButton>
-
-                  <RorSearch
-                    v-if="rorSearchOpenIndex === cIndex"
-                    :open="rorSearchOpenIndex === cIndex"
-                    :org-name="creator.givenName"
-                    @update:open="
-                      (v) => {
-                        if (!v) rorSearchOpenIndex = null;
-                      }
-                    "
-                    @select="
-                      (rorUrl, name) => handleRorSelect(rorUrl, name, cIndex)
-                    "
                   />
                 </template>
               </div>
@@ -1680,7 +1751,7 @@ async function addSubjectAndFocus() {
                 >
                   <UAlert
                     v-if="
-                      relatedIdentifier.relatedIdentifier.includes(
+                      relatedIdentifier.relatedIdentifier?.includes(
                         'posters.science/discover/',
                       )
                     "
@@ -1994,7 +2065,7 @@ async function addSubjectAndFocus() {
                   v-for="(section, sIndex) in state.posterContent?.sections ||
                   []"
                   :key="sIndex"
-                  class="space-y-2 rounded-xl border border-l-4 border-gray-200 border-l-pink-300 p-4 dark:border-l-pink-700"
+                  class="space-y-2 rounded-r-xl border border-l-4 border-gray-200 border-l-pink-300 p-3 dark:border-l-pink-700"
                 >
                   <UFormField
                     :name="`posterContent.sections.${sIndex}.sectionTitle`"
@@ -2061,7 +2132,7 @@ async function addSubjectAndFocus() {
                 <div
                   v-for="(caption, cIndex) in state.tableCaptions || []"
                   :key="cIndex"
-                  class="space-y-2 rounded-xl border border-l-4 border-gray-200 border-l-pink-300 p-4 dark:border-l-pink-700"
+                  class="space-y-2 rounded-r-xl border border-l-4 border-gray-200 border-l-pink-300 p-3 dark:border-l-pink-700"
                 >
                   <UFormField
                     :name="`tableCaptions.${cIndex}.id`"
@@ -2121,7 +2192,7 @@ async function addSubjectAndFocus() {
                 <div
                   v-for="(caption, cIndex) in state.imageCaptions || []"
                   :key="cIndex"
-                  class="space-y-2 rounded-xl border border-l-4 border-gray-200 border-l-pink-300 p-4 dark:border-l-pink-700"
+                  class="space-y-2 rounded-r-xl border border-l-4 border-gray-200 border-l-pink-300 p-3 dark:border-l-pink-700"
                 >
                   <UFormField
                     :name="`imageCaptions.${cIndex}.id`"
