@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 const querySchema = z.object({
-  query: z.string().min(2, "Query must be at least 2 characters"),
+  query: z.string().trim().min(2, "Query must be at least 2 characters"),
   simple: z
     .string()
     .optional()

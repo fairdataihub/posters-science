@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 const querySchema = z.object({
-  q: z.string().min(1),
+  q: z.string().trim().min(1),
 });
 
 interface OrcidExpandedResult {

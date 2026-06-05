@@ -27,10 +27,12 @@ const schema = z
   .object({
     password: z
       .string()
+      .trim()
       .min(12, "Must be at least 12 characters")
       .max(128, "Must be at most 128 characters"),
     confirmPassword: z
       .string()
+      .trim()
       .min(12, "Must be at least 12 characters")
       .max(128, "Must be at most 128 characters"),
   })

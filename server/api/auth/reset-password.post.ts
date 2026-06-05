@@ -3,9 +3,10 @@ import { hash } from "bcrypt";
 import { createHash } from "node:crypto";
 
 const schema = z.object({
-  token: z.string().min(1, "Token is required"),
+  token: z.string().trim().min(1, "Token is required"),
   password: z
     .string()
+    .trim()
     .min(12, "Must be at least 12 characters")
     .max(128, "Must be at most 128 characters"),
 });

@@ -3,7 +3,7 @@ import { compare } from "bcrypt";
 
 const loginSchema = z.object({
   emailAddress: z.email(),
-  password: z.string().min(8),
+  password: z.string().trim().min(8),
 });
 
 export default defineEventHandler(async (event) => {
