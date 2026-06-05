@@ -256,11 +256,33 @@ if (data.value) {
             | "Personal"
             | "Organizational",
           nameIdentifiers: (() => {
-            const mapped = (creator.nameIdentifiers || []).map((ni: any) => ({
-              nameIdentifier: ni?.nameIdentifier || "",
-              nameIdentifierScheme: ni?.nameIdentifierScheme || "",
-              schemeURI: ni?.schemeURI || "",
-            }));
+            const raw: any[] = creator.nameIdentifiers || [];
+            const mapped = raw.map((ni: any) => {
+              // Extraction API may save identifiers as bare strings
+              if (typeof ni === "string") {
+                return {
+                  nameIdentifier: ni,
+                  nameIdentifierScheme: "",
+                  schemeURI: "",
+                };
+              }
+
+              return {
+                nameIdentifier: ni?.nameIdentifier || "",
+                nameIdentifierScheme: ni?.nameIdentifierScheme || "",
+                schemeURI: ni?.schemeURI || "",
+              };
+            });
+
+            // The form shows only index 0. Move the first non-empty identifier to
+            // the front so it is always visible regardless of extraction ordering.
+            const firstNonEmpty = mapped.findIndex(
+              (ni) => ni.nameIdentifier.trim() !== "",
+            );
+            if (firstNonEmpty > 0) {
+              const [item] = mapped.splice(firstNonEmpty, 1);
+              mapped.unshift(item);
+            }
 
             return mapped.length > 0
               ? mapped
