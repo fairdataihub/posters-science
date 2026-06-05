@@ -940,6 +940,15 @@ async function addSubjectAndFocus() {
     last?.$el?.querySelector?.("input") ?? (last?.$el as HTMLInputElement);
   input?.focus?.();
 }
+
+const moveAuthor = (index: number, direction: string) => {
+  const newIndex = direction === "up" ? index - 1 : index + 1;
+  if (newIndex < 0 || newIndex >= state.creators.length) return;
+
+  const temp = state.creators[newIndex]!;
+  state.creators[newIndex] = state.creators[index]!;
+  state.creators[index] = temp;
+};
 </script>
 
 <template>
@@ -1106,14 +1115,45 @@ async function addSubjectAndFocus() {
                 :key="cIndex"
                 class="space-y-4 rounded-xl border border-gray-200 p-4"
               >
-                <div
-                  class="bg-primary-50 inline-flex items-center rounded-md px-3 py-1 dark:bg-pink-950/60"
-                >
-                  <p
-                    class="text-primary-700 text-base font-medium dark:text-pink-300"
+                <div class="flex items-center justify-between gap-4">
+                  <div
+                    class="bg-primary-50 inline-flex items-center justify-between rounded-md px-3 py-1 dark:bg-pink-950/60"
                   >
-                    Author {{ cIndex + 1 }}
-                  </p>
+                    <p
+                      class="text-primary-700 text-base font-medium dark:text-pink-300"
+                    >
+                      Author {{ cIndex + 1 }}
+                    </p>
+                  </div>
+
+                  <UFieldGroup>
+                    <UTooltip
+                      text="Move this creator up in the list"
+                      placement="top"
+                    >
+                      <UButton
+                        variant="ghost"
+                        icon="material-symbols-light:move-up-rounded"
+                        :disabled="cIndex === 0 || state.creators.length < 2"
+                        @click="moveAuthor(cIndex, 'up')"
+                      />
+                    </UTooltip>
+
+                    <UTooltip
+                      text="Move this creator down in the list"
+                      placement="top"
+                    >
+                      <UButton
+                        variant="ghost"
+                        icon="material-symbols-light:move-down-rounded"
+                        :disabled="
+                          cIndex === state.creators.length - 1 ||
+                          state.creators.length < 2
+                        "
+                        @click="moveAuthor(cIndex, 'down')"
+                      />
+                    </UTooltip>
+                  </UFieldGroup>
                 </div>
 
                 <div class="flex items-start justify-between gap-3">
