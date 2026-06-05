@@ -16,8 +16,36 @@ export default defineNuxtConfig({
     "@nuxt/image",
     "nuxt-echarts",
     "@nuxt/content",
-    // "@scalar/nuxt",
+    "@nuxtjs/robots",
+    "@nuxtjs/sitemap",
+    "nuxt-schema-org",
   ],
+  icon: {
+    collections: [
+      "heroicons",
+      "lucide",
+      "material-symbols",
+      "simple-icons",
+      "vscode-icons",
+    ],
+  },
+  vite: {
+    optimizeDeps: {
+      include: [
+        "@inspira-ui/plugins", // CJS
+        "@internationalized/date",
+        "clsx",
+        "dayjs", // CJS
+        "dayjs/plugin/relativeTime", // CJS
+        "dayjs/plugin/timezone", // CJS
+        "dayjs/plugin/updateLocale", // CJS
+        "dayjs/plugin/utc", // CJS
+        "motion-v",
+        "vue3-lottie",
+        "zod",
+      ],
+    },
+  },
   // Runtime config values can be overridden at container startup using NUXT_ prefixed env vars.
   // This works because Nuxt scans for NUXT_* env vars when the app starts (not at build time)
   // and automatically maps them to runtimeConfig keys:
@@ -25,6 +53,10 @@ export default defineNuxtConfig({
   //   - NUXT_ZENODO_CLIENT_ID -> runtimeConfig.zenodoClientId
   // Using process.env.XXX here would bake values at build time, making them unchangeable at runtime.
   runtimeConfig: {
+    session: {
+      password: process.env.NUXT_SESSION_PASSWORD || "",
+      maxAge: 60 * 60 * 24 * 7, // 1 week in seconds
+    },
     resendApiKey: "",
     siteUrl: "http://localhost:3000",
     zenodoClientId: "",
@@ -47,6 +79,7 @@ export default defineNuxtConfig({
       siteEnv: "",
     },
   },
+
   eslint: {},
   echarts: {
     charts: ["BarChart", "PieChart", "LineChart"],
@@ -73,14 +106,6 @@ export default defineNuxtConfig({
         description: "API Documentation for Posters.science",
       },
       route: "/_docs/openapi.json",
-      ui: {
-        scalar: {
-          route: "/_docs/scalar",
-        },
-        swagger: {
-          route: "/_docs/swagger",
-        },
-      },
     },
   },
   image: {

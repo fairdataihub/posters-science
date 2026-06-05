@@ -7,8 +7,16 @@ import licenses from "../../app/assets/data/licenses.json";
  */
 export function buildPosterJson(
   meta: PosterMetadata,
-  options?: { title?: string; description?: string },
+  options?: {
+    title?: string;
+    description?: string;
+    zenodoDoi?: string;
+    publishedAt?: Date;
+    includePublisher?: boolean;
+  },
 ) {
+  const currentPublicationYear = new Date().getFullYear();
+
   const doi = meta.doi ?? undefined;
   let prefix: string | undefined;
   let suffix: string | undefined;
@@ -22,10 +30,14 @@ export function buildPosterJson(
     }
   }
 
-  const publisher =
-    meta.publisher != null && meta.publisher !== ""
-      ? { name: meta.publisher }
-      : undefined;
+  const publisher = options?.includePublisher
+    ? {
+        name: "Zenodo",
+        publisherIdentifier: "https://doi.org/10.17616/R3QP53",
+        publisherIdentifierScheme: "DOI",
+        schemeURI: "https://doi.org",
+      }
+    : undefined;
 
   const conference = buildConference(meta);
 
@@ -39,20 +51,16 @@ export function buildPosterJson(
     : (posterContentRaw as {
         sections?: unknown[];
         unstructuredContent?: string;
+        submissionAbstract?: string;
       } | null);
 
   const rawSections = posterContentObj?.sections ?? [];
   const filteredSections = Array.isArray(rawSections)
     ? rawSections.filter((s: unknown) => {
         if (typeof s !== "object" || s === null) return false;
-        const { sectionTitle, sectionContent } = s as Record<string, unknown>;
+        const { sectionContent } = s as Record<string, unknown>;
 
-        return (
-          typeof sectionTitle === "string" &&
-          sectionTitle !== "" &&
-          typeof sectionContent === "string" &&
-          sectionContent !== ""
-        );
+        return typeof sectionContent === "string" && sectionContent !== "";
       })
     : [];
 
@@ -69,9 +77,22 @@ export function buildPosterJson(
       : undefined;
 
   const titles = options?.title ? [{ title: options.title }] : undefined;
-  const descriptions = options?.description
-    ? [{ description: options.description, descriptionType: "Abstract" }]
-    : undefined;
+  const descriptionEntries: { description: string; descriptionType: string }[] =
+    [];
+  if (options?.description) {
+    descriptionEntries.push({
+      description: options.description,
+      descriptionType: "Other",
+    });
+  }
+  if (posterContentObj?.submissionAbstract) {
+    descriptionEntries.push({
+      description: posterContentObj.submissionAbstract,
+      descriptionType: "Abstract",
+    });
+  }
+  const descriptions =
+    descriptionEntries.length > 0 ? descriptionEntries : undefined;
 
   const fundingRefs = Array.isArray(meta.fundingReferences)
     ? (meta.fundingReferences as unknown[]).filter(
@@ -85,22 +106,58 @@ export function buildPosterJson(
     : [];
 
   const validIdentifiers = filterIdentifiers(meta.identifiers);
+  const zenodoDoi = options?.zenodoDoi;
+  const mergedIdentifiers = zenodoDoi
+    ? [
+        { identifier: zenodoDoi, identifierType: "DOI" },
+        ...(validIdentifiers ?? []),
+      ]
+    : validIdentifiers;
   const validRelatedIdentifiers = filterRelatedIdentifiers(
     meta.relatedIdentifiers,
   );
   const validTableCaptions = filterCaptions(meta.tableCaptions);
   const validImageCaptions = filterCaptions(meta.imageCaptions);
 
+  const existingDates = Array.isArray(meta.dates)
+    ? (meta.dates as unknown[]).filter(
+        (d): d is Record<string, unknown> =>
+          typeof d === "object" && d !== null,
+      )
+    : [];
+
+  const hasSubmitted = existingDates.some((d) => d.dateType === "Submitted");
+
+  const dates =
+    options?.publishedAt && !hasSubmitted
+      ? [
+          {
+            date: formatDateISO(options.publishedAt),
+            dateType: "Submitted",
+            dateInformation: "Submitted to Zenodo through Posters.science",
+          },
+          ...existingDates,
+        ]
+      : existingDates.length > 0
+        ? existingDates
+        : undefined;
+
   const posterJson: Record<string, unknown> = {
+    $schema: "https://posters.science/schema/v0.2/poster_schema.json",
     ...(doi && { doi }),
     ...(prefix && { prefix }),
     ...(suffix && { suffix }),
     ...(titles && { titles }),
     ...(descriptions && { descriptions }),
-    ...(validIdentifiers && { identifiers: validIdentifiers }),
+    ...(dates && { dates }),
+    types: {
+      resourceType: "Conference Poster",
+      resourceTypeGeneral: "Poster",
+    },
+    ...(mergedIdentifiers && { identifiers: mergedIdentifiers }),
     creators: cleanCreators(meta.creators),
     ...(publisher && { publisher }),
-    ...(meta.publicationYear && { publicationYear: meta.publicationYear }),
+    publicationYear: currentPublicationYear,
     subjects: (meta.subjects ?? [])
       .filter((s) => s !== "")
       .map((s) => ({ subject: s })),
@@ -131,6 +188,10 @@ export function buildPosterJson(
   };
 
   return stripEmptyStrings(posterJson) as Record<string, unknown>;
+}
+
+function formatDateISO(d: Date): string {
+  return d.toISOString().slice(0, 10);
 }
 
 function stripEmptyStrings(value: unknown): unknown {
@@ -198,7 +259,7 @@ function cleanCreators(raw: unknown): unknown[] {
       ? c.affiliation.filter((aff: unknown) => {
           if (typeof aff === "string") return aff.trim() !== "";
           if (typeof aff === "object" && aff !== null) {
-            const name = (aff as Record<string, unknown>).name;
+            const { name } = aff as Record<string, unknown>;
 
             return typeof name === "string" && name.trim() !== "";
           }
@@ -207,12 +268,27 @@ function cleanCreators(raw: unknown): unknown[] {
         })
       : undefined;
 
-    const { nameIdentifiers: _ni, affiliation: _aff, ...rest } = c;
-    void _ni;
-    void _aff;
+    const name =
+      typeof c.name === "string" && c.name.trim() ? c.name.trim() : undefined;
+    const nameType =
+      typeof c.nameType === "string" && c.nameType.trim()
+        ? c.nameType.trim()
+        : undefined;
+    const isOrg = nameType?.toLowerCase() === "organizational";
+    const givenName =
+      !isOrg && typeof c.givenName === "string" && c.givenName.trim()
+        ? c.givenName.trim()
+        : undefined;
+    const familyName =
+      !isOrg && typeof c.familyName === "string" && c.familyName.trim()
+        ? c.familyName.trim()
+        : undefined;
 
     return {
-      ...rest,
+      ...(name && { name }),
+      ...(givenName && { givenName }),
+      ...(familyName && { familyName }),
+      ...(nameType && { nameType }),
       ...(nameIdentifiers && nameIdentifiers.length > 0 && { nameIdentifiers }),
       ...(affiliation && affiliation.length > 0 && { affiliation }),
     };

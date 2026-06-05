@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { randomBytes } from "crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { sendEmail } from "../../utils/sendEmail";
 
 const schema = z.object({
@@ -16,7 +16,7 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  const { email } = body.data;
+  const email = body.data.email.trim().toLowerCase();
 
   const user = await prisma.user.findUnique({
     where: { emailAddress: email },
@@ -33,23 +33,26 @@ export default defineEventHandler(async (event) => {
     where: { userId: user.id },
   });
 
-  const resetToken = randomBytes(32).toString("hex");
+  const rawResetToken = randomBytes(32).toString("hex");
+  const resetTokenHash = createHash("sha256")
+    .update(rawResetToken)
+    .digest("hex");
   const expiresAt = new Date(Date.now() + 1000 * 60 * 60); // 1 hour
 
   await prisma.userForgotPassword.create({
     data: {
       userId: user.id,
-      resetToken,
+      resetToken: resetTokenHash,
       expiresAt,
     },
   });
 
   const config = useRuntimeConfig();
-  const resetUrl = `${config.siteUrl}/reset-password?token=${resetToken}`;
+  const resetUrl = `${config.siteUrl}/reset-password?token=${encodeURIComponent(rawResetToken)}`;
 
   await sendEmail({
     to: email,
-    subject: "Reset your password — Posters.science",
+    subject: "Reset your password - Posters.science",
     html: `
 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; color: #333;">
   <h2 style="color: #1a1a1a;">Reset Your Password</h2>
@@ -67,7 +70,7 @@ export default defineEventHandler(async (event) => {
   </p>
   <hr style="border: none; border-top: 1px solid #eee; margin: 24px 0;" />
   <p style="font-size: 12px; color: #999;">
-    This link will expire in <strong>1 hour</strong>. If you didn't request a password reset, you can safely ignore this email — your account remains secure.
+    This link will expire in <strong>1 hour</strong>. If you didn't request a password reset, you can safely ignore this email - your account remains secure.
   </p>
   <p style="font-size: 13px; color: #555;">~ Posters.science</p>
 </div>

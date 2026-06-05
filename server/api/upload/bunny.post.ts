@@ -17,7 +17,7 @@ export default defineEventHandler(async (event) => {
 
   const { bunnyPrivateStorage, bunnyPrivateStorageKey, posterExtractionApi } =
     config;
-  const { siteEnv } = config.public;
+  const siteEnv = config.siteEnv || config.public.siteEnv;
 
   if (!bunnyPrivateStorage || !bunnyPrivateStorageKey) {
     throw createError({

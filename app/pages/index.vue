@@ -38,7 +38,7 @@ const links = ref([
       class="mb-0 pb-0"
     >
       <div class="group relative inline-block">
-        <img src="/assets/images/fairy.png" alt="Logo" class="block pl-16" />
+        <img src="/assets/images/fairy.png" alt="Logo" class="block sm:pl-16" />
         <!-- Glow effect behind the image -->
         <div
           class="bg-primary/20 absolute inset-0 -z-10 animate-pulse rounded-xl blur-3xl"
@@ -73,7 +73,7 @@ const links = ref([
     <div class="mt-0">
       <div class="mx-auto max-w-screen-xl px-6 py-16">
         <!-- Soft launch notice -->
-        <div class="mx-auto max-w-3xl px-6 pb-12">
+        <div class="mx-auto max-w-3xl pb-12">
           <div
             class="border-primary/20 bg-primary/5 flex items-start gap-3 rounded-xl border px-5 py-4"
           >
@@ -88,12 +88,8 @@ const links = ref([
               functionality is up and running, and we'd love for you to test it.
               We would greatly appreciate it if you could share a poster,
               discover posters, and
-              <button
-                class="text-primary cursor-pointer font-medium underline underline-offset-2"
-                @click="feedbackOpen = true"
-              >
-                share your thoughts via our feedback form</button
-              >.
+              <!-- prettier-ignore -->
+              <span class="text-primary cursor-pointer font-medium underline underline-offset-2" @click="feedbackOpen = true">share your thoughts via our feedback form.</span>
             </p>
           </div>
         </div>
@@ -103,16 +99,14 @@ const links = ref([
             Why Posters Matter
           </h2>
 
-          <p class="text-muted text-lg leading-relaxed">
+          <p class="text-muted text-justify text-lg leading-relaxed">
             It is estimated that millions of scientific posters are presented
             every year at conferences, making them one of the most common forms
             of scientific communication. Posters often highlight early-stage
             insights and preliminary results, introducing them for the first
             time beyond the research team. As such, they represent a valuable
-            source of scientific knowledge. However, they are not consistently
-            shared. When shared, they are not FAIR (Findable, Accessible,
-            Interoperable, Reusable). This limits their visibility and long-term
-            impact. We want to change that.
+            source of scientific knowledge. Yet most are seen by a handful of
+            conference attendees and then forgotten. We want to change that.
           </p>
         </div>
       </div>
@@ -126,10 +120,32 @@ const links = ref([
             Share your poster in three steps
           </h2>
 
-          <p class="text-muted mx-auto mt-4 max-w-2xl text-lg">
-            From upload to a citable, FAIR-compliant and AI-ready poster record
-            in minutes.
+          <p
+            class="text-muted mx-auto mt-4 max-w-3xl text-justify text-lg leading-relaxed"
+          >
+            Science is shifting toward a culture where impact goes beyond
+            journal publications, and posters are increasingly recognized as
+            valuable research outputs in their own right. Posters.science gives
+            your poster a citable record so others can formally credit your
+            findings, makes it discoverable to researchers searching for work
+            like yours, and ensures it's AI-ready for the next generation of
+            scientific tools. Turn it into a legitimate, lasting output you can
+            claim alongside your other contributions.
           </p>
+
+          <div
+            class="align-center mt-6 block justify-center space-y-4 text-center"
+          >
+            <UButton
+              to="/share/new"
+              variant="outline"
+              size="xl"
+              trailing-icon="line-md:file-upload"
+              class="self-start"
+            >
+              Share Poster
+            </UButton>
+          </div>
         </div>
 
         <!-- Timeline steps with connecting gradient line -->
@@ -267,11 +283,29 @@ const links = ref([
             Explore scientific posters from across the web
           </h2>
 
-          <p class="text-muted mx-auto mt-4 max-w-2xl text-lg">
-            Posters.science automatically discovers and indexes posters from
-            repositories and other platforms, so you can find them all in one
-            place.
+          <p
+            class="text-muted mx-auto mt-4 max-w-3xl text-justify text-lg leading-relaxed"
+          >
+            Posters.science automatically discovers and indexes scientific
+            posters from repositories and platforms across the web. Use
+            Posters.science's discover feature and browse the latest findings to
+            spark new hypotheses, support your ideas, stay ahead of emerging
+            work in your field, and connect with researchers working on the same
+            problems.
           </p>
+
+          <div
+            class="align-center mt-5 block justify-center space-y-4 text-center"
+          >
+            <UButton
+              to="/discover"
+              size="xl"
+              variant="outline"
+              trailing-icon="heroicons:magnifying-glass"
+            >
+              Find Posters
+            </UButton>
+          </div>
         </div>
 
         <div class="grid grid-cols-1 gap-8 md:grid-cols-2 xl:grid-cols-4">
@@ -302,13 +336,15 @@ const links = ref([
             </div>
           </UCard>
 
-          <UCard class="h-full transition-shadow duration-200 hover:shadow-md">
-            <div class="flex flex-col gap-4">
+          <UCard
+            class="h-full transition-shadow duration-200 hover:shadow-md [&>[data-slot=body]]:flex [&>[data-slot=body]]:h-full [&>[data-slot=body]]:flex-col"
+          >
+            <div class="flex flex-1 flex-col gap-4">
               <Icon name="heroicons:squares-2x2" class="text-primary h-8 w-8" />
 
               <h3 class="text-xl font-semibold">Browse and filter</h3>
 
-              <p class="text-muted text-sm leading-relaxed">
+              <p class="text-muted flex-1 text-sm leading-relaxed">
                 Browse all indexed posters. Filter by publication date or search
                 using keywords to find posters of interest.
               </p>
@@ -325,8 +361,8 @@ const links = ref([
               <h3 class="text-xl font-semibold">Poster detail pages</h3>
 
               <p class="text-muted text-sm leading-relaxed">
-                Each poster has a dedicated page that includes full metadata, a
-                preview, and a direct link to the original archived file.
+                Each poster has a dedicated page that includes full metadata
+                and a direct link to the original archived file.
               </p>
             </div>
           </UCard>
@@ -352,15 +388,19 @@ const links = ref([
           </UCard>
         </div>
 
-        <!-- <div class="mt-10 flex justify-center">
-          <UButton
-            to="/discover"
-            size="xl"
-            trailing-icon="ic:outline-saved-search"
-          >
-            Find Posters
-          </UButton>
-        </div> -->
+        <div
+          class="align-center mt-5 block justify-center space-y-4 text-center"
+        >
+          <p class="text-muted mx-auto mt-12 max-w-2xl text-center text-sm">
+            Want to learn more about how Posters.science works? Check out our
+            <a
+              href="https://docs.posters.science"
+              target="_blank"
+              class="text-primary hover:underline"
+              >documentation</a
+            >.
+          </p>
+        </div>
       </div>
     </div>
 

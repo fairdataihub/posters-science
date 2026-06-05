@@ -62,6 +62,7 @@ type JsonPoster = {
   fundingReferences?: any[];
   ethicsApprovals?: any[];
   domain?: string;
+  _license_blocked?: boolean;
 };
 
 function mapToDbFields(data: JsonPoster) {
@@ -124,10 +125,7 @@ function mapToDbFields(data: JsonPoster) {
   const doiRaw = doiEntry?.identifier;
   const doi = typeof doiRaw === "string" ? doiRaw.toLowerCase() : null;
 
-  const publisher =
-    typeof data.publisher === "string"
-      ? data.publisher
-      : (data.publisher?.name ?? null);
+  const publisher = "Zenodo";
 
   const publicationYear = data.publicationYear ?? null;
 
@@ -140,11 +138,8 @@ function mapToDbFields(data: JsonPoster) {
   const relatedIdentifiers = data.relatedIdentifiers ?? [];
 
   const sizesArr = (data.sizes ?? []).filter((s: any) => typeof s === "string");
-  const formatsArr = (data.formats ?? []).filter(
-    (f: any) => typeof f === "string",
-  );
   const size = sizesArr[0] ?? null;
-  const format = formatsArr[0] ?? null;
+  const format = "application/pdf";
   const version = data.version ?? null;
 
   const rightsList = data.rightsList ?? [];
@@ -167,10 +162,19 @@ function mapToDbFields(data: JsonPoster) {
 
   const domain = data.domain ?? "Other";
 
-  const issuedDateStr = (data.dates ?? []).find(
+  const datesArr = data.dates ?? [];
+
+  const issuedDateRaw = datesArr.find(
     (d: any) => d?.dateType === "Issued",
   )?.date;
+  const issuedDateStr = issuedDateRaw?.split("/")[0] ?? null;
   const issuedAt = issuedDateStr ? new Date(issuedDateStr) : new Date();
+
+  const submittedDateRaw = datesArr.find(
+    (d: any) => d?.dateType === "Submitted",
+  )?.date;
+  const submittedDateStr = submittedDateRaw?.split("/")[0] ?? null;
+  const submittedAt = submittedDateStr ? new Date(submittedDateStr) : issuedAt;
 
   // Real JSON uses "content" field; fall back to empty sections
   const posterContent = data.content ?? {};
@@ -196,6 +200,8 @@ function mapToDbFields(data: JsonPoster) {
     identifiers,
     publisher,
     issuedAt,
+    submittedAt,
+    dates: datesArr,
     publicationYear,
     subjects,
     language,
@@ -217,6 +223,30 @@ function mapToDbFields(data: JsonPoster) {
     conferenceSeries,
     domain,
   };
+}
+
+function getImageUrl(
+  filePath: string,
+  doi: string | null,
+  licenseBlocked?: boolean,
+): string {
+  const basename = path.basename(filePath); // e.g. "12345678_complete.json"
+  const id = basename.replace(/_complete\.json$/, "");
+
+  if (licenseBlocked) {
+    return `https://api.dicebear.com/9.x/shapes/svg?seed=${id}`;
+  }
+
+  if (!doi) return "";
+
+  const lower = doi.toLowerCase();
+  let source: "zenodo" | "figshare" | null = null;
+
+  if (lower.includes("zenodo")) source = "zenodo";
+  else if (lower.includes("figshare")) source = "figshare";
+  if (!source) return "";
+
+  return `https://cdn.posters.science/thumbnails/a/${source}_${id}.jpeg`;
 }
 
 function collectJsonFiles(mergedDir: string): string[] {
@@ -244,29 +274,34 @@ async function main() {
   const limit = limitArg ? Number(limitArg) : Infinity;
   const mergedDir = getArg("dir") ?? path.join(process.cwd(), "merged");
 
-  console.log(`\n👤 Importing posters for userId: ${userId}`);
+  console.log(`\n Importing posters for userId: ${userId}`);
 
   const allFiles = collectJsonFiles(mergedDir);
-  console.log(`📂 Found ${allFiles.length} JSON files in ${mergedDir}`);
+  console.log(` Found ${allFiles.length} JSON files in ${mergedDir}`);
 
   let created = 0;
   let updated = 0;
   let errored = 0;
 
-  for (const filePath of allFiles) {
+  for (let i = 0; i < allFiles.length; i++) {
+    const filePath = allFiles[i];
     if (created + updated >= limit) break;
+
+    const progress = ((i + 1) / allFiles.length) * 100;
+    console.log(`Progress: ${progress.toFixed(2)}%`);
 
     const raw = fs.readFileSync(filePath, "utf-8");
     let data: JsonPoster;
     try {
       data = JSON.parse(raw) as JsonPoster;
     } catch {
-      console.warn(`   ⚠️  Could not parse ${filePath}`);
+      console.warn(`     Could not parse ${filePath}`);
       errored++;
       continue;
     }
 
     const mapped = mapToDbFields(data);
+    const imageUrl = getImageUrl(filePath, mapped.doi, data._license_blocked);
 
     // The unique key is the DOI URL (https://doi.org/<doi>)
     const existingMetadata = mapped.doi
@@ -309,6 +344,7 @@ async function main() {
       tableCaptions: mapped.tableCaptions,
       imageCaptions: mapped.imageCaptions,
       domain: mapped.domain,
+      dates: mapped.dates,
     };
 
     try {
@@ -320,8 +356,10 @@ async function main() {
             data: {
               title: mapped.posterTitle,
               description: mapped.posterDescription,
-              publishedAt: mapped.issuedAt,
-              updated: mapped.issuedAt,
+              publishedAt: mapped.submittedAt,
+              updated: mapped.submittedAt,
+              created: mapped.submittedAt,
+              ...(imageUrl ? { imageUrl } : {}),
             },
           });
 
@@ -333,7 +371,7 @@ async function main() {
 
         updated++;
         console.log(
-          `   🔄 [updated] ${existingMetadata.posterId} — ${mapped.posterTitle.slice(0, 60)}`,
+          `    [updated] ${existingMetadata.posterId} - ${mapped.posterTitle.slice(0, 60)}\n      imageUrl: ${imageUrl || "(none)"}`,
         );
       } else {
         // Create new poster and metadata
@@ -343,12 +381,12 @@ async function main() {
               userId,
               title: mapped.posterTitle,
               description: mapped.posterDescription,
-              imageUrl: "",
+              imageUrl,
               automated: true,
               status: "published",
-              publishedAt: mapped.issuedAt,
-              created: mapped.issuedAt,
-              updated: mapped.issuedAt,
+              publishedAt: mapped.submittedAt,
+              created: mapped.submittedAt,
+              updated: mapped.submittedAt,
               randomInt: Math.floor(Math.random() * 1000000),
             },
             select: { id: true, title: true },
@@ -364,11 +402,11 @@ async function main() {
 
         created++;
         console.log(
-          `   ✅ [created] ${poster.id} — ${poster.title.slice(0, 60)}`,
+          `    [created] ${poster.id} - ${poster.title.slice(0, 60)}\n      imageUrl: ${imageUrl || "(none)"}`,
         );
       }
     } catch (err: any) {
-      console.warn(`   ❌ Failed: ${filePath}\n      ${err?.message}`);
+      console.warn(`    Failed: ${filePath}\n      ${err?.message}`);
       errored++;
     }
   }
@@ -380,7 +418,7 @@ async function main() {
 
 main()
   .catch((err) => {
-    console.error("\n❌ Import failed:");
+    console.error("\n Import failed:");
     console.error(err);
     process.exitCode = 1;
   })

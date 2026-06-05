@@ -9,18 +9,25 @@ import {
   IDENTIFIER_TYPE_OPTIONS,
   IDENTIFIER_TYPE_PLACEHOLDER_OPTIONS,
   RELATION_TYPE_OPTIONS,
+  RESOURCE_TYPE_OPTIONS,
+  FUNDER_IDENTIFIER_TYPE_OPTIONS,
+  inferRelatedIdentifierType,
+  inferFunderIdentifierType,
+  inferNameIdentifierScheme,
+  inferAffiliationIdentifierScheme,
+  normalizeNameIdentifierToUrl,
+  normalizeAffiliationIdentifierToUrl,
+  schemeUriForScheme,
+  extractOrcidId,
+  validateOrcidExists,
 } from "@/utils/poster_schema";
 import {
-  CalendarDate,
-  DateFormatter,
+  type CalendarDate,
   getLocalTimeZone,
   parseDate,
 } from "@internationalized/date";
-
-const df = new DateFormatter("en-US", {
-  dateStyle: "medium",
-  timeZone: getLocalTimeZone(),
-});
+import DatePicker from "~/components/ui/DatePicker.vue";
+import DateRangePicker from "~/components/ui/DateRangePicker.vue";
 
 definePageMeta({
   middleware: ["auth"],
@@ -42,15 +49,62 @@ useSeoMeta({
 });
 
 const loading = ref(false);
+const orcidErrors = ref<Record<string, string | undefined>>({});
+const orcidChecking = ref<Record<string, boolean | undefined>>({});
+const identifierTypeErrors = ref<Record<string, string | undefined>>({});
+const affiliationIdentifierErrors = ref<Record<string, string | undefined>>({});
+const orcidSearchOpenIndex = ref<number | null>(null);
+const rorSearchOpenIndex = ref<number | null>(null);
+const affiliationRorSearchOpen = ref<string | null>(null);
+const autofillHighlight = ref<Record<string, boolean>>({});
+
+function handleOrcidSelect(orcidUrl: string, cIndex: number) {
+  const ni = state.creators[cIndex]?.nameIdentifiers?.[0];
+
+  if (ni) ni.nameIdentifier = orcidUrl;
+  handleNameIdentifierInput(orcidUrl, cIndex, 0);
+
+  orcidSearchOpenIndex.value = null;
+
+  const key = `${cIndex}-0`;
+  autofillHighlight.value[key] = true;
+
+  setTimeout(() => {
+    autofillHighlight.value[key] = false;
+  }, 700);
+}
+
+function handleRorSelect(rorUrl: string, displayName: string, cIndex: number) {
+  const ni = state.creators[cIndex]?.nameIdentifiers?.[0];
+  if (ni) ni.nameIdentifier = rorUrl;
+
+  handleNameIdentifierInput(rorUrl, cIndex, 0);
+
+  const creator = state.creators[cIndex];
+  if (creator) creator.givenName = displayName;
+
+  rorSearchOpenIndex.value = null;
+
+  const key = `${cIndex}-0`;
+  autofillHighlight.value[key] = true;
+
+  setTimeout(() => {
+    autofillHighlight.value[key] = false;
+  }, 700);
+}
+
 const additionalInfoCollapsed = ref(true);
 const posterContentCollapsed = ref(true);
 const mandatoryCollapsed = ref(false);
+const additionalInfoOpened = ref(false);
+const posterContentOpened = ref(false);
 const subjectInputRefs = ref<{ $el?: HTMLElement; focus?: () => void }[]>([]);
 
 // Initial state (matches PosterMetadata / StrictFormSchema)
 const state = reactive<StrictFormSchema>({
   title: "",
   description: "",
+  submissionAbstract: "",
   doi: "",
   identifiers: [],
   creators: [
@@ -58,7 +112,9 @@ const state = reactive<StrictFormSchema>({
       givenName: "",
       familyName: "",
       nameType: "Personal",
-      nameIdentifiers: [],
+      nameIdentifiers: [
+        { nameIdentifier: "", nameIdentifierScheme: "", schemeURI: "" },
+      ],
       affiliation: [],
     },
   ],
@@ -83,6 +139,8 @@ const state = reactive<StrictFormSchema>({
     conferenceEndDate: "",
     conferenceAcronym: "",
     conferenceSeries: "",
+    presentedStartDate: "",
+    presentedEndDate: "",
   },
   posterContent: {
     sections: [],
@@ -155,7 +213,7 @@ if (data.value) {
       state.identifiers = (
         meta.identifiers as { identifier?: string; identifierType?: string }[]
       ).map((i) => ({
-        identifier: i.identifier || "DEMO",
+        identifier: i.identifier || "",
         identifierType: i.identifierType || "",
       }));
     }
@@ -171,7 +229,9 @@ if (data.value) {
         if (creator.name && !givenName && !familyName) {
           const trimmed = creator.name.trim();
 
-          if (trimmed.includes(",")) {
+          if (creator.nameType === "Organizational") {
+            givenName = trimmed;
+          } else if (trimmed.includes(",")) {
             // "Family, Given" format
             const [family, ...rest] = trimmed.split(",");
             familyName = (family ?? "").trim();
@@ -195,11 +255,45 @@ if (data.value) {
           nameType: (creator.nameType || "Personal") as
             | "Personal"
             | "Organizational",
-          nameIdentifiers: (creator.nameIdentifiers || []).map((ni: any) => ({
-            nameIdentifier: ni?.nameIdentifier || "",
-            nameIdentifierScheme: ni?.nameIdentifierScheme || "",
-            schemeURI: ni?.schemeURI || "",
-          })),
+          nameIdentifiers: (() => {
+            const raw: any[] = creator.nameIdentifiers || [];
+            const mapped = raw.map((ni: any) => {
+              // Extraction API may save identifiers as bare strings
+              if (typeof ni === "string") {
+                return {
+                  nameIdentifier: ni,
+                  nameIdentifierScheme: "",
+                  schemeURI: "",
+                };
+              }
+
+              return {
+                nameIdentifier: ni?.nameIdentifier || "",
+                nameIdentifierScheme: ni?.nameIdentifierScheme || "",
+                schemeURI: ni?.schemeURI || "",
+              };
+            });
+
+            // The form shows only index 0. Move the first non-empty identifier to
+            // the front so it is always visible regardless of extraction ordering.
+            const firstNonEmpty = mapped.findIndex(
+              (ni) => ni.nameIdentifier.trim() !== "",
+            );
+            if (firstNonEmpty > 0) {
+              const [item] = mapped.splice(firstNonEmpty, 1);
+              mapped.unshift(item);
+            }
+
+            return mapped.length > 0
+              ? mapped
+              : [
+                  {
+                    nameIdentifier: "",
+                    nameIdentifierScheme: "",
+                    schemeURI: "",
+                  },
+                ];
+          })(),
           affiliation: (creator.affiliation || []).map((a: any) => {
             if (typeof a === "string") {
               return {
@@ -218,6 +312,36 @@ if (data.value) {
             };
           }),
         };
+      });
+      // Back-fill scheme/schemeURI for data loaded from the API
+      state.creators.forEach((creator) => {
+        creator.nameIdentifiers?.forEach((ni) => {
+          if (ni.nameIdentifier) {
+            const inferred = inferNameIdentifierScheme(ni.nameIdentifier);
+            if (inferred) {
+              ni.nameIdentifierScheme ||= inferred.scheme;
+              ni.schemeURI ||= inferred.schemeURI;
+              if (!ni.nameIdentifier.trim().startsWith("http")) {
+                const normalized = normalizeNameIdentifierToUrl(
+                  ni.nameIdentifier,
+                  inferred.scheme,
+                );
+                if (normalized) ni.nameIdentifier = normalized;
+              }
+            }
+          }
+        });
+        creator.affiliation?.forEach((aff) => {
+          if (!aff.schemeURI && aff.affiliationIdentifier) {
+            const inferred = inferAffiliationIdentifierScheme(
+              aff.affiliationIdentifier,
+            );
+            if (inferred) {
+              aff.affiliationIdentifierScheme ||= inferred.scheme;
+              aff.schemeURI = inferred.schemeURI;
+            }
+          }
+        });
       });
       console.log("Transformed creators", state.creators);
     }
@@ -254,7 +378,6 @@ if (data.value) {
 
     if (meta.size) state.size = meta.size;
     if (meta.format) state.format = meta.format;
-    if (meta.version) state.version = meta.version;
     if (meta.license) state.license = meta.license;
 
     // Funding references - cast funderIdentifierType to enum
@@ -290,6 +413,8 @@ if (data.value) {
         conferenceEndDate: meta.conference.conferenceEndDate ?? "",
         conferenceAcronym: meta.conference.conferenceAcronym || "",
         conferenceSeries: meta.conference.conferenceSeries || "",
+        presentedStartDate: meta.conference.presentedStartDate ?? "",
+        presentedEndDate: meta.conference.presentedEndDate ?? "",
       };
     }
 
@@ -302,6 +427,10 @@ if (data.value) {
           })) || [],
         unstructuredContent: meta.posterContent.unstructuredContent || "",
       };
+
+      if (meta.posterContent.submissionAbstract) {
+        state.submissionAbstract = meta.posterContent.submissionAbstract;
+      }
     }
 
     // Table and image captions (support legacy tableCaption/imageCaption)
@@ -345,40 +474,72 @@ const toW3CDate = (cd: CalendarDate) => {
 };
 
 // Conference dates as a range for UCalendar (range); state keeps conferenceStartDate/conferenceEndDate strings
-type DateRange = { start: CalendarDate; end: CalendarDate };
-
-function todayCalendarDate(): CalendarDate {
-  const now = new Date();
-
-  return new CalendarDate(now.getFullYear(), now.getMonth() + 1, now.getDate());
-}
+type DateRange = {
+  start: CalendarDate | undefined;
+  end: CalendarDate | undefined;
+};
 
 const conferenceDateRange = computed<DateRange>({
   get() {
     const startStr = state.conference?.conferenceStartDate ?? "";
     const endStr = state.conference?.conferenceEndDate ?? "";
 
-    const today = todayCalendarDate();
-    let start: CalendarDate;
-    let end: CalendarDate;
+    if (!startStr && !endStr) return { start: undefined, end: undefined };
+
+    let start: CalendarDate | undefined;
+    let end: CalendarDate | undefined;
     try {
-      start = startStr ? parseDate(startStr) : today;
-      end = endStr ? parseDate(endStr) : today;
+      start = startStr ? parseDate(startStr) : undefined;
+      end = endStr ? parseDate(endStr) : undefined;
     } catch {
-      start = today;
-      end = today;
+      start = undefined;
+      end = undefined;
     }
-    if (start.compare(end) > 0) end = start;
+    if (start && end && start.compare(end) > 0) end = start;
 
     return { start, end };
   },
   set(value: DateRange) {
     if (state.conference) {
-      state.conference.conferenceStartDate = toW3CDate(value.start);
-      state.conference.conferenceEndDate = toW3CDate(value.end);
+      state.conference.conferenceStartDate = value.start
+        ? toW3CDate(value.start)
+        : "";
+      state.conference.conferenceEndDate = value.end
+        ? toW3CDate(value.end)
+        : "";
     }
   },
 });
+
+function clearConferenceDates() {
+  if (state.conference) {
+    state.conference.conferenceStartDate = "";
+    state.conference.conferenceEndDate = "";
+  }
+}
+
+const presentedDate = computed<CalendarDate | undefined>({
+  get() {
+    const str = state.conference?.presentedStartDate ?? "";
+    if (!str) return undefined;
+    try {
+      return parseDate(str);
+    } catch {
+      return undefined;
+    }
+  },
+  set(value: CalendarDate | undefined) {
+    if (state.conference) {
+      state.conference.presentedStartDate = value ? toW3CDate(value) : "";
+    }
+  },
+});
+
+function clearPresentedDate() {
+  if (state.conference) {
+    state.conference.presentedStartDate = "";
+  }
+}
 
 const currentYear = new Date().getFullYear();
 const conferenceYearOptions = Array.from(
@@ -427,17 +588,10 @@ async function saveDraft() {
   savingDraft.value = true;
 
   try {
-    const response = await $fetch(`/api/poster/${id}`, {
+    await $fetch(`/api/poster/${id}?draft=true`, {
       method: "PUT",
       body: state,
     });
-
-    if (!response || (response as any).error) {
-      throw new Error(
-        (response as any)?.message ||
-          "Unknown error occurred while saving draft.",
-      );
-    }
 
     toast.add({
       title: "Changes Saved",
@@ -457,7 +611,84 @@ async function saveDraft() {
   }
 }
 
+const showSectionModal = ref(false);
+const pendingUnopened = ref<("additionalInfo" | "posterContent")[]>([]);
+const pendingSubmitEvent = ref<FormSubmitEvent<StrictFormSchema> | null>(null);
+
+function toggleAdditionalInfo() {
+  additionalInfoCollapsed.value = !additionalInfoCollapsed.value;
+  if (!additionalInfoCollapsed.value) additionalInfoOpened.value = true;
+}
+
+function togglePosterContent() {
+  posterContentCollapsed.value = !posterContentCollapsed.value;
+  if (!posterContentCollapsed.value) posterContentOpened.value = true;
+}
+
+async function reviewSections() {
+  showSectionModal.value = false;
+
+  const scrollTargetId = pendingUnopened.value.includes("additionalInfo")
+    ? "additional-info-section"
+    : "poster-content-section";
+
+  // Wait for the modal close animation to finish before mutating layout
+  await new Promise((resolve) => setTimeout(resolve, 300));
+
+  if (pendingUnopened.value.includes("additionalInfo")) {
+    additionalInfoCollapsed.value = false;
+    additionalInfoOpened.value = true;
+  }
+  if (pendingUnopened.value.includes("posterContent")) {
+    posterContentCollapsed.value = false;
+    posterContentOpened.value = true;
+  }
+
+  await nextTick();
+  await new Promise((resolve) => setTimeout(resolve, 150));
+
+  const el = document.getElementById(scrollTargetId);
+  if (el) {
+    const top = el.getBoundingClientRect().top + window.scrollY - 24;
+    window.scrollTo({ top, behavior: "smooth" });
+  }
+}
+
+async function continueAnyway() {
+  showSectionModal.value = false;
+  additionalInfoOpened.value = true;
+  posterContentOpened.value = true;
+
+  if (pendingSubmitEvent.value) {
+    await onSubmit(pendingSubmitEvent.value);
+  }
+}
+
 async function onSubmit(event: FormSubmitEvent<StrictFormSchema>) {
+  const unopened: ("additionalInfo" | "posterContent")[] = [];
+  if (!additionalInfoOpened.value) unopened.push("additionalInfo");
+  if (!posterContentOpened.value) unopened.push("posterContent");
+
+  if (unopened.length > 0) {
+    pendingUnopened.value = unopened;
+    pendingSubmitEvent.value = event;
+    showSectionModal.value = true;
+
+    return;
+  }
+
+  if (Object.values(orcidErrors.value).some(Boolean)) {
+    toast.add({
+      title: "ORCID Validation Error",
+      description:
+        "One or more creator ORCIDs could not be found. Verify or remove them before saving.",
+      color: "error",
+      icon: "material-symbols:error",
+    });
+
+    return;
+  }
+
   console.log("Submitting poster metadata");
   loading.value = true;
 
@@ -484,7 +715,7 @@ async function onSubmit(event: FormSubmitEvent<StrictFormSchema>) {
     });
 
     // Navigate to review page
-    await navigateTo(`/share/${id}/review`);
+    await navigateTo(`/share/${id}/publish`);
   } catch (err) {
     console.error(err);
     toast.add({
@@ -498,7 +729,7 @@ async function onSubmit(event: FormSubmitEvent<StrictFormSchema>) {
   }
 }
 
-function onError(event: {
+async function onError(event: {
   errors: { id?: string; path?: string; message?: string }[];
 }) {
   const errorCount = event.errors.length;
@@ -514,17 +745,191 @@ function onError(event: {
     icon: "material-symbols:error",
   });
 
-  console.log("Validation errors:", event.errors);
+  if (!firstError?.id) return;
 
-  // Scroll to first error field if it has an id
-  if (firstError?.id) {
-    const el = document.getElementById(firstError.id);
-    el?.scrollIntoView({ behavior: "smooth", block: "center" });
+  const fieldId = firstError.id;
+
+  if (
+    fieldId.startsWith("posterContent") ||
+    fieldId.startsWith("tableCaptions") ||
+    fieldId.startsWith("imageCaptions")
+  ) {
+    posterContentCollapsed.value = false;
+    posterContentOpened.value = true;
+  } else if (
+    fieldId === "submissionAbstract" ||
+    fieldId === "language" ||
+    fieldId === "domain" ||
+    fieldId === "license" ||
+    fieldId.startsWith("identifiers") ||
+    fieldId.startsWith("relatedIdentifiers") ||
+    fieldId.startsWith("fundingReferences")
+  ) {
+    additionalInfoCollapsed.value = false;
+    additionalInfoOpened.value = true;
+  } else {
+    mandatoryCollapsed.value = false;
   }
+
+  await nextTick();
+
+  const el = document.getElementById(fieldId);
+  el?.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
 function removeRow<T>(arr: T[], index: number) {
   arr.splice(index, 1);
+}
+
+function handleAffiliationIdentifierInput(
+  value: string,
+  cIndex: number,
+  aIndex: number,
+) {
+  const aff = state.creators[cIndex]?.affiliation?.[aIndex];
+  if (!aff) return;
+  const key = `${cIndex}-${aIndex}`;
+  const inferred = inferAffiliationIdentifierScheme(value);
+  if (inferred) {
+    aff.affiliationIdentifierScheme = inferred.scheme;
+    aff.schemeURI = inferred.schemeURI;
+    if (!value.trim().startsWith("http")) {
+      const normalized = normalizeAffiliationIdentifierToUrl(
+        value,
+        inferred.scheme,
+      );
+      if (normalized) aff.affiliationIdentifier = normalized;
+    }
+    affiliationIdentifierErrors.value[key] = undefined;
+  } else if (value.trim()) {
+    affiliationIdentifierErrors.value[key] =
+      "Only ROR identifiers are accepted for affiliations.";
+  } else {
+    affiliationIdentifierErrors.value[key] = undefined;
+  }
+}
+
+function handleNameTypeChange(nameType: string, cIndex: number) {
+  if (nameType === "Organizational") {
+    const creator = state.creators[cIndex];
+    if (creator) creator.familyName = "";
+  }
+
+  const identifiers = state.creators[cIndex]?.nameIdentifiers ?? [];
+  const expectedScheme = nameType === "Organizational" ? "ROR" : "ORCID";
+  identifiers.forEach((ni, niIndex) => {
+    const key = `${cIndex}-${niIndex}`;
+    if (!ni.nameIdentifier?.trim()) {
+      identifierTypeErrors.value[key] = undefined;
+
+      return;
+    }
+    const inferred = inferNameIdentifierScheme(ni.nameIdentifier);
+    if (!inferred || inferred.scheme !== expectedScheme) {
+      identifierTypeErrors.value[key] =
+        nameType === "Organizational"
+          ? "Only ROR identifiers are accepted for organizational creators."
+          : "Only ORCID identifiers are accepted for personal creators.";
+    } else {
+      identifierTypeErrors.value[key] = undefined;
+    }
+  });
+}
+
+function handleNameIdentifierInput(
+  value: string,
+  cIndex: number,
+  niIndex: number,
+) {
+  const key = `${cIndex}-${niIndex}`;
+  orcidErrors.value[key] = undefined;
+  const ni = state.creators[cIndex]?.nameIdentifiers?.[niIndex];
+  if (!ni) return;
+  const inferred = inferNameIdentifierScheme(value);
+  const nameType = state.creators[cIndex]?.nameType;
+  const expectedScheme = nameType === "Organizational" ? "ROR" : "ORCID";
+  if (inferred) {
+    ni.nameIdentifierScheme = inferred.scheme;
+    ni.schemeURI = inferred.schemeURI;
+    if (!value.trim().startsWith("http")) {
+      const normalized = normalizeNameIdentifierToUrl(value, inferred.scheme);
+      if (normalized) ni.nameIdentifier = normalized;
+    }
+    if (inferred.scheme !== expectedScheme) {
+      identifierTypeErrors.value[key] =
+        nameType === "Organizational"
+          ? "Only ROR identifiers are accepted for organizational creators."
+          : "Only ORCID identifiers are accepted for personal creators.";
+    } else {
+      identifierTypeErrors.value[key] = undefined;
+    }
+  } else if (value.trim()) {
+    identifierTypeErrors.value[key] =
+      nameType === "Organizational"
+        ? "Only ROR identifiers are accepted for organizational creators."
+        : "Only ORCID identifiers are accepted for personal creators.";
+  } else {
+    identifierTypeErrors.value[key] = undefined;
+  }
+}
+
+async function handleOrcidBlur(cIndex: number, niIndex: number) {
+  const ni = state.creators[cIndex]?.nameIdentifiers?.[niIndex];
+  if (!ni?.nameIdentifier) return;
+
+  const isOrcid =
+    ni.nameIdentifierScheme?.toLowerCase() === "orcid" ||
+    ni.nameIdentifier.toLowerCase().includes("orcid.org");
+  if (!isOrcid) return;
+
+  const orcidId = extractOrcidId(ni.nameIdentifier);
+  if (!orcidId) return;
+
+  const key = `${cIndex}-${niIndex}`;
+  orcidErrors.value[key] = undefined;
+  orcidChecking.value[key] = true;
+
+  const exists = await validateOrcidExists(orcidId);
+  orcidChecking.value[key] = false;
+
+  if (!exists) {
+    orcidErrors.value[key] =
+      "ORCID not found. Verify the ID at orcid.org or remove it.";
+  }
+}
+
+function handleAffiliationRorSelect(
+  rorUrl: string,
+  displayName: string,
+  cIndex: number,
+  aIndex: number,
+) {
+  const aff = state.creators[cIndex]?.affiliation?.[aIndex];
+  if (aff) {
+    aff.affiliationIdentifier = rorUrl;
+    aff.name = displayName;
+    handleAffiliationIdentifierInput(rorUrl, cIndex, aIndex);
+  }
+  affiliationRorSearchOpen.value = null;
+  const key = `aff-${cIndex}-${aIndex}`;
+  autofillHighlight.value[key] = true;
+  setTimeout(() => {
+    autofillHighlight.value[key] = false;
+  }, 700);
+}
+
+function handleFunderIdentifierTypeChange(value: string, fIndex: number) {
+  const funder = state.fundingReferences[fIndex];
+  if (!funder) return;
+  const uri = schemeUriForScheme(value);
+  if (uri) funder.schemeUri ||= uri;
+}
+
+function handleFunderIdentifierInput(value: string, fIndex: number) {
+  const funder = state.fundingReferences[fIndex];
+  if (!funder) return;
+  const inferred = inferFunderIdentifierType(value);
+  if (inferred) funder.funderIdentifierType ||= inferred;
 }
 
 async function addSubjectAndFocus() {
@@ -555,199 +960,103 @@ async function addSubjectAndFocus() {
     </UPageHeader>
 
     <UForm
+      ref="formRef"
       :schema="strictFormSchema"
       :state="state"
-      class="space-y-6"
+      class="space-y-8"
       :disabled="loading"
       @submit="onSubmit"
       @error="onError"
     >
       <div
-        class="group cursor-pointer select-none"
-        @click="mandatoryCollapsed = !mandatoryCollapsed"
+        class="overflow-hidden rounded-2xl border border-pink-200 bg-white shadow-sm dark:border-pink-900 dark:bg-gray-900"
       >
-        <div class="flex items-center justify-between">
-          <div>
-            <h2
-              class="dark:group-hover:text-primary-300 group-hover:text-primary-600 text-3xl font-semibold transition-colors"
-            >
-              Mandatory Information
-            </h2>
-
-            <p class="text-lg text-gray-500">
-              These are the minimum fields that are required to submit your
-              poster.
-            </p>
-          </div>
-
-          <UIcon
-            name="i-lucide-chevron-up"
-            class="group-hover:text-primary-600 dark:group-hover:text-primary-300 size-8 text-gray-400 transition-all"
-            :class="{ 'rotate-180': mandatoryCollapsed }"
-          />
-        </div>
-
-        <USeparator class="my-4" type="dashed" />
-      </div>
-
-      <div
-        class="space-y-6 transition-all duration-200 ease-in-out"
-        :class="mandatoryCollapsed ? 'hidden opacity-0' : 'opacity-100'"
-      >
-        <CardCollapsibleContent
-          title="About the poster"
-          :collapse="false"
-          description="Some general information about the poster"
+        <div
+          class="group cursor-pointer bg-pink-50 px-6 py-5 transition-colors select-none hover:bg-pink-100 dark:bg-pink-950/40 dark:hover:bg-pink-950/60"
+          :class="
+            mandatoryCollapsed
+              ? ''
+              : 'border-b border-pink-200 dark:border-pink-900'
+          "
+          @click="mandatoryCollapsed = !mandatoryCollapsed"
         >
-          <div class="space-y-4">
-            <UFormField label="Title" required name="title">
-              <UInput v-model="state.title" />
-            </UFormField>
-
-            <UFormField label="Description" required name="description">
-              <UTextarea v-model="state.description" class="w-full" />
-            </UFormField>
-
-            <UFormField label="Keywords" name="subjects" required>
-              <div v-if="state.subjects && state.subjects?.length > 0">
-                <div
-                  v-for="(_subject, sIndex) in state.subjects"
-                  :key="sIndex"
-                  class="mb-2 flex gap-2"
-                >
-                  <UFormField
-                    class="w-full"
-                    :name="`subjects.${sIndex}`"
-                    label=""
-                    required
-                  >
-                    <UInput
-                      ref="subjectInputRefs"
-                      v-model="state.subjects[sIndex]"
-                      placeholder="e.g., Machine Learning, Type 2 Diabetes"
-                      @keydown.enter.prevent="addSubjectAndFocus"
-                    />
-                  </UFormField>
-
-                  <UButton
-                    size="sm"
-                    color="error"
-                    variant="outline"
-                    icon="i-lucide-trash"
-                    @click="removeRow(state.subjects, sIndex)"
-                  />
-
-                  <UButton
-                    size="sm"
-                    color="success"
-                    variant="outline"
-                    icon="i-lucide-plus"
-                    @click="state.subjects.push('')"
-                  />
-                </div>
-              </div>
-
-              <div v-else>
-                <UButton
-                  size="sm"
-                  class="w-full"
-                  color="success"
-                  variant="outline"
-                  label="Add Keyword"
-                  icon="i-lucide-plus"
-                  @click="state.subjects.push('')"
+          <div class="flex items-center justify-between gap-4">
+            <div class="flex items-center gap-4">
+              <div
+                class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-pink-100 dark:bg-pink-900/60"
+              >
+                <UIcon
+                  name="i-lucide-clipboard-list"
+                  class="size-5 text-pink-600 dark:text-pink-400"
                 />
               </div>
-            </UFormField>
-          </div>
-        </CardCollapsibleContent>
 
-        <CardCollapsibleContent
-          title="Creators"
-          :collapse="false"
-          description="These are the people who contributed to the poster"
-        >
-          <div class="space-y-4">
-            <div
-              v-for="(creator, cIndex) in state.creators"
-              :key="cIndex"
-              class="space-y-2 rounded-xl border border-gray-200 p-4"
-            >
-              <div class="flex items-start justify-between gap-3">
-                <UFormField
-                  :name="`creators.${cIndex}.givenName`"
-                  label="Given Name"
-                  required
-                  class="flex-1"
-                >
-                  <UInput
-                    v-model="creator.givenName"
-                    placeholder="e.g., Garcia, Sofia"
+              <div>
+                <div class="flex items-center gap-2">
+                  <h2
+                    class="text-xl font-semibold text-gray-900 dark:text-white"
+                  >
+                    Mandatory Information
+                  </h2>
+
+                  <UBadge
+                    label="Required"
+                    color="error"
+                    variant="subtle"
+                    size="sm"
                   />
-                </UFormField>
+                </div>
 
-                <UFormField
-                  :name="`creators.${cIndex}.familyName`"
-                  label="Family Name"
-                  required
-                  class="flex-1"
-                >
-                  <UInput
-                    v-model="creator.familyName"
-                    placeholder="e.g., Garcia, Sofia"
-                  />
-                </UFormField>
-
-                <UFormField
-                  :name="`creators.${cIndex}.nameType`"
-                  label="Type"
-                  class="w-40"
-                >
-                  <USelect
-                    v-model="creator.nameType"
-                    class="w-full"
-                    :items="[
-                      { label: 'Personal', value: 'Personal' },
-                      { label: 'Organizational', value: 'Organizational' },
-                    ]"
-                  />
-                </UFormField>
-
-                <UButton
-                  v-if="state.creators.length > 1"
-                  class="mt-7"
-                  size="xs"
-                  trailing-icon="i-lucide-trash-2"
-                  color="error"
-                  variant="solid"
-                  @click="removeRow(state.creators, cIndex)"
-                >
-                  Delete Creator
-                </UButton>
+                <p class="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
+                  These are the minimum fields required to submit your poster.
+                </p>
               </div>
+            </div>
 
-              <UFormField label="Affiliations" name="affiliation">
-                <div
-                  v-if="
-                    state.creators[cIndex]?.affiliation &&
-                    state.creators[cIndex]?.affiliation?.length > 0
-                  "
-                >
+            <UIcon
+              name="i-lucide-chevron-up"
+              class="size-5 shrink-0 text-pink-500 transition-transform duration-200 dark:text-pink-400"
+              :class="{ 'rotate-180': mandatoryCollapsed }"
+            />
+          </div>
+        </div>
+
+        <div
+          class="space-y-6 px-6 py-6 transition-all duration-200 ease-in-out"
+          :class="mandatoryCollapsed ? 'hidden opacity-0' : 'opacity-100'"
+        >
+          <CardCollapsibleContent
+            title="About the poster"
+            :collapse="false"
+            description="Some general information about the poster"
+          >
+            <div class="space-y-4">
+              <UFormField label="Title" required name="title">
+                <UInput v-model="state.title" />
+              </UFormField>
+
+              <UFormField label="Description" required name="description">
+                <UTextarea v-model="state.description" class="w-full" />
+              </UFormField>
+
+              <UFormField label="Keywords" name="subjects" required>
+                <div v-if="state.subjects && state.subjects?.length > 0">
                   <div
-                    v-for="(affiliation, aIndex) in state.creators[cIndex]
-                      ?.affiliation"
-                    :key="aIndex"
+                    v-for="(_subject, sIndex) in state.subjects"
+                    :key="sIndex"
                     class="mb-2 flex gap-2"
                   >
                     <UFormField
                       class="w-full"
-                      :name="`creators.${cIndex}.affiliation.${aIndex}.name`"
+                      :name="`subjects.${sIndex}`"
                       label=""
                       required
                     >
                       <UInput
-                        v-model="affiliation.name"
-                        placeholder="University of California, San Diego"
+                        ref="subjectInputRefs"
+                        v-model="state.subjects[sIndex]"
+                        placeholder="e.g., Machine Learning, Type 2 Diabetes"
+                        @keydown.enter.prevent="addSubjectAndFocus"
                       />
                     </UFormField>
 
@@ -756,29 +1065,284 @@ async function addSubjectAndFocus() {
                       color="error"
                       variant="outline"
                       icon="i-lucide-trash"
-                      @click="
-                        removeRow(state.creators[cIndex]?.affiliation!, aIndex)
-                      "
-                    />
-
-                    <UButton
-                      size="sm"
-                      color="success"
-                      variant="outline"
-                      icon="i-lucide-plus"
-                      @click="
-                        state.creators[cIndex]?.affiliation?.push({
-                          name: '',
-                          affiliationIdentifier: '',
-                          affiliationIdentifierScheme: '',
-                          schemeURI: '',
-                        })
-                      "
+                      @click="removeRow(state.subjects, sIndex)"
                     />
                   </div>
+
+                  <UButton
+                    size="sm"
+                    class="mt-2 w-full"
+                    color="success"
+                    variant="outline"
+                    label="Add Keyword"
+                    icon="i-lucide-plus"
+                    @click="addSubjectAndFocus"
+                  />
                 </div>
 
                 <div v-else>
+                  <UButton
+                    size="sm"
+                    class="w-full"
+                    color="success"
+                    variant="outline"
+                    label="Add Keyword"
+                    icon="i-lucide-plus"
+                    @click="state.subjects.push('')"
+                  />
+                </div>
+              </UFormField>
+            </div>
+          </CardCollapsibleContent>
+
+          <CardCollapsibleContent
+            title="Creators"
+            :collapse="false"
+            description="These are the people who contributed to the poster"
+          >
+            <div class="space-y-4">
+              <div
+                v-for="(creator, cIndex) in state.creators"
+                :key="cIndex"
+                class="space-y-4 rounded-xl border border-gray-200 p-4"
+              >
+                <div
+                  class="bg-primary-50 inline-flex items-center rounded-md px-3 py-1 dark:bg-pink-950/60"
+                >
+                  <p
+                    class="text-primary-700 text-base font-medium dark:text-pink-300"
+                  >
+                    Author {{ cIndex + 1 }}
+                  </p>
+                </div>
+
+                <div class="flex items-start justify-between gap-3">
+                  <template v-if="creator.nameType !== 'Organizational'">
+                    <UFormField
+                      :name="`creators.${cIndex}.givenName`"
+                      label="Given Name"
+                      required
+                      class="flex-1"
+                    >
+                      <UInput
+                        v-model="creator.givenName"
+                        placeholder="e.g., Sofia"
+                      />
+                    </UFormField>
+
+                    <UFormField
+                      :name="`creators.${cIndex}.familyName`"
+                      label="Family Name"
+                      required
+                      class="flex-1"
+                    >
+                      <UInput
+                        v-model="creator.familyName"
+                        placeholder="e.g., Garcia"
+                      />
+                    </UFormField>
+                  </template>
+
+                  <template v-else>
+                    <UFormField
+                      :name="`creators.${cIndex}.givenName`"
+                      label="Organization Name"
+                      required
+                      class="flex-1"
+                    >
+                      <UInput
+                        v-model="creator.givenName"
+                        placeholder="e.g., National Institutes of Health"
+                      />
+                    </UFormField>
+                  </template>
+
+                  <UFormField
+                    :name="`creators.${cIndex}.nameType`"
+                    label="Type"
+                    class="w-40"
+                  >
+                    <USelect
+                      v-model="creator.nameType"
+                      class="w-full"
+                      :items="[
+                        { label: 'Personal', value: 'Personal' },
+                        { label: 'Organizational', value: 'Organizational' },
+                      ]"
+                      @update:model-value="
+                        (v) => handleNameTypeChange(String(v), cIndex)
+                      "
+                    />
+                  </UFormField>
+
+                  <UButton
+                    v-if="state.creators.length > 1"
+                    class="mt-7"
+                    size="xs"
+                    trailing-icon="i-lucide-trash-2"
+                    color="error"
+                    variant="solid"
+                    @click="removeRow(state.creators, cIndex)"
+                  >
+                    Delete Creator
+                  </UButton>
+                </div>
+
+                <UFormField
+                  label="Affiliations"
+                  name="affiliation"
+                  class="mt-2"
+                >
+                  <template
+                    v-if="
+                      state.creators[cIndex]?.affiliation &&
+                      state.creators[cIndex]?.affiliation?.length > 0
+                    "
+                    #hint
+                  >
+                    <a
+                      href="https://ror.org/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="hover:text-primary-500 text-[11px] font-normal text-gray-400 hover:underline"
+                      >Learn more about ROR</a
+                    >
+                  </template>
+
+                  <div
+                    v-for="(affiliation, aIndex) in state.creators[cIndex]
+                      ?.affiliation"
+                    :key="aIndex"
+                    class="mb-2 space-y-2 rounded-r-xl border border-l-4 border-gray-200 border-l-pink-300 p-3 dark:border-l-pink-700"
+                  >
+                    <div class="flex gap-2">
+                      <UFormField
+                        class="w-full"
+                        :name="`creators.${cIndex}.affiliation.${aIndex}.name`"
+                        label="Name"
+                        required
+                      >
+                        <div class="relative">
+                          <div
+                            v-if="autofillHighlight[`aff-${cIndex}-${aIndex}`]"
+                            class="orcid-autofill-ring pointer-events-none absolute inset-0 rounded-md"
+                          />
+
+                          <UInput
+                            v-model="affiliation.name"
+                            placeholder="University of California, San Diego"
+                          />
+                        </div>
+                      </UFormField>
+
+                      <UButton
+                        class="mt-6"
+                        size="sm"
+                        color="error"
+                        variant="outline"
+                        icon="i-lucide-trash"
+                        @click="
+                          removeRow(
+                            state.creators[cIndex]?.affiliation!,
+                            aIndex,
+                          )
+                        "
+                      />
+                    </div>
+
+                    <div class="flex gap-2">
+                      <UFormField
+                        :name="`creators.${cIndex}.affiliation.${aIndex}.affiliationIdentifier`"
+                        label="ROR Identifier"
+                        :error="
+                          affiliationIdentifierErrors[`${cIndex}-${aIndex}`]
+                        "
+                        class="w-full"
+                      >
+                        <div class="relative">
+                          <div
+                            v-if="autofillHighlight[`aff-${cIndex}-${aIndex}`]"
+                            class="orcid-autofill-ring pointer-events-none absolute inset-0 rounded-md"
+                          />
+
+                          <UInput
+                            v-model="affiliation.affiliationIdentifier"
+                            placeholder="https://ror.org/..."
+                            class="w-full"
+                            @update:model-value="
+                              (v) =>
+                                handleAffiliationIdentifierInput(
+                                  v,
+                                  cIndex,
+                                  aIndex,
+                                )
+                            "
+                          >
+                            <template
+                              v-if="
+                                affiliation.affiliationIdentifier?.startsWith(
+                                  'http',
+                                ) &&
+                                !affiliationIdentifierErrors[
+                                  `${cIndex}-${aIndex}`
+                                ]
+                              "
+                              #trailing
+                            >
+                              <a
+                                :href="affiliation.affiliationIdentifier"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                class="hover:text-primary-500 flex items-center text-gray-400"
+                              >
+                                <UIcon
+                                  name="i-lucide-external-link"
+                                  class="size-4 cursor-pointer"
+                                />
+                              </a>
+                            </template>
+                          </UInput>
+                        </div>
+                      </UFormField>
+
+                      <UButton
+                        class="mt-6"
+                        size="xs"
+                        variant="outline"
+                        icon="i-lucide-search"
+                        label="Find ROR"
+                        :disabled="!affiliation.name"
+                        @click="
+                          affiliationRorSearchOpen = `${cIndex}-${aIndex}`
+                        "
+                      />
+
+                      <IdentifierRorSearch
+                        v-if="
+                          affiliationRorSearchOpen === `${cIndex}-${aIndex}`
+                        "
+                        :open="
+                          affiliationRorSearchOpen === `${cIndex}-${aIndex}`
+                        "
+                        :initial-query="affiliation.name"
+                        @update:open="
+                          (v) => {
+                            if (!v) affiliationRorSearchOpen = null;
+                          }
+                        "
+                        @select="
+                          (rorUrl, displayName) =>
+                            handleAffiliationRorSelect(
+                              rorUrl,
+                              displayName,
+                              cIndex,
+                              aIndex,
+                            )
+                        "
+                      />
+                    </div>
+                  </div>
+
                   <UButton
                     size="sm"
                     class="w-full"
@@ -795,257 +1359,159 @@ async function addSubjectAndFocus() {
                       })
                     "
                   />
-                </div>
-              </UFormField>
-            </div>
+                </UFormField>
 
-            <UButton
-              icon="i-lucide-plus"
-              variant="outline"
-              color="primary"
-              class="w-full"
-              label="Add Creator"
-              @click="
-                state.creators.push({
-                  givenName: '',
-                  familyName: '',
-                  nameType: 'Personal',
-                  nameIdentifiers: [],
-                  affiliation: [],
-                })
-              "
-            />
-          </div>
-        </CardCollapsibleContent>
-
-        <CardCollapsibleContent
-          title="Conference"
-          :collapse="false"
-          description="The conference or event where the poster was presented"
-        >
-          <div class="space-y-4">
-            <div class="grid gap-3 md:grid-cols-2">
-              <UFormField
-                name="conference.conferenceName"
-                label="Conference name"
-                required
-              >
-                <UInput
-                  v-model="state.conference.conferenceName"
-                  placeholder="e.g., ARVO 2025"
-                />
-              </UFormField>
-
-              <UFormField
-                name="conference.conferenceYear"
-                label="Conference year"
-                required
-              >
-                <USelect
-                  v-model="state.conference.conferenceYear"
-                  class="w-full"
-                  :items="conferenceYearOptions"
-                  placeholder="Select a year"
-                />
-              </UFormField>
-            </div>
-
-            <UFormField name="conference.conferenceLocation" label="Location">
-              <UInput
-                v-model="state.conference.conferenceLocation"
-                placeholder="e.g., Seattle, WA, USA"
-              />
-            </UFormField>
-
-            <div class="grid gap-3 md:grid-cols-3">
-              <UFormField name="conference.conferenceAcronym" label="Acronym">
-                <UInput
-                  v-model="state.conference.conferenceAcronym"
-                  placeholder="e.g., ARVO"
-                />
-              </UFormField>
-
-              <UFormField
-                name="conference.conferenceUri"
-                label="Conference Website"
-              >
-                <UInput
-                  v-model="state.conference.conferenceUri"
-                  placeholder="https://www.arvo.org/annual-meeting"
-                  type="url"
-                />
-              </UFormField>
-
-              <UFormField
-                name="conference.conferenceStartDate"
-                label="Conference dates"
-              >
-                <UPopover>
-                  <UButton
-                    color="neutral"
-                    variant="subtle"
-                    icon="i-lucide-calendar"
-                    class="w-full"
+                <UFormField name="nameIdentifiers" class="mt-5">
+                  <div
+                    v-if="
+                      state.creators[cIndex]?.nameIdentifiers?.[0] !== undefined
+                    "
                   >
-                    <template
-                      v-if="
-                        state.conference?.conferenceStartDate &&
-                        state.conference?.conferenceEndDate
+                    <UFormField
+                      class="w-full"
+                      :name="`creators.${cIndex}.nameIdentifiers.0.nameIdentifier`"
+                      :label="
+                        creator.nameType === 'Organizational'
+                          ? 'ROR Identifier'
+                          : 'ORCID Identifier'
+                      "
+                      :error="
+                        orcidErrors[`${cIndex}-0`] ||
+                        identifierTypeErrors[`${cIndex}-0`]
                       "
                     >
-                      {{
-                        df.format(
-                          conferenceDateRange.start.toDate(getLocalTimeZone()),
-                        )
-                      }}
-                      –
-                      {{
-                        df.format(
-                          conferenceDateRange.end.toDate(getLocalTimeZone()),
-                        )
-                      }}
-                    </template>
+                      <template #hint>
+                        <a
+                          :href="
+                            creator.nameType === 'Organizational'
+                              ? 'https://ror.org/'
+                              : 'https://orcid.org/'
+                          "
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          class="hover:text-primary-500 text-[11px] font-normal text-gray-400 hover:underline"
+                        >
+                          {{
+                            creator.nameType === "Organizational"
+                              ? "Learn more about ROR"
+                              : "Learn more about ORCID"
+                          }}
+                        </a>
+                      </template>
 
-                    <template v-else>Pick a date range</template>
-                  </UButton>
+                      <div class="flex gap-2">
+                        <div class="relative flex-1">
+                          <div
+                            v-if="autofillHighlight[`${cIndex}-0`]"
+                            class="orcid-autofill-ring pointer-events-none absolute inset-0 rounded-md"
+                          />
 
-                  <template #content>
-                    <UCalendar v-model="conferenceDateRange" range />
-                  </template>
-                </UPopover>
-              </UFormField>
-            </div>
-          </div>
-        </CardCollapsibleContent>
-      </div>
+                          <UInput
+                            v-model="
+                              state.creators[cIndex].nameIdentifiers![0]
+                                .nameIdentifier
+                            "
+                            :placeholder="
+                              creator.nameType === 'Organizational'
+                                ? 'https://ror.org/...'
+                                : 'https://orcid.org/0000-0000-0000-0000'
+                            "
+                            :loading="orcidChecking[`${cIndex}-0`]"
+                            @update:model-value="
+                              (v) => handleNameIdentifierInput(v, cIndex, 0)
+                            "
+                            @blur="() => handleOrcidBlur(cIndex, 0)"
+                          >
+                            <template
+                              v-if="
+                                state.creators[
+                                  cIndex
+                                ].nameIdentifiers![0].nameIdentifier?.startsWith(
+                                  'http',
+                                ) && !identifierTypeErrors[`${cIndex}-0`]
+                              "
+                              #trailing
+                            >
+                              <a
+                                :href="
+                                  state.creators[cIndex].nameIdentifiers![0]
+                                    .nameIdentifier
+                                "
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                class="hover:text-primary-500 text-gray-400"
+                              >
+                                <UIcon
+                                  name="i-lucide-external-link"
+                                  class="size-4 cursor-pointer"
+                                />
+                              </a>
+                            </template>
+                          </UInput>
+                        </div>
 
-      <div
-        class="group mt-20 cursor-pointer select-none"
-        @click="additionalInfoCollapsed = !additionalInfoCollapsed"
-      >
-        <div class="flex items-center justify-between">
-          <div>
-            <h2
-              class="dark:group-hover:text-primary-300 group-hover:text-primary-600 text-3xl font-semibold transition-colors"
-            >
-              Additional Information
-            </h2>
+                        <template v-if="creator.nameType !== 'Organizational'">
+                          <UButton
+                            size="sm"
+                            variant="outline"
+                            color="primary"
+                            icon="i-lucide-search"
+                            :disabled="!creator.givenName"
+                            @click="orcidSearchOpenIndex = cIndex"
+                          >
+                            Find ORCID
+                          </UButton>
 
-            <p class="text-lg text-gray-500">
-              Optional metadata. We recommend providing as much information as
-              possible to make your poster more FAIR.
-            </p>
-          </div>
+                          <IdentifierOrcidSearch
+                            v-if="orcidSearchOpenIndex === cIndex"
+                            :open="orcidSearchOpenIndex === cIndex"
+                            :given-name="creator.givenName"
+                            :family-name="creator.familyName || ''"
+                            :affiliations="
+                              creator.affiliation
+                                ?.map((a) => a.name)
+                                .filter(Boolean) ?? []
+                            "
+                            @update:open="
+                              (v) => {
+                                if (!v) orcidSearchOpenIndex = null;
+                              }
+                            "
+                            @select="
+                              (orcidUrl) => handleOrcidSelect(orcidUrl, cIndex)
+                            "
+                          />
+                        </template>
 
-          <UIcon
-            name="i-lucide-chevron-down"
-            class="group-hover:text-primary-600 dark:group-hover:text-primary-300 size-8 text-gray-400 transition-all"
-            :class="{ 'rotate-180': !additionalInfoCollapsed }"
-          />
-        </div>
+                        <template v-if="creator.nameType === 'Organizational'">
+                          <UButton
+                            size="sm"
+                            variant="outline"
+                            icon="i-lucide-search"
+                            label="Find ROR"
+                            :disabled="!creator.givenName"
+                            @click="rorSearchOpenIndex = cIndex"
+                          />
 
-        <USeparator class="my-4" type="dashed" />
-      </div>
-
-      <div
-        class="transition-all duration-200 ease-in-out"
-        :class="additionalInfoCollapsed ? 'hidden opacity-0' : 'opacity-100'"
-      >
-        <div class="space-y-6">
-          <CardCollapsibleContent
-            title="General"
-            :collapse="false"
-            description="Language, domain, and version details for this poster"
-          >
-            <div class="space-y-4">
-              <UFormField label="Primary Language" name="language">
-                <USelect
-                  v-model="state.language"
-                  :items="ISO_LANGUAGE_OPTIONS"
-                  placeholder="Select a language"
-                  class="w-full"
-                />
-              </UFormField>
-
-              <UFormField label="Domain / Field of Study" name="domain">
-                <UInput
-                  v-model="state.domain"
-                  placeholder="e.g., Machine Learning, Clinical Medicine"
-                />
-              </UFormField>
-
-              <UFormField label="Version" name="version">
-                <UInput v-model="state.version" placeholder="e.g., 1.0" />
-              </UFormField>
-
-              <!-- License moved to review/submit step (Zenodo flow) -->
-              <UFormField v-if="false" name="license" label="License">
-                <USelect
-                  v-model="state.license"
-                  class="w-full"
-                  :items="LICENSE_OPTIONS"
-                  placeholder="Select a license"
-                />
-              </UFormField>
-            </div>
-          </CardCollapsibleContent>
-
-          <!-- Identifiers section hidden for now -->
-          <CardCollapsibleContent
-            v-if="false"
-            title="Identifiers"
-            :collapse="false"
-            description="Alternative identifiers assigned to this poster (e.g. arXiv, Handle)"
-          >
-            <div class="space-y-4">
-              <div
-                v-for="(identifier, iIndex) in state.identifiers"
-                :key="iIndex"
-                class="space-y-2 rounded-xl border border-gray-200 p-4"
-              >
-                <div class="flex items-start justify-between gap-3">
-                  <UFormField
-                    :name="`identifiers.${iIndex}.identifier`"
-                    label="Identifier"
-                    required
-                    class="flex-1"
-                  >
-                    <UInput
-                      v-model="identifier.identifier"
-                      :placeholder="
-                        IDENTIFIER_TYPE_PLACEHOLDER_OPTIONS.find(
-                          (id) => id.value === identifier.identifierType,
-                        )?.label || 'Select an identifier type'
-                      "
-                    />
-                  </UFormField>
-
-                  <UFormField
-                    :name="`identifiers.${iIndex}.identifierType`"
-                    label="Type"
-                    required
-                    class="flex-1"
-                  >
-                    <USelect
-                      v-model="identifier.identifierType"
-                      class="w-full"
-                      :items="IDENTIFIER_TYPE_OPTIONS"
-                      placeholder="Select an identifier type"
-                    />
-                  </UFormField>
-
-                  <UButton
-                    v-if="state.identifiers.length > 1"
-                    class="mt-7"
-                    size="xs"
-                    trailing-icon="i-lucide-trash-2"
-                    color="error"
-                    variant="solid"
-                    @click="removeRow(state.identifiers, iIndex)"
-                  >
-                    Delete Identifier
-                  </UButton>
-                </div>
+                          <IdentifierRorSearch
+                            v-if="rorSearchOpenIndex === cIndex"
+                            :open="rorSearchOpenIndex === cIndex"
+                            :initial-query="creator.givenName || ''"
+                            @update:open="
+                              (v) => {
+                                if (!v) rorSearchOpenIndex = null;
+                              }
+                            "
+                            @select="
+                              (rorUrl, name) =>
+                                handleRorSelect(rorUrl, name, cIndex)
+                            "
+                          />
+                        </template>
+                      </div>
+                    </UFormField>
+                  </div>
+                </UFormField>
               </div>
 
               <UButton
@@ -1053,11 +1519,20 @@ async function addSubjectAndFocus() {
                 variant="outline"
                 color="primary"
                 class="w-full"
-                label="Add Identifier"
+                label="Add Creator"
                 @click="
-                  state.identifiers.push({
-                    identifier: '',
-                    identifierType: '',
+                  state.creators.push({
+                    givenName: '',
+                    familyName: '',
+                    nameType: 'Personal',
+                    nameIdentifiers: [
+                      {
+                        nameIdentifier: '',
+                        nameIdentifierScheme: '',
+                        schemeURI: '',
+                      },
+                    ],
+                    affiliation: [],
                   })
                 "
               />
@@ -1065,56 +1540,370 @@ async function addSubjectAndFocus() {
           </CardCollapsibleContent>
 
           <CardCollapsibleContent
-            title="Related Publications"
+            title="Conference"
             :collapse="false"
-            description="Links to related publications, datasets, or supplementary materials"
+            description="The conference or event where the poster was presented"
           >
             <div class="space-y-4">
-              <div
-                v-for="(relatedIdentifier, iIndex) in state.relatedIdentifiers"
-                :key="iIndex"
-                class="space-y-2 rounded-xl border border-gray-200 p-4"
-              >
-                <div class="flex items-start justify-between gap-3">
-                  <UFormField
-                    :name="`relatedIdentifiers.${iIndex}.relatedIdentifier`"
-                    label="Identifier"
-                    required
-                    class="flex-1"
-                  >
-                    <UInput
-                      v-model="relatedIdentifier.relatedIdentifier"
-                      :placeholder="
-                        IDENTIFIER_TYPE_PLACEHOLDER_OPTIONS.find(
-                          (id) =>
-                            id.value ===
-                            relatedIdentifier.relatedIdentifierType,
-                        )?.label || 'Select an identifier type'
-                      "
-                    />
-                  </UFormField>
+              <div class="grid gap-3 md:grid-cols-2">
+                <UFormField
+                  name="conference.conferenceName"
+                  label="Conference name"
+                  required
+                >
+                  <UInput
+                    v-model="state.conference.conferenceName"
+                    placeholder="e.g., Association for Research in Vision and Ophthalmology Conference"
+                  />
+                </UFormField>
 
-                  <UFormField
-                    :name="`relatedIdentifiers.${iIndex}.relatedIdentifierType`"
-                    label="Type"
-                    required
-                    class="flex-1"
+                <UFormField
+                  name="conference.conferenceYear"
+                  label="Conference year"
+                  required
+                >
+                  <USelect
+                    v-model="state.conference.conferenceYear"
+                    class="w-full"
+                    :items="conferenceYearOptions"
+                    placeholder="Select a year"
+                  />
+                </UFormField>
+              </div>
+
+              <UFormField name="conference.conferenceLocation" label="Location">
+                <UInput
+                  v-model="state.conference.conferenceLocation"
+                  placeholder="e.g., Seattle, WA, USA"
+                />
+              </UFormField>
+
+              <div class="grid gap-3 md:grid-cols-2">
+                <UFormField name="conference.conferenceAcronym" label="Acronym">
+                  <UInput
+                    v-model="state.conference.conferenceAcronym"
+                    placeholder="e.g., ARVO"
+                  />
+                </UFormField>
+
+                <UFormField
+                  name="conference.conferenceUri"
+                  label="Conference Website"
+                >
+                  <UInput
+                    v-model="state.conference.conferenceUri"
+                    placeholder="https://www.arvo.org/annual-meeting"
+                    type="url"
+                  />
+                </UFormField>
+              </div>
+
+              <div class="grid gap-3 md:grid-cols-2">
+                <UFormField
+                  name="conference.conferenceStartDate"
+                  label="Conference dates"
+                  description="The full date range of the conference or event"
+                >
+                  <DateRangePicker
+                    v-model="conferenceDateRange"
+                    label="Conference dates"
+                    variant="subtle"
+                    placeholder="Pick a date range"
+                    clearable
+                    class="w-full"
+                    @clear="clearConferenceDates"
+                  />
+                </UFormField>
+
+                <UFormField
+                  name="conference.presentedStartDate"
+                  label="Poster presentation date"
+                  description="When the poster was first presented"
+                >
+                  <DatePicker
+                    v-model="presentedDate"
+                    icon="i-lucide-presentation"
+                    variant="subtle"
+                    placeholder="Pick a date"
+                    clearable
+                    class="w-full"
+                    @clear="clearPresentedDate"
+                  />
+                </UFormField>
+              </div>
+            </div>
+          </CardCollapsibleContent>
+        </div>
+      </div>
+
+      <div
+        id="additional-info-section"
+        class="overflow-hidden rounded-2xl border border-violet-200 bg-white shadow-sm dark:border-violet-900 dark:bg-gray-900"
+      >
+        <div
+          class="group cursor-pointer bg-violet-50 px-6 py-5 transition-colors select-none hover:bg-violet-100 dark:bg-violet-950/40 dark:hover:bg-violet-950/60"
+          :class="
+            additionalInfoCollapsed
+              ? ''
+              : 'border-b border-violet-200 dark:border-violet-900'
+          "
+          @click="toggleAdditionalInfo"
+        >
+          <div class="flex items-center justify-between gap-4">
+            <div class="flex items-center gap-4">
+              <div
+                class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-violet-100 dark:bg-violet-900/60"
+              >
+                <UIcon
+                  name="i-lucide-layers"
+                  class="size-5 text-violet-600 dark:text-violet-400"
+                />
+              </div>
+
+              <div>
+                <div class="flex items-center gap-2">
+                  <h2
+                    class="text-xl font-semibold text-gray-900 dark:text-white"
                   >
-                    <USelect
-                      v-model="relatedIdentifier.relatedIdentifierType"
-                      class="w-full"
-                      :items="IDENTIFIER_TYPE_OPTIONS"
-                      placeholder="Select an identifier type"
-                    />
-                  </UFormField>
+                    Additional Information
+                  </h2>
+
+                  <UBadge
+                    label="Optional"
+                    color="neutral"
+                    variant="subtle"
+                    size="sm"
+                  />
                 </div>
 
-                <div class="flex items-start justify-between gap-3">
+                <p class="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
+                  Optional metadata. Providing more detail makes your poster
+                  more FAIR.
+                </p>
+              </div>
+            </div>
+
+            <UIcon
+              name="i-lucide-chevron-down"
+              class="size-5 shrink-0 text-violet-500 transition-transform duration-200 dark:text-violet-400"
+              :class="{ 'rotate-180': !additionalInfoCollapsed }"
+            />
+          </div>
+        </div>
+
+        <div
+          class="transition-all duration-200 ease-in-out"
+          :class="additionalInfoCollapsed ? 'hidden opacity-0' : 'opacity-100'"
+        >
+          <div class="space-y-6 px-6 py-6">
+            <CardCollapsibleContent
+              title="Poster Abstract"
+              :collapse="false"
+              description="Provide here your poster abstract exactly as submitted to the conference."
+            >
+              <UFormField name="submissionAbstract">
+                <UTextarea
+                  v-model="state.submissionAbstract"
+                  class="w-full"
+                  placeholder="Enter your poster abstract as submitted to the conference"
+                />
+              </UFormField>
+            </CardCollapsibleContent>
+
+            <CardCollapsibleContent
+              title="General"
+              :collapse="false"
+              description="Language, domain, and version details for this poster"
+            >
+              <div class="space-y-4">
+                <UFormField label="Primary Language" name="language">
+                  <USelect
+                    v-model="state.language"
+                    :items="ISO_LANGUAGE_OPTIONS"
+                    placeholder="Select a language"
+                    class="w-full"
+                  />
+                </UFormField>
+
+                <UFormField label="Domain / Field of Study" name="domain">
+                  <UInput
+                    v-model="state.domain"
+                    placeholder="e.g., Machine Learning, Clinical Medicine"
+                  />
+                </UFormField>
+
+                <!-- License moved to review/submit step (Zenodo flow) -->
+                <UFormField v-if="false" name="license" label="License">
+                  <USelect
+                    v-model="state.license"
+                    class="w-full"
+                    :items="LICENSE_OPTIONS"
+                    placeholder="Select a license"
+                  />
+                </UFormField>
+              </div>
+            </CardCollapsibleContent>
+
+            <!-- Identifiers section hidden for now -->
+            <CardCollapsibleContent
+              v-if="false"
+              title="Identifiers"
+              :collapse="false"
+              description="Alternative identifiers assigned to this poster (e.g. arXiv, Handle)"
+            >
+              <div class="space-y-4">
+                <div
+                  v-for="(identifier, iIndex) in state.identifiers"
+                  :key="iIndex"
+                  class="space-y-2 rounded-xl border border-gray-200 p-4"
+                >
+                  <div class="flex items-start justify-between gap-3">
+                    <UFormField
+                      :name="`identifiers.${iIndex}.identifier`"
+                      label="Identifier"
+                      required
+                      class="flex-1"
+                    >
+                      <UInput
+                        v-model="identifier.identifier"
+                        :placeholder="
+                          IDENTIFIER_TYPE_PLACEHOLDER_OPTIONS.find(
+                            (id) => id.value === identifier.identifierType,
+                          )?.label || 'Select an identifier type'
+                        "
+                      />
+                    </UFormField>
+
+                    <UFormField
+                      :name="`identifiers.${iIndex}.identifierType`"
+                      label="Type"
+                      required
+                      class="flex-1"
+                    >
+                      <USelect
+                        v-model="identifier.identifierType"
+                        class="w-full"
+                        :items="IDENTIFIER_TYPE_OPTIONS"
+                        placeholder="Select an identifier type"
+                      />
+                    </UFormField>
+
+                    <UButton
+                      v-if="state.identifiers.length > 1"
+                      class="mt-7"
+                      size="xs"
+                      trailing-icon="i-lucide-trash-2"
+                      color="error"
+                      variant="solid"
+                      @click="removeRow(state.identifiers, iIndex)"
+                    >
+                      Delete Identifier
+                    </UButton>
+                  </div>
+                </div>
+
+                <UButton
+                  icon="i-lucide-plus"
+                  variant="outline"
+                  color="primary"
+                  class="w-full"
+                  label="Add Identifier"
+                  @click="
+                    state.identifiers.push({
+                      identifier: '',
+                      identifierType: '',
+                    })
+                  "
+                />
+              </div>
+            </CardCollapsibleContent>
+
+            <CardCollapsibleContent
+              title="Related Resources"
+              :collapse="false"
+              description="Links to related publications, datasets, or supplementary materials"
+            >
+              <div class="space-y-4">
+                <div
+                  v-for="(
+                    relatedIdentifier, iIndex
+                  ) in state.relatedIdentifiers"
+                  :key="iIndex"
+                  class="space-y-2 rounded-r-xl border border-l-4 border-gray-200 border-l-pink-300 p-4 dark:border-l-pink-700"
+                >
+                  <UAlert
+                    v-if="
+                      relatedIdentifier.relatedIdentifier?.includes(
+                        'posters.science/discover/',
+                      )
+                    "
+                    color="info"
+                    variant="subtle"
+                    icon="i-lucide-info"
+                    title="Suggested by Posters.science"
+                    description="We suggest adding this relation to make your poster traceable in the Posters.science database. Note that the discovery URL will only become active once you share the poster in the next step."
+                  />
+
+                  <div class="flex items-start gap-3">
+                    <UFormField
+                      :name="`relatedIdentifiers.${iIndex}.relatedIdentifier`"
+                      label="Identifier"
+                      required
+                      class="flex-1"
+                    >
+                      <UInput
+                        v-model="relatedIdentifier.relatedIdentifier"
+                        :placeholder="
+                          IDENTIFIER_TYPE_PLACEHOLDER_OPTIONS.find(
+                            (id) =>
+                              id.value ===
+                              relatedIdentifier.relatedIdentifierType,
+                          )?.label || 'https://doi.org/10.1038/sdata.2016.18'
+                        "
+                        @update:model-value="
+                          (v) => {
+                            if (!relatedIdentifier.relatedIdentifierType) {
+                              const inferred = inferRelatedIdentifierType(
+                                String(v),
+                              );
+                              if (inferred)
+                                relatedIdentifier.relatedIdentifierType =
+                                  inferred;
+                            }
+                          }
+                        "
+                      />
+                    </UFormField>
+
+                    <UFormField
+                      :name="`relatedIdentifiers.${iIndex}.relatedIdentifierType`"
+                      label="Type"
+                      required
+                      class="flex-1"
+                    >
+                      <USelect
+                        v-model="relatedIdentifier.relatedIdentifierType"
+                        class="w-full"
+                        :items="IDENTIFIER_TYPE_OPTIONS"
+                        placeholder="Select an identifier type"
+                      />
+                    </UFormField>
+
+                    <UButton
+                      class="mt-6 shrink-0"
+                      size="sm"
+                      icon="i-lucide-trash-2"
+                      color="error"
+                      variant="outline"
+                      @click="removeRow(state.relatedIdentifiers, iIndex)"
+                    />
+                  </div>
+
                   <UFormField
                     :name="`relatedIdentifiers.${iIndex}.relationType`"
                     label="Relation Type"
+                    description="A=Your poster, B=The resource"
                     required
-                    class="flex-1"
                   >
                     <USelect
                       v-model="relatedIdentifier.relationType"
@@ -1124,271 +1913,426 @@ async function addSubjectAndFocus() {
                     />
                   </UFormField>
 
-                  <UButton
-                    v-if="
-                      state.relatedIdentifiers &&
-                      state.relatedIdentifiers.length > 1
-                    "
-                    class="mt-7"
-                    size="xs"
-                    trailing-icon="i-lucide-trash-2"
-                    color="error"
-                    variant="solid"
-                    @click="removeRow(state.relatedIdentifiers, iIndex)"
+                  <UFormField
+                    :name="`relatedIdentifiers.${iIndex}.resourceTypeGeneral`"
+                    label="Resource Type"
+                    description="The general type of the related resource"
                   >
-                    Delete Related Identifier
-                  </UButton>
+                    <USelect
+                      v-model="relatedIdentifier.resourceTypeGeneral"
+                      class="w-full"
+                      :items="RESOURCE_TYPE_OPTIONS"
+                      placeholder="Select a resource type (optional)"
+                    />
+                  </UFormField>
                 </div>
+
+                <UButton
+                  icon="i-lucide-plus"
+                  variant="outline"
+                  color="primary"
+                  class="w-full"
+                  label="Add Related  Identifier"
+                  @click="
+                    state.relatedIdentifiers.push({
+                      relatedIdentifier: '',
+                      relatedIdentifierType: '',
+                      relationType: '',
+                      resourceTypeGeneral: undefined,
+                    })
+                  "
+                />
               </div>
+            </CardCollapsibleContent>
 
-              <UButton
-                icon="i-lucide-plus"
-                variant="outline"
-                color="primary"
-                class="w-full"
-                label="Add Related  Identifier"
-                @click="
-                  state.relatedIdentifiers.push({
-                    relatedIdentifier: '',
-                    relatedIdentifierType: '',
-                    relationType: '',
-                  })
-                "
-              />
-            </div>
-          </CardCollapsibleContent>
-        </div>
-      </div>
-
-      <div
-        class="group mt-20 cursor-pointer select-none"
-        @click="posterContentCollapsed = !posterContentCollapsed"
-      >
-        <div class="flex items-center justify-between">
-          <div>
-            <h2
-              class="dark:group-hover:text-primary-300 group-hover:text-primary-600 text-3xl font-semibold transition-colors"
+            <CardCollapsibleContent
+              title="Funding"
+              :collapse="false"
+              description="Grants and funding sources that supported this work"
             >
-              Poster Content
-            </h2>
+              <div class="space-y-4">
+                <div
+                  v-for="(funder, fIndex) in state.fundingReferences"
+                  :key="fIndex"
+                  class="space-y-3 rounded-xl border border-l-4 border-gray-200 border-l-pink-300 p-4 dark:border-l-pink-700"
+                >
+                  <div class="flex items-start justify-between gap-3">
+                    <UFormField
+                      :name="`fundingReferences.${fIndex}.funderName`"
+                      label="Funder Name"
+                      required
+                      class="flex-1"
+                    >
+                      <UInput
+                        v-model="funder.funderName"
+                        placeholder="National Institutes of Health"
+                      />
+                    </UFormField>
 
-            <p class="text-lg text-gray-500">
-              This is content we extracted directly from your poster.
-            </p>
+                    <UButton
+                      class="mt-6 shrink-0"
+                      size="sm"
+                      icon="i-lucide-trash-2"
+                      color="error"
+                      variant="outline"
+                      @click="removeRow(state.fundingReferences, fIndex)"
+                    />
+                  </div>
+
+                  <div class="grid gap-3 md:grid-cols-2">
+                    <UFormField
+                      :name="`fundingReferences.${fIndex}.funderIdentifier`"
+                      label="Funder Identifier"
+                    >
+                      <UInput
+                        v-model="funder.funderIdentifier"
+                        placeholder="https://ror.org/04xfq0f34"
+                        @update:model-value="
+                          (v) => handleFunderIdentifierInput(String(v), fIndex)
+                        "
+                      />
+                    </UFormField>
+
+                    <UFormField
+                      :name="`fundingReferences.${fIndex}.funderIdentifierType`"
+                      label="Identifier Type"
+                    >
+                      <USelect
+                        v-model="funder.funderIdentifierType"
+                        :items="FUNDER_IDENTIFIER_TYPE_OPTIONS"
+                        placeholder="Select a type"
+                        class="w-full"
+                        @update:model-value="
+                          (v) =>
+                            handleFunderIdentifierTypeChange(String(v), fIndex)
+                        "
+                      />
+                    </UFormField>
+                  </div>
+
+                  <UFormField
+                    :name="`fundingReferences.${fIndex}.schemeUri`"
+                    label="Scheme URI"
+                  >
+                    <UInput
+                      v-model="funder.schemeUri"
+                      placeholder="https://ror.org"
+                      class="w-full"
+                    />
+                  </UFormField>
+
+                  <div class="grid gap-3 md:grid-cols-3">
+                    <UFormField
+                      :name="`fundingReferences.${fIndex}.awardNumber`"
+                      label="Award Number"
+                    >
+                      <UInput
+                        v-model="funder.awardNumber"
+                        placeholder="R01GM123456"
+                      />
+                    </UFormField>
+
+                    <UFormField
+                      :name="`fundingReferences.${fIndex}.awardTitle`"
+                      label="Award Title"
+                    >
+                      <UInput
+                        v-model="funder.awardTitle"
+                        placeholder="Grant title"
+                      />
+                    </UFormField>
+
+                    <UFormField
+                      :name="`fundingReferences.${fIndex}.awardUri`"
+                      label="Award URI"
+                    >
+                      <UInput
+                        v-model="funder.awardUri"
+                        placeholder="https://reporter.nih.gov/..."
+                      />
+                    </UFormField>
+                  </div>
+                </div>
+
+                <UButton
+                  icon="i-lucide-plus"
+                  variant="outline"
+                  color="primary"
+                  class="w-full"
+                  label="Add Funding Reference"
+                  @click="
+                    state.fundingReferences.push({
+                      funderName: '',
+                      funderIdentifier: '',
+                      funderIdentifierType: undefined,
+                      schemeUri: '',
+                      awardNumber: '',
+                      awardUri: '',
+                      awardTitle: '',
+                    })
+                  "
+                />
+              </div>
+            </CardCollapsibleContent>
           </div>
-
-          <UIcon
-            name="i-lucide-chevron-down"
-            class="group-hover:text-primary-600 dark:group-hover:text-primary-300 size-8 text-gray-400 transition-all"
-            :class="{ 'rotate-180': !posterContentCollapsed }"
-          />
         </div>
-
-        <USeparator class="my-4" type="dashed" />
       </div>
 
       <div
-        class="transition-all duration-200 ease-in-out"
-        :class="posterContentCollapsed ? 'hidden opacity-0' : 'opacity-100'"
+        id="poster-content-section"
+        class="overflow-hidden rounded-2xl border border-sky-200 bg-white shadow-sm dark:border-sky-900 dark:bg-gray-900"
       >
-        <div class="space-y-6">
-          <CardCollapsibleContent
-            title="Poster Content"
-            :collapse="false"
-            description="This is content we extracted directly from your poster."
-          >
-            <div class="space-y-4">
+        <div
+          class="group cursor-pointer bg-sky-50 px-6 py-5 transition-colors select-none hover:bg-sky-100 dark:bg-sky-950/40 dark:hover:bg-sky-950/60"
+          :class="
+            posterContentCollapsed
+              ? ''
+              : 'border-b border-sky-200 dark:border-sky-900'
+          "
+          @click="togglePosterContent"
+        >
+          <div class="flex items-center justify-between gap-4">
+            <div class="flex items-center gap-4">
               <div
-                v-for="(section, sIndex) in state.posterContent?.sections || []"
-                :key="sIndex"
-                class="space-y-2 rounded-xl border border-gray-200 p-4"
+                class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-sky-100 dark:bg-sky-900/60"
               >
-                <UFormField
-                  :name="`posterContent.sections.${sIndex}.sectionTitle`"
-                  label="Section Title"
-                  required
-                  class="flex-1"
-                >
-                  <UInput
-                    v-model="section.sectionTitle"
-                    placeholder="e.g., Introduction"
-                  />
-                </UFormField>
-
-                <UFormField
-                  :name="`posterContent.sections.${sIndex}.sectionContent`"
-                  label="Section Content"
-                  required
-                  class="flex-1"
-                >
-                  <!-- TODO: Add a rich text editor here. -->
-                  <UTextarea
-                    v-model="section.sectionContent"
-                    placeholder="e.g., Machine learning algorithms were applied to analyze retinal images from 4,000 participants..."
-                    class="w-full"
-                  />
-                </UFormField>
-
-                <div class="flex justify-end">
-                  <UButton
-                    class="mt-7"
-                    size="xs"
-                    trailing-icon="i-lucide-trash-2"
-                    color="error"
-                    variant="solid"
-                    @click="
-                      removeRow(state.posterContent?.sections || [], sIndex)
-                    "
-                  >
-                    Delete Section
-                  </UButton>
-                </div>
+                <UIcon
+                  name="i-lucide-file-text"
+                  class="size-5 text-sky-600 dark:text-sky-400"
+                />
               </div>
 
-              <UButton
-                icon="i-lucide-plus"
-                variant="outline"
-                color="primary"
-                class="w-full"
-                label="Add Section"
-                @click="
-                  state.posterContent?.sections?.push({
-                    sectionTitle: '',
-                    sectionContent: '',
-                  })
-                "
-              />
-            </div>
-          </CardCollapsibleContent>
-
-          <CardCollapsibleContent
-            title="Table Captions"
-            :collapse="false"
-            description="These are the table captions that are associated with the poster."
-          >
-            <div class="space-y-4">
-              <div
-                v-for="(caption, cIndex) in state.tableCaptions || []"
-                :key="cIndex"
-                class="space-y-2 rounded-xl border border-gray-200 p-4"
-              >
-                <UFormField
-                  :name="`tableCaptions.${cIndex}.id`"
-                  label="Table Identifier"
-                  required
-                  class="flex-1"
-                >
-                  <UInput v-model="caption.id" placeholder="e.g., Table 1" />
-                </UFormField>
-
-                <UFormField
-                  :name="`tableCaptions.${cIndex}.caption`"
-                  label="Table Caption"
-                  required
-                  class="flex-1"
-                >
-                  <UInput
-                    v-model="caption.caption"
-                    placeholder="e.g., Summary of Results"
-                  />
-                </UFormField>
-
-                <div class="flex justify-end">
-                  <UButton
-                    class="mt-7"
-                    size="xs"
-                    trailing-icon="i-lucide-trash-2"
-                    color="error"
-                    variant="solid"
-                    @click="removeRow(state.tableCaptions || [], cIndex)"
+              <div>
+                <div class="flex items-center gap-2">
+                  <h2
+                    class="text-xl font-semibold text-gray-900 dark:text-white"
                   >
-                    Delete Caption
-                  </UButton>
-                </div>
-              </div>
+                    Poster Content
+                  </h2>
 
-              <UButton
-                icon="i-lucide-plus"
-                variant="outline"
-                color="primary"
-                class="w-full"
-                label="Add Caption"
-                @click="
-                  state.tableCaptions?.push({
-                    id: '',
-                    caption: '',
-                  })
-                "
-              />
-            </div>
-          </CardCollapsibleContent>
-
-          <CardCollapsibleContent
-            title="Image Captions"
-            :collapse="false"
-            description="These are the image captions that are associated with the poster."
-          >
-            <div class="space-y-4">
-              <div
-                v-for="(caption, cIndex) in state.imageCaptions || []"
-                :key="cIndex"
-                class="space-y-2 rounded-xl border border-gray-200 p-4"
-              >
-                <UFormField
-                  :name="`imageCaptions.${cIndex}.id`"
-                  label="Image Identifier"
-                  required
-                  class="flex-1"
-                >
-                  <UInput v-model="caption.id" placeholder="e.g., Image 1" />
-                </UFormField>
-
-                <UFormField
-                  :name="`imageCaptions.${cIndex}.caption`"
-                  label="Image Caption"
-                  required
-                  class="flex-1"
-                >
-                  <UInput
-                    v-model="caption.caption"
-                    placeholder="e.g., Summary of Results"
+                  <UBadge
+                    label="Auto-extracted"
+                    color="primary"
+                    variant="subtle"
+                    size="sm"
                   />
-                </UFormField>
-
-                <div class="flex justify-end">
-                  <UButton
-                    class="mt-7"
-                    size="xs"
-                    trailing-icon="i-lucide-trash-2"
-                    color="error"
-                    variant="solid"
-                    @click="removeRow(state.imageCaptions || [], cIndex)"
-                  >
-                    Delete Image Caption
-                  </UButton>
                 </div>
-              </div>
 
-              <UButton
-                icon="i-lucide-plus"
-                variant="outline"
-                color="primary"
-                class="w-full"
-                label="Add Image Caption"
-                @click="
-                  state.imageCaptions?.push({
-                    id: '',
-                    caption: '',
-                  })
-                "
-              />
+                <p class="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
+                  This is content we extracted directly from your poster.
+                </p>
+              </div>
             </div>
-          </CardCollapsibleContent>
+
+            <UIcon
+              name="i-lucide-chevron-down"
+              class="size-5 shrink-0 text-sky-500 transition-transform duration-200 dark:text-sky-400"
+              :class="{ 'rotate-180': !posterContentCollapsed }"
+            />
+          </div>
+        </div>
+
+        <div
+          class="transition-all duration-200 ease-in-out"
+          :class="posterContentCollapsed ? 'hidden opacity-0' : 'opacity-100'"
+        >
+          <div class="space-y-6 px-6 py-6">
+            <CardCollapsibleContent
+              title="Poster Content"
+              :collapse="false"
+              description="This is content we extracted directly from your poster."
+            >
+              <div class="space-y-4">
+                <div
+                  v-for="(section, sIndex) in state.posterContent?.sections ||
+                  []"
+                  :key="sIndex"
+                  class="space-y-2 rounded-r-xl border border-l-4 border-gray-200 border-l-pink-300 p-3 dark:border-l-pink-700"
+                >
+                  <UFormField
+                    :name="`posterContent.sections.${sIndex}.sectionTitle`"
+                    label="Section Title"
+                    class="flex-1"
+                  >
+                    <UInput
+                      v-model="section.sectionTitle"
+                      placeholder="e.g., Introduction"
+                    />
+                  </UFormField>
+
+                  <UFormField
+                    :name="`posterContent.sections.${sIndex}.sectionContent`"
+                    label="Section Content"
+                    class="flex-1"
+                  >
+                    <!-- TODO: Add a rich text editor here. -->
+                    <UTextarea
+                      v-model="section.sectionContent"
+                      placeholder="e.g., Machine learning algorithms were applied to analyze retinal images from 4,000 participants..."
+                      class="w-full"
+                    />
+                  </UFormField>
+
+                  <div class="flex justify-end">
+                    <UButton
+                      class="mt-7"
+                      size="xs"
+                      trailing-icon="i-lucide-trash-2"
+                      color="error"
+                      variant="solid"
+                      @click="
+                        removeRow(state.posterContent?.sections || [], sIndex)
+                      "
+                    >
+                      Delete Section
+                    </UButton>
+                  </div>
+                </div>
+
+                <UButton
+                  icon="i-lucide-plus"
+                  variant="outline"
+                  color="primary"
+                  class="w-full"
+                  label="Add Section"
+                  @click="
+                    state.posterContent?.sections?.push({
+                      sectionTitle: '',
+                      sectionContent: '',
+                    })
+                  "
+                />
+              </div>
+            </CardCollapsibleContent>
+
+            <CardCollapsibleContent
+              title="Table Captions"
+              :collapse="false"
+              description="These are the table captions that are associated with the poster."
+            >
+              <div class="space-y-4">
+                <div
+                  v-for="(caption, cIndex) in state.tableCaptions || []"
+                  :key="cIndex"
+                  class="space-y-2 rounded-r-xl border border-l-4 border-gray-200 border-l-pink-300 p-3 dark:border-l-pink-700"
+                >
+                  <UFormField
+                    :name="`tableCaptions.${cIndex}.id`"
+                    label="Table Identifier"
+                    class="flex-1"
+                  >
+                    <UInput v-model="caption.id" placeholder="e.g., Table 1" />
+                  </UFormField>
+
+                  <UFormField
+                    :name="`tableCaptions.${cIndex}.caption`"
+                    label="Table Caption"
+                    class="flex-1"
+                  >
+                    <UInput
+                      v-model="caption.caption"
+                      placeholder="e.g., Summary of Results"
+                    />
+                  </UFormField>
+
+                  <div class="flex justify-end">
+                    <UButton
+                      class="mt-7"
+                      size="xs"
+                      trailing-icon="i-lucide-trash-2"
+                      color="error"
+                      variant="solid"
+                      @click="removeRow(state.tableCaptions || [], cIndex)"
+                    >
+                      Delete Caption
+                    </UButton>
+                  </div>
+                </div>
+
+                <UButton
+                  icon="i-lucide-plus"
+                  variant="outline"
+                  color="primary"
+                  class="w-full"
+                  label="Add Caption"
+                  @click="
+                    state.tableCaptions?.push({
+                      id: '',
+                      caption: '',
+                    })
+                  "
+                />
+              </div>
+            </CardCollapsibleContent>
+
+            <CardCollapsibleContent
+              title="Image Captions"
+              :collapse="false"
+              description="These are the image captions that are associated with the poster."
+            >
+              <div class="space-y-4">
+                <div
+                  v-for="(caption, cIndex) in state.imageCaptions || []"
+                  :key="cIndex"
+                  class="space-y-2 rounded-r-xl border border-l-4 border-gray-200 border-l-pink-300 p-3 dark:border-l-pink-700"
+                >
+                  <UFormField
+                    :name="`imageCaptions.${cIndex}.id`"
+                    label="Image Identifier"
+                    class="flex-1"
+                  >
+                    <UInput v-model="caption.id" placeholder="e.g., Image 1" />
+                  </UFormField>
+
+                  <UFormField
+                    :name="`imageCaptions.${cIndex}.caption`"
+                    label="Image Caption"
+                    class="flex-1"
+                  >
+                    <UInput
+                      v-model="caption.caption"
+                      placeholder="e.g., Summary of Results"
+                    />
+                  </UFormField>
+
+                  <div class="flex justify-end">
+                    <UButton
+                      class="mt-7"
+                      size="xs"
+                      trailing-icon="i-lucide-trash-2"
+                      color="error"
+                      variant="solid"
+                      @click="removeRow(state.imageCaptions || [], cIndex)"
+                    >
+                      Delete Image Caption
+                    </UButton>
+                  </div>
+                </div>
+
+                <UButton
+                  icon="i-lucide-plus"
+                  variant="outline"
+                  color="primary"
+                  class="w-full"
+                  label="Add Image Caption"
+                  @click="
+                    state.imageCaptions?.push({
+                      id: '',
+                      caption: '',
+                    })
+                  "
+                />
+              </div>
+            </CardCollapsibleContent>
+          </div>
         </div>
       </div>
 
       <div class="flex gap-3">
-        <UTooltip text="Save your progress without moving to the next step" class="flex-1">
+        <UTooltip
+          text="Save your progress without moving to the next step"
+          class="flex-1"
+        >
           <UButton
             :disabled="savingDraft || loading"
             :loading="savingDraft"
@@ -1402,7 +2346,10 @@ async function addSubjectAndFocus() {
           />
         </UTooltip>
 
-        <UTooltip text="Save your changes and proceed to the publishing step" class="flex-1">
+        <UTooltip
+          text="Save your changes and proceed to the publishing step"
+          class="flex-1"
+        >
           <UButton
             :disabled="loading || savingDraft"
             :loading="loading"
@@ -1416,5 +2363,96 @@ async function addSubjectAndFocus() {
         </UTooltip>
       </div>
     </UForm>
+
+    <UModal
+      v-model:open="showSectionModal"
+      :title="
+        pendingUnopened.length > 1
+          ? 'Sections Not Reviewed'
+          : pendingUnopened[0] === 'posterContent'
+            ? 'AI-Extracted Content Not Reviewed'
+            : 'Additional Information Not Reviewed'
+      "
+    >
+      <template #body>
+        <div class="space-y-4">
+          <UAlert
+            color="warning"
+            variant="subtle"
+            :title="
+              pendingUnopened.length > 1
+                ? `You haven't opened the Additional Information or Poster Content sections`
+                : pendingUnopened[0] === 'posterContent'
+                  ? `You haven't opened the Poster Content section`
+                  : `You haven't opened the Additional Information section`
+            "
+            :description="
+              pendingUnopened.length > 1
+                ? 'These sections contain optional metadata and AI-extracted content from your poster. Reviewing them helps ensure accuracy and makes your poster more FAIR.'
+                : pendingUnopened[0] === 'posterContent'
+                  ? 'The last section contains text, table captions, and image captions extracted from your poster by AI. Reviewing this content helps ensure accuracy before publishing.'
+                  : 'This section contains optional metadata like abstract, language, domain, and funding information. Providing more detail makes your poster more FAIR.'
+            "
+          />
+
+          <p class="text-sm text-gray-600 dark:text-gray-400">
+            <template v-if="pendingUnopened.length > 1">
+              We recommend expanding both sections and reviewing the content
+              before continuing.
+            </template>
+
+            <template v-else-if="pendingUnopened[0] === 'posterContent'">
+              We recommend expanding the Poster Content section and checking the
+              extracted content before continuing.
+            </template>
+
+            <template v-else>
+              We recommend expanding the Additional Information section and
+              reviewing the fields before continuing.
+            </template>
+          </p>
+        </div>
+      </template>
+
+      <template #footer>
+        <div class="flex w-full justify-between gap-3">
+          <UButton
+            variant="outline"
+            icon="i-lucide-eye"
+            @click="reviewSections"
+          >
+            {{
+              pendingUnopened.length > 1
+                ? "Review Sections"
+                : pendingUnopened[0] === "posterContent"
+                  ? "Review Content"
+                  : "Review Section"
+            }}
+          </UButton>
+
+          <UButton color="primary" @click="continueAnyway">
+            Continue Anyway
+          </UButton>
+        </div>
+      </template>
+    </UModal>
   </div>
 </template>
+
+<style scoped>
+@keyframes autofill-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgba(236, 72, 153, 0.65);
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgba(236, 72, 153, 0.2);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(236, 72, 153, 0);
+  }
+}
+
+.orcid-autofill-ring {
+  animation: autofill-ring 0.7s ease-out forwards;
+}
+</style>

@@ -6,11 +6,17 @@ definePageMeta({
   middleware: ["auth"],
 });
 
-const { clear } = useUserSession();
+const { clear, user } = useUserSession();
+
+const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Profile - Posters.science")}&description=${encodeURIComponent("Manage your account profile and preferences on Posters.science")}&app=posters-science&org=fairdataihub`;
 
 useSeoMeta({
   title: "Profile",
   description: "Manage your Scholar Data profile and preferences.",
+  ogTitle: "Profile - Posters.science",
+  ogDescription:
+    "Manage your account profile and preferences on Posters.science.",
+  ogImage,
 });
 
 const toast = useToast();
@@ -20,9 +26,17 @@ const passwordLoading = ref(false);
 
 const passwordSchema = z
   .object({
-    currentPassword: z.string().min(8, "Must be at least 8 characters"),
-    newPassword: z.string().min(8, "Must be at least 8 characters"),
-    confirmPassword: z.string().min(8, "Must be at least 8 characters"),
+    currentPassword: z.string().trim().min(8, "Must be at least 8 characters"),
+    newPassword: z
+      .string()
+      .trim()
+      .min(12, "Must be at least 12 characters")
+      .max(128, "Must be at most 128 characters"),
+    confirmPassword: z
+      .string()
+      .trim()
+      .min(12, "Must be at least 12 characters")
+      .max(128, "Must be at most 128 characters"),
   })
   .refine((d) => d.newPassword === d.confirmPassword, {
     message: "Passwords do not match",
@@ -87,7 +101,7 @@ async function onDeleteAccount() {
   toast.add({
     title: "Unavailable",
     description:
-      "Account deletion is not available yet. Please contact support if you wish to delete your account.",
+      "Account deletion is not available yet. Please contact us at https://tally.so/r/XxEBYP if you wish to delete your account.",
     color: "info",
     icon: "i-heroicons-information-circle",
   });
@@ -192,18 +206,30 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
         >
           <template #title>
             <div class="flex min-w-full items-center justify-between gap-2">
-              <UAvatar
-                :src="`https://api.dicebear.com/9.x/thumbs/svg?seed=${userData?.id}`"
-                alt="User avatar"
-              />
+              <div class="flex items-center gap-3">
+                <UAvatar
+                  :src="`https://api.dicebear.com/9.x/thumbs/svg?seed=${userData?.id}`"
+                  alt="User avatar"
+                />
 
-              <h1 class="text-2xl font-bold">
-                {{
-                  userData?.givenName || userData?.familyName
-                    ? `${userData?.givenName} ${userData?.familyName}`
-                    : userData?.id
-                }}
-              </h1>
+                <h1 class="text-2xl font-bold">
+                  {{
+                    userData?.givenName || userData?.familyName
+                      ? `${userData?.givenName} ${userData?.familyName}`
+                      : userData?.id
+                  }}
+                </h1>
+              </div>
+
+              <UButton
+                v-if="user?.role === 'admin'"
+                to="/admin"
+                icon="material-symbols:admin-panel-settings"
+                label="Admin Panel"
+                color="neutral"
+                variant="subtle"
+                size="sm"
+              />
             </div>
           </template>
         </UPageHeader>
@@ -248,7 +274,7 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
                     {{
                       userData?.updated
                         ? new Date(userData.updated).toLocaleString()
-                        : "—"
+                        : "-"
                     }}
                   </p>
                 </div>
@@ -283,7 +309,7 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
                     {{
                       userData?.created
                         ? new Date(userData.created).toLocaleDateString()
-                        : "—"
+                        : "-"
                     }}
                   </p>
                 </div>
@@ -376,7 +402,7 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
                   description="Delete profile and all associated data"
                 >
                   <UTooltip
-                    text="This function is not yet available. Please contact support if you wish to delete your account."
+                    text="This function is not yet available. Please contact us at https://tally.so/r/XxEBYP if you wish to delete your account."
                   >
                     <UButton
                       color="error"

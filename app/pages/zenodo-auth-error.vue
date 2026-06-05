@@ -3,8 +3,20 @@ const route = useRoute();
 const posterId = route.query.posterId as string | undefined;
 
 const reviewLink = posterId
-  ? `/share/${posterId}/review?repository=zenodo`
+  ? `/share/${posterId}/publish?repository=zenodo`
   : "/dashboard";
+
+const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Zenodo Auth Error - Posters.science")}&description=${encodeURIComponent("Troubleshooting steps for Zenodo sign-in issues during poster publishing")}&app=posters-science&org=fairdataihub`;
+
+useSeoMeta({
+  title: "Zenodo Auth Error",
+  description:
+    "Troubleshooting steps for Zenodo sign-in issues during poster publishing.",
+  ogTitle: "Zenodo Auth Error - Posters.science",
+  ogDescription:
+    "Troubleshooting steps for Zenodo sign-in issues during poster publishing.",
+  ogImage,
+});
 </script>
 
 <template>

@@ -2,7 +2,7 @@
 
 These Terms of Use (the "Terms") govern your access to and use of Posters.science (the "Platform") and related services. By accessing or using the Platform, you agree to be bound by these Terms. If you do not agree to these Terms, you must not use the Platform.
 
-**Note:** Posters.science is a platform for discovering and sharing scientific posters. The Platform does not host poster files directly — it provides metadata, previews, and links to posters archived in external repositories such as Zenodo. The Platform is designed to support responsible sharing and reuse of scientific posters in accordance with FAIR (Findable, Accessible, Interoperable, Reusable) data principles.
+**Note:** Posters.science is a platform for discovering and sharing scientific posters. The Platform does not host poster files directly - it provides metadata, previews, and links to posters archived in external repositories such as Zenodo. The Platform is designed to support responsible sharing and reuse of scientific posters in accordance with FAIR (Findable, Accessible, Interoperable, Reusable) data principles.
 
 ## 1. Definitions
 
@@ -113,4 +113,4 @@ _Last updated: March 30, 2026_
 
 ## 15. Contact
 
-If you have questions about these Terms or about Posters.science, please contact us through our [Contact page](/contact). You may also report technical issues or feature requests via our GitHub issues at [github.com/fairdataihub/posters-science/issues](https://github.com/fairdataihub/posters-science/issues).
+If you have questions about these Terms or about Posters.science, please contact us through our [feedback form](https://tally.so/r/XxEBYP). You may also report technical issues or feature requests via our GitHub issues at [github.com/fairdataihub/posters-science/issues](https://github.com/fairdataihub/posters-science/issues).

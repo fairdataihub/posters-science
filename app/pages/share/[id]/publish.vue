@@ -8,12 +8,42 @@ definePageMeta({
 const route = useRoute();
 const toast = useToast();
 const { id } = route.params as { id: string };
+const { siteEnv } = useRuntimeConfig().public;
+
+const isProductionEnv = siteEnv === "production";
 
 // Shared license selection (used by Zenodo and simulated flows)
 const selectedLicense = ref("");
 
 // Download completion state
 const downloadComplete = ref(false);
+
+// Poster JSON preview drawer
+const posterJsonDrawerOpen = ref(false);
+const posterJsonData = ref<Record<string, unknown> | null>(null);
+const posterJsonLoading = ref(false);
+
+async function openPosterJsonPreview() {
+  posterJsonDrawerOpen.value = true;
+  if (posterJsonData.value) return;
+  posterJsonLoading.value = true;
+  try {
+    posterJsonData.value = await $fetch<Record<string, unknown>>(
+      `/api/poster/${id}/poster-json`,
+      { credentials: "include" },
+    );
+  } catch (err) {
+    toast.add({
+      title: "Preview Failed",
+      description:
+        err instanceof Error ? err.message : "Could not load poster.json",
+      color: "error",
+    });
+    posterJsonDrawerOpen.value = false;
+  } finally {
+    posterJsonLoading.value = false;
+  }
+}
 
 const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Submit Poster - Posters.science")}&description=${encodeURIComponent("Archive your scientific poster on a trusted open repository")}&app=posters-science&org=fairdataihub`;
 
@@ -223,9 +253,10 @@ watch(depositionMode, () => {
 
 const readyToArchive = computed(
   () =>
-    depositionMode.value === "new" ||
-    (depositionMode.value === "existing" &&
-      selectedDeposition.value !== undefined),
+    !!selectedLicense.value &&
+    (depositionMode.value === "new" ||
+      (depositionMode.value === "existing" &&
+        selectedDeposition.value !== undefined)),
 );
 
 // Archive progress state
@@ -485,18 +516,37 @@ async function handleArchive() {
     <div class="border-default mb-6 rounded-xl border p-6">
       <h3 class="mb-3 text-lg font-semibold">Submission Files</h3>
 
-      <UTree
-        :items="[
-          {
-            label: 'poster.json',
-            icon: 'i-vscode-icons-file-type-json',
-          },
-          {
-            label: posterData?.extractionJob?.fileName || 'poster.pdf',
-            icon: 'i-vscode-icons-file-type-pdf2',
-          },
-        ]"
-      />
+      <div class="flex flex-col">
+        <div
+          class="flex items-center justify-between gap-2 rounded-md px-2 py-1 hover:bg-gray-50"
+        >
+          <div class="flex items-center gap-2">
+            <UIcon name="i-vscode-icons-file-type-json" class="size-4" />
+
+            <span class="text-sm">poster.json</span>
+          </div>
+
+          <UButton
+            v-if="!isProductionEnv"
+            variant="subtle"
+            size="xs"
+            icon="i-lucide-eye"
+            @click="openPosterJsonPreview"
+          >
+            Preview file
+          </UButton>
+        </div>
+
+        <div
+          class="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-gray-50"
+        >
+          <UIcon name="i-vscode-icons-file-type-pdf2" class="size-4" />
+
+          <span class="text-sm">{{
+            posterData?.extractionJob?.fileName || "poster.pdf"
+          }}</span>
+        </div>
+      </div>
     </div>
 
     <!-- Repository selection -->
@@ -554,11 +604,31 @@ async function handleArchive() {
         <h3 class="text-lg font-semibold">Archive to Zenodo</h3>
       </div>
 
+      <p class="mb-5 text-sm">
+        <ULink to="https://zenodo.org" target="_blank" class="text-primary underline">Zenodo</ULink>
+        is a free and open-source general-purpose repository developed
+        and maintained by the European Organization for Nuclear Research (CERN)
+        in partnership with OpenAIRE. It is one of the most popular repositories
+        for sharing posters.
+      </p>
+
       <!-- Loading state while fetching Zenodo token status -->
       <UiSpinner v-if="zenodoLoading" class="py-8" />
 
       <!-- Not signed in -->
       <template v-else-if="!zenodoTokenExists">
+        <p class="mb-4 text-sm">
+          If you don't have a Zenodo account already, please create one first at
+          <ULink
+            to="https://zenodo.org"
+            target="_blank"
+            class="text-primary underline"
+          >
+            zenodo.org</ULink
+          >
+          before continuing.
+        </p>
+
         <UAlert
           color="warning"
           variant="subtle"
@@ -685,10 +755,13 @@ async function handleArchive() {
         <!-- Archive controls (shown when not archiving) -->
         <template v-else>
           <div class="mb-4 flex items-center justify-between">
-            <span class="text-success flex items-center gap-2 text-sm">
-              <UIcon name="i-lucide-check-circle" class="size-4" />
+            <UBadge
+              color="success"
+              variant="subtle"
+              icon="i-lucide-check-circle"
+            >
               Connected to Zenodo
-            </span>
+            </UBadge>
 
             <UButton
               variant="outline"
@@ -726,7 +799,9 @@ async function handleArchive() {
 
               <!-- License selection -->
               <div class="mt-4">
-                <p class="text-muted mb-2 text-sm">License</p>
+                <p class="text-muted mb-2 text-sm">
+                  License <span class="text-error">*</span>
+                </p>
 
                 <USelectMenu
                   v-model="selectedLicense"
@@ -796,7 +871,9 @@ async function handleArchive() {
       <template v-else>
         <div class="mt-5 flex flex-col gap-4">
           <div>
-            <p class="text-muted mb-2 text-sm">License</p>
+            <p class="text-muted mb-2 text-sm">
+              License <span class="text-error">*</span>
+            </p>
 
             <USelectMenu
               v-model="selectedLicense"
@@ -812,6 +889,7 @@ async function handleArchive() {
             <UButton
               color="primary"
               size="lg"
+              :disabled="!selectedLicense"
               :loading="isSimulatedPublishing"
               @click="handleSimulatedArchive"
             >
@@ -889,5 +967,29 @@ async function handleArchive() {
         </UButton>
       </template>
     </div>
+
+    <UDrawer
+      v-model:open="posterJsonDrawerOpen"
+      direction="right"
+      :ui="{ content: 'w-[600px] max-w-full' }"
+    >
+      <template #content>
+        <div class="flex h-full flex-col gap-4 p-6">
+          <div class="flex items-center gap-2">
+            <UIcon name="i-vscode-icons-file-type-json" class="size-5" />
+
+            <h3 class="text-lg font-semibold">poster.json preview</h3>
+          </div>
+
+          <UiSpinner v-if="posterJsonLoading" />
+
+          <pre
+            v-else-if="posterJsonData"
+            class="bg-muted overflow-auto rounded-lg p-4 text-xs"
+            >{{ JSON.stringify(posterJsonData, null, 2) }}</pre
+          >
+        </div>
+      </template>
+    </UDrawer>
   </div>
 </template>

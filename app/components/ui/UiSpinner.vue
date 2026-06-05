@@ -5,6 +5,7 @@ interface UiSpinnerProps {
   loading?: boolean;
   size?: "sm" | "md" | "lg";
   overlay?: boolean;
+  subtle?: boolean;
   overlayClass?: string;
   spinnerClass?: string;
   class?: string;
@@ -14,6 +15,7 @@ const props = withDefaults(defineProps<UiSpinnerProps>(), {
   loading: true,
   size: "md",
   overlay: false,
+  subtle: false,
   overlayClass: "",
   spinnerClass: "",
   class: "",
@@ -33,24 +35,33 @@ const sizeClasses = {
   <!-- Wrapper mode: show content with overlay when loading -->
   <div v-if="overlay && hasContent" :class="cn('relative', props.class)">
     <div
-      :class="cn('transition-opacity', props.loading && 'pointer-events-none')"
+      :class="
+        cn(
+          'transition-[filter,opacity] duration-300 ease-in-out',
+          props.loading &&
+            !props.subtle &&
+            'pointer-events-none opacity-70 blur-sm',
+          props.loading && props.subtle && 'pointer-events-none',
+        )
+      "
     >
       <slot />
     </div>
 
     <Transition
-      enter-active-class="transition-opacity duration-200"
-      enter-from-class="opacity-0"
-      enter-to-class="opacity-100"
-      leave-active-class="transition-opacity duration-200"
-      leave-from-class="opacity-100"
-      leave-to-class="opacity-0"
+      enter-active-class="fast-fade-blur-enter-active"
+      enter-from-class="fast-fade-blur-enter-from"
+      enter-to-class="fast-fade-blur-enter-to"
+      leave-active-class="fast-fade-blur-leave-active"
+      leave-from-class="fast-fade-blur-leave-from"
+      leave-to-class="fast-fade-blur-leave-to"
     >
       <div
         v-if="props.loading"
         :class="
           cn(
-            'absolute inset-0 z-50 flex items-center justify-center bg-black/40 dark:bg-black/30',
+            'absolute inset-0 z-50 flex items-center justify-center',
+            props.subtle && 'bg-white/40 dark:bg-black/40',
             props.overlayClass,
           )
         "
@@ -86,3 +97,27 @@ const sizeClasses = {
     <slot v-else />
   </div>
 </template>
+
+<style scoped>
+.blur-enter-from,
+.blur-leave-to {
+  filter: blur(0.5rem);
+  opacity: 0;
+}
+
+.blur-enter-active,
+.blur-leave-active {
+  transition: all 1s ease-in;
+}
+
+.fast-fade-blur-enter-from,
+.fast-fade-blur-leave-to {
+  filter: blur(0.5rem);
+  opacity: 0;
+}
+
+.fast-fade-blur-enter-active,
+.fast-fade-blur-leave-active {
+  transition: all 0.3s ease-in;
+}
+</style>

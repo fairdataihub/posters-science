@@ -9,7 +9,7 @@ export default defineEventHandler(async (event) => {
     previousStepAt = now;
   };
 
-  const { search, page, limit, sortBy, dateFrom, dateTo } = getQuery(event);
+  const { search, page, limit, sortBy, dateFrom, dateTo, source } = getQuery(event);
 
   const pageNum = Math.max(1, parseInt(String(page || "1")));
   const limitNum = Math.min(50, Math.max(1, parseInt(String(limit || "9"))));
@@ -75,12 +75,43 @@ export default defineEventHandler(async (event) => {
       : {};
   markStep("date-filter");
 
+  const validSources = ["zenodo", "figshare", "user_submitted"];
+  const sourceValues = source
+    ? String(source)
+        .split(",")
+        .map((s) => s.trim().toLowerCase())
+        .filter((s) => validSources.includes(s))
+    : [];
+
+  const isFigshare = {
+    OR: [
+      { imageUrl: { contains: "/figshare_", mode: "insensitive" as const } },
+      {
+        posterMetadata: {
+          doi: { startsWith: "10.6084/", mode: "insensitive" as const },
+        },
+      },
+    ],
+  };
+
+  const sourceConditions: Record<string, unknown>[] = [];
+  if (sourceValues.includes("figshare")) sourceConditions.push(isFigshare);
+  if (sourceValues.includes("zenodo"))
+    sourceConditions.push({ automated: true, NOT: isFigshare });
+  if (sourceValues.includes("user_submitted"))
+    sourceConditions.push({ automated: false });
+
+  const sourceFilter =
+    sourceConditions.length > 0 ? { OR: sourceConditions } : {};
+  markStep("source-filter");
+
   const rawPosters =
     (await prisma.poster.findMany({
       where: {
         status: "published",
         ...searchFilter,
         ...dateFilter,
+        ...sourceFilter,
       },
       orderBy: isSortByViews ? { publishedAt: "desc" } : orderBy,
       skip,
@@ -103,6 +134,7 @@ export default defineEventHandler(async (event) => {
       status: "published",
       ...searchFilter,
       ...dateFilter,
+      ...sourceFilter,
     },
   });
   markStep("db-count");

@@ -56,6 +56,7 @@ export default defineAppConfig({
     header: {
       slots: {
         root: "bg-default/75 backdrop-blur border-b border-default h-(--ui-header-height) static",
+        body: "p-4 sm:p-6 overflow-y-auto flex flex-col gap-3",
       },
     },
     link: {

@@ -1,4 +1,10 @@
 import { buildPosterJson } from "./buildPosterJson";
+import { isValidOrcidChecksum, validateOrcidExists } from "#shared/utils/orcid";
+import isoLanguages from "../../app/assets/data/iso-639-1.json";
+
+const ISO639_1_TO_3: Record<string, string> = Object.fromEntries(
+  isoLanguages.filter((l) => l.alpha3).map((l) => [l.code, l.alpha3]),
+);
 const config = useRuntimeConfig();
 
 /**
@@ -152,6 +158,40 @@ type ProgressCallback = (
   event: PublicationProgressEvent,
 ) => void | Promise<void>;
 
+type PosterIdentifier = { identifier: string; identifierType: string };
+
+function extractOrcid(ni: {
+  nameIdentifier: string;
+  nameIdentifierScheme?: string;
+  schemeURI?: string;
+}): string | undefined {
+  const { nameIdentifier, nameIdentifierScheme, schemeURI } = ni;
+  if (!nameIdentifier) return undefined;
+
+  if (nameIdentifier.toLowerCase().includes("orcid.org/")) {
+    return nameIdentifier.replace(/.*orcid\.org\//i, "").trim() || undefined;
+  }
+
+  const isOrcid =
+    nameIdentifierScheme?.toLowerCase() === "orcid" ||
+    schemeURI?.toLowerCase().includes("orcid.org");
+
+  return isOrcid ? nameIdentifier : undefined;
+}
+
+function extractRorId(
+  affiliationIdentifier: string | undefined,
+  scheme: string | undefined,
+): string | undefined {
+  if (!affiliationIdentifier) return undefined;
+  const isRor =
+    scheme?.toLowerCase() === "ror" ||
+    affiliationIdentifier.toLowerCase().includes("ror.org/");
+  if (!isRor) return undefined;
+
+  return affiliationIdentifier.replace(/.*ror\.org\//i, "").trim() || undefined;
+}
+
 export async function beginZenodoPublication(
   posterId: string,
   mode: string,
@@ -213,9 +253,12 @@ export async function beginZenodoPublication(
   const bucketUrl = deposition.links.bucket;
   const { doi } = deposition.metadata.prereserve_doi;
 
+  const draftUrl = `${config.zenodoEndpoint}/deposit/${newDepositionId}`;
+
   console.log(
     `[Zenodo] Working deposition ready - id: ${newDepositionId}, doi: ${doi}, bucket: ${bucketUrl}`,
   );
+  console.log(`[Zenodo] Draft URL: ${draftUrl}`);
 
   // Update zenodoDeposition information
   const posterInt = parseInt(posterId);
@@ -300,40 +343,139 @@ export async function beginZenodoPublication(
   });
 
   // Build Zenodo deposition metadata from poster data
-  const creators = poster.posterMetadata.creators as {
-    name: string;
-    affiliation?: { name: string }[];
+  const meta = poster.posterMetadata;
+
+  const metaIdentifiers: PosterIdentifier[] = Array.isArray(meta.identifiers)
+    ? (meta.identifiers as PosterIdentifier[])
+    : [];
+
+  const creators = meta.creators as InvenioCreator[];
+
+  // Check ORCID IDs exist in the registry. Fail-open: warns but never blocks publication.
+  const orcidIds = (creators ?? [])
+    .flatMap((c) => c.nameIdentifiers?.map(extractOrcid).filter(Boolean) ?? [])
+    .filter((id): id is string => !!id);
+
+  if (orcidIds.length > 0) {
+    const results = await Promise.all(
+      orcidIds.map((id) => validateOrcidExists(id)),
+    );
+    const invalid = orcidIds.filter((_, i) => !results[i]);
+    if (invalid.length > 0) {
+      console.warn(
+        `[Zenodo] ORCID registry check failed for: ${invalid.join(", ")}`,
+      );
+      await onProgress?.({
+        step: "upload_metadata",
+        status: "error",
+        message: `Could not verify the following ORCID IDs in the registry: ${invalid.join(", ")}. Publication will continue — please confirm these IDs are correct.`,
+      });
+    }
+  }
+
+  const rawRelated = meta.relatedIdentifiers as {
+    relatedIdentifier?: string;
+    relatedIdentifierType?: string;
+    relationType?: string;
+    resourceTypeGeneral?: string;
   }[];
 
-  // TODO: Add more metadata fields as needed
-  const posterLicense = poster.posterMetadata.license;
-  const metadata = {
-    metadata: {
-      title: poster.title,
-      upload_type: "poster",
-      publication_type: "poster",
-      creators: creators.map((c) => ({
-        name: c.name,
-        ...(c.affiliation?.[0]?.name && {
-          affiliation: c.affiliation[0].name,
-        }),
-      })),
-      description: poster.description,
-      prereserve_doi: {
-        doi,
-      },
-      ...(posterLicense && { license: posterLicense }),
-    },
-  };
+  const rawFunding = meta.fundingReferences as {
+    funderName?: string;
+    funderIdentifier?: string;
+    funderIdentifierType?: string;
+    awardNumber?: string;
+    awardUri?: string;
+    awardTitle?: string;
+  }[];
 
-  // Update the zenodo deposition metadata
-  console.log(`[Zenodo] Updating metadata for deposition: ${newDepositionId}`);
+  const datesArr = Array.isArray(meta.dates)
+    ? (meta.dates as Array<{ date?: string; dateType?: string }>)
+    : [];
 
-  await updateDepositionMetadata(
+  const hasSubmittedInMeta = datesArr.some((d) => d.dateType === "Submitted");
+
+  const zenodoDates: {
+    date: string;
+    type: { id: string };
+    description?: string;
+  }[] = [];
+
+  const zenodoSharedAt = new Date();
+
+  // Inject submitted date from when the poster is shared to Zenodo
+  if (!hasSubmittedInMeta) {
+    zenodoDates.push({
+      date: zenodoSharedAt.toISOString().slice(0, 10),
+      type: { id: "submitted" },
+      description: "Submitted to Zenodo through Posters.science",
+    });
+  }
+
+  // Map all meta.dates to InvenioRDM format. DataCite dateType values map
+  // 1:1 to InvenioRDM type.id by lowercasing. "Presented" is our custom type
+  // stored in meta.dates; it maps to type "other" with a description.
+  for (const entry of datesArr) {
+    if (!entry.date || !entry.dateType) continue;
+    if (entry.dateType === "Presented") {
+      zenodoDates.push({
+        date: entry.date,
+        type: { id: "other" },
+        description: "Poster presentation date",
+      });
+    } else {
+      zenodoDates.push({
+        date: entry.date,
+        type: { id: entry.dateType.toLowerCase() },
+      });
+    }
+  }
+
+  const posterContentObj = meta.posterContent as {
+    submissionAbstract?: string;
+  } | null;
+
+  console.log(
+    `[Zenodo] Updating metadata via InvenioRDM for deposition: ${newDepositionId}`,
+  );
+
+  const metadataResult = await updateRdmMetadata(
     newDepositionId,
     tokenRecord.accessToken,
-    metadata,
+    poster.title,
+    poster.description,
+    meta as unknown as Record<string, unknown>,
+    creators,
+    {
+      submissionAbstract: posterContentObj?.submissionAbstract,
+      rawFunding,
+      dbRelated: Array.isArray(rawRelated) ? rawRelated : [],
+      presentedDates: zenodoDates,
+    },
   );
+
+  if (!metadataResult.success) {
+    console.error(
+      `[Zenodo] Metadata update failed for deposition ${newDepositionId}: ${metadataResult.error}`,
+    );
+
+    await onProgress?.({
+      step: "upload_metadata",
+      status: "error",
+      message: `Metadata update failed: ${metadataResult.error}`,
+    });
+
+    return { success: false, error: metadataResult.error };
+  }
+
+  if (!meta.version) {
+    meta.version = mode === "new" ? "1" : null;
+  } else if (mode === "existing") {
+    const prev = parseInt(meta.version as string, 10);
+    if (!isNaN(prev)) {
+      meta.version = String(prev + 1);
+    }
+  }
 
   await onProgress?.({
     step: "upload_metadata",
@@ -354,6 +496,9 @@ export async function beginZenodoPublication(
   const posterJson = buildPosterJson(poster.posterMetadata, {
     title: poster.title,
     description: poster.description,
+    zenodoDoi: doi,
+    publishedAt: zenodoSharedAt,
+    includePublisher: true,
   });
   const posterJsonBlob = new Blob([JSON.stringify(posterJson, null, 2)], {
     type: "application/json",
@@ -374,7 +519,74 @@ export async function beginZenodoPublication(
     return { success: false, error: uploadResult.error };
   }
 
-  // TODO: Retrieve and upload poster file
+  // Retrieve and upload poster file
+  const extractionJob = await prisma.extractionJob.findUnique({
+    where: { posterId: posterInt },
+  });
+
+  if (!extractionJob?.filePath) {
+    console.log(
+      `[Zenodo] No extraction job or file path found for poster: ${posterId}`,
+    );
+
+    return { success: false, error: "Poster file not found for upload" };
+  }
+
+  console.log(
+    `[Zenodo] Fetching poster file from BunnyCDN: ${extractionJob.filePath}`,
+  );
+
+  const posterFileRes = await fetch(
+    `${config.bunnyPrivateStorage}/${extractionJob.filePath}`,
+    { headers: { AccessKey: config.bunnyPrivateStorageKey } },
+  );
+
+  if (!posterFileRes.ok) {
+    console.log(
+      `[Zenodo] Failed to fetch poster file from BunnyCDN: ${posterFileRes.status}`,
+    );
+
+    return {
+      success: false,
+      error: "Failed to retrieve poster file from storage",
+    };
+  }
+
+  const posterFileName = extractionJob.fileName || "poster.pdf";
+  const posterFileContentLength = posterFileRes.headers.get("Content-Length");
+
+  console.log(
+    `[Zenodo] Uploading poster file "${posterFileName}" to bucket: ${bucketUrl}`,
+  );
+
+  const posterFileUploadRes = await fetch(`${bucketUrl}/${posterFileName}`, {
+    method: "PUT",
+    // @ts-expect-error required when body is a ReadableStream
+    duplex: "half",
+    headers: {
+      "Content-Type": "application/octet-stream",
+      ...(posterFileContentLength
+        ? { "Content-Length": posterFileContentLength }
+        : {}),
+      Authorization: `Bearer ${tokenRecord.accessToken}`,
+    },
+    body: posterFileRes.body,
+  });
+
+  if (!posterFileUploadRes.ok) {
+    console.log(
+      `[Zenodo] Failed to upload poster file "${posterFileName}" (status: ${posterFileUploadRes.status})`,
+    );
+
+    const errorMsg = await getZenodoErrorMessage(
+      `Failed to upload file "${posterFileName}"`,
+      posterFileUploadRes,
+    );
+
+    return { success: false, error: errorMsg };
+  }
+
+  console.log(`[Zenodo] Uploaded poster file "${posterFileName}" successfully`);
 
   await onProgress?.({
     step: "upload_files",
@@ -390,7 +602,8 @@ export async function beginZenodoPublication(
   });
 
   // Publish the deposition
-  console.log(`[Zenodo] Publishing deposition: ${newDepositionId}`);
+  console.log(`[Zenodo] About to publish deposition: ${newDepositionId}`);
+  console.log(`[Zenodo] Inspect draft before publish: ${draftUrl}`);
 
   const publishResult = await publishZenodoDeposition(
     tokenRecord.accessToken,
@@ -510,11 +723,30 @@ export async function beginZenodoPublication(
     },
   });
 
+  const publishedDoi = publishResult.data.doi;
+
+  if (!publishedDoi) {
+    console.error(
+      `[Zenodo] Published deposition ${newDepositionId} is missing a DOI in the response`,
+    );
+
+    return { success: false, error: "Published deposition is missing a DOI" };
+  }
+
+  const alreadyHasDoi = metaIdentifiers.some(
+    (i) => i.identifier === publishedDoi && i.identifierType === "DOI",
+  );
+  const updatedIdentifiers: PosterIdentifier[] = alreadyHasDoi
+    ? metaIdentifiers
+    : [{ identifier: publishedDoi, identifierType: "DOI" }, ...metaIdentifiers];
+
   await prisma.posterMetadata.update({
     where: { posterId: posterInt },
     data: {
-      doi: publishResult.data.doi,
+      doi: publishedDoi,
       publisher: "Zenodo",
+      identifiers: updatedIdentifiers,
+      ...(meta.version && { version: meta.version }),
     },
   });
 
@@ -678,73 +910,371 @@ async function deleteFileFromZenodo(
   }
 }
 
-async function updateDepositionMetadata(
-  depositionId: number,
-  zenodoToken: string,
-  metadata: object,
+type InvenioCreator = {
+  name?: string;
+  givenName?: string;
+  familyName?: string;
+  nameType?: string;
+  affiliation?: {
+    name: string;
+    affiliationIdentifier?: string;
+    affiliationIdentifierScheme?: string;
+  }[];
+  nameIdentifiers?: {
+    nameIdentifier: string;
+    nameIdentifierScheme?: string;
+    schemeURI?: string;
+  }[];
+};
+
+// Build InvenioRDM-format creator objects from DB creator data.
+// DB data has full structured creators; legacy draft only has combined name strings.
+function buildRdmCreators(
+  dbCreators: InvenioCreator[],
+  options?: { skipRorIds?: boolean },
 ) {
-  console.log(`[Zenodo] Updating metadata for deposition: ${depositionId}`);
+  const skipIds = options?.skipRorIds ?? false;
 
-  try {
-    const response = await fetch(
-      `${config.zenodoApiEndpoint}/deposit/depositions/${depositionId}`,
-      {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${zenodoToken}`,
-        },
-        body: JSON.stringify(metadata),
-      },
-    );
+  return dbCreators.map((c) => {
+    const isOrg = c.nameType?.toLowerCase() === "organizational";
 
-    if (!response.ok) {
-      const errorMsg = await getZenodoErrorMessage(
-        "Failed to update metadata",
-        response,
+    const orcidRaw = c.nameIdentifiers?.map(extractOrcid).find(Boolean);
+    const orcidBare = orcidRaw?.replace(/^https?:\/\/orcid\.org\//i, "").trim();
+    const orcid =
+      orcidBare && isValidOrcidChecksum(orcidBare) ? orcidBare : undefined;
+
+    if (orcidRaw && !orcid) {
+      console.warn(
+        `[Zenodo] RDM affiliation patch: dropping invalid ORCID "${orcidRaw}" (failed format/checksum)`,
       );
-
-      console.log(`[Zenodo] ${errorMsg}`);
-
-      return { success: false, error: errorMsg };
     }
 
-    const updatedData = await response.json();
+    const affiliations = (c.affiliation ?? [])
+      .filter((a) => a.name?.trim())
+      .map((a) => {
+        const rorId = skipIds
+          ? undefined
+          : extractRorId(
+              a.affiliationIdentifier,
+              a.affiliationIdentifierScheme,
+            );
 
-    console.log(`[Zenodo] Metadata updated for deposition: ${depositionId}`);
-
-    // if the metadata does not have an upload_type, add it and update the metadata again
-    console.log("[Zenodo] Checking for upload_type in metadata");
-    if (
-      !updatedData?.metadata?.upload_type ||
-      updatedData?.metadata?.upload_type != "poster"
-    ) {
-      console.log(
-        "[Zenodo] upload_type present, re-updating metadata with poster type",
-      );
-
-      console.log("[Zenodo] Current metadata:", updatedData.metadata);
-
-      const newMetadata = {
-        ...updatedData.metadata,
-        upload_type: "poster",
-      };
-
-      console.log("[Zenodo] New metadata:", newMetadata);
-
-      await updateDepositionMetadata(depositionId, zenodoToken, {
-        metadata: newMetadata,
+        return { name: a.name, ...(rorId && { id: rorId }) };
       });
+
+    if (isOrg) {
+      return {
+        person_or_org: {
+          type: "organizational" as const,
+          name: c.name || c.familyName || "",
+          ...(orcid && {
+            identifiers: [{ scheme: "orcid", identifier: orcid }],
+          }),
+        },
+        ...(affiliations.length > 0 && { affiliations }),
+      };
     }
 
-    return { success: true, data: updatedData };
-  } catch (error) {
-    console.log("[Zenodo] Error updating metadata:", error);
+    let familyName = c.familyName;
+    let givenName = c.givenName;
+    if (!familyName && !givenName && c.name) {
+      const commaIdx = c.name.indexOf(",");
+      if (commaIdx !== -1) {
+        familyName = c.name.slice(0, commaIdx).trim();
+        givenName = c.name.slice(commaIdx + 1).trim();
+      } else {
+        familyName = c.name.trim();
+      }
+    }
 
     return {
-      success: false,
-      error: `Failed to update metadata: ${(error as Error).message}`,
+      person_or_org: {
+        type: "personal" as const,
+        ...(familyName && { family_name: familyName }),
+        ...(givenName && { given_name: givenName }),
+        ...(orcid && { identifiers: [{ scheme: "orcid", identifier: orcid }] }),
+      },
+      ...(affiliations.length > 0 && { affiliations }),
     };
+  });
+}
+
+// DataCite resourceTypeGeneral → InvenioRDM resource_type.id (conservative mapping)
+const DATACITE_TO_INVENIORDM_TYPE: Record<string, string> = {
+  Audiovisual: "video",
+  Book: "publication-book",
+  BookChapter: "publication-section",
+  ComputationalNotebook: "software-computationalnotebook",
+  ConferencePaper: "publication-conferencepaper",
+  Dataset: "dataset",
+  Dissertation: "publication-thesis",
+  Image: "image",
+  JournalArticle: "publication-article",
+  Preprint: "publication-preprint",
+  Report: "publication-report",
+  Software: "software",
+  Other: "other",
+};
+
+type RdmExtras = {
+  skipRorIds?: boolean;
+  skipFunderIds?: boolean;
+  submissionAbstract?: string;
+  rawFunding?: {
+    funderName?: string;
+    funderIdentifier?: string;
+    funderIdentifierType?: string;
+    awardNumber?: string;
+    awardUri?: string;
+    awardTitle?: string;
+  }[];
+  dbRelated?: {
+    relatedIdentifier?: string;
+    relatedIdentifierType?: string;
+    relationType?: string;
+    resourceTypeGeneral?: string;
+  }[];
+  presentedDates?: {
+    date: string;
+    type: { id: string };
+    description?: string;
+  }[];
+};
+
+// Builds a complete InvenioRDM PUT payload directly from DB data.
+// Used instead of convertLegacyDraftToRdmPayload so we never need to GET the
+// legacy draft before updating metadata.
+function buildFullRdmPayload(
+  posterTitle: string,
+  posterDescription: string,
+  meta: Record<string, unknown>,
+  dbCreators: InvenioCreator[],
+  options?: RdmExtras,
+): object {
+  const rdmCreators = buildRdmCreators(dbCreators, options);
+
+  const keywords = ((meta.subjects as string[] | undefined) ?? []).filter(
+    (s) => s !== "",
+  );
+
+  const lang2 = meta.language as string | null | undefined;
+  const lang3 = lang2
+    ? ((ISO639_1_TO_3 as Record<string, string>)[lang2] ?? lang2)
+    : undefined;
+
+  const licenseId = (meta.license as string | null | undefined)
+    ? (meta.license as string).toLowerCase()
+    : undefined;
+
+  const rawRelated = (options?.dbRelated ?? []).filter(
+    (r) => r.relatedIdentifier && r.relatedIdentifierType && r.relationType,
+  );
+  const rdmRelated = rawRelated
+    .filter((r) => {
+      const scheme = r.relatedIdentifierType!.toLowerCase();
+      const id = r.relatedIdentifier!;
+      if (scheme === "url") return /^https?:\/\//.test(id);
+      if (scheme === "doi") return /^10\.\d{4,}\//.test(id);
+
+      return true;
+    })
+    .map((r) => {
+      const rdmType = r.resourceTypeGeneral
+        ? DATACITE_TO_INVENIORDM_TYPE[r.resourceTypeGeneral]
+        : undefined;
+
+      return {
+        identifier: r.relatedIdentifier!,
+        scheme: r.relatedIdentifierType!.toLowerCase(),
+        relation_type: { id: r.relationType!.toLowerCase() },
+        ...(rdmType && { resource_type: { id: rdmType } }),
+      };
+    });
+
+  const funding = (options?.rawFunding ?? [])
+    .filter((f) => f.funderName?.trim())
+    .map((f) => {
+      const rorId = options?.skipFunderIds
+        ? undefined
+        : extractRorId(f.funderIdentifier, f.funderIdentifierType);
+      const entry: Record<string, unknown> = {
+        funder: { name: f.funderName, ...(rorId && { id: rorId }) },
+      };
+      if (f.awardNumber?.trim() || f.awardUri?.trim()) {
+        entry.award = {
+          ...(f.awardNumber?.trim() && { number: f.awardNumber }),
+          ...(f.awardTitle?.trim() && { title: { en: f.awardTitle } }),
+          ...(f.awardUri?.trim() && {
+            identifiers: [{ identifier: f.awardUri, scheme: "url" }],
+          }),
+        };
+      }
+
+      return entry;
+    });
+
+  const additionalDescriptions = options?.submissionAbstract
+    ? [{ description: options.submissionAbstract, type: { id: "abstract" } }]
+    : [];
+
+  const conferenceDates =
+    (meta.conferenceStartDate as string | null) &&
+    (meta.conferenceEndDate as string | null)
+      ? `${meta.conferenceStartDate} - ${meta.conferenceEndDate}`
+      : (meta.conferenceStartDate as string | null) ||
+        (meta.conferenceEndDate as string | null) ||
+        (meta.conferenceYear ? String(meta.conferenceYear) : undefined);
+
+  const meeting: Record<string, string> = {};
+  if (meta.conferenceName) meeting.title = meta.conferenceName as string;
+  if (meta.conferenceAcronym)
+    meeting.acronym = meta.conferenceAcronym as string;
+  if (meta.conferenceLocation)
+    meeting.place = meta.conferenceLocation as string;
+  if (meta.conferenceUri) meeting.url = meta.conferenceUri as string;
+  if (conferenceDates) meeting.dates = conferenceDates;
+  const customFields: Record<string, unknown> = {};
+  if (Object.keys(meeting).length > 0) {
+    customFields["meeting:meeting"] = meeting;
+  }
+
+  return {
+    metadata: {
+      title: posterTitle,
+      description: posterDescription,
+      publication_date: String(new Date().getFullYear()),
+      resource_type: { id: "poster" },
+      publisher: "Zenodo",
+      creators: rdmCreators,
+      ...(keywords.length > 0 && {
+        subjects: keywords.map((kw) => ({ subject: kw })),
+      }),
+      ...(lang3 && { languages: [{ id: lang3 }] }),
+      ...(licenseId && { rights: [{ id: licenseId }] }),
+      ...(rdmRelated.length > 0 && { related_identifiers: rdmRelated }),
+      ...(funding.length > 0 && { funding }),
+      ...(additionalDescriptions.length > 0 && {
+        additional_descriptions: additionalDescriptions,
+      }),
+      ...(options?.presentedDates?.length && {
+        dates: options.presentedDates,
+      }),
+      ...((meta.version as string | null | undefined) && {
+        version: meta.version as string,
+      }),
+    },
+    ...(Object.keys(customFields).length > 0 && {
+      custom_fields: customFields,
+    }),
+  };
+}
+
+// PUTs a complete InvenioRDM metadata payload for the given deposition.
+// This is the sole metadata update path - replaces the legacy deposit API entirely.
+async function updateRdmMetadata(
+  depositionId: number,
+  zenodoToken: string,
+  posterTitle: string,
+  posterDescription: string,
+  meta: Record<string, unknown>,
+  creators: InvenioCreator[],
+  extras?: Pick<
+    RdmExtras,
+    "submissionAbstract" | "rawFunding" | "dbRelated" | "presentedDates"
+  >,
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const payload = buildFullRdmPayload(
+      posterTitle,
+      posterDescription,
+      meta,
+      creators,
+      { ...extras },
+    );
+    console.log(
+      `[Zenodo] RDM metadata: sending InvenioRDM payload for deposition ${depositionId}: ${JSON.stringify(payload, null, 2)}`,
+    );
+
+    const putDraft = async (body: object) => {
+      const res = await fetch(
+        `${config.zenodoApiEndpoint}/records/${depositionId}/draft`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${zenodoToken}`,
+          },
+          body: JSON.stringify(body),
+        },
+      );
+      const text = await res.text().catch(() => "");
+
+      return { ok: res.ok, status: res.status, body: text };
+    };
+
+    let put = await putDraft(payload);
+
+    // Zenodo's vocabulary doesn't include every ROR/funder ID. Detect the
+    // rejection via structured errors[] first; fall back to substring match
+    // if the body isn't valid JSON or has no errors array.
+    const isVocabularyRejection = (res: {
+      ok: boolean;
+      status: number;
+      body: string;
+    }) => {
+      if (res.ok || res.status !== 400) return false;
+      try {
+        const parsed = JSON.parse(res.body) as {
+          errors?: { message?: string }[];
+        };
+        if (parsed.errors?.length) {
+          return parsed.errors.some((e) =>
+            /invalid value/i.test(e.message ?? ""),
+          );
+        }
+      } catch {
+        // not JSON - fall through to substring check
+      }
+
+      return /invalid value/i.test(res.body);
+    };
+
+    if (isVocabularyRejection(put)) {
+      console.warn(
+        `[Zenodo] RDM metadata: ROR/funder vocabulary rejection (status: ${put.status}) - ${put.body}. Retrying without ROR/funder IDs.`,
+      );
+
+      const fallback = buildFullRdmPayload(
+        posterTitle,
+        posterDescription,
+        meta,
+        creators,
+        { ...extras, skipRorIds: true, skipFunderIds: true },
+      );
+      console.log(
+        `[Zenodo] RDM metadata: retry payload (name-only affiliations/funders): ${JSON.stringify(fallback, null, 2)}`,
+      );
+
+      put = await putDraft(fallback);
+    }
+
+    if (!put.ok) {
+      const msg = `RDM metadata PUT failed (status: ${put.status}) - ${put.body}`;
+      console.error(`[Zenodo] ${msg}`);
+
+      return { success: false, error: msg };
+    }
+
+    console.log(
+      `[Zenodo] RDM metadata: success for deposition ${depositionId}`,
+    );
+
+    return { success: true };
+  } catch (err) {
+    const msg = `RDM metadata: unexpected error - ${(err as Error).message}`;
+    console.error(`[Zenodo] ${msg}`, err);
+
+    return { success: false, error: msg };
   }
 }
 
@@ -895,6 +1425,7 @@ async function uploadFileToZenodoBucket(
       method: "PUT",
       headers: {
         "Content-Type": "application/octet-stream",
+        "Content-Length": String(content.size),
         Authorization: `Bearer ${zenodoToken}`,
       },
       body: content,
@@ -965,6 +1496,9 @@ async function publishZenodoDeposition(
 
     console.log(
       `[Zenodo] Deposition ${depositionId} published at: ${data.links?.latest_html}`,
+    );
+    console.log(
+      `[Zenodo] Published record URL: ${data.links?.record_html ?? data.links?.latest_html}`,
     );
 
     return { success: true, data };

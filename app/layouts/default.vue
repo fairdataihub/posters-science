@@ -3,8 +3,14 @@ import type { NavigationMenuItem } from "@nuxt/ui";
 
 const { clear, user } = useUserSession();
 const feedbackOpen = useState("feedbackOpen", () => false);
+const mobileMenuOpen = ref(false);
 
 const route = useRoute();
+
+function openFeedback() {
+  mobileMenuOpen.value = false;
+  feedbackOpen.value = true;
+}
 
 const logout = async () => {
   clear();
@@ -27,6 +33,11 @@ const headerItems = computed<NavigationMenuItem[]>(() => [
     to: "/share/new",
     active: route.path.startsWith("/share"),
   },
+  {
+    label: "Documentation",
+    to: "https://docs.posters.science",
+    target: "_blank",
+  },
   // {
   //   label: "Learn More",
   //   to: "/about",
@@ -45,7 +56,7 @@ const headerItems = computed<NavigationMenuItem[]>(() => [
   // },
 ]);
 
-const profileDropdownItems = ref([
+const profileDropdownItems = computed(() => [
   [
     {
       label: `${user?.value?.givenName} ${user?.value?.familyName}`,
@@ -64,6 +75,15 @@ const profileDropdownItems = ref([
       label: "Liked posters",
       to: "/liked",
     },
+    ...(user?.value?.role === "admin"
+      ? [
+          {
+            icon: "material-symbols:admin-panel-settings",
+            label: "Admin",
+            to: "/admin",
+          },
+        ]
+      : []),
   ],
   [
     {
@@ -73,6 +93,32 @@ const profileDropdownItems = ref([
     },
   ],
 ]);
+
+const mobileProfileNavItems = computed<NavigationMenuItem[]>(() => [
+  {
+    icon: "material-symbols:account-circle",
+    label: "Profile",
+    to: "/profile",
+  },
+  {
+    icon: "material-symbols:star",
+    label: "Liked posters",
+    to: "/liked",
+  },
+  {
+    icon: "majesticons:logout",
+    label: "Logout",
+    onSelect: logout,
+  },
+]);
+
+const mobileFeedbackNavItems: NavigationMenuItem[] = [
+  {
+    icon: "material-symbols:rate-review",
+    label: "Give Feedback",
+    onSelect: openFeedback,
+  },
+];
 
 const footerItems: NavigationMenuItem[] = [
   {
@@ -87,7 +133,7 @@ const footerItems: NavigationMenuItem[] = [
   <div class="relative">
     <!-- <UiAuroraBackground class="absolute inset-0 -z-10 h-full" /> -->
 
-    <UHeader>
+    <UHeader v-model:open="mobileMenuOpen">
       <template #title>
         <NuxtLink to="/" class="flex text-2xl font-bold">
           Posters.science
@@ -98,6 +144,7 @@ const footerItems: NavigationMenuItem[] = [
 
       <template #right>
         <UButton
+          class="hidden lg:inline-flex"
           color="neutral"
           variant="ghost"
           label="Give Feedback"
@@ -108,33 +155,49 @@ const footerItems: NavigationMenuItem[] = [
 
         <AuthState>
           <template #default="{ loggedIn }">
-            <NuxtLink v-if="!loggedIn" to="/login">
+            <NuxtLink
+              v-if="!loggedIn"
+              to="/login"
+              class="hidden lg:inline-flex"
+            >
               <UButton size="lg" label="Log in" />
             </NuxtLink>
 
-            <NuxtLink v-if="!loggedIn" to="/register">
+            <NuxtLink
+              v-if="!loggedIn"
+              to="/signup"
+              class="hidden lg:inline-flex"
+            >
               <UButton size="lg" label="Get started" />
             </NuxtLink>
 
             <UDropdownMenu
               :items="profileDropdownItems"
               arrow
-              :content="{
-                align: 'end',
-              }"
-              :ui="{
-                content: 'w-48',
-              }"
+              :content="{ align: 'end' }"
+              :ui="{ content: 'w-48' }"
             >
-              <UButton
-                v-if="loggedIn"
-                :avatar="{
-                  src: `https://api.dicebear.com/9.x/shapes/svg?seed=${user?.id}`,
-                }"
-                size="xl"
-                color="neutral"
-                variant="ghost"
-              />
+              <div v-if="loggedIn" class="relative inline-flex">
+                <UButton
+                  :avatar="{
+                    src: `https://api.dicebear.com/9.x/shapes/svg?seed=${user?.id}`,
+                  }"
+                  size="xl"
+                  color="neutral"
+                  variant="ghost"
+                />
+
+                <span
+                  v-if="user?.role === 'admin'"
+                  class="bg-primary absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full"
+                >
+                  <Icon
+                    name="material-symbols:crown"
+                    size="10"
+                    class="text-white"
+                  />
+                </span>
+              </div>
             </UDropdownMenu>
           </template>
 
@@ -143,6 +206,66 @@ const footerItems: NavigationMenuItem[] = [
             <USkeleton class="h-12 w-12 rounded-full" />
           </template>
         </AuthState>
+      </template>
+
+      <template #body>
+        <UNavigationMenu
+          :items="headerItems"
+          orientation="vertical"
+          class="w-full"
+        />
+
+        <USeparator />
+
+        <AuthState>
+          <template #default="{ loggedIn }">
+            <div v-if="!loggedIn" class="flex flex-col gap-2">
+              <NuxtLink to="/login" class="w-full">
+                <UButton
+                  block
+                  color="neutral"
+                  variant="outline"
+                  label="Log in"
+                />
+              </NuxtLink>
+
+              <NuxtLink to="/signup" class="w-full">
+                <UButton block label="Get started" />
+              </NuxtLink>
+            </div>
+
+            <div v-else class="flex flex-col">
+              <div class="flex items-center gap-3 px-3 py-2">
+                <UAvatar
+                  :src="`https://api.dicebear.com/9.x/shapes/svg?seed=${user?.id}`"
+                  size="md"
+                />
+
+                <span class="truncate font-medium">
+                  {{ user?.givenName }} {{ user?.familyName }}
+                </span>
+              </div>
+
+              <UNavigationMenu
+                :items="mobileProfileNavItems"
+                orientation="vertical"
+                class="w-full"
+              />
+            </div>
+          </template>
+
+          <template #placeholder>
+            <USkeleton class="h-10 w-full rounded-md" />
+          </template>
+        </AuthState>
+
+        <USeparator />
+
+        <UNavigationMenu
+          :items="mobileFeedbackNavItems"
+          orientation="vertical"
+          class="w-full"
+        />
       </template>
     </UHeader>
 

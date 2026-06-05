@@ -5,9 +5,15 @@ definePageMeta({
   layout: false,
 });
 
+const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Posters.science Schemas")}&description=${encodeURIComponent("A collection of schemas used in Posters.science applications")}&app=posters-science&org=fairdataihub`;
+
 useSeoMeta({
   title: "Poster.science Schemas",
   description: "A collection of schemas used in poster.science applications",
+  ogTitle: "Posters.science Schemas",
+  ogDescription:
+    "A collection of schemas used in Posters.science applications.",
+  ogImage,
 });
 </script>
 

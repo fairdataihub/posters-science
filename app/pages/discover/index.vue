@@ -1,10 +1,7 @@
 <script setup lang="ts">
 import dayjs from "dayjs";
-import {
-  type CalendarDate,
-  DateFormatter,
-  getLocalTimeZone,
-} from "@internationalized/date";
+import { getLocalTimeZone, parseDate } from "@internationalized/date";
+import type { CalendarDate } from "@internationalized/date";
 
 const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Discover Posters - Posters.science")}&description=${encodeURIComponent("Find and explore scientific posters on a variety of topics.")}&app=posters-science&org=fairdataihub`;
 
@@ -16,16 +13,26 @@ useSeoMeta({
   ogImage,
 });
 
-const df = new DateFormatter("en-US", {
-  dateStyle: "medium",
-});
+const route = useRoute();
+const router = useRouter();
+
+const sourceFilterValue = ref<string[]>(
+  route.query.source
+    ? String(route.query.source)
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : [],
+);
 
 const dateFilterValue = shallowRef<{
   start: CalendarDate | undefined;
   end: CalendarDate | undefined;
 }>({
-  start: undefined,
-  end: undefined,
+  start: route.query.dateFrom
+    ? parseDate(route.query.dateFrom as string)
+    : undefined,
+  end: route.query.dateTo ? parseDate(route.query.dateTo as string) : undefined,
 });
 
 const dateFrom = computed(() =>
@@ -40,6 +47,12 @@ const dateTo = computed(() =>
     : undefined,
 );
 
+const sourceParam = computed(() =>
+  sourceFilterValue.value.length > 0
+    ? sourceFilterValue.value.join(",")
+    : undefined,
+);
+
 type Poster = {
   id: number | undefined;
   title: string;
@@ -51,17 +64,18 @@ type Poster = {
   updated: Date;
   // views: number;
   likes: number;
+  automated: boolean;
 };
 
 const PAGE_SIZE = 9;
 
-const page = ref(1);
+const page = ref(Number(route.query.page) || 1);
 
-const sortBy = ref("Newest First");
+const sortBy = ref((route.query.sortBy as string) || "Newest First");
 const posters = ref<Poster[]>([]);
 const total = ref(0);
-const searchQuery = ref("");
-const committedSearch = ref("");
+const searchQuery = ref((route.query.search as string) || "");
+const committedSearch = ref((route.query.search as string) || "");
 
 const mapPosters = (apiPosters: Poster[]) => {
   return apiPosters.map((poster) => ({
@@ -77,6 +91,7 @@ const mapPosters = (apiPosters: Poster[]) => {
     updated: poster.updated ? poster.updated : new Date(),
     // views: typeof poster.views === "number" ? poster.views : 0,
     likes: typeof poster.likes === "number" ? poster.likes : 0,
+    automated: typeof poster.automated === "boolean" ? poster.automated : false,
   }));
 };
 
@@ -88,6 +103,7 @@ const { data, error, status } = await useFetch("/api/discover", {
     sortBy,
     dateFrom,
     dateTo,
+    source: sourceParam,
   },
 });
 
@@ -103,6 +119,28 @@ watch(sortBy, () => {
 watch(dateFilterValue, () => {
   page.value = 1;
 });
+
+watch(sourceFilterValue, () => {
+  page.value = 1;
+});
+
+watch(
+  [page, committedSearch, sortBy, dateFilterValue, sourceFilterValue],
+  () => {
+    const query: Record<string, string> = {};
+    if (page.value !== 1) query.page = String(page.value);
+    if (committedSearch.value) query.search = committedSearch.value;
+    if (sortBy.value !== "Newest First") query.sortBy = sortBy.value;
+    if (dateFilterValue.value.start)
+      query.dateFrom = dateFilterValue.value.start.toString();
+    if (dateFilterValue.value.end)
+      query.dateTo = dateFilterValue.value.end.toString();
+    if (sourceFilterValue.value.length > 0)
+      query.source = sourceFilterValue.value.join(",");
+    router.replace({ query });
+  },
+  { deep: true },
+);
 
 watch(
   data,
@@ -120,6 +158,18 @@ if (error.value) {
 }
 
 const totalFiltered = computed(() => total.value);
+
+const showMobileFilter = ref(false);
+const hasActiveFilters = computed(
+  () => !!dateFilterValue.value.start || sourceFilterValue.value.length > 0,
+);
+const activeFilterCount = computed(() => {
+  let count = 0;
+  if (dateFilterValue.value.start) count++;
+  if (sourceFilterValue.value.length > 0) count++;
+
+  return count;
+});
 </script>
 
 <template>
@@ -140,7 +190,7 @@ const totalFiltered = computed(() => total.value);
     />
 
     <div class="flex gap-6">
-      <div :class="['block w-80 flex-shrink-0 transition-all duration-300']">
+      <div class="hidden w-80 flex-shrink-0 md:block">
         <UCard class="sticky top-4">
           <template #header>
             <div class="flex items-center justify-between">
@@ -149,71 +199,47 @@ const totalFiltered = computed(() => total.value);
           </template>
 
           <div class="space-y-6">
-            <div>
-              <h4 class="mb-3 text-sm font-medium">Published</h4>
+            <DiscoverPublishedDateFilter v-model="dateFilterValue" />
 
-              <div class="flex items-center gap-2">
-                <UPopover>
-                  <UButton
-                    color="neutral"
-                    variant="outline"
-                    size="sm"
-                    icon="i-lucide-calendar"
-                  >
-                    <template v-if="dateFilterValue.start">
-                      <template v-if="dateFilterValue.end">
-                        {{
-                          df.format(
-                            dateFilterValue.start.toDate(getLocalTimeZone()),
-                          )
-                        }}
-                        -
-                        {{
-                          df.format(
-                            dateFilterValue.end.toDate(getLocalTimeZone()),
-                          )
-                        }}
-                      </template>
-
-                      <template v-else>
-                        {{
-                          df.format(
-                            dateFilterValue.start.toDate(getLocalTimeZone()),
-                          )
-                        }}
-                      </template>
-                    </template>
-
-                    <template v-else> Pick a date </template>
-                  </UButton>
-
-                  <template #content>
-                    <UCalendar
-                      v-model="dateFilterValue"
-                      class="p-2"
-                      :number-of-months="2"
-                      range
-                    />
-                  </template>
-                </UPopover>
-
-                <UButton
-                  v-if="dateFilterValue.start"
-                  color="neutral"
-                  variant="ghost"
-                  size="sm"
-                  icon="i-lucide-x"
-                  @click="
-                    dateFilterValue = { start: undefined, end: undefined }
-                  "
-                />
-              </div>
-            </div>
+            <DiscoverSourceFilter v-model="sourceFilterValue" />
           </div>
         </UCard>
       </div>
 
       <div class="min-w-0 flex-1">
+        <!-- Mobile filter toggle - hidden on md+ -->
+        <div class="mb-4 md:hidden">
+          <UButton
+            color="neutral"
+            variant="outline"
+            icon="i-lucide-sliders-horizontal"
+            :trailing-icon="
+              showMobileFilter ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'
+            "
+            class="w-full justify-between"
+            @click="showMobileFilter = !showMobileFilter"
+          >
+            <span class="flex items-center gap-2">
+              Filters
+              <UBadge v-if="hasActiveFilters" color="primary" size="xs">{{
+                activeFilterCount
+              }}</UBadge>
+            </span>
+          </UButton>
+
+          <div
+            v-show="showMobileFilter"
+            class="mt-2 space-y-6 rounded-lg border p-4"
+          >
+            <DiscoverPublishedDateFilter
+              v-model="dateFilterValue"
+              :number-of-months="1"
+            />
+
+            <DiscoverSourceFilter v-model="sourceFilterValue" />
+          </div>
+        </div>
+
         <div class="flex items-center gap-2 pb-4">
           <UInput
             v-model="searchQuery"
@@ -259,7 +285,7 @@ const totalFiltered = computed(() => total.value);
               class="relative h-full"
             >
               <UCard
-                class="group relative flex h-full flex-1 cursor-pointer flex-col transition-all duration-300 hover:shadow-lg"
+                class="group relative flex h-full flex-1 cursor-pointer flex-col shadow-sm ring-0 transition-shadow duration-300 hover:shadow-md"
               >
                 <div class="relative h-full flex-1">
                   <div class="relative overflow-hidden">
@@ -268,6 +294,21 @@ const totalFiltered = computed(() => total.value);
                       :alt="poster.title"
                       class="h-48 w-full object-cover transition-transform duration-300 group-hover:scale-105"
                     />
+
+                    <UTooltip
+                      v-if="poster.automated"
+                      text="This poster was picked up by our automated system."
+                    >
+                      <UBadge
+                        color="primary"
+                        variant="solid"
+                        size="xs"
+                        icon="i-lucide-sparkles"
+                        class="absolute top-2 left-2 z-10 cursor-help"
+                      >
+                        Auto-indexed
+                      </UBadge>
+                    </UTooltip>
                   </div>
 
                   <div class="relative flex flex-col justify-between gap-2 p-2">

@@ -68,4 +68,4 @@ _Last updated: March 30, 2026_
 
 ## 10. Contact Us
 
-If you have questions about this Privacy Policy or how your information is handled, please contact us through our [Contact page](/contact).
+If you have questions about this Privacy Policy or how your information is handled, please contact us through our [feedback form](https://tally.so/r/XxEBYP).

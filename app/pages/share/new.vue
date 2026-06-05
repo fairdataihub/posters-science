@@ -3,9 +3,14 @@ definePageMeta({
   middleware: ["auth"],
 });
 
+const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Share a Poster - Posters.science")}&description=${encodeURIComponent("Upload and share your scientific poster with the community")}&app=posters-science&org=fairdataihub`;
+
 useSeoMeta({
   title: "Share a Poster",
   description: "Upload and share your poster with the community",
+  ogTitle: "Share a Poster - Posters.science",
+  ogDescription: "Upload and share your scientific poster with the community.",
+  ogImage,
 });
 
 const status = ref(0);
@@ -120,7 +125,7 @@ const uploadFile = async () => {
 
     if (!uploadResponse.posterId) {
       error.value =
-        "Upload failed. Please try again. If the problem persists, please contact support.";
+        "Upload failed. Please try again. If the problem persists, please contact us at https://tally.so/r/XxEBYP";
       status.value = 0;
       isUploading.value = false;
 
@@ -132,7 +137,7 @@ const uploadFile = async () => {
       pollJobStatus(uploadResponse.extractionJobId);
     } else {
       error.value =
-        "Upload failed. Please try again. If the problem persists, please contact support.";
+        "Upload failed. Please try again. If the problem persists, please contact us at https://tally.so/r/XxEBYP";
       status.value = 0;
       isUploading.value = false;
     }
@@ -177,7 +182,7 @@ onUnmounted(() => {
   <div class="mx-auto flex w-full max-w-screen-xl flex-col gap-6 px-6">
     <UPageHeader
       title="Upload Poster"
-      description="Upload the PDF or image file of your poster. (Max size: 10MB)"
+      description="Upload the PDF or image file of your poster."
     >
       <template #headline>
         <UBreadcrumb
@@ -190,7 +195,7 @@ onUnmounted(() => {
     </UPageHeader>
 
     <div class="lg:col-span-2">
-      <UiSpinner :loading="status === 2 || isUploading" overlay>
+      <UiSpinner :loading="status === 2 || isUploading" overlay subtle>
         <UCard>
           <div class="space-y-6">
             <UiFileUpload @on-change="selectedFiles = $event">

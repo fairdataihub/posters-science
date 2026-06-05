@@ -14,8 +14,16 @@ definePageMeta({
   layout: "auth",
 });
 
+const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Signup - Posters.science")}&description=${encodeURIComponent("Create a Posters.science account to share and discover scientific posters")}&app=posters-science&org=fairdataihub`;
+
 useSeoMeta({
   title: "Signup",
+  description:
+    "Create a Posters.science account to share and discover scientific posters.",
+  ogTitle: "Signup - Posters.science",
+  ogDescription:
+    "Create a Posters.science account to share and discover scientific posters.",
+  ogImage,
 });
 
 const toast = useToast();
@@ -27,7 +35,11 @@ const schema = z.object({
   emailAddress: z.string().email(),
   familyName: z.string(),
   givenName: z.string(),
-  password: z.string().min(8, "Must be at least 8 characters"),
+  password: z
+    .string()
+    .trim()
+    .min(12, "Must be at least 12 characters")
+    .max(128, "Must be at most 128 characters"),
 });
 
 type Schema = z.output<typeof schema>;
@@ -36,7 +48,7 @@ const state = reactive({
   emailAddress: isDev ? "rick@example.com" : "",
   familyName: isDev ? "Sanchez" : "",
   givenName: isDev ? "Rick" : "",
-  password: isDev ? "12345678" : "",
+  password: isDev ? "123456789012" : "",
 });
 
 async function onSubmit(event: FormSubmitEvent<Schema>) {

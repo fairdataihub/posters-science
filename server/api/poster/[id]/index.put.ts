@@ -1,4 +1,8 @@
-import { strictFormSchema } from "~~/app/utils/poster_schema";
+import { flattenError } from "zod";
+import {
+  strictFormSchema,
+  type StrictFormSchema,
+} from "~~/app/utils/poster_schema";
 
 export default defineEventHandler(async (event) => {
   const session = await requireUserSession(event);
@@ -34,33 +38,61 @@ export default defineEventHandler(async (event) => {
     });
   }
 
+  const isDraft = getQuery(event).draft === "true";
+
   // Parse and validate the request body
   const body = await readBody(event);
-  const parseResult = strictFormSchema.safeParse(body);
 
-  if (!parseResult.success) {
-    throw createError({
-      statusCode: 422,
-      statusMessage: "Invalid poster data",
-      data: parseResult.error.flatten(),
-    });
+  let data: StrictFormSchema;
+
+  if (isDraft) {
+    data = body as StrictFormSchema;
+  } else {
+    const parseResult = strictFormSchema.safeParse(body);
+
+    if (!parseResult.success) {
+      throw createError({
+        statusCode: 422,
+        statusMessage: "Invalid poster data",
+        data: {
+          ...flattenError(parseResult.error),
+          issues: parseResult.error.issues.map((i) => ({
+            path: i.path,
+            message: i.message,
+          })),
+        },
+      });
+    }
+
+    data = parseResult.data;
   }
-
-  const { data } = parseResult;
 
   // Transform form data to DB format (PosterMetadata fields only)
   const creators = (data.creators ?? []).map((creator) => ({
     name:
       [creator.givenName, creator.familyName].filter(Boolean).join(" ") ||
       "Unknown Creator",
+    ...(creator.givenName && { givenName: creator.givenName }),
+    ...(creator.familyName && { familyName: creator.familyName }),
     ...(creator.nameType && { nameType: creator.nameType }),
     ...(creator.nameIdentifiers && {
       nameIdentifiers: creator.nameIdentifiers.map((ni) => ({
         nameIdentifier: ni.nameIdentifier,
+        nameIdentifierScheme: ni.nameIdentifierScheme,
+        schemeURI: ni.schemeURI,
       })),
     }),
     ...(creator.affiliation && {
-      affiliation: creator.affiliation.map((aff) => ({ name: aff.name })),
+      affiliation: creator.affiliation.map((aff) => ({
+        name: aff.name,
+        ...(aff.affiliationIdentifier && {
+          affiliationIdentifier: aff.affiliationIdentifier,
+        }),
+        ...(aff.affiliationIdentifierScheme && {
+          affiliationIdentifierScheme: aff.affiliationIdentifierScheme,
+        }),
+        ...(aff.schemeURI && { schemeURI: aff.schemeURI }),
+      })),
     }),
   }));
 
@@ -68,7 +100,7 @@ export default defineEventHandler(async (event) => {
   const posterDescription = data.description || "No description provided";
 
   const identifiers = data.identifiers ?? [];
-  const publisher = data.publisher ?? null;
+  const publisher = "Zenodo";
   const publicationYear = data.publicationYear ?? null;
   const subjects = Array.from(
     new Map(
@@ -98,9 +130,34 @@ export default defineEventHandler(async (event) => {
   const conferenceAcronym = conference?.conferenceAcronym ?? null;
   const conferenceSeries = conference?.conferenceSeries ?? null;
 
-  const posterContent = data.posterContent ?? {
-    sections: [],
-    unstructuredContent: "",
+  const presentedStartDate = conference?.presentedStartDate ?? "";
+  const presentedEndDate = conference?.presentedEndDate ?? "";
+  const existingDates = Array.isArray(existingPoster.posterMetadata?.dates)
+    ? (
+        existingPoster.posterMetadata.dates as Array<{
+          date?: string;
+          dateType?: string;
+        }>
+      ).filter((d) => d.dateType !== "Presented")
+    : [];
+  const presentedEntry = presentedStartDate
+    ? [
+        {
+          date:
+            presentedEndDate && presentedEndDate !== presentedStartDate
+              ? `${presentedStartDate}/${presentedEndDate}`
+              : presentedStartDate,
+          dateType: "Presented",
+        },
+      ]
+    : [];
+  const dates = [...presentedEntry, ...existingDates];
+
+  const posterContent = {
+    ...(data.posterContent ?? { sections: [], unstructuredContent: "" }),
+    ...(data.submissionAbstract && {
+      submissionAbstract: data.submissionAbstract,
+    }),
   };
   const tableCaptions = data.tableCaptions ?? [];
   const imageCaptions = data.imageCaptions ?? [];
@@ -138,6 +195,7 @@ export default defineEventHandler(async (event) => {
           conferenceEndDate,
           conferenceAcronym,
           conferenceSeries,
+          dates,
           posterContent,
           tableCaptions,
           imageCaptions,

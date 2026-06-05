@@ -2,8 +2,8 @@ import { z } from "zod";
 import { compare, hash } from "bcrypt";
 
 const schema = z.object({
-  currentPassword: z.string().min(8),
-  newPassword: z.string().min(8),
+  currentPassword: z.string().trim().min(8),
+  newPassword: z.string().trim().min(8),
 });
 
 export default defineEventHandler(async (event) => {
