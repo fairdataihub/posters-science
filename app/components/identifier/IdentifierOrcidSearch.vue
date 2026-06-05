@@ -36,12 +36,23 @@ watch(useAffiliationFilter, () => {
 });
 
 async function runSearch() {
-  if (!query.value.trim()) return;
+  const parts = query.value.trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return;
+
+  const givenName = parts[0]!;
+  const familyName = parts.length > 1 ? parts.slice(1).join(" ") : parts[0]!;
+
   loading.value = true;
   searched.value = false;
   try {
     const data = await $fetch<OrcidResult[]>("/api/orcid/search", {
-      query: { q: query.value.trim() },
+      query: {
+        givenName,
+        familyName,
+        ...(useAffiliationFilter.value && props.affiliations[0]
+          ? { affiliation: props.affiliations[0] }
+          : {}),
+      },
     });
     results.value = data;
   } catch {
@@ -72,7 +83,7 @@ function selectResult(result: OrcidResult) {
       <div class="flex h-full w-full flex-col gap-4">
         <div
           v-if="affiliations.length > 0"
-          class="flex hidden items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 dark:border-gray-700 dark:bg-gray-800/50"
+          class="flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 dark:border-gray-700 dark:bg-gray-800/50"
         >
           <UToggle
             :model-value="useAffiliationFilter"
@@ -173,36 +184,36 @@ function selectResult(result: OrcidResult) {
               class="hover:border-primary-300 hover:bg-primary-50 dark:hover:border-primary-700 dark:hover:bg-primary-900/20 w-full rounded-lg border border-gray-200 p-3 text-left transition-colors dark:border-gray-700"
               @click="selectResult(result)"
             >
-              <div class="flex items-start justify-between gap-2">
-                <div class="min-w-0 flex-1">
+              <div class="flex flex-col gap-1">
+                <div class="flex items-center justify-between gap-2">
                   <p class="font-medium text-gray-900 dark:text-white">
                     {{ result.givenName }} {{ result.familyName }}
                   </p>
 
-                  <p
-                    v-if="result.affiliations.length"
-                    class="mt-0.5 text-xs text-gray-500 dark:text-gray-400"
+                  <a
+                    :href="`https://orcid.org/${result.orcidId}`"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="hover:text-primary-500 shrink-0 font-mono text-gray-500 hover:underline dark:text-gray-400"
+                    @click.stop
                   >
-                    {{ result.affiliations.join(", ") }}
-                  </p>
-
-                  <p
-                    v-else
-                    class="mt-0.5 text-xs text-gray-400 italic dark:text-gray-500"
-                  >
-                    No institution info
-                  </p>
+                    {{ result.orcidId }}
+                  </a>
                 </div>
 
-                <a
-                  :href="`https://orcid.org/${result.orcidId}`"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="hover:text-primary-500 shrink-0 font-mono text-xs text-gray-400 hover:underline"
-                  @click.stop
+                <p
+                  v-if="result.affiliations.length"
+                  class="text-xs text-gray-500 dark:text-gray-400"
                 >
-                  {{ result.orcidId }}
-                </a>
+                  {{ result.affiliations.join(", ") }}
+                </p>
+
+                <p
+                  v-else
+                  class="text-xs italic text-gray-400 dark:text-gray-500"
+                >
+                  No institution info
+                </p>
               </div>
             </button>
           </div>

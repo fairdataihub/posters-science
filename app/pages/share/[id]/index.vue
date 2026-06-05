@@ -1159,7 +1159,27 @@ async function addSubjectAndFocus() {
                   </UButton>
                 </div>
 
-                <UFormField label="Affiliations" name="affiliation">
+                <UFormField
+                  label="Affiliations"
+                  name="affiliation"
+                  class="mt-2"
+                >
+                  <template
+                    v-if="
+                      state.creators[cIndex]?.affiliation &&
+                      state.creators[cIndex]?.affiliation?.length > 0
+                    "
+                    #hint
+                  >
+                    <a
+                      href="https://ror.org/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="hover:text-primary-500 text-[11px] font-normal text-gray-400 hover:underline"
+                      >Learn more about ROR</a
+                    >
+                  </template>
+
                   <div
                     v-for="(affiliation, aIndex) in state.creators[cIndex]
                       ?.affiliation"
