@@ -463,6 +463,16 @@ if (data.value) {
 
 if (error.value) {
   console.error(error.value);
+
+  if (error.value.statusCode === 404) {
+    navigateTo("/dashboard", { replace: true });
+  }
+
+  useToast().add({
+    title: "Error",
+    description: "There was a problem loading your poster.",
+    color: "error",
+  });
 }
 
 // Convert between CalendarDate and string (YYYY-MM-DD)
