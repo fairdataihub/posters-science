@@ -4,24 +4,10 @@ import licenses from "@/assets/data/licenses.json";
 import identifierTypes from "@/assets/data/identifier-types.json";
 import relationTypes from "@/assets/data/relation-types.json";
 import resourceTypes from "@/assets/data/resource-types.json";
+import { isValidOrcidChecksum, validateOrcidExists } from "#shared/utils/orcid";
+import { normalizeDoi, validateDoi } from "./doi";
 
-// ORCID checksum validation (ISO 7064 mod 11,2).
-// Assumes the caller has already confirmed the value is an ORCID (via scheme or URL prefix).
-// Validates two input forms: full URL (https://orcid.org/XXXX-...) or bare XXXX-XXXX-XXXX-XXXX.
-function isValidOrcidChecksum(value: string): boolean {
-  const bare = value.replace(/.*orcid\.org\//i, "").trim();
-  if (!/^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$/.test(bare)) return false;
-  const digits = bare.replace(/-/g, "");
-  let total = 0;
-  for (let i = 0; i < 15; i++) {
-    total = (total + parseInt(digits[i]!, 10)) * 2;
-  }
-  const remainder = total % 11;
-  const result = (12 - remainder) % 11;
-  const checkChar = result === 10 ? "X" : String(result);
-
-  return digits[15] === checkChar;
-}
+export { validateOrcidExists };
 
 // ROR ID validation using ISO 7064 MOD 97-10 checksum (same algorithm as IBAN).
 // Format: leading 0 + 6 Crockford base32 chars + 2 decimal check digits.
@@ -244,20 +230,6 @@ export function extractOrcidId(value: string): string | null {
   const match = value.match(/(\d{4}-\d{4}-\d{4}-\d{3}[\dX])/i);
 
   return match?.[1] ?? null;
-}
-
-// Checks whether an ORCID ID actually exists in the ORCID registry.
-// Returns true on network failure so users are never blocked by connectivity issues.
-export async function validateOrcidExists(orcidId: string): Promise<boolean> {
-  try {
-    const res = await fetch(`https://pub.orcid.org/v3.0/${orcidId}`, {
-      headers: { Accept: "application/json" },
-    });
-
-    return res.ok;
-  } catch {
-    return true;
-  }
 }
 
 // Constants and options for select fields
@@ -548,10 +520,20 @@ const ConferenceSchema = z.object({
 });
 
 // Poster content schema
-const PosterSectionSchema = z.object({
-  sectionTitle: z.string().optional(),
-  sectionContent: z.string().optional(),
-});
+const PosterSectionSchema = z
+  .object({
+    sectionTitle: z.string().optional(),
+    sectionContent: z.string().optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.sectionTitle?.trim() && !data.sectionContent?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Section content is required when a section title is provided",
+        path: ["sectionContent"],
+      });
+    }
+  });
 
 const PosterContentSchema = z.object({
   sections: z.array(PosterSectionSchema).optional(),
@@ -669,8 +651,20 @@ export const formSchema = z.object({
 export type FormSchema = z.infer<typeof formSchema>;
 
 // STRICT FORM SCHEMA
-// Used for PUT endpoint validation
-// enforces all required fields from poster_schema.json
+// Used for PUT endpoint validation; aligned with public/schema/v0.2/poster_schema.json
+//
+// Field coverage per JSON schema:
+//   M  = Mandatory in JSON schema, enforced by Zod
+//   M* = Mandatory in JSON schema, autofilled server-side (not enforced here)
+//   O  = Optional in JSON schema, exposed in UI
+//
+// title          M   creators        M   license         O
+// doi            M*  subjects        M   fundingReferences O
+// publisher      M*  language        O   conference      O
+// publicationYear M* identifiers     O   relatedIdentifiers O
+//
+// When upgrading to a new poster_schema.json version: diff the $defs above against
+// strictFormSchema to find any new required fields that need Zod enforcement or server autofill.
 const StrictAffiliationSchema = z
   .object({
     name: z.string().min(1, { message: "Affiliation name is required" }),
@@ -729,13 +723,30 @@ const StrictNameIdentifierSchema = z
     },
   );
 
-const StrictCreatorSchema = z.object({
-  givenName: z.string().min(1, { message: "Given name is required" }),
-  familyName: z.string().min(1, { message: "Family name is required" }),
-  nameType: z.enum(NAME_TYPE_VALUES).optional(),
-  nameIdentifiers: z.array(StrictNameIdentifierSchema).optional(),
-  affiliation: z.array(StrictAffiliationSchema).optional(),
-});
+const StrictCreatorSchema = z
+  .object({
+    givenName: z.string().min(1, { message: "Name is required" }),
+    familyName: z.string().optional(),
+    nameType: z.enum(NAME_TYPE_VALUES).optional(),
+    nameIdentifiers: z.preprocess(
+      (ids) =>
+        Array.isArray(ids)
+          ? ids.filter((ni: unknown) => {
+              if (typeof ni !== "object" || ni === null) return false;
+
+              return !!(ni as Record<string, unknown>).nameIdentifier;
+            })
+          : ids,
+      z.array(StrictNameIdentifierSchema).optional(),
+    ),
+    affiliation: z.array(StrictAffiliationSchema).optional(),
+  })
+  .refine(
+    (data) =>
+      data.nameType === "Organizational" ||
+      (data.familyName && data.familyName.length > 0),
+    { message: "Family name is required", path: ["familyName"] },
+  );
 
 const StrictPublisherSchema = z.object({
   name: z.string().min(1, { message: "Publisher name is required" }),
@@ -798,7 +809,13 @@ export const strictFormSchema = z.object({
   submissionAbstract: z.string().optional(),
   language: z.string(),
   domain: z.string(),
-  doi: z.string(),
+  doi: z
+    .string()
+    .transform((v) => normalizeDoi(v))
+    .refine((v) => validateDoi(v) === "", {
+      message:
+        "Please enter a valid DOI (e.g. 10.5281/zenodo.1234567) or a doi.org URL.",
+    }),
   identifiers: z.array(IdentifierSchema),
   creators: z
     .array(StrictCreatorSchema)

@@ -1,4 +1,5 @@
 import { buildPosterJson } from "./buildPosterJson";
+import { isValidOrcidChecksum, validateOrcidExists } from "#shared/utils/orcid";
 import isoLanguages from "../../app/assets/data/iso-639-1.json";
 
 const ISO639_1_TO_3: Record<string, string> = Object.fromEntries(
@@ -350,6 +351,28 @@ export async function beginZenodoPublication(
 
   const creators = meta.creators as InvenioCreator[];
 
+  // Check ORCID IDs exist in the registry. Fail-open: warns but never blocks publication.
+  const orcidIds = (creators ?? [])
+    .flatMap((c) => c.nameIdentifiers?.map(extractOrcid).filter(Boolean) ?? [])
+    .filter((id): id is string => !!id);
+
+  if (orcidIds.length > 0) {
+    const results = await Promise.all(
+      orcidIds.map((id) => validateOrcidExists(id)),
+    );
+    const invalid = orcidIds.filter((_, i) => !results[i]);
+    if (invalid.length > 0) {
+      console.warn(
+        `[Zenodo] ORCID registry check failed for: ${invalid.join(", ")}`,
+      );
+      await onProgress?.({
+        step: "upload_metadata",
+        status: "error",
+        message: `Could not verify the following ORCID IDs in the registry: ${invalid.join(", ")}. Publication will continue — please confirm these IDs are correct.`,
+      });
+    }
+  }
+
   const rawRelated = meta.relatedIdentifiers as {
     relatedIdentifier?: string;
     relatedIdentifierType?: string;
@@ -362,6 +385,7 @@ export async function beginZenodoPublication(
     funderIdentifier?: string;
     funderIdentifierType?: string;
     awardNumber?: string;
+    awardUri?: string;
     awardTitle?: string;
   }[];
 
@@ -474,6 +498,7 @@ export async function beginZenodoPublication(
     description: poster.description,
     zenodoDoi: doi,
     publishedAt: zenodoSharedAt,
+    includePublisher: true,
   });
   const posterJsonBlob = new Blob([JSON.stringify(posterJson, null, 2)], {
     type: "application/json",
@@ -902,19 +927,6 @@ type InvenioCreator = {
   }[];
 };
 
-// ORCID format: 4 groups of 4 digits, last char may be X
-const ORCID_PATTERN = /^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$/;
-
-// ISO 7064 mod 11,2 checksum used by ORCID
-function validateOrcidChecksum(bare: string): boolean {
-  const digits = bare.replace(/-/g, "");
-  let total = 0;
-  for (let i = 0; i < 15; i++) total = (total + parseInt(digits[i]!, 10)) * 2;
-  const expected = (12 - (total % 11)) % 11;
-
-  return digits[15] === (expected === 10 ? "X" : String(expected));
-}
-
 // Build InvenioRDM-format creator objects from DB creator data.
 // DB data has full structured creators; legacy draft only has combined name strings.
 function buildRdmCreators(
@@ -929,11 +941,7 @@ function buildRdmCreators(
     const orcidRaw = c.nameIdentifiers?.map(extractOrcid).find(Boolean);
     const orcidBare = orcidRaw?.replace(/^https?:\/\/orcid\.org\//i, "").trim();
     const orcid =
-      orcidBare &&
-      ORCID_PATTERN.test(orcidBare) &&
-      validateOrcidChecksum(orcidBare)
-        ? orcidBare
-        : undefined;
+      orcidBare && isValidOrcidChecksum(orcidBare) ? orcidBare : undefined;
 
     if (orcidRaw && !orcid) {
       console.warn(
@@ -1017,6 +1025,7 @@ type RdmExtras = {
     funderIdentifier?: string;
     funderIdentifierType?: string;
     awardNumber?: string;
+    awardUri?: string;
     awardTitle?: string;
   }[];
   dbRelated?: {
@@ -1091,10 +1100,13 @@ function buildFullRdmPayload(
       const entry: Record<string, unknown> = {
         funder: { name: f.funderName, ...(rorId && { id: rorId }) },
       };
-      if (f.awardNumber?.trim()) {
+      if (f.awardNumber?.trim() || f.awardUri?.trim()) {
         entry.award = {
-          number: f.awardNumber,
+          ...(f.awardNumber?.trim() && { number: f.awardNumber }),
           ...(f.awardTitle?.trim() && { title: { en: f.awardTitle } }),
+          ...(f.awardUri?.trim() && {
+            identifiers: [{ identifier: f.awardUri, scheme: "url" }],
+          }),
         };
       }
 

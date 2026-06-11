@@ -5,7 +5,7 @@ FROM node:22-alpine AS builder
 RUN apk add --no-cache openssl
 
 # Enable corepack and install pnpm
-RUN corepack enable && corepack prepare pnpm@10 --activate
+RUN corepack enable && corepack prepare pnpm@11 --activate
 
 WORKDIR /app
 
@@ -13,7 +13,7 @@ WORKDIR /app
 ARG DATABASE_URL
 
 # Copy only necessary files for dependency installation
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml  ./
 COPY prisma ./prisma/
 
 RUN pnpm install --frozen-lockfile \

@@ -51,9 +51,53 @@ useSeoMeta({
 const loading = ref(false);
 const orcidErrors = ref<Record<string, string | undefined>>({});
 const orcidChecking = ref<Record<string, boolean | undefined>>({});
+const identifierTypeErrors = ref<Record<string, string | undefined>>({});
+const affiliationIdentifierErrors = ref<Record<string, string | undefined>>({});
+const orcidSearchOpenIndex = ref<number | null>(null);
+const rorSearchOpenIndex = ref<number | null>(null);
+const affiliationRorSearchOpen = ref<string | null>(null);
+const autofillHighlight = ref<Record<string, boolean>>({});
+
+function handleOrcidSelect(orcidUrl: string, cIndex: number) {
+  const ni = state.creators[cIndex]?.nameIdentifiers?.[0];
+
+  if (ni) ni.nameIdentifier = orcidUrl;
+  handleNameIdentifierInput(orcidUrl, cIndex, 0);
+
+  orcidSearchOpenIndex.value = null;
+
+  const key = `${cIndex}-0`;
+  autofillHighlight.value[key] = true;
+
+  setTimeout(() => {
+    autofillHighlight.value[key] = false;
+  }, 700);
+}
+
+function handleRorSelect(rorUrl: string, displayName: string, cIndex: number) {
+  const ni = state.creators[cIndex]?.nameIdentifiers?.[0];
+  if (ni) ni.nameIdentifier = rorUrl;
+
+  handleNameIdentifierInput(rorUrl, cIndex, 0);
+
+  const creator = state.creators[cIndex];
+  if (creator) creator.givenName = displayName;
+
+  rorSearchOpenIndex.value = null;
+
+  const key = `${cIndex}-0`;
+  autofillHighlight.value[key] = true;
+
+  setTimeout(() => {
+    autofillHighlight.value[key] = false;
+  }, 700);
+}
+
 const additionalInfoCollapsed = ref(true);
 const posterContentCollapsed = ref(true);
 const mandatoryCollapsed = ref(false);
+const additionalInfoOpened = ref(false);
+const posterContentOpened = ref(false);
 const subjectInputRefs = ref<{ $el?: HTMLElement; focus?: () => void }[]>([]);
 
 // Initial state (matches PosterMetadata / StrictFormSchema)
@@ -68,7 +112,9 @@ const state = reactive<StrictFormSchema>({
       givenName: "",
       familyName: "",
       nameType: "Personal",
-      nameIdentifiers: [],
+      nameIdentifiers: [
+        { nameIdentifier: "", nameIdentifierScheme: "", schemeURI: "" },
+      ],
       affiliation: [],
     },
   ],
@@ -183,7 +229,9 @@ if (data.value) {
         if (creator.name && !givenName && !familyName) {
           const trimmed = creator.name.trim();
 
-          if (trimmed.includes(",")) {
+          if (creator.nameType === "Organizational") {
+            givenName = trimmed;
+          } else if (trimmed.includes(",")) {
             // "Family, Given" format
             const [family, ...rest] = trimmed.split(",");
             familyName = (family ?? "").trim();
@@ -207,11 +255,45 @@ if (data.value) {
           nameType: (creator.nameType || "Personal") as
             | "Personal"
             | "Organizational",
-          nameIdentifiers: (creator.nameIdentifiers || []).map((ni: any) => ({
-            nameIdentifier: ni?.nameIdentifier || "",
-            nameIdentifierScheme: ni?.nameIdentifierScheme || "",
-            schemeURI: ni?.schemeURI || "",
-          })),
+          nameIdentifiers: (() => {
+            const raw: any[] = creator.nameIdentifiers || [];
+            const mapped = raw.map((ni: any) => {
+              // Extraction API may save identifiers as bare strings
+              if (typeof ni === "string") {
+                return {
+                  nameIdentifier: ni,
+                  nameIdentifierScheme: "",
+                  schemeURI: "",
+                };
+              }
+
+              return {
+                nameIdentifier: ni?.nameIdentifier || "",
+                nameIdentifierScheme: ni?.nameIdentifierScheme || "",
+                schemeURI: ni?.schemeURI || "",
+              };
+            });
+
+            // The form shows only index 0. Move the first non-empty identifier to
+            // the front so it is always visible regardless of extraction ordering.
+            const firstNonEmpty = mapped.findIndex(
+              (ni) => ni.nameIdentifier.trim() !== "",
+            );
+            if (firstNonEmpty > 0) {
+              const [item] = mapped.splice(firstNonEmpty, 1);
+              mapped.unshift(item);
+            }
+
+            return mapped.length > 0
+              ? mapped
+              : [
+                  {
+                    nameIdentifier: "",
+                    nameIdentifierScheme: "",
+                    schemeURI: "",
+                  },
+                ];
+          })(),
           affiliation: (creator.affiliation || []).map((a: any) => {
             if (typeof a === "string") {
               return {
@@ -381,6 +463,16 @@ if (data.value) {
 
 if (error.value) {
   console.error(error.value);
+
+  if (error.value.statusCode === 404) {
+    navigateTo("/dashboard", { replace: true });
+  }
+
+  useToast().add({
+    title: "Error",
+    description: "There was a problem loading your poster.",
+    color: "error",
+  });
 }
 
 // Convert between CalendarDate and string (YYYY-MM-DD)
@@ -529,7 +621,72 @@ async function saveDraft() {
   }
 }
 
+const showSectionModal = ref(false);
+const pendingUnopened = ref<("additionalInfo" | "posterContent")[]>([]);
+const pendingSubmitEvent = ref<FormSubmitEvent<StrictFormSchema> | null>(null);
+
+function toggleAdditionalInfo() {
+  additionalInfoCollapsed.value = !additionalInfoCollapsed.value;
+  if (!additionalInfoCollapsed.value) additionalInfoOpened.value = true;
+}
+
+function togglePosterContent() {
+  posterContentCollapsed.value = !posterContentCollapsed.value;
+  if (!posterContentCollapsed.value) posterContentOpened.value = true;
+}
+
+async function reviewSections() {
+  showSectionModal.value = false;
+
+  const scrollTargetId = pendingUnopened.value.includes("additionalInfo")
+    ? "additional-info-section"
+    : "poster-content-section";
+
+  // Wait for the modal close animation to finish before mutating layout
+  await new Promise((resolve) => setTimeout(resolve, 300));
+
+  if (pendingUnopened.value.includes("additionalInfo")) {
+    additionalInfoCollapsed.value = false;
+    additionalInfoOpened.value = true;
+  }
+  if (pendingUnopened.value.includes("posterContent")) {
+    posterContentCollapsed.value = false;
+    posterContentOpened.value = true;
+  }
+
+  await nextTick();
+  await new Promise((resolve) => setTimeout(resolve, 150));
+
+  const el = document.getElementById(scrollTargetId);
+  if (el) {
+    const top = el.getBoundingClientRect().top + window.scrollY - 24;
+    window.scrollTo({ top, behavior: "smooth" });
+  }
+}
+
+async function continueAnyway() {
+  showSectionModal.value = false;
+  additionalInfoOpened.value = true;
+  posterContentOpened.value = true;
+
+  if (pendingSubmitEvent.value) {
+    await onSubmit(pendingSubmitEvent.value);
+  }
+}
+
 async function onSubmit(event: FormSubmitEvent<StrictFormSchema>) {
+  const unopened: ("additionalInfo" | "posterContent")[] = [];
+  if (!additionalInfoOpened.value) unopened.push("additionalInfo");
+  if (!posterContentOpened.value) unopened.push("posterContent");
+
+  if (unopened.length > 0) {
+    pendingUnopened.value = unopened;
+    pendingSubmitEvent.value = event;
+    showSectionModal.value = true;
+
+    return;
+  }
+
   if (Object.values(orcidErrors.value).some(Boolean)) {
     toast.add({
       title: "ORCID Validation Error",
@@ -608,6 +765,7 @@ async function onError(event: {
     fieldId.startsWith("imageCaptions")
   ) {
     posterContentCollapsed.value = false;
+    posterContentOpened.value = true;
   } else if (
     fieldId === "submissionAbstract" ||
     fieldId === "language" ||
@@ -618,6 +776,7 @@ async function onError(event: {
     fieldId.startsWith("fundingReferences")
   ) {
     additionalInfoCollapsed.value = false;
+    additionalInfoOpened.value = true;
   } else {
     mandatoryCollapsed.value = false;
   }
@@ -639,10 +798,11 @@ function handleAffiliationIdentifierInput(
 ) {
   const aff = state.creators[cIndex]?.affiliation?.[aIndex];
   if (!aff) return;
+  const key = `${cIndex}-${aIndex}`;
   const inferred = inferAffiliationIdentifierScheme(value);
   if (inferred) {
-    aff.affiliationIdentifierScheme ||= inferred.scheme;
-    aff.schemeURI ||= inferred.schemeURI;
+    aff.affiliationIdentifierScheme = inferred.scheme;
+    aff.schemeURI = inferred.schemeURI;
     if (!value.trim().startsWith("http")) {
       const normalized = normalizeAffiliationIdentifierToUrl(
         value,
@@ -650,7 +810,40 @@ function handleAffiliationIdentifierInput(
       );
       if (normalized) aff.affiliationIdentifier = normalized;
     }
+    affiliationIdentifierErrors.value[key] = undefined;
+  } else if (value.trim()) {
+    affiliationIdentifierErrors.value[key] =
+      "Only ROR identifiers are accepted for affiliations.";
+  } else {
+    affiliationIdentifierErrors.value[key] = undefined;
   }
+}
+
+function handleNameTypeChange(nameType: string, cIndex: number) {
+  if (nameType === "Organizational") {
+    const creator = state.creators[cIndex];
+    if (creator) creator.familyName = "";
+  }
+
+  const identifiers = state.creators[cIndex]?.nameIdentifiers ?? [];
+  const expectedScheme = nameType === "Organizational" ? "ROR" : "ORCID";
+  identifiers.forEach((ni, niIndex) => {
+    const key = `${cIndex}-${niIndex}`;
+    if (!ni.nameIdentifier?.trim()) {
+      identifierTypeErrors.value[key] = undefined;
+
+      return;
+    }
+    const inferred = inferNameIdentifierScheme(ni.nameIdentifier);
+    if (!inferred || inferred.scheme !== expectedScheme) {
+      identifierTypeErrors.value[key] =
+        nameType === "Organizational"
+          ? "Only ROR identifiers are accepted for organizational creators."
+          : "Only ORCID identifiers are accepted for personal creators.";
+    } else {
+      identifierTypeErrors.value[key] = undefined;
+    }
+  });
 }
 
 function handleNameIdentifierInput(
@@ -658,17 +851,35 @@ function handleNameIdentifierInput(
   cIndex: number,
   niIndex: number,
 ) {
-  orcidErrors.value[`${cIndex}-${niIndex}`] = undefined;
+  const key = `${cIndex}-${niIndex}`;
+  orcidErrors.value[key] = undefined;
   const ni = state.creators[cIndex]?.nameIdentifiers?.[niIndex];
   if (!ni) return;
   const inferred = inferNameIdentifierScheme(value);
+  const nameType = state.creators[cIndex]?.nameType;
+  const expectedScheme = nameType === "Organizational" ? "ROR" : "ORCID";
   if (inferred) {
-    ni.nameIdentifierScheme ||= inferred.scheme;
-    ni.schemeURI ||= inferred.schemeURI;
+    ni.nameIdentifierScheme = inferred.scheme;
+    ni.schemeURI = inferred.schemeURI;
     if (!value.trim().startsWith("http")) {
       const normalized = normalizeNameIdentifierToUrl(value, inferred.scheme);
       if (normalized) ni.nameIdentifier = normalized;
     }
+    if (inferred.scheme !== expectedScheme) {
+      identifierTypeErrors.value[key] =
+        nameType === "Organizational"
+          ? "Only ROR identifiers are accepted for organizational creators."
+          : "Only ORCID identifiers are accepted for personal creators.";
+    } else {
+      identifierTypeErrors.value[key] = undefined;
+    }
+  } else if (value.trim()) {
+    identifierTypeErrors.value[key] =
+      nameType === "Organizational"
+        ? "Only ROR identifiers are accepted for organizational creators."
+        : "Only ORCID identifiers are accepted for personal creators.";
+  } else {
+    identifierTypeErrors.value[key] = undefined;
   }
 }
 
@@ -697,26 +908,24 @@ async function handleOrcidBlur(cIndex: number, niIndex: number) {
   }
 }
 
-function handleNameIdentifierSchemeInput(
-  value: string,
-  cIndex: number,
-  niIndex: number,
-) {
-  const ni = state.creators[cIndex]?.nameIdentifiers?.[niIndex];
-  if (!ni) return;
-  const uri = schemeUriForScheme(value);
-  if (uri) ni.schemeURI ||= uri;
-}
-
-function handleAffiliationSchemeInput(
-  value: string,
+function handleAffiliationRorSelect(
+  rorUrl: string,
+  displayName: string,
   cIndex: number,
   aIndex: number,
 ) {
   const aff = state.creators[cIndex]?.affiliation?.[aIndex];
-  if (!aff) return;
-  const uri = schemeUriForScheme(value);
-  if (uri) aff.schemeURI ||= uri;
+  if (aff) {
+    aff.affiliationIdentifier = rorUrl;
+    aff.name = displayName;
+    handleAffiliationIdentifierInput(rorUrl, cIndex, aIndex);
+  }
+  affiliationRorSearchOpen.value = null;
+  const key = `aff-${cIndex}-${aIndex}`;
+  autofillHighlight.value[key] = true;
+  setTimeout(() => {
+    autofillHighlight.value[key] = false;
+  }, 700);
 }
 
 function handleFunderIdentifierTypeChange(value: string, fIndex: number) {
@@ -741,6 +950,15 @@ async function addSubjectAndFocus() {
     last?.$el?.querySelector?.("input") ?? (last?.$el as HTMLInputElement);
   input?.focus?.();
 }
+
+const moveCreator = (index: number, direction: "up" | "down") => {
+  const newIndex = direction === "up" ? index - 1 : index + 1;
+  if (newIndex < 0 || newIndex >= state.creators.length) return;
+
+  const temp = state.creators[newIndex]!;
+  state.creators[newIndex] = state.creators[index]!;
+  state.creators[index] = temp;
+};
 </script>
 
 <template>
@@ -907,40 +1125,87 @@ async function addSubjectAndFocus() {
                 :key="cIndex"
                 class="space-y-4 rounded-xl border border-gray-200 p-4"
               >
-                <div
-                  class="bg-primary-50 inline-flex items-center rounded-md px-3 py-1 dark:bg-pink-950/60"
-                >
-                  <p
-                    class="text-primary-700 text-base font-medium dark:text-pink-300"
+                <div class="flex items-center justify-between gap-4">
+                  <div
+                    class="bg-primary-50 inline-flex items-center justify-between rounded-md px-3 py-1 dark:bg-pink-950/60"
                   >
-                    Author {{ cIndex + 1 }}
-                  </p>
+                    <p
+                      class="text-primary-700 text-base font-medium dark:text-pink-300"
+                    >
+                      Author {{ cIndex + 1 }}
+                    </p>
+                  </div>
+
+                  <UFieldGroup>
+                    <UTooltip
+                      text="Move this creator up in the list"
+                      placement="top"
+                    >
+                      <UButton
+                        variant="ghost"
+                        icon="material-symbols-light:move-up-rounded"
+                        :disabled="cIndex === 0 || state.creators.length < 2"
+                        @click="moveCreator(cIndex, 'up')"
+                      />
+                    </UTooltip>
+
+                    <UTooltip
+                      text="Move this creator down in the list"
+                      placement="top"
+                    >
+                      <UButton
+                        variant="ghost"
+                        icon="material-symbols-light:move-down-rounded"
+                        :disabled="
+                          cIndex === state.creators.length - 1 ||
+                          state.creators.length < 2
+                        "
+                        @click="moveCreator(cIndex, 'down')"
+                      />
+                    </UTooltip>
+                  </UFieldGroup>
                 </div>
 
                 <div class="flex items-start justify-between gap-3">
-                  <UFormField
-                    :name="`creators.${cIndex}.givenName`"
-                    label="Given Name"
-                    required
-                    class="flex-1"
-                  >
-                    <UInput
-                      v-model="creator.givenName"
-                      placeholder="e.g., Garcia, Sofia"
-                    />
-                  </UFormField>
+                  <template v-if="creator.nameType !== 'Organizational'">
+                    <UFormField
+                      :name="`creators.${cIndex}.givenName`"
+                      label="Given Name"
+                      required
+                      class="flex-1"
+                    >
+                      <UInput
+                        v-model="creator.givenName"
+                        placeholder="e.g., Sofia"
+                      />
+                    </UFormField>
 
-                  <UFormField
-                    :name="`creators.${cIndex}.familyName`"
-                    label="Family Name"
-                    required
-                    class="flex-1"
-                  >
-                    <UInput
-                      v-model="creator.familyName"
-                      placeholder="e.g., Garcia, Sofia"
-                    />
-                  </UFormField>
+                    <UFormField
+                      :name="`creators.${cIndex}.familyName`"
+                      label="Family Name"
+                      required
+                      class="flex-1"
+                    >
+                      <UInput
+                        v-model="creator.familyName"
+                        placeholder="e.g., Garcia"
+                      />
+                    </UFormField>
+                  </template>
+
+                  <template v-else>
+                    <UFormField
+                      :name="`creators.${cIndex}.givenName`"
+                      label="Organization Name"
+                      required
+                      class="flex-1"
+                    >
+                      <UInput
+                        v-model="creator.givenName"
+                        placeholder="e.g., National Institutes of Health"
+                      />
+                    </UFormField>
+                  </template>
 
                   <UFormField
                     :name="`creators.${cIndex}.nameType`"
@@ -954,6 +1219,9 @@ async function addSubjectAndFocus() {
                         { label: 'Personal', value: 'Personal' },
                         { label: 'Organizational', value: 'Organizational' },
                       ]"
+                      @update:model-value="
+                        (v) => handleNameTypeChange(String(v), cIndex)
+                      "
                     />
                   </UFormField>
 
@@ -971,172 +1239,86 @@ async function addSubjectAndFocus() {
                 </div>
 
                 <UFormField
-                  label="Creator Identifiers (e.g., ORCID)"
-                  name="nameIdentifiers"
+                  label="Affiliations"
+                  name="affiliation"
+                  class="mt-2"
                 >
-                  <div
-                    v-if="
-                      state.creators[cIndex]?.nameIdentifiers &&
-                      state.creators[cIndex]?.nameIdentifiers?.length > 0
-                    "
-                  >
-                    <div
-                      v-for="(ni, niIndex) in state.creators[cIndex]
-                        ?.nameIdentifiers"
-                      :key="niIndex"
-                      class="mb-2 space-y-2 rounded-r-xl border border-l-4 border-gray-200 border-l-pink-300 p-3 dark:border-l-pink-700"
-                    >
-                      <div class="flex gap-2">
-                        <UFormField
-                          class="w-40 shrink-0"
-                          :name="`creators.${cIndex}.nameIdentifiers.${niIndex}.nameIdentifierScheme`"
-                          label="Identifier Type"
-                        >
-                          <UInput
-                            v-model="ni.nameIdentifierScheme"
-                            placeholder="e.g., ORCID"
-                            @update:model-value="
-                              (v) =>
-                                handleNameIdentifierSchemeInput(
-                                  String(v),
-                                  cIndex,
-                                  niIndex,
-                                )
-                            "
-                          />
-                        </UFormField>
-
-                        <UFormField
-                          class="w-full"
-                          :name="`creators.${cIndex}.nameIdentifiers.${niIndex}.nameIdentifier`"
-                          label="Identifier"
-                          required
-                          :error="orcidErrors[`${cIndex}-${niIndex}`]"
-                        >
-                          <UInput
-                            v-model="ni.nameIdentifier"
-                            placeholder="https://orcid.org/0000-0000-0000-0000"
-                            :loading="orcidChecking[`${cIndex}-${niIndex}`]"
-                            @update:model-value="
-                              (v) =>
-                                handleNameIdentifierInput(v, cIndex, niIndex)
-                            "
-                            @blur="() => handleOrcidBlur(cIndex, niIndex)"
-                          />
-                        </UFormField>
-
-                        <UButton
-                          class="mt-6"
-                          size="sm"
-                          color="error"
-                          variant="outline"
-                          icon="i-lucide-trash"
-                          @click="
-                            removeRow(
-                              state.creators[cIndex]?.nameIdentifiers!,
-                              niIndex,
-                            )
-                          "
-                        />
-                      </div>
-
-                      <UFormField
-                        :name="`creators.${cIndex}.nameIdentifiers.${niIndex}.schemeURI`"
-                        label="Scheme URI"
-                      >
-                        <UInput
-                          v-model="ni.schemeURI"
-                          placeholder="https://orcid.org"
-                          class="w-full"
-                        />
-                      </UFormField>
-                    </div>
-
-                    <UButton
-                      size="sm"
-                      class="mt-2 w-full"
-                      color="success"
-                      variant="outline"
-                      label="Add Creator Identifier"
-                      icon="i-lucide-plus"
-                      @click="
-                        state.creators[cIndex]?.nameIdentifiers?.push({
-                          nameIdentifier: '',
-                          nameIdentifierScheme: '',
-                          schemeURI: '',
-                        })
-                      "
-                    />
-                  </div>
-
-                  <div v-else>
-                    <UButton
-                      size="sm"
-                      class="w-full"
-                      color="success"
-                      variant="outline"
-                      label="Add Creator Identifier"
-                      icon="i-lucide-plus"
-                      @click="
-                        state.creators[cIndex]?.nameIdentifiers?.push({
-                          nameIdentifier: '',
-                          nameIdentifierScheme: '',
-                          schemeURI: '',
-                        })
-                      "
-                    />
-                  </div>
-                </UFormField>
-
-                <UFormField label="Affiliations" name="affiliation">
-                  <div
+                  <template
                     v-if="
                       state.creators[cIndex]?.affiliation &&
                       state.creators[cIndex]?.affiliation?.length > 0
                     "
+                    #hint
                   >
-                    <div
-                      v-for="(affiliation, aIndex) in state.creators[cIndex]
-                        ?.affiliation"
-                      :key="aIndex"
-                      class="mb-2 space-y-2 rounded-r-xl border border-l-4 border-gray-200 border-l-pink-300 p-3 dark:border-l-pink-700"
+                    <a
+                      href="https://ror.org/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="hover:text-primary-500 text-[11px] font-normal text-gray-400 hover:underline"
+                      >Learn more about ROR</a
                     >
-                      <div class="flex gap-2">
-                        <UFormField
-                          class="w-full"
-                          :name="`creators.${cIndex}.affiliation.${aIndex}.name`"
-                          label="Name"
-                          required
-                        >
+                  </template>
+
+                  <div
+                    v-for="(affiliation, aIndex) in state.creators[cIndex]
+                      ?.affiliation"
+                    :key="aIndex"
+                    class="mb-2 space-y-2 rounded-r-xl border border-l-4 border-gray-200 border-l-pink-300 p-3 dark:border-l-pink-700"
+                  >
+                    <div class="flex gap-2">
+                      <UFormField
+                        class="w-full"
+                        :name="`creators.${cIndex}.affiliation.${aIndex}.name`"
+                        label="Name"
+                        required
+                      >
+                        <div class="relative">
+                          <div
+                            v-if="autofillHighlight[`aff-${cIndex}-${aIndex}`]"
+                            class="orcid-autofill-ring pointer-events-none absolute inset-0 rounded-md"
+                          />
+
                           <UInput
                             v-model="affiliation.name"
                             placeholder="University of California, San Diego"
                           />
-                        </UFormField>
+                        </div>
+                      </UFormField>
 
-                        <UButton
-                          class="mt-6"
-                          size="sm"
-                          color="error"
-                          variant="outline"
-                          icon="i-lucide-trash"
-                          @click="
-                            removeRow(
-                              state.creators[cIndex]?.affiliation!,
-                              aIndex,
-                            )
-                          "
-                        />
-                      </div>
+                      <UButton
+                        class="mt-6"
+                        size="sm"
+                        color="error"
+                        variant="outline"
+                        icon="i-lucide-trash"
+                        @click="
+                          removeRow(
+                            state.creators[cIndex]?.affiliation!,
+                            aIndex,
+                          )
+                        "
+                      />
+                    </div>
 
-                      <div class="grid gap-2 md:grid-cols-2">
-                        <UFormField
-                          :name="`creators.${cIndex}.affiliation.${aIndex}.affiliationIdentifier`"
-                          label="Affiliation Identifier"
-                        >
+                    <div class="flex gap-2">
+                      <UFormField
+                        :name="`creators.${cIndex}.affiliation.${aIndex}.affiliationIdentifier`"
+                        label="ROR Identifier"
+                        :error="
+                          affiliationIdentifierErrors[`${cIndex}-${aIndex}`]
+                        "
+                        class="w-full"
+                      >
+                        <div class="relative">
+                          <div
+                            v-if="autofillHighlight[`aff-${cIndex}-${aIndex}`]"
+                            class="orcid-autofill-ring pointer-events-none absolute inset-0 rounded-md"
+                          />
+
                           <UInput
                             v-model="affiliation.affiliationIdentifier"
-                            placeholder="https://ror.org/0168r3w48"
+                            placeholder="https://ror.org/..."
+                            class="w-full"
                             @update:model-value="
                               (v) =>
                                 handleAffiliationIdentifierInput(
@@ -1145,75 +1327,239 @@ async function addSubjectAndFocus() {
                                   aIndex,
                                 )
                             "
-                          />
-                        </UFormField>
-
-                        <UFormField
-                          :name="`creators.${cIndex}.affiliation.${aIndex}.affiliationIdentifierScheme`"
-                          label="Identifier Scheme"
-                        >
-                          <UInput
-                            v-model="affiliation.affiliationIdentifierScheme"
-                            placeholder="ROR"
-                            @update:model-value="
-                              (v) =>
-                                handleAffiliationSchemeInput(
-                                  String(v),
-                                  cIndex,
-                                  aIndex,
-                                )
-                            "
-                          />
-                        </UFormField>
-                      </div>
-
-                      <UFormField
-                        :name="`creators.${cIndex}.affiliation.${aIndex}.schemeURI`"
-                        label="Scheme URI"
-                      >
-                        <UInput
-                          v-model="affiliation.schemeURI"
-                          placeholder="https://ror.org"
-                          class="w-full"
-                        />
+                          >
+                            <template
+                              v-if="
+                                affiliation.affiliationIdentifier?.startsWith(
+                                  'http',
+                                ) &&
+                                !affiliationIdentifierErrors[
+                                  `${cIndex}-${aIndex}`
+                                ]
+                              "
+                              #trailing
+                            >
+                              <a
+                                :href="affiliation.affiliationIdentifier"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                class="hover:text-primary-500 flex items-center text-gray-400"
+                              >
+                                <UIcon
+                                  name="i-lucide-external-link"
+                                  class="size-4 cursor-pointer"
+                                />
+                              </a>
+                            </template>
+                          </UInput>
+                        </div>
                       </UFormField>
-                    </div>
 
-                    <UButton
-                      size="sm"
-                      class="mt-2 w-full"
-                      color="success"
-                      variant="outline"
-                      label="Add Affiliation"
-                      icon="i-lucide-plus"
-                      @click="
-                        state.creators[cIndex]?.affiliation?.push({
-                          name: '',
-                          affiliationIdentifier: '',
-                          affiliationIdentifierScheme: '',
-                          schemeURI: '',
-                        })
-                      "
-                    />
+                      <UButton
+                        class="mt-6"
+                        size="xs"
+                        variant="outline"
+                        icon="i-lucide-search"
+                        label="Find ROR"
+                        :disabled="!affiliation.name"
+                        @click="
+                          affiliationRorSearchOpen = `${cIndex}-${aIndex}`
+                        "
+                      />
+
+                      <IdentifierRorSearch
+                        v-if="
+                          affiliationRorSearchOpen === `${cIndex}-${aIndex}`
+                        "
+                        :open="
+                          affiliationRorSearchOpen === `${cIndex}-${aIndex}`
+                        "
+                        :initial-query="affiliation.name"
+                        @update:open="
+                          (v) => {
+                            if (!v) affiliationRorSearchOpen = null;
+                          }
+                        "
+                        @select="
+                          (rorUrl, displayName) =>
+                            handleAffiliationRorSelect(
+                              rorUrl,
+                              displayName,
+                              cIndex,
+                              aIndex,
+                            )
+                        "
+                      />
+                    </div>
                   </div>
 
-                  <div v-else>
-                    <UButton
-                      size="sm"
+                  <UButton
+                    size="sm"
+                    class="w-full"
+                    color="success"
+                    variant="outline"
+                    label="Add Affiliation"
+                    icon="i-lucide-plus"
+                    @click="
+                      state.creators[cIndex]?.affiliation?.push({
+                        name: '',
+                        affiliationIdentifier: '',
+                        affiliationIdentifierScheme: '',
+                        schemeURI: '',
+                      })
+                    "
+                  />
+                </UFormField>
+
+                <UFormField name="nameIdentifiers" class="mt-5">
+                  <div
+                    v-if="
+                      state.creators[cIndex]?.nameIdentifiers?.[0] !== undefined
+                    "
+                  >
+                    <UFormField
                       class="w-full"
-                      color="success"
-                      variant="outline"
-                      label="Add Affiliation"
-                      icon="i-lucide-plus"
-                      @click="
-                        state.creators[cIndex]?.affiliation?.push({
-                          name: '',
-                          affiliationIdentifier: '',
-                          affiliationIdentifierScheme: '',
-                          schemeURI: '',
-                        })
+                      :name="`creators.${cIndex}.nameIdentifiers.0.nameIdentifier`"
+                      :label="
+                        creator.nameType === 'Organizational'
+                          ? 'ROR Identifier'
+                          : 'ORCID Identifier'
                       "
-                    />
+                      :error="
+                        orcidErrors[`${cIndex}-0`] ||
+                        identifierTypeErrors[`${cIndex}-0`]
+                      "
+                    >
+                      <template #hint>
+                        <a
+                          :href="
+                            creator.nameType === 'Organizational'
+                              ? 'https://ror.org/'
+                              : 'https://orcid.org/'
+                          "
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          class="hover:text-primary-500 text-[11px] font-normal text-gray-400 hover:underline"
+                        >
+                          {{
+                            creator.nameType === "Organizational"
+                              ? "Learn more about ROR"
+                              : "Learn more about ORCID"
+                          }}
+                        </a>
+                      </template>
+
+                      <div class="flex gap-2">
+                        <div class="relative flex-1">
+                          <div
+                            v-if="autofillHighlight[`${cIndex}-0`]"
+                            class="orcid-autofill-ring pointer-events-none absolute inset-0 rounded-md"
+                          />
+
+                          <UInput
+                            v-model="
+                              state.creators[cIndex].nameIdentifiers![0]
+                                .nameIdentifier
+                            "
+                            :placeholder="
+                              creator.nameType === 'Organizational'
+                                ? 'https://ror.org/...'
+                                : 'https://orcid.org/0000-0000-0000-0000'
+                            "
+                            :loading="orcidChecking[`${cIndex}-0`]"
+                            @update:model-value="
+                              (v) => handleNameIdentifierInput(v, cIndex, 0)
+                            "
+                            @blur="() => handleOrcidBlur(cIndex, 0)"
+                          >
+                            <template
+                              v-if="
+                                state.creators[
+                                  cIndex
+                                ].nameIdentifiers![0].nameIdentifier?.startsWith(
+                                  'http',
+                                ) && !identifierTypeErrors[`${cIndex}-0`]
+                              "
+                              #trailing
+                            >
+                              <a
+                                :href="
+                                  state.creators[cIndex].nameIdentifiers![0]
+                                    .nameIdentifier
+                                "
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                class="hover:text-primary-500 text-gray-400"
+                              >
+                                <UIcon
+                                  name="i-lucide-external-link"
+                                  class="size-4 cursor-pointer"
+                                />
+                              </a>
+                            </template>
+                          </UInput>
+                        </div>
+
+                        <template v-if="creator.nameType !== 'Organizational'">
+                          <UButton
+                            size="sm"
+                            variant="outline"
+                            color="primary"
+                            icon="i-lucide-search"
+                            :disabled="!creator.givenName"
+                            @click="orcidSearchOpenIndex = cIndex"
+                          >
+                            Find ORCID
+                          </UButton>
+
+                          <IdentifierOrcidSearch
+                            v-if="orcidSearchOpenIndex === cIndex"
+                            :open="orcidSearchOpenIndex === cIndex"
+                            :given-name="creator.givenName"
+                            :family-name="creator.familyName || ''"
+                            :affiliations="
+                              creator.affiliation
+                                ?.map((a) => a.name)
+                                .filter(Boolean) ?? []
+                            "
+                            @update:open="
+                              (v) => {
+                                if (!v) orcidSearchOpenIndex = null;
+                              }
+                            "
+                            @select="
+                              (orcidUrl) => handleOrcidSelect(orcidUrl, cIndex)
+                            "
+                          />
+                        </template>
+
+                        <template v-if="creator.nameType === 'Organizational'">
+                          <UButton
+                            size="sm"
+                            variant="outline"
+                            icon="i-lucide-search"
+                            label="Find ROR"
+                            :disabled="!creator.givenName"
+                            @click="rorSearchOpenIndex = cIndex"
+                          />
+
+                          <IdentifierRorSearch
+                            v-if="rorSearchOpenIndex === cIndex"
+                            :open="rorSearchOpenIndex === cIndex"
+                            :initial-query="creator.givenName || ''"
+                            @update:open="
+                              (v) => {
+                                if (!v) rorSearchOpenIndex = null;
+                              }
+                            "
+                            @select="
+                              (rorUrl, name) =>
+                                handleRorSelect(rorUrl, name, cIndex)
+                            "
+                          />
+                        </template>
+                      </div>
+                    </UFormField>
                   </div>
                 </UFormField>
               </div>
@@ -1229,7 +1575,13 @@ async function addSubjectAndFocus() {
                     givenName: '',
                     familyName: '',
                     nameType: 'Personal',
-                    nameIdentifiers: [],
+                    nameIdentifiers: [
+                      {
+                        nameIdentifier: '',
+                        nameIdentifierScheme: '',
+                        schemeURI: '',
+                      },
+                    ],
                     affiliation: [],
                   })
                 "
@@ -1335,6 +1687,7 @@ async function addSubjectAndFocus() {
       </div>
 
       <div
+        id="additional-info-section"
         class="overflow-hidden rounded-2xl border border-violet-200 bg-white shadow-sm dark:border-violet-900 dark:bg-gray-900"
       >
         <div
@@ -1344,7 +1697,7 @@ async function addSubjectAndFocus() {
               ? ''
               : 'border-b border-violet-200 dark:border-violet-900'
           "
-          @click="additionalInfoCollapsed = !additionalInfoCollapsed"
+          @click="toggleAdditionalInfo"
         >
           <div class="flex items-center justify-between gap-4">
             <div class="flex items-center gap-4">
@@ -1528,6 +1881,19 @@ async function addSubjectAndFocus() {
                   :key="iIndex"
                   class="space-y-2 rounded-r-xl border border-l-4 border-gray-200 border-l-pink-300 p-4 dark:border-l-pink-700"
                 >
+                  <UAlert
+                    v-if="
+                      relatedIdentifier.relatedIdentifier?.includes(
+                        'posters.science/discover/',
+                      )
+                    "
+                    color="info"
+                    variant="subtle"
+                    icon="i-lucide-info"
+                    title="Suggested by Posters.science"
+                    description="We suggest adding this relation to make your poster traceable in the Posters.science database. Note that the discovery URL will only become active once you share the poster in the next step."
+                  />
+
                   <div class="flex items-start gap-3">
                     <UFormField
                       :name="`relatedIdentifiers.${iIndex}.relatedIdentifier`"
@@ -1763,6 +2129,7 @@ async function addSubjectAndFocus() {
       </div>
 
       <div
+        id="poster-content-section"
         class="overflow-hidden rounded-2xl border border-sky-200 bg-white shadow-sm dark:border-sky-900 dark:bg-gray-900"
       >
         <div
@@ -1772,7 +2139,7 @@ async function addSubjectAndFocus() {
               ? ''
               : 'border-b border-sky-200 dark:border-sky-900'
           "
-          @click="posterContentCollapsed = !posterContentCollapsed"
+          @click="togglePosterContent"
         >
           <div class="flex items-center justify-between gap-4">
             <div class="flex items-center gap-4">
@@ -1830,7 +2197,7 @@ async function addSubjectAndFocus() {
                   v-for="(section, sIndex) in state.posterContent?.sections ||
                   []"
                   :key="sIndex"
-                  class="space-y-2 rounded-xl border border-l-4 border-gray-200 border-l-pink-300 p-4 dark:border-l-pink-700"
+                  class="space-y-2 rounded-r-xl border border-l-4 border-gray-200 border-l-pink-300 p-3 dark:border-l-pink-700"
                 >
                   <UFormField
                     :name="`posterContent.sections.${sIndex}.sectionTitle`"
@@ -1897,7 +2264,7 @@ async function addSubjectAndFocus() {
                 <div
                   v-for="(caption, cIndex) in state.tableCaptions || []"
                   :key="cIndex"
-                  class="space-y-2 rounded-xl border border-l-4 border-gray-200 border-l-pink-300 p-4 dark:border-l-pink-700"
+                  class="space-y-2 rounded-r-xl border border-l-4 border-gray-200 border-l-pink-300 p-3 dark:border-l-pink-700"
                 >
                   <UFormField
                     :name="`tableCaptions.${cIndex}.id`"
@@ -1957,7 +2324,7 @@ async function addSubjectAndFocus() {
                 <div
                   v-for="(caption, cIndex) in state.imageCaptions || []"
                   :key="cIndex"
-                  class="space-y-2 rounded-xl border border-l-4 border-gray-200 border-l-pink-300 p-4 dark:border-l-pink-700"
+                  class="space-y-2 rounded-r-xl border border-l-4 border-gray-200 border-l-pink-300 p-3 dark:border-l-pink-700"
                 >
                   <UFormField
                     :name="`imageCaptions.${cIndex}.id`"
@@ -2046,5 +2413,96 @@ async function addSubjectAndFocus() {
         </UTooltip>
       </div>
     </UForm>
+
+    <UModal
+      v-model:open="showSectionModal"
+      :title="
+        pendingUnopened.length > 1
+          ? 'Sections Not Reviewed'
+          : pendingUnopened[0] === 'posterContent'
+            ? 'AI-Extracted Content Not Reviewed'
+            : 'Additional Information Not Reviewed'
+      "
+    >
+      <template #body>
+        <div class="space-y-4">
+          <UAlert
+            color="warning"
+            variant="subtle"
+            :title="
+              pendingUnopened.length > 1
+                ? `You haven't opened the Additional Information or Poster Content sections`
+                : pendingUnopened[0] === 'posterContent'
+                  ? `You haven't opened the Poster Content section`
+                  : `You haven't opened the Additional Information section`
+            "
+            :description="
+              pendingUnopened.length > 1
+                ? 'These sections contain optional metadata and AI-extracted content from your poster. Reviewing them helps ensure accuracy and makes your poster more FAIR.'
+                : pendingUnopened[0] === 'posterContent'
+                  ? 'The last section contains text, table captions, and image captions extracted from your poster by AI. Reviewing this content helps ensure accuracy before publishing.'
+                  : 'This section contains optional metadata like abstract, language, domain, and funding information. Providing more detail makes your poster more FAIR.'
+            "
+          />
+
+          <p class="text-sm text-gray-600 dark:text-gray-400">
+            <template v-if="pendingUnopened.length > 1">
+              We recommend expanding both sections and reviewing the content
+              before continuing.
+            </template>
+
+            <template v-else-if="pendingUnopened[0] === 'posterContent'">
+              We recommend expanding the Poster Content section and checking the
+              extracted content before continuing.
+            </template>
+
+            <template v-else>
+              We recommend expanding the Additional Information section and
+              reviewing the fields before continuing.
+            </template>
+          </p>
+        </div>
+      </template>
+
+      <template #footer>
+        <div class="flex w-full justify-between gap-3">
+          <UButton
+            variant="outline"
+            icon="i-lucide-eye"
+            @click="reviewSections"
+          >
+            {{
+              pendingUnopened.length > 1
+                ? "Review Sections"
+                : pendingUnopened[0] === "posterContent"
+                  ? "Review Content"
+                  : "Review Section"
+            }}
+          </UButton>
+
+          <UButton color="primary" @click="continueAnyway">
+            Continue Anyway
+          </UButton>
+        </div>
+      </template>
+    </UModal>
   </div>
 </template>
+
+<style scoped>
+@keyframes autofill-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgba(236, 72, 153, 0.65);
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgba(236, 72, 153, 0.2);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(236, 72, 153, 0);
+  }
+}
+
+.orcid-autofill-ring {
+  animation: autofill-ring 0.7s ease-out forwards;
+}
+</style>

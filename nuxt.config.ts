@@ -16,6 +16,9 @@ export default defineNuxtConfig({
     "@nuxt/image",
     "nuxt-echarts",
     "@nuxt/content",
+    "@nuxtjs/robots",
+    "@nuxtjs/sitemap",
+    "nuxt-schema-org",
   ],
   icon: {
     collections: [
@@ -29,19 +32,16 @@ export default defineNuxtConfig({
   vite: {
     optimizeDeps: {
       include: [
+        "@inspira-ui/plugins", // CJS
         "@internationalized/date",
-        "@vue/devtools-core",
-        "@vue/devtools-kit",
-        "dayjs",
-        "dayjs/plugin/updateLocale",
-        "dayjs/plugin/relativeTime",
-        "dayjs/plugin/utc",
-        "dayjs/plugin/timezone",
-        "vue3-lottie",
-        "@inspira-ui/plugins",
-        "motion-v",
         "clsx",
-        "tailwind-merge",
+        "dayjs", // CJS
+        "dayjs/plugin/relativeTime", // CJS
+        "dayjs/plugin/timezone", // CJS
+        "dayjs/plugin/updateLocale", // CJS
+        "dayjs/plugin/utc", // CJS
+        "motion-v",
+        "vue3-lottie",
         "zod",
       ],
     },

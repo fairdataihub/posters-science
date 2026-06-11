@@ -61,6 +61,7 @@ export default defineEventHandler(async (event) => {
 
   return {
     id: poster.id,
+    automated: poster.automated,
     views,
     likes: poster._count.likes,
     liked,

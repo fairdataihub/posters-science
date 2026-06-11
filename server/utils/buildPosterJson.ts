@@ -12,6 +12,7 @@ export function buildPosterJson(
     description?: string;
     zenodoDoi?: string;
     publishedAt?: Date;
+    includePublisher?: boolean;
   },
 ) {
   const currentPublicationYear = new Date().getFullYear();
@@ -29,12 +30,14 @@ export function buildPosterJson(
     }
   }
 
-  const publisher = {
-    name: "Zenodo",
-    publisherIdentifier: "https://doi.org/10.17616/R3QP53",
-    publisherIdentifierScheme: "DOI",
-    schemeURI: "https://doi.org",
-  };
+  const publisher = options?.includePublisher
+    ? {
+        name: "Zenodo",
+        publisherIdentifier: "https://doi.org/10.17616/R3QP53",
+        publisherIdentifierScheme: "DOI",
+        schemeURI: "https://doi.org",
+      }
+    : undefined;
 
   const conference = buildConference(meta);
 
@@ -55,14 +58,9 @@ export function buildPosterJson(
   const filteredSections = Array.isArray(rawSections)
     ? rawSections.filter((s: unknown) => {
         if (typeof s !== "object" || s === null) return false;
-        const { sectionTitle, sectionContent } = s as Record<string, unknown>;
+        const { sectionContent } = s as Record<string, unknown>;
 
-        return (
-          typeof sectionTitle === "string" &&
-          sectionTitle !== "" &&
-          typeof sectionContent === "string" &&
-          sectionContent !== ""
-        );
+        return typeof sectionContent === "string" && sectionContent !== "";
       })
     : [];
 
@@ -158,7 +156,7 @@ export function buildPosterJson(
     },
     ...(mergedIdentifiers && { identifiers: mergedIdentifiers }),
     creators: cleanCreators(meta.creators),
-    publisher,
+    ...(publisher && { publisher }),
     publicationYear: currentPublicationYear,
     subjects: (meta.subjects ?? [])
       .filter((s) => s !== "")
@@ -272,17 +270,18 @@ function cleanCreators(raw: unknown): unknown[] {
 
     const name =
       typeof c.name === "string" && c.name.trim() ? c.name.trim() : undefined;
-    const givenName =
-      typeof c.givenName === "string" && c.givenName.trim()
-        ? c.givenName.trim()
-        : undefined;
-    const familyName =
-      typeof c.familyName === "string" && c.familyName.trim()
-        ? c.familyName.trim()
-        : undefined;
     const nameType =
       typeof c.nameType === "string" && c.nameType.trim()
         ? c.nameType.trim()
+        : undefined;
+    const isOrg = nameType?.toLowerCase() === "organizational";
+    const givenName =
+      !isOrg && typeof c.givenName === "string" && c.givenName.trim()
+        ? c.givenName.trim()
+        : undefined;
+    const familyName =
+      !isOrg && typeof c.familyName === "string" && c.familyName.trim()
+        ? c.familyName.trim()
         : undefined;
 
     return {

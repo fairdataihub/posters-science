@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import dayjs from "dayjs";
-import { getLocalTimeZone } from "@internationalized/date";
+import { getLocalTimeZone, parseDate } from "@internationalized/date";
 import type { CalendarDate } from "@internationalized/date";
 
 const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Discover Posters - Posters.science")}&description=${encodeURIComponent("Find and explore scientific posters on a variety of topics.")}&app=posters-science&org=fairdataihub`;
@@ -13,12 +13,26 @@ useSeoMeta({
   ogImage,
 });
 
+const route = useRoute();
+const router = useRouter();
+
+const sourceFilterValue = ref<string[]>(
+  route.query.source
+    ? String(route.query.source)
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : [],
+);
+
 const dateFilterValue = shallowRef<{
   start: CalendarDate | undefined;
   end: CalendarDate | undefined;
 }>({
-  start: undefined,
-  end: undefined,
+  start: route.query.dateFrom
+    ? parseDate(route.query.dateFrom as string)
+    : undefined,
+  end: route.query.dateTo ? parseDate(route.query.dateTo as string) : undefined,
 });
 
 const dateFrom = computed(() =>
@@ -30,6 +44,12 @@ const dateFrom = computed(() =>
 const dateTo = computed(() =>
   dateFilterValue.value.end
     ? dateFilterValue.value.end.toDate(getLocalTimeZone()).toISOString()
+    : undefined,
+);
+
+const sourceParam = computed(() =>
+  sourceFilterValue.value.length > 0
+    ? sourceFilterValue.value.join(",")
     : undefined,
 );
 
@@ -49,13 +69,13 @@ type Poster = {
 
 const PAGE_SIZE = 9;
 
-const page = ref(1);
+const page = ref(Number(route.query.page) || 1);
 
-const sortBy = ref("Newest First");
+const sortBy = ref((route.query.sortBy as string) || "Newest First");
 const posters = ref<Poster[]>([]);
 const total = ref(0);
-const searchQuery = ref("");
-const committedSearch = ref("");
+const searchQuery = ref((route.query.search as string) || "");
+const committedSearch = ref((route.query.search as string) || "");
 
 const mapPosters = (apiPosters: Poster[]) => {
   return apiPosters.map((poster) => ({
@@ -83,6 +103,7 @@ const { data, error, status } = await useFetch("/api/discover", {
     sortBy,
     dateFrom,
     dateTo,
+    source: sourceParam,
   },
 });
 
@@ -98,6 +119,28 @@ watch(sortBy, () => {
 watch(dateFilterValue, () => {
   page.value = 1;
 });
+
+watch(sourceFilterValue, () => {
+  page.value = 1;
+});
+
+watch(
+  [page, committedSearch, sortBy, dateFilterValue, sourceFilterValue],
+  () => {
+    const query: Record<string, string> = {};
+    if (page.value !== 1) query.page = String(page.value);
+    if (committedSearch.value) query.search = committedSearch.value;
+    if (sortBy.value !== "Newest First") query.sortBy = sortBy.value;
+    if (dateFilterValue.value.start)
+      query.dateFrom = dateFilterValue.value.start.toString();
+    if (dateFilterValue.value.end)
+      query.dateTo = dateFilterValue.value.end.toString();
+    if (sourceFilterValue.value.length > 0)
+      query.source = sourceFilterValue.value.join(",");
+    router.replace({ query });
+  },
+  { deep: true },
+);
 
 watch(
   data,
@@ -117,7 +160,16 @@ if (error.value) {
 const totalFiltered = computed(() => total.value);
 
 const showMobileFilter = ref(false);
-const hasActiveFilters = computed(() => !!dateFilterValue.value.start);
+const hasActiveFilters = computed(
+  () => !!dateFilterValue.value.start || sourceFilterValue.value.length > 0,
+);
+const activeFilterCount = computed(() => {
+  let count = 0;
+  if (dateFilterValue.value.start) count++;
+  if (sourceFilterValue.value.length > 0) count++;
+
+  return count;
+});
 </script>
 
 <template>
@@ -148,6 +200,8 @@ const hasActiveFilters = computed(() => !!dateFilterValue.value.start);
 
           <div class="space-y-6">
             <DiscoverPublishedDateFilter v-model="dateFilterValue" />
+
+            <DiscoverSourceFilter v-model="sourceFilterValue" />
           </div>
         </UCard>
       </div>
@@ -167,17 +221,22 @@ const hasActiveFilters = computed(() => !!dateFilterValue.value.start);
           >
             <span class="flex items-center gap-2">
               Filters
-              <UBadge v-if="hasActiveFilters" color="primary" size="xs"
-                >1</UBadge
-              >
+              <UBadge v-if="hasActiveFilters" color="primary" size="xs">{{
+                activeFilterCount
+              }}</UBadge>
             </span>
           </UButton>
 
-          <div v-show="showMobileFilter" class="mt-2 rounded-lg border p-4">
+          <div
+            v-show="showMobileFilter"
+            class="mt-2 space-y-6 rounded-lg border p-4"
+          >
             <DiscoverPublishedDateFilter
               v-model="dateFilterValue"
               :number-of-months="1"
             />
+
+            <DiscoverSourceFilter v-model="sourceFilterValue" />
           </div>
         </div>
 
@@ -242,8 +301,8 @@ const hasActiveFilters = computed(() => !!dateFilterValue.value.start);
                     >
                       <UBadge
                         color="primary"
-                        variant="soft"
-                        size="sm"
+                        variant="solid"
+                        size="xs"
                         icon="i-lucide-sparkles"
                         class="absolute top-2 left-2 z-10 cursor-help"
                       >

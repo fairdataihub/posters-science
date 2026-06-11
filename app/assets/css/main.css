@@ -49,6 +49,10 @@ pre {
   @apply text-xs whitespace-pre-wrap;
 }
 
+.debug {
+  border: 1px solid red;
+}
+
 /* Line clamp utilities */
 .line-clamp-2 {
   display: -webkit-box;

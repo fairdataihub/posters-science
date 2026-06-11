@@ -26,13 +26,15 @@ const passwordLoading = ref(false);
 
 const passwordSchema = z
   .object({
-    currentPassword: z.string().min(8, "Must be at least 8 characters"),
+    currentPassword: z.string().trim().min(8, "Must be at least 8 characters"),
     newPassword: z
       .string()
+      .trim()
       .min(12, "Must be at least 12 characters")
       .max(128, "Must be at most 128 characters"),
     confirmPassword: z
       .string()
+      .trim()
       .min(12, "Must be at least 12 characters")
       .max(128, "Must be at most 128 characters"),
   })
