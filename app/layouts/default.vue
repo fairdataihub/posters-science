@@ -115,7 +115,7 @@ const mobileProfileNavItems = computed<NavigationMenuItem[]>(() => [
 const mobileFeedbackNavItems: NavigationMenuItem[] = [
   {
     icon: "material-symbols:rate-review",
-    label: "Give Feedback",
+    label: "Contact Us",
     onSelect: openFeedback,
   },
 ];
@@ -133,7 +133,14 @@ const footerItems: NavigationMenuItem[] = [
   <div class="relative">
     <!-- <UiAuroraBackground class="absolute inset-0 -z-10 h-full" /> -->
 
-    <UHeader v-model:open="mobileMenuOpen">
+    <UHeader
+      v-model:open="mobileMenuOpen"
+      :ui="{
+        left: 'lg:flex-none',
+        center: 'flex-1 justify-center',
+        right: 'lg:flex-none',
+      }"
+    >
       <template #title>
         <NuxtLink to="/" class="flex text-2xl font-bold">
           Posters.science
@@ -147,7 +154,7 @@ const footerItems: NavigationMenuItem[] = [
           class="hidden lg:inline-flex"
           color="neutral"
           variant="ghost"
-          label="Give Feedback"
+          label="Contact Us"
           @click="feedbackOpen = true"
         />
 
