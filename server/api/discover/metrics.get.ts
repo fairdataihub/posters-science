@@ -1,4 +1,4 @@
-import iso6391 from "../../../app/assets/data/iso-639-1.json";
+import iso6391 from "#shared/data/iso-639-1.json";
 
 const languageNames = new Map(iso6391.map((l) => [l.code, l.name]));
 
@@ -96,6 +96,7 @@ export default defineEventHandler(async () => {
     creatorStatsResult,
     rorPosterResult,
     funderPairsRaw,
+    languageCountResult,
   ] = await Promise.all([
     // 1) count of published posters that are manually shared
     prisma.poster.count({ where: { status: "published", automated: false } }),
@@ -227,6 +228,8 @@ export default defineEventHandler(async () => {
         WHERE p.status = 'published'
       ) sub
       WHERE institution IS NOT NULL AND institution != ''
+        AND trim(institution) !~ '^[0-9]+$'
+        AND lower(trim(institution)) <> 'institution name'
     `,
 
     // 14) top 20 institutions by poster count
@@ -252,6 +255,8 @@ export default defineEventHandler(async () => {
         GROUP BY institution
       ) sub
       WHERE institution IS NOT NULL AND institution != ''
+        AND trim(institution) !~ '^[0-9]+$'
+        AND lower(trim(institution)) <> 'institution name'
       ORDER BY poster_count DESC
       LIMIT 20
     `,
@@ -277,7 +282,7 @@ export default defineEventHandler(async () => {
         AND pm.doi <> ''
     `,
 
-    // 17) creator-derived stats in a single flatten of creators
+    // 17) creator derived stats in a single flatten of creators
     prisma.$queryRaw<
       [
         {
@@ -324,8 +329,8 @@ export default defineEventHandler(async () => {
     `,
 
     // 19) distinct (poster, funder) pairs; canonicalized and counted in JS so
-    //     funder-name variants (NSF directorates, grant#s) roll up to one entity
-    //     without double-counting posters that cite the same funder twice
+    // funder-name variants (NSF directorates, grant#s) roll up to one entity
+    // without double-counting posters that cite the same funder twice
     prisma.$queryRaw<Array<{ poster_id: number; funder: string }>>`
       SELECT DISTINCT p.id AS poster_id, fr->>'funderName' AS funder
       FROM "PosterMetadata" pm
@@ -339,6 +344,17 @@ export default defineEventHandler(async () => {
         AND fr->>'funderName' IS NOT NULL
         AND fr->>'funderName' <> ''
         AND lower(fr->>'funderName') <> 'unknown funder'
+    `,
+
+    // 20) true count of distinct languages (the languages query above is
+    // limited to the top 10 for the chart, so its length under-reports)
+    prisma.$queryRaw<[{ count: number }]>`
+      SELECT COUNT(DISTINCT pm.language)::int AS count
+      FROM "PosterMetadata" pm
+      JOIN "Poster" p ON pm."posterId" = p.id
+      WHERE p.status = 'published'
+        AND pm.language IS NOT NULL
+        AND pm.language <> ''
     `,
   ]);
 
@@ -441,7 +457,7 @@ export default defineEventHandler(async () => {
       funded: fundedResult[0]?.count ?? 0,
       uniqueSubjectCount: uniqueSubjectResult[0]?.count ?? 0,
       uniqueInstitutionCount: uniqueInstitutionResult[0]?.count ?? 0,
-      languageCount: languageDistribution.length,
+      languageCount: languageCountResult[0]?.count ?? 0,
       domains,
       languages: languageDistribution.map((r) => ({
         name: languageNames.get(r.language!.toLowerCase()) ?? r.language!,

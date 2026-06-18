@@ -34,6 +34,7 @@ type PlacedWord = Word & {
 const container = ref<HTMLDivElement | null>(null);
 const placedWords = ref<PlacedWord[]>([]);
 const svgWidth = ref(0);
+let resizeObserver: ResizeObserver | null = null;
 
 function colorFor(text: string): string {
   let hash = 0;
@@ -81,16 +82,26 @@ onMounted(async () => {
   svgWidth.value = container.value.offsetWidth || 600;
   runLayout(svgWidth.value);
 
-  const observer = new ResizeObserver((entries) => {
+  resizeObserver = new ResizeObserver((entries) => {
     const w = entries[0]?.contentRect.width ?? 0;
     if (w > 0 && Math.abs(w - svgWidth.value) > 10) {
       svgWidth.value = w;
       runLayout(w);
     }
   });
-  observer.observe(container.value);
-  onUnmounted(() => observer.disconnect());
+  resizeObserver.observe(container.value);
 });
+
+// Cleanup registered synchronously during setup
+onUnmounted(() => resizeObserver?.disconnect());
+
+// Recompute the layout when the words change
+watch(
+  () => props.words.map((w) => `${w.text}:${w.value}`).join("|"),
+  () => {
+    if (svgWidth.value > 0) runLayout(svgWidth.value);
+  },
+);
 </script>
 
 <template>
