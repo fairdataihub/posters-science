@@ -13,11 +13,12 @@ useSeoMeta({
 
 const { data } = await useFetch("/api/discover/metrics");
 
-// ── Animated counters ────────────────────────────────────────────────────────
+// Animated counters
 const displayFunded = ref(0);
 const displaySubjects = ref(0);
 const displayInstitutions = ref(0);
 const displayLanguages = ref(0);
+const displayResearchers = ref(0);
 
 const animateCount = (target: number, output: Ref<number>) => {
   if (!target) return;
@@ -40,15 +41,16 @@ onMounted(() => {
     displayInstitutions,
   );
   animateCount(data.value?.world.languageCount ?? 0, displayLanguages);
+  animateCount(data.value?.world.researcherCount ?? 0, displayResearchers);
 });
 
-// ── Dark-mode-aware label color ──────────────────────────────────────────────
+// Dark mode label color
 const colorMode = useColorMode();
 const labelColor = computed(() =>
   colorMode.value === "dark" ? "#d1d5db" : "#374151",
 );
 
-// ── Chart color palette ──────────────────────────────────────────────────────
+// Chart color palette
 const PINK = "#ec4899";
 const PINK_LIGHT = "#f9a8d4";
 const CHART_COLORS = [
@@ -64,7 +66,7 @@ const CHART_COLORS = [
   "#6366f1",
 ];
 
-// ── Monthly growth chart ─────────────────────────────────────────────────────
+// Monthly growth chart
 const monthlyChartOption = computed<ECOption>(() => {
   const trend = data.value?.platform.monthlyTrend ?? [];
   const months = trend.map((t) => {
@@ -94,7 +96,11 @@ const monthlyChartOption = computed<ECOption>(() => {
   );
 
   return {
-    tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, appendToBody: true },
+    tooltip: {
+      trigger: "axis",
+      axisPointer: { type: "shadow" },
+      appendToBody: true,
+    },
     grid: { left: "3%", right: "4%", bottom: "3%", containLabel: true },
     xAxis: {
       type: "category",
@@ -131,7 +137,7 @@ const monthlyChartOption = computed<ECOption>(() => {
   };
 });
 
-// ── Horizontal bar helper ────────────────────────────────────────────────────
+// Horizontal bar helper
 function makeHorizontalBar(
   items: Array<{ name: string; count: number }>,
   color = PINK,
@@ -139,7 +145,11 @@ function makeHorizontalBar(
   const sorted = [...items].sort((a, b) => a.count - b.count);
 
   return {
-    tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, appendToBody: true },
+    tooltip: {
+      trigger: "axis",
+      axisPointer: { type: "shadow" },
+      appendToBody: true,
+    },
     grid: {
       left: "4%",
       right: "6%",
@@ -164,7 +174,12 @@ function makeHorizontalBar(
         data: sorted.map((d) => d.count),
         itemStyle: { color, borderRadius: [0, 4, 4, 0] },
         emphasis: { itemStyle: { color: "#be185d" } },
-        label: { show: true, position: "right", fontSize: 11, color: labelColor.value },
+        label: {
+          show: true,
+          position: "right",
+          fontSize: 11,
+          color: labelColor.value,
+        },
       },
     ],
   };
@@ -188,8 +203,11 @@ const institutionsChartOption = computed(() =>
     "#10b981",
   ),
 );
+const fundersChartOption = computed(() =>
+  makeHorizontalBar(data.value?.world.funders ?? [], "#f59e0b"),
+);
 
-// ── Donut chart helper ───────────────────────────────────────────────────────
+// Donut chart helper
 function makeDonut(
   title: string,
   items: Array<{ name: string; count: number }>,
@@ -222,7 +240,12 @@ function makeDonut(
         itemStyle: { borderRadius: 6, borderColor: "#fff", borderWidth: 2 },
         label: { show: false },
         emphasis: {
-          label: { show: true, fontSize: 14, fontWeight: "bold", position: "center" },
+          label: {
+            show: true,
+            fontSize: 14,
+            fontWeight: "bold",
+            position: "center",
+          },
         },
         labelLine: { show: false },
         data: items.map((i) => ({ name: i.name, value: i.count })),
@@ -238,12 +261,16 @@ const languageChartOption = computed(() =>
   makeDonut("Language Distribution", data.value?.world.languages ?? []),
 );
 
-// ── Conference year chart ────────────────────────────────────────────────────
+// Conference year chart
 const conferenceYearChartOption = computed<ECOption>(() => {
   const years = data.value?.world.conferenceYears ?? [];
 
   return {
-    tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, appendToBody: true },
+    tooltip: {
+      trigger: "axis",
+      axisPointer: { type: "shadow" },
+      appendToBody: true,
+    },
     grid: { left: "3%", right: "4%", bottom: "3%", containLabel: true },
     xAxis: {
       type: "category",
@@ -265,7 +292,73 @@ const conferenceYearChartOption = computed<ECOption>(() => {
         data: years.map((y) => y.count),
         itemStyle: { color: "#f59e0b", borderRadius: [4, 4, 0, 0] },
         emphasis: { itemStyle: { color: "#d97706" } },
-        label: { show: true, position: "top", fontSize: 11, color: labelColor.value },
+        label: {
+          show: true,
+          position: "top",
+          fontSize: 11,
+          color: labelColor.value,
+        },
+      },
+    ],
+  };
+});
+
+// Publication year chart (clean field, ~100% coverage)
+const publicationYearChartOption = computed<ECOption>(() => {
+  const years = data.value?.world.publicationYears ?? [];
+
+  return {
+    tooltip: {
+      trigger: "axis",
+      axisPointer: { type: "shadow" },
+      appendToBody: true,
+    },
+    grid: { left: "3%", right: "4%", bottom: "3%", containLabel: true },
+    xAxis: {
+      type: "category",
+      data: years.map((y) => String(y.year)),
+      axisLabel: { rotate: 45, fontSize: 12, color: labelColor.value },
+    },
+    yAxis: {
+      type: "value",
+      name: "Posters",
+      nameLocation: "middle",
+      nameGap: 45,
+      nameTextStyle: { color: labelColor.value },
+      axisLabel: { color: labelColor.value },
+    },
+    series: [
+      {
+        name: "Posters",
+        type: "bar",
+        data: years.map((y) => y.count),
+        itemStyle: { color: "#3b82f6", borderRadius: [4, 4, 0, 0] },
+        emphasis: { itemStyle: { color: "#1d4ed8" } },
+      },
+    ],
+  };
+});
+
+// Open science identifier coverage (DOI / ORCID / ROR)
+const openScience = computed(() => {
+  const w = data.value?.world;
+  const total = w?.publishedTotal ?? 0;
+  const pct = (n?: number) =>
+    total ? Math.round(((n ?? 0) / total) * 100) : 0;
+
+  return {
+    total,
+    items: [
+      { label: "With a DOI", pct: pct(w?.withDoi), count: w?.withDoi ?? 0 },
+      {
+        label: "With an ORCID author",
+        pct: pct(w?.withOrcid),
+        count: w?.withOrcid ?? 0,
+      },
+      {
+        label: "With a ROR institution",
+        pct: pct(w?.withRor),
+        count: w?.withRor ?? 0,
       },
     ],
   };
@@ -273,7 +366,7 @@ const conferenceYearChartOption = computed<ECOption>(() => {
 </script>
 
 <template>
-  <div class="mx-auto flex w-full max-w-screen-xl flex-col gap-10 px-6 pb-16">
+  <div class="mx-auto flex w-full max-w-screen-xl flex-col gap-10 px-6 pb-10">
     <UPageCTA
       title="Metrics"
       description="Explore the research archived on Posters.science"
@@ -295,6 +388,29 @@ const conferenceYearChartOption = computed<ECOption>(() => {
           <div style="height: 380px">
             <VChart :option="monthlyChartOption" autoresize />
           </div>
+        </UCard>
+
+        <template #fallback>
+          <USkeleton class="h-96 w-full rounded-xl" />
+        </template>
+      </ClientOnly>
+
+      <ClientOnly>
+        <UCard>
+          <template #header>
+            <h3 class="text-base font-semibold">Posters by Publication Year</h3>
+          </template>
+
+          <div
+            v-if="data?.world?.publicationYears?.length"
+            style="height: 380px"
+          >
+            <VChart :option="publicationYearChartOption" autoresize />
+          </div>
+
+          <p v-else class="text-muted py-8 text-center text-sm">
+            No data available yet.
+          </p>
         </UCard>
 
         <template #fallback>
@@ -335,7 +451,7 @@ const conferenceYearChartOption = computed<ECOption>(() => {
     <section class="flex flex-col gap-4">
       <h2 class="text-xl font-semibold">Research at a Glance</h2>
 
-      <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div class="grid grid-cols-2 gap-4 lg:grid-cols-3">
         <UCard>
           <div class="flex flex-col items-center gap-1 py-2 text-center">
             <div class="text-3xl font-bold text-pink-600">
@@ -381,6 +497,30 @@ const conferenceYearChartOption = computed<ECOption>(() => {
             <p class="text-sm font-medium">Languages</p>
 
             <p class="text-muted text-xs">Languages represented</p>
+          </div>
+        </UCard>
+
+        <UCard>
+          <div class="flex flex-col items-center gap-1 py-2 text-center">
+            <div class="text-3xl font-bold text-pink-600">
+              {{ displayResearchers.toLocaleString() }}
+            </div>
+
+            <p class="text-sm font-medium">Researchers</p>
+
+            <p class="text-muted text-xs">Distinct authors represented</p>
+          </div>
+        </UCard>
+
+        <UCard>
+          <div class="flex flex-col items-center gap-1 py-2 text-center">
+            <div class="text-3xl font-bold text-pink-600">
+              {{ (data?.world.avgAuthorsPerPoster ?? 0).toFixed(2) }}
+            </div>
+
+            <p class="text-sm font-medium">Avg Authors / Poster</p>
+
+            <p class="text-muted text-xs">Average authors per poster</p>
           </div>
         </UCard>
       </div>
@@ -473,6 +613,21 @@ const conferenceYearChartOption = computed<ECOption>(() => {
     <section class="flex flex-col gap-4">
       <h2 class="text-xl font-semibold">Open Science and Reach</h2>
 
+      <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <UCard v-for="item in openScience.items" :key="item.label">
+          <div class="flex flex-col items-center gap-1 py-2 text-center">
+            <div class="text-3xl font-bold text-pink-600">{{ item.pct }}%</div>
+
+            <p class="text-sm font-medium">{{ item.label }}</p>
+
+            <p class="text-muted text-xs">
+              {{ item.count.toLocaleString() }} of
+              {{ openScience.total.toLocaleString() }} posters
+            </p>
+          </div>
+        </UCard>
+      </div>
+
       <ClientOnly>
         <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <UCard>
@@ -502,6 +657,29 @@ const conferenceYearChartOption = computed<ECOption>(() => {
 
             <USkeleton class="h-96 w-full rounded-xl" />
           </div>
+        </template>
+      </ClientOnly>
+
+      <ClientOnly>
+        <UCard>
+          <template #header>
+            <h3 class="text-base font-semibold">Top Funders</h3>
+          </template>
+
+          <div
+            v-if="data?.world?.funders?.length"
+            :style="`height: ${Math.max(300, (data?.world?.funders?.length ?? 0) * 36)}px`"
+          >
+            <VChart :option="fundersChartOption" autoresize />
+          </div>
+
+          <p v-else class="text-muted py-8 text-center text-sm">
+            No data available yet.
+          </p>
+        </UCard>
+
+        <template #fallback>
+          <USkeleton class="h-80 w-full rounded-xl" />
         </template>
       </ClientOnly>
     </section>
@@ -586,6 +764,5 @@ const conferenceYearChartOption = computed<ECOption>(() => {
         </template>
       </ClientOnly>
     </section>
-
   </div>
 </template>

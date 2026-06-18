@@ -20,10 +20,62 @@ function normalizeLicense(raw: string): string {
   return raw.trim();
 }
 
+// Strip trailing qualifiers so publisher variants merge into one entry,
+// e.g. "Figshare (United Kingdom)" / "figshare.com" / "Figshare" -> "Figshare".
+function cleanPublisherName(raw: string): string {
+  const cleaned = raw
+    .trim()
+    .replace(/\s*\([^)]*\)\s*$/, "") // drop trailing "(United Kingdom)", "(EPA)", etc.
+    .replace(/\.(com|org|net|io|edu|gov)$/i, "") // drop trailing TLD, e.g. "figshare.com"
+    .trim();
+
+  return cleaned || raw.trim();
+}
+
+// Canonical names for organizations that show up under many name variants in
+// source metadata, so a chart doesn't split one entity across many bars. Rules
+// marked funderOnly are only safe in a funding context: "NSF <grant#>" means the
+// agency, but "NSF Unidata" as a publisher is a distinct program, not the agency.
+type OrgAlias = {
+  canonical: string;
+  pattern: RegExp;
+  exclude?: RegExp;
+  funderOnly?: boolean;
+};
+
+const ORG_ALIASES: OrgAlias[] = [
+  {
+    canonical: "U.S. Environmental Protection Agency",
+    pattern: /environmental protection agency/i,
+  },
+  {
+    canonical: "U.S. National Science Foundation",
+    pattern: /national science foundation|\bnsf\b|^directorate for /i,
+    // Keep other countries' science foundations and NSF-named events separate.
+    exclude:
+      /swiss|swedish|china|chinese|korea|natural science|meeting|conference|workshop|symposium/i,
+    funderOnly: true,
+  },
+];
+
+function canonicalizeOrg(raw: string, isFunder = false): string {
+  const cleaned = cleanPublisherName(raw);
+  for (const alias of ORG_ALIASES) {
+    if (alias.funderOnly && !isFunder) continue;
+    if (alias.pattern.test(cleaned) && !alias.exclude?.test(cleaned)) {
+      return alias.canonical;
+    }
+  }
+
+  return cleaned;
+}
+
 const NULL_CONFERENCE =
   /^(not\s+specified|n\/a|no\s+specified|sin\s+especif[ia]r|none|unknown|not\s+available|unspecified|-)$/i;
 
 export default defineEventHandler(async () => {
+  const currentYear = new Date().getFullYear();
+
   const [
     manualCount,
     automatedCount,
@@ -39,13 +91,18 @@ export default defineEventHandler(async () => {
     uniqueSubjectResult,
     uniqueInstitutionResult,
     topInstitutions,
+    publicationYearDistribution,
+    doiResult,
+    creatorStatsResult,
+    rorPosterResult,
+    funderPairsRaw,
   ] = await Promise.all([
-    // 1
+    // 1) count of published posters that are manually shared
     prisma.poster.count({ where: { status: "published", automated: false } }),
-    // 2
+    // 2) count of published posters that are auto-indexed
     prisma.poster.count({ where: { status: "published", automated: true } }),
 
-    // 3 — monthly trend (last 13 months, client fills full 12-month window)
+    // 3) monthly trend (last 13 months, client fills full 12-month window)
     prisma.$queryRaw<Array<{ month: Date; count: number }>>`
       SELECT DATE_TRUNC('month', created) AS month, COUNT(*)::int AS count
       FROM "Poster"
@@ -55,7 +112,7 @@ export default defineEventHandler(async () => {
       ORDER BY month ASC
     `,
 
-    // 4 — posters with at least one funding reference
+    // 4) posters with at least one funding reference
     prisma.$queryRaw<[{ count: number }]>`
       SELECT COUNT(*)::int AS count
       FROM "PosterMetadata" pm
@@ -65,7 +122,7 @@ export default defineEventHandler(async () => {
         AND jsonb_array_length(pm."fundingReferences"::jsonb) > 0
     `,
 
-    // 5
+    // 5) top 10 domains
     prisma.posterMetadata.groupBy({
       by: ["domain"],
       where: { poster: { status: "published" }, domain: { not: null } },
@@ -74,7 +131,7 @@ export default defineEventHandler(async () => {
       take: 10,
     }),
 
-    // 6
+    // 6) top 10 languages
     prisma.posterMetadata.groupBy({
       by: ["language"],
       where: { poster: { status: "published" }, language: { not: null } },
@@ -83,7 +140,7 @@ export default defineEventHandler(async () => {
       take: 10,
     }),
 
-    // 7
+    // 7) top 50 licenses
     prisma.posterMetadata.groupBy({
       by: ["license"],
       where: { poster: { status: "published" }, license: { not: null } },
@@ -92,16 +149,16 @@ export default defineEventHandler(async () => {
       take: 50, // fetch more before normalization merges duplicates
     }),
 
-    // 8
+    // 8) all publishers (merged + canonicalized in JS; ordered so the
+    //    highest-count variant supplies the display name)
     prisma.posterMetadata.groupBy({
       by: ["publisher"],
       where: { poster: { status: "published" }, publisher: { not: null } },
       _count: { _all: true },
       orderBy: { _count: { publisher: "desc" } },
-      take: 50,
     }),
 
-    // 9
+    // 9) conference year distribution
     prisma.posterMetadata.groupBy({
       by: ["conferenceYear"],
       where: {
@@ -112,7 +169,7 @@ export default defineEventHandler(async () => {
       orderBy: { conferenceYear: "asc" },
     }),
 
-    // 10
+    // 10) top 30 conference names
     prisma.posterMetadata.groupBy({
       by: ["conferenceName"],
       where: {
@@ -124,7 +181,7 @@ export default defineEventHandler(async () => {
       take: 30, // fetch more to have enough after filtering
     }),
 
-    // 11 — top 20 subjects via unnest
+    // 11) top 20 subjects
     prisma.$queryRaw<Array<{ subject: string; count: number }>>`
       SELECT unnest(subjects) AS subject, COUNT(*)::int AS count
       FROM "PosterMetadata" pm
@@ -137,7 +194,7 @@ export default defineEventHandler(async () => {
       LIMIT 20
     `,
 
-    // 12 — count of distinct subjects across all published posters
+    // 12) count of distinct subjects across all published posters
     prisma.$queryRaw<[{ count: number }]>`
       SELECT COUNT(DISTINCT s)::int AS count
       FROM "PosterMetadata" pm
@@ -148,7 +205,7 @@ export default defineEventHandler(async () => {
         AND s != ''
     `,
 
-    // 13 — count of distinct institution names from creators[].affiliation JSON
+    // 13) count of distinct institution names from creators[].affiliation JSON
     prisma.$queryRaw<[{ count: number }]>`
       SELECT COUNT(DISTINCT institution)::int AS count
       FROM (
@@ -172,7 +229,7 @@ export default defineEventHandler(async () => {
       WHERE institution IS NOT NULL AND institution != ''
     `,
 
-    // 14 — top 20 institutions by poster count
+    // 14) top 20 institutions by poster count
     prisma.$queryRaw<Array<{ institution: string; poster_count: number }>>`
       SELECT institution, poster_count FROM (
         SELECT
@@ -197,6 +254,91 @@ export default defineEventHandler(async () => {
       WHERE institution IS NOT NULL AND institution != ''
       ORDER BY poster_count DESC
       LIMIT 20
+    `,
+
+    // 15) publication year distribution
+    prisma.posterMetadata.groupBy({
+      by: ["publicationYear"],
+      where: {
+        poster: { status: "published" },
+        publicationYear: { not: null, gte: 2000, lte: currentYear },
+      },
+      _count: { _all: true },
+      orderBy: { publicationYear: "asc" },
+    }),
+
+    // 16) count of published posters with a DOI
+    prisma.$queryRaw<[{ count: number }]>`
+      SELECT COUNT(*)::int AS count
+      FROM "PosterMetadata" pm
+      JOIN "Poster" p ON pm."posterId" = p.id
+      WHERE p.status = 'published'
+        AND pm.doi IS NOT NULL
+        AND pm.doi <> ''
+    `,
+
+    // 17) creator-derived stats in a single flatten of creators
+    prisma.$queryRaw<
+      [
+        {
+          mentions: number;
+          posters_with_authors: number;
+          distinct_authors: number;
+          orcid_posters: number;
+        },
+      ]
+    >`
+      WITH creators_flat AS (
+        SELECT p.id AS pid, jsonb_array_elements(pm.creators) AS cr
+        FROM "PosterMetadata" pm
+        JOIN "Poster" p ON pm."posterId" = p.id
+        WHERE p.status = 'published'
+          AND jsonb_typeof(pm.creators) = 'array'
+      )
+      SELECT
+        COUNT(*)::int AS mentions,
+        COUNT(DISTINCT pid)::int AS posters_with_authors,
+        COUNT(DISTINCT cr->>'name') FILTER (WHERE cr->>'name' <> '')::int AS distinct_authors,
+        COUNT(DISTINCT pid) FILTER (
+          WHERE cr->'nameIdentifiers' @> '[{"nameIdentifierType": "ORCID"}]'::jsonb
+        )::int AS orcid_posters
+      FROM creators_flat
+    `,
+
+    // 18) count of published posters with >=1 ROR-identified affiliation
+    prisma.$queryRaw<[{ count: number }]>`
+      SELECT COUNT(DISTINCT p.id)::int AS count
+      FROM "PosterMetadata" pm
+      JOIN "Poster" p ON pm."posterId" = p.id
+      CROSS JOIN LATERAL jsonb_array_elements(
+        CASE WHEN pm.creators IS NOT NULL AND jsonb_typeof(pm.creators) = 'array'
+             THEN pm.creators ELSE '[]'::jsonb END
+      ) AS creator
+      CROSS JOIN LATERAL jsonb_array_elements(
+        CASE WHEN jsonb_typeof(creator->'affiliation') = 'array'
+             THEN creator->'affiliation' ELSE '[]'::jsonb END
+      ) AS aff
+      WHERE p.status = 'published'
+        AND aff->>'affiliationIdentifierScheme' = 'ROR'
+        AND aff->>'affiliationIdentifier' <> ''
+    `,
+
+    // 19) distinct (poster, funder) pairs; canonicalized and counted in JS so
+    //     funder-name variants (NSF directorates, grant#s) roll up to one entity
+    //     without double-counting posters that cite the same funder twice
+    prisma.$queryRaw<Array<{ poster_id: number; funder: string }>>`
+      SELECT DISTINCT p.id AS poster_id, fr->>'funderName' AS funder
+      FROM "PosterMetadata" pm
+      JOIN "Poster" p ON pm."posterId" = p.id
+      CROSS JOIN LATERAL jsonb_array_elements(
+        CASE WHEN pm."fundingReferences" IS NOT NULL
+              AND jsonb_typeof(pm."fundingReferences") = 'array'
+             THEN pm."fundingReferences" ELSE '[]'::jsonb END
+      ) AS fr
+      WHERE p.status = 'published'
+        AND fr->>'funderName' IS NOT NULL
+        AND fr->>'funderName' <> ''
+        AND lower(fr->>'funderName') <> 'unknown funder'
     `,
   ]);
 
@@ -228,15 +370,22 @@ export default defineEventHandler(async () => {
     .filter((r) => r.domain && r.domain.trim() !== "")
     .map((r) => ({ name: r.domain!, count: r._count._all }));
 
-  // Normalize and merge publisher name variants (e.g. "figshare" + "Figshare" → one entry)
-  const publisherMap = new Map<string, { displayName: string; count: number }>();
+  // Normalize and merge publisher name variants (e.g. "figshare" + "Figshare" into one entry)
+  const publisherMap = new Map<
+    string,
+    { displayName: string; count: number }
+  >();
   for (const r of publisherDistribution) {
-    const key = r.publisher!.trim().toLowerCase();
+    const displayName = canonicalizeOrg(r.publisher!);
+    const key = displayName.toLowerCase();
     const existing = publisherMap.get(key);
     if (existing) {
       existing.count += r._count._all;
     } else {
-      publisherMap.set(key, { displayName: r.publisher!.trim(), count: r._count._all });
+      publisherMap.set(key, {
+        displayName,
+        count: r._count._all,
+      });
     }
   }
   const publishers = [...publisherMap.values()]
@@ -244,13 +393,43 @@ export default defineEventHandler(async () => {
     .slice(0, 15)
     .map(({ displayName, count }) => ({ name: displayName, count }));
 
-  // Filter null-equivalent conference names
+  // Filter null conference names
   const conferences = topConferencesRaw
     .filter(
       (r) => r.conferenceName && !NULL_CONFERENCE.test(r.conferenceName.trim()),
     )
     .slice(0, 15)
     .map((r) => ({ name: r.conferenceName!, count: r._count._all }));
+
+  // Creator-derived stats (from the single creators flatten)
+  const creatorStats = creatorStatsResult[0];
+  const avgAuthorsPerPoster = creatorStats?.posters_with_authors
+    ? Math.round(
+        (creatorStats.mentions / creatorStats.posters_with_authors) * 100,
+      ) / 100
+    : 0;
+
+  // Roll up funder-name variants to canonical orgs, counting distinct posters.
+  const funderPosters = new Map<string, Set<number>>();
+  for (const r of funderPairsRaw) {
+    const name = canonicalizeOrg(r.funder, true);
+    if (!name) continue;
+    let set = funderPosters.get(name);
+    if (!set) {
+      set = new Set();
+      funderPosters.set(name, set);
+    }
+    set.add(r.poster_id);
+  }
+  const funders = [...funderPosters.entries()]
+    .map(([name, set]) => ({ name, count: set.size }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 15);
+
+  const publicationYears = publicationYearDistribution.map((r) => ({
+    year: r.publicationYear!,
+    count: r._count._all,
+  }));
 
   return {
     platform: {
@@ -277,6 +456,14 @@ export default defineEventHandler(async () => {
       publishers,
       subjects: topSubjects,
       institutions: topInstitutions,
+      publishedTotal: manualCount + automatedCount,
+      publicationYears,
+      researcherCount: creatorStats?.distinct_authors ?? 0,
+      avgAuthorsPerPoster,
+      withDoi: doiResult[0]?.count ?? 0,
+      withOrcid: creatorStats?.orcid_posters ?? 0,
+      withRor: rorPosterResult[0]?.count ?? 0,
+      funders,
     },
   };
 });
