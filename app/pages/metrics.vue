@@ -49,6 +49,9 @@ const colorMode = useColorMode();
 const labelColor = computed(() =>
   colorMode.value === "dark" ? "#d1d5db" : "#374151",
 );
+const gridLineColor = computed(() =>
+  colorMode.value === "dark" ? "#374151" : "#e5e7eb",
+);
 
 // Chart color palette
 const PINK = "#ec4899";
@@ -157,7 +160,19 @@ function makeHorizontalBar(
       bottom: "4%",
       containLabel: true,
     },
-    xAxis: { type: "value", axisLabel: { color: labelColor.value } },
+    // Each bar is labelled with its exact value on the right, so the x-axis
+    // tick numbers are redundant and only overlap/jumble on narrow (mobile)
+    // widths. Keep the gridlines for visual structure, just drop the numbers.
+    xAxis: {
+      type: "value",
+      axisLabel: { show: false },
+      axisLine: { show: false },
+      axisTick: { show: false },
+      splitLine: {
+        show: true,
+        lineStyle: { color: gridLineColor.value },
+      },
+    },
     yAxis: {
       type: "category",
       data: sorted.map((d) => d.name),
@@ -374,7 +389,7 @@ const openScience = computed(() => {
     />
 
     <!-- Archive Growth -->
-    <section class="flex flex-col gap-4">
+    <section class="flex flex-col gap-4 lg:-mt-16">
       <h2 class="text-xl font-semibold">Archive Growth</h2>
 
       <ClientOnly>

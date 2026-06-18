@@ -2,6 +2,14 @@ import iso6391 from "#shared/data/iso-639-1.json";
 
 const languageNames = new Map(iso6391.map((l) => [l.code, l.name]));
 
+// Rights statements that aren't real licenses; excluded from the distribution.
+const EXCLUDED_LICENSES = new Set([
+  "in copyright",
+  "copyright not evaluated",
+  "all rights reserved",
+  "other-at",
+]);
+
 function normalizeLicense(raw: string): string {
   const s = raw
     .trim()
@@ -374,6 +382,7 @@ export default defineEventHandler(async () => {
   const licenseMap = new Map<string, number>();
   for (const r of licenseDistributionRaw) {
     const key = normalizeLicense(r.license!);
+    if (EXCLUDED_LICENSES.has(key.toLowerCase())) continue;
     licenseMap.set(key, (licenseMap.get(key) ?? 0) + r._count._all);
   }
   const licenses = [...licenseMap.entries()]
