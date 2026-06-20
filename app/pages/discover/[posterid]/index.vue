@@ -7,7 +7,7 @@ import {
   RESOURCE_TYPE_OPTIONS,
   RELATION_TYPE_OPTIONS,
 } from "@/utils/poster_schema";
-import type { WithContext, Poster } from "schema-dts";
+import type { WithContext, ScholarlyArticle } from "schema-dts";
 
 const route = useRoute();
 const posterId = route.params.posterid as string;
@@ -149,6 +149,7 @@ const posterSource = computed(() => {
   const imageUrl = api?.imageUrl ?? "";
   if (doi.startsWith("10.6084/") || imageUrl.includes("/figshare_"))
     return "figshare";
+
   return "zenodo";
 });
 
@@ -186,7 +187,7 @@ useSeoMeta({
   ogImage,
 });
 
-const NuxtSchemaPoster: WithContext<Poster> = {
+/*const NuxtSchemaPoster: WithContext<Poster> = {
   name: poster.value?.title,
   "@context": "https://schema.org",
   "@id": `https://doi.org/${poster.value?.doi}`,
@@ -194,6 +195,21 @@ const NuxtSchemaPoster: WithContext<Poster> = {
   abstract: poster.value?.description || "No description available.",
   sameAs: poster.value?.doi ? `https://doi.org/${poster.value.doi}` : undefined,
   url: `https://posters.science/discover/${poster.value.id}`,
+};
+
+useSchemaOrg([NuxtSchemaPoster]);*/
+
+const NuxtSchemaPoster: WithContext<ScholarlyArticle> = {
+  "@context": "https://schema.org",
+  "@type": "ScholarlyArticle",
+  headline: poster.value?.title,
+  description: poster.value?.description || "No description available.",
+  abstract: poster.value?.description || "No description available.",
+  url: `https://posters.science/discover/${poster.value.id}`,
+  identifier: poster.value?.doi
+    ? `https://doi.org/${poster.value.doi}`
+    : undefined,
+  datePublished: poster.value?.publishedAt?.toISOString(),
 };
 
 useSchemaOrg([NuxtSchemaPoster]);
