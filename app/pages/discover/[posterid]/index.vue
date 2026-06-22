@@ -187,29 +187,75 @@ useSeoMeta({
   ogImage,
 });
 
-/*const NuxtSchemaPoster: WithContext<Poster> = {
-  name: poster.value?.title,
-  "@context": "https://schema.org",
-  "@id": `https://doi.org/${poster.value?.doi}`,
-  "@type": "Poster",
-  abstract: poster.value?.description || "No description available.",
-  sameAs: poster.value?.doi ? `https://doi.org/${poster.value.doi}` : undefined,
-  url: `https://posters.science/discover/${poster.value.id}`,
-};
-
-useSchemaOrg([NuxtSchemaPoster]);*/
-
 const NuxtSchemaPoster: WithContext<ScholarlyArticle> = {
   "@context": "https://schema.org",
+  "@id": poster.value?.doi ? `https://doi.org/${poster.value.doi}` : undefined,
   "@type": "ScholarlyArticle",
-  headline: poster.value?.title,
-  description: poster.value?.description || "No description available.",
-  abstract: poster.value?.description || "No description available.",
-  url: `https://posters.science/discover/${poster.value.id}`,
-  identifier: poster.value?.doi
-    ? `https://doi.org/${poster.value.doi}`
+  about: poster.value?.domain
+    ? {
+        "@type": "Thing",
+        name: poster.value.domain,
+      }
     : undefined,
-  datePublished: poster.value?.publishedAt?.toISOString(),
+  abstract: poster.value?.description || "No description available.",
+  author: poster.value?.authors?.length
+    ? poster.value.authors.map((author: any) => ({
+        "@type": "Person",
+        givenName: author.givenName,
+        familyName: author.familyName,
+        affiliation: author.affiliation
+          ? {
+              "@type": "Organization",
+              name: author.affiliation,
+            }
+          : undefined,
+        sameAs: author.orcid ? `https://orcid.org/${author.orcid}` : undefined,
+      }))
+    : undefined,
+  citation: poster.value.references
+    ?.map((r: any) => r.doi || r.url || r.title)
+    .filter(Boolean),
+  datePublished: poster.value?.publishedAt?.toISOString() || undefined,
+  funder: poster.value.funding?.length
+    ? poster.value.funding.map((f: any) => ({
+        "@type": "Organization",
+        name: f.agency,
+        identifier: f.grantNumber
+          ? {
+              "@type": "PropertyValue",
+              propertyID: "grantNumber",
+              value: f.grantNumber,
+            }
+          : undefined,
+        url: f.awardUri || undefined,
+      }))
+    : undefined,
+  headline: poster.value?.title || undefined,
+  identifier: poster.value?.doi
+    ? {
+        "@type": "PropertyValue",
+        propertyID: "DOI",
+        value: poster.value.doi,
+        url: `https://doi.org/${poster.value.doi}`,
+      }
+    : undefined,
+  image: poster.value?.imageUrl
+    ? {
+        "@type": "ImageObject",
+        url: poster.value.imageUrl,
+        contentUrl: poster.value.imageUrl,
+      }
+    : undefined,
+  inLanguage: poster.value?.language || "en",
+  keywords: poster.value?.keywords?.length ? poster.value.keywords : undefined,
+  license: poster.value?.license || undefined,
+  mainEntityOfPage: {
+    "@type": "WebPage",
+    "@id": `https://posters.science/discover/${poster.value.id}`,
+  },
+  name: poster.value?.title || undefined,
+  url: `https://posters.science/discover/${poster.value.id}`,
+  version: poster.value?.version || undefined,
 };
 
 useSchemaOrg([NuxtSchemaPoster]);
