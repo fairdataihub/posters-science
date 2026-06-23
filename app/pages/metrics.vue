@@ -354,6 +354,17 @@ const publicationYearChartOption = computed<ECOption>(() => {
   };
 });
 
+// Last updated metrics timestamp
+const lastUpdated = computed(() => {
+  const ts = data.value?.generatedAt;
+  if (!ts) return null;
+
+  return new Date(ts).toLocaleString("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+});
+
 // Open science identifier coverage (DOI / ORCID / ROR)
 const openScience = computed(() => {
   const w = data.value?.world;
@@ -779,5 +790,9 @@ const openScience = computed(() => {
         </template>
       </ClientOnly>
     </section>
+
+    <p v-if="lastUpdated" class="text-muted text-center text-sm">
+      Last updated {{ lastUpdated }}
+    </p>
   </div>
 </template>
