@@ -65,6 +65,14 @@ const ORG_ALIASES: OrgAlias[] = [
       /swiss|swedish|china|chinese|korea|natural science|meeting|conference|workshop|symposium/i,
     funderOnly: true,
   },
+  {
+    canonical: "National Institutes of Health",
+    // "NIH", "National Institute of Health" (a common misspelling) and the
+    // correct "National Institutes of Health" all denote the US agency. The
+    // named sub-institutes ("National Cancer Institute", etc.) don't match
+    // this pattern, so they stay as their own distinct entries.
+    pattern: /national institutes? of health|\bnih\b/i,
+  },
 ];
 
 function canonicalizeOrg(raw: string, isFunder = false): string {
@@ -77,6 +85,19 @@ function canonicalizeOrg(raw: string, isFunder = false): string {
   }
 
   return cleaned;
+}
+
+// Collapse a distribution to its top N entries plus a single "Other" bucket
+function topWithOther(
+  items: Array<{ name: string; count: number }>,
+  top: number,
+): Array<{ name: string; count: number }> {
+  const sorted = [...items].sort((a, b) => b.count - a.count);
+  const head = sorted.slice(0, top);
+  const otherCount = sorted.slice(top).reduce((sum, i) => sum + i.count, 0);
+  if (otherCount > 0) head.push({ name: "Other", count: otherCount });
+
+  return head;
 }
 
 const NULL_CONFERENCE =
@@ -93,7 +114,6 @@ export async function computeMetrics(client: PrismaClient) {
     manualCount,
     automatedCount,
     monthlyTrend,
-    fundedResult,
     domainDistributionRaw,
     languageDistribution,
     licenseDistributionRaw,
@@ -101,7 +121,6 @@ export async function computeMetrics(client: PrismaClient) {
     conferenceYearDistribution,
     topConferencesRaw,
     topSubjects,
-    uniqueSubjectResult,
     uniqueInstitutionResult,
     topInstitutions,
     publicationYearDistribution,
@@ -126,16 +145,6 @@ export async function computeMetrics(client: PrismaClient) {
       ORDER BY month ASC
     `,
 
-    // 4) posters with at least one funding reference
-    client.$queryRaw<[{ count: number }]>`
-      SELECT COUNT(*)::int AS count
-      FROM "PosterMetadata" pm
-      JOIN "Poster" p ON pm."posterId" = p.id
-      WHERE p.status = 'published'
-        AND pm."fundingReferences" IS NOT NULL
-        AND jsonb_array_length(pm."fundingReferences"::jsonb) > 0
-    `,
-
     // 5) top 10 domains
     client.posterMetadata.groupBy({
       by: ["domain"],
@@ -145,13 +154,12 @@ export async function computeMetrics(client: PrismaClient) {
       take: 10,
     }),
 
-    // 6) top 10 languages
+    // 6) full language distribution (collapsed to top 3 + "Other" below)
     client.posterMetadata.groupBy({
       by: ["language"],
       where: { poster: { status: "published" }, language: { not: null } },
       _count: { _all: true },
       orderBy: { _count: { language: "desc" } },
-      take: 10,
     }),
 
     // 7) top 50 licenses
@@ -163,8 +171,8 @@ export async function computeMetrics(client: PrismaClient) {
       take: 50, // fetch more before normalization merges duplicates
     }),
 
-    // 8) all publishers (merged + canonicalized in JS; ordered so the
-    //    highest-count variant supplies the display name)
+    // 8) all publishers (merged + canonicalized ordered so the
+    // highest-count variant supplies the display name)
     client.posterMetadata.groupBy({
       by: ["publisher"],
       where: { poster: { status: "published" }, publisher: { not: null } },
@@ -208,20 +216,10 @@ export async function computeMetrics(client: PrismaClient) {
       LIMIT 20
     `,
 
-    // 12) count of distinct subjects across all published posters
+    // 13) count of distinct institutions from creators[].affiliation JSON.
+    // Uniqueness is by name only (case-insensitive, trimmed)
     client.$queryRaw<[{ count: number }]>`
-      SELECT COUNT(DISTINCT s)::int AS count
-      FROM "PosterMetadata" pm
-      JOIN "Poster" p ON pm."posterId" = p.id
-      CROSS JOIN LATERAL unnest(pm.subjects) AS s
-      WHERE p.status = 'published'
-        AND pm.subjects IS NOT NULL
-        AND s != ''
-    `,
-
-    // 13) count of distinct institution names from creators[].affiliation JSON
-    client.$queryRaw<[{ count: number }]>`
-      SELECT COUNT(DISTINCT institution)::int AS count
+      SELECT COUNT(DISTINCT lower(trim(institution)))::int AS count
       FROM (
         SELECT
           CASE
@@ -245,7 +243,7 @@ export async function computeMetrics(client: PrismaClient) {
         AND lower(trim(institution)) <> 'institution name'
     `,
 
-    // 14) top 20 institutions by poster count
+    // 14) top 10 institutions by poster count
     client.$queryRaw<Array<{ institution: string; poster_count: number }>>`
       SELECT institution, poster_count FROM (
         SELECT
@@ -271,10 +269,10 @@ export async function computeMetrics(client: PrismaClient) {
         AND trim(institution) !~ '^[0-9]+$'
         AND lower(trim(institution)) <> 'institution name'
       ORDER BY poster_count DESC
-      LIMIT 20
+      LIMIT 10
     `,
 
-    // 15) publication year distribution
+    // 15) publication year distribution (published posters)
     client.posterMetadata.groupBy({
       by: ["publicationYear"],
       where: {
@@ -296,27 +294,44 @@ export async function computeMetrics(client: PrismaClient) {
     `,
 
     // 17) creator derived stats in a single flatten of creators
+    //
+    // Author identity rules (Researchers counter):
+    //   - If a creator has a non-empty ORCID, that ORCID is the identity.
+    //   - Otherwise, identity is the trimmed, lowercased name.
+    // This way authors with consistent ORCIDs collapse across posters, and
+    // name-only matches no longer split on casing differences.
     client.$queryRaw<
       [
         {
-          mentions: number;
-          posters_with_authors: number;
           distinct_authors: number;
           orcid_posters: number;
         },
       ]
     >`
       WITH creators_flat AS (
-        SELECT p.id AS pid, jsonb_array_elements(pm.creators) AS cr
+        SELECT
+          p.id AS pid,
+          cr,
+          NULLIF(lower(trim(cr->>'name')), '') AS name_norm,
+          (
+            SELECT NULLIF(ni->>'nameIdentifier', '')
+            FROM jsonb_array_elements(
+              CASE WHEN jsonb_typeof(cr->'nameIdentifiers') = 'array'
+                   THEN cr->'nameIdentifiers' ELSE '[]'::jsonb END
+            ) AS ni
+            WHERE ni->>'nameIdentifierType' = 'ORCID'
+            LIMIT 1
+          ) AS orcid
         FROM "PosterMetadata" pm
         JOIN "Poster" p ON pm."posterId" = p.id
+        CROSS JOIN LATERAL jsonb_array_elements(pm.creators) AS cr
         WHERE p.status = 'published'
           AND jsonb_typeof(pm.creators) = 'array'
       )
       SELECT
-        COUNT(*)::int AS mentions,
-        COUNT(DISTINCT pid)::int AS posters_with_authors,
-        COUNT(DISTINCT cr->>'name') FILTER (WHERE cr->>'name' <> '')::int AS distinct_authors,
+        COUNT(DISTINCT COALESCE('orcid:' || orcid, 'name:' || name_norm)) FILTER (
+          WHERE orcid IS NOT NULL OR name_norm IS NOT NULL
+        )::int AS distinct_authors,
         COUNT(DISTINCT pid) FILTER (
           WHERE cr->'nameIdentifiers' @> '[{"nameIdentifierType": "ORCID"}]'::jsonb
         )::int AS orcid_posters
@@ -342,7 +357,7 @@ export async function computeMetrics(client: PrismaClient) {
     `,
 
     // 19) distinct (poster, funder) pairs; canonicalized and counted in JS so
-    // funder-name variants (NSF directorates, grant#s) roll up to one entity
+    // funder-name variants roll up to one entity
     // without double-counting posters that cite the same funder twice
     client.$queryRaw<Array<{ poster_id: number; funder: string }>>`
       SELECT DISTINCT p.id AS poster_id, fr->>'funderName' AS funder
@@ -359,8 +374,7 @@ export async function computeMetrics(client: PrismaClient) {
         AND lower(fr->>'funderName') <> 'unknown funder'
     `,
 
-    // 20) true count of distinct languages (the languages query above is
-    // limited to the top 10 for the chart, so its length under-reports)
+    // 20) count of distinct languages
     client.$queryRaw<[{ count: number }]>`
       SELECT COUNT(DISTINCT pm.language)::int AS count
       FROM "PosterMetadata" pm
@@ -390,10 +404,10 @@ export async function computeMetrics(client: PrismaClient) {
     if (EXCLUDED_LICENSES.has(key.toLowerCase())) continue;
     licenseMap.set(key, (licenseMap.get(key) ?? 0) + r._count._all);
   }
-  const licenses = [...licenseMap.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 10)
-    .map(([name, count]) => ({ name, count }));
+  const licenses = topWithOther(
+    [...licenseMap.entries()].map(([name, count]) => ({ name, count })),
+    3,
+  );
 
   // Filter empty-string domains
   const domains = domainDistributionRaw
@@ -420,7 +434,7 @@ export async function computeMetrics(client: PrismaClient) {
   }
   const publishers = [...publisherMap.values()]
     .sort((a, b) => b.count - a.count)
-    .slice(0, 15)
+    .slice(0, 10)
     .map(({ displayName, count }) => ({ name: displayName, count }));
 
   // Filter null conference names
@@ -433,11 +447,6 @@ export async function computeMetrics(client: PrismaClient) {
 
   // Creator-derived stats (from the single creators flatten)
   const creatorStats = creatorStatsResult[0];
-  const avgAuthorsPerPoster = creatorStats?.posters_with_authors
-    ? Math.round(
-        (creatorStats.mentions / creatorStats.posters_with_authors) * 100,
-      ) / 100
-    : 0;
 
   // Roll up funder-name variants to canonical orgs, counting distinct posters.
   const funderPosters = new Map<string, Set<number>>();
@@ -451,6 +460,7 @@ export async function computeMetrics(client: PrismaClient) {
     }
     set.add(r.poster_id);
   }
+  const funderCount = funderPosters.size;
   const funders = [...funderPosters.entries()]
     .map(([name, set]) => ({ name, count: set.size }))
     .sort((a, b) => b.count - a.count)
@@ -461,6 +471,15 @@ export async function computeMetrics(client: PrismaClient) {
     count: r._count._all,
   }));
 
+  // Top 3 languages plus an "Other" bucket for the donut
+  const languages = topWithOther(
+    languageDistribution.map((r) => ({
+      name: languageNames.get(r.language!.toLowerCase()) ?? r.language!,
+      count: r._count._all,
+    })),
+    3,
+  );
+
   return {
     platform: {
       monthlyTrend: fullTrend,
@@ -468,15 +487,10 @@ export async function computeMetrics(client: PrismaClient) {
       automatedCount,
     },
     world: {
-      funded: fundedResult[0]?.count ?? 0,
-      uniqueSubjectCount: uniqueSubjectResult[0]?.count ?? 0,
       uniqueInstitutionCount: uniqueInstitutionResult[0]?.count ?? 0,
       languageCount: languageCountResult[0]?.count ?? 0,
       domains,
-      languages: languageDistribution.map((r) => ({
-        name: languageNames.get(r.language!.toLowerCase()) ?? r.language!,
-        count: r._count._all,
-      })),
+      languages,
       licenses,
       conferences,
       conferenceYears: conferenceYearDistribution.map((r) => ({
@@ -489,10 +503,10 @@ export async function computeMetrics(client: PrismaClient) {
       publishedTotal: manualCount + automatedCount,
       publicationYears,
       researcherCount: creatorStats?.distinct_authors ?? 0,
-      avgAuthorsPerPoster,
       withDoi: doiResult[0]?.count ?? 0,
       withOrcid: creatorStats?.orcid_posters ?? 0,
       withRor: rorPosterResult[0]?.count ?? 0,
+      funderCount,
       funders,
     },
   };
