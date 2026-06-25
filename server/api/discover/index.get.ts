@@ -1,3 +1,16 @@
+import { canonicalizeOrg, normalizeLicense } from "../../utils/canonicalize";
+
+function parseList(value: unknown): string[] {
+  if (!value) return [];
+
+  return String(value)
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+const EMPTY_RESPONSE = { posters: [] as never[], total: 0 };
+
 export default defineEventHandler(async (event) => {
   const requestStartedAt = Date.now();
   let previousStepAt = requestStartedAt;
@@ -9,7 +22,18 @@ export default defineEventHandler(async (event) => {
     previousStepAt = now;
   };
 
-  const { search, page, limit, sortBy, dateFrom, dateTo, source } = getQuery(event);
+  const {
+    search,
+    page,
+    limit,
+    sortBy,
+    source,
+    language,
+    license,
+    publicationYear,
+    institution,
+    funder,
+  } = getQuery(event);
 
   const pageNum = Math.max(1, parseInt(String(page || "1")));
   const limitNum = Math.min(50, Math.max(1, parseInt(String(limit || "9"))));
@@ -57,24 +81,6 @@ export default defineEventHandler(async (event) => {
   })();
   markStep("sort-setup");
 
-  const dateFilter =
-    dateFrom || dateTo
-      ? {
-          publishedAt: {
-            ...(dateFrom ? { gte: new Date(String(dateFrom)) } : {}),
-            ...(dateTo
-              ? (() => {
-                  const end = new Date(String(dateTo));
-                  end.setHours(23, 59, 59, 999);
-
-                  return { lte: end };
-                })()
-              : {}),
-          },
-        }
-      : {};
-  markStep("date-filter");
-
   const validSources = ["zenodo", "figshare", "user_submitted"];
   const sourceValues = source
     ? String(source)
@@ -105,14 +111,140 @@ export default defineEventHandler(async (event) => {
     sourceConditions.length > 0 ? { OR: sourceConditions } : {};
   markStep("source-filter");
 
+  // ---- New metadata filters ------------------------------------------------
+  // Scalar filters apply via posterMetadata.is.<field>.in. License and publisher
+  // need canonicalization: the user picks a canonical bucket (matching what
+  // /metrics shows), and we expand it to the raw DB values that normalize to
+  // that bucket. Institution and funder are inside JSON arrays, so they need
+  // raw SQL prefetches that return matching poster IDs.
+
+  const languageValues = parseList(language);
+  const licenseCanonicalValues = parseList(license);
+  const publicationYearValues = parseList(publicationYear)
+    .map((s) => parseInt(s, 10))
+    .filter((n) => Number.isFinite(n));
+  const institutionValues = parseList(institution).map((s) =>
+    s.trim().toLowerCase(),
+  );
+  const funderCanonicalValues = parseList(funder);
+
+  const metadataWhere: Record<string, unknown> = {};
+
+  if (languageValues.length > 0) {
+    metadataWhere.language = { in: languageValues };
+  }
+  if (publicationYearValues.length > 0) {
+    metadataWhere.publicationYear = { in: publicationYearValues };
+  }
+
+  if (licenseCanonicalValues.length > 0) {
+    const rawLicenses = await prisma.posterMetadata.findMany({
+      where: {
+        poster: { status: "published" },
+        license: { not: null },
+      },
+      select: { license: true },
+      distinct: ["license"],
+    });
+    const wanted = new Set(licenseCanonicalValues);
+    const matching = rawLicenses
+      .map((r) => r.license!)
+      .filter((raw) => wanted.has(normalizeLicense(raw)));
+    if (matching.length === 0) return EMPTY_RESPONSE;
+    metadataWhere.license = { in: matching };
+  }
+  markStep("license-filter");
+
+  let institutionPosterIds: number[] | null = null;
+  if (institutionValues.length > 0) {
+    const rows = await prisma.$queryRaw<Array<{ poster_id: number }>>`
+      SELECT DISTINCT p.id AS poster_id
+      FROM "PosterMetadata" pm
+      JOIN "Poster" p ON pm."posterId" = p.id
+      CROSS JOIN LATERAL jsonb_array_elements(
+        CASE WHEN pm.creators IS NOT NULL AND jsonb_typeof(pm.creators) = 'array'
+             THEN pm.creators ELSE '[]'::jsonb END
+      ) AS creator
+      CROSS JOIN LATERAL jsonb_array_elements(
+        CASE WHEN jsonb_typeof(creator->'affiliation') = 'array'
+             THEN creator->'affiliation' ELSE '[]'::jsonb END
+      ) AS aff
+      WHERE p.status = 'published'
+        AND lower(trim(
+          CASE
+            WHEN jsonb_typeof(aff) = 'object' THEN aff->>'name'
+            WHEN jsonb_typeof(aff) = 'string' THEN aff#>>'{}'
+          END
+        )) = ANY(${institutionValues}::text[])
+    `;
+    institutionPosterIds = rows.map((r) => Number(r.poster_id));
+    if (institutionPosterIds.length === 0) return EMPTY_RESPONSE;
+  }
+  markStep("institution-filter");
+
+  let funderPosterIds: number[] | null = null;
+  if (funderCanonicalValues.length > 0) {
+    // Fetch distinct (poster, raw funder) pairs in a single scan and
+    // canonicalize in JS, collecting the poster IDs whose funder maps to a
+    // wanted bucket. Mirrors the pattern used by /api/discover/facets.
+    const funderRows = await prisma.$queryRaw<
+      Array<{ poster_id: number; funder: string }>
+    >`
+      SELECT DISTINCT p.id AS poster_id, fr->>'funderName' AS funder
+      FROM "PosterMetadata" pm
+      JOIN "Poster" p ON pm."posterId" = p.id
+      CROSS JOIN LATERAL jsonb_array_elements(
+        CASE WHEN pm."fundingReferences" IS NOT NULL
+              AND jsonb_typeof(pm."fundingReferences") = 'array'
+             THEN pm."fundingReferences" ELSE '[]'::jsonb END
+      ) AS fr
+      WHERE p.status = 'published'
+        AND fr->>'funderName' IS NOT NULL
+        AND fr->>'funderName' <> ''
+    `;
+    const wanted = new Set(funderCanonicalValues);
+    const matchingIds = new Set<number>();
+    for (const row of funderRows) {
+      if (wanted.has(canonicalizeOrg(row.funder, true))) {
+        matchingIds.add(Number(row.poster_id));
+      }
+    }
+    if (matchingIds.size === 0) return EMPTY_RESPONSE;
+    funderPosterIds = [...matchingIds];
+  }
+  markStep("funder-filter");
+
+  // Intersect JSON-derived poster ID sets when both filters are active.
+  let idFilter: { in: number[] } | undefined;
+  if (institutionPosterIds !== null && funderPosterIds !== null) {
+    const funderSet = new Set(funderPosterIds);
+    const intersection = institutionPosterIds.filter((id) => funderSet.has(id));
+    if (intersection.length === 0) return EMPTY_RESPONSE;
+    idFilter = { in: intersection };
+  } else if (institutionPosterIds !== null) {
+    idFilter = { in: institutionPosterIds };
+  } else if (funderPosterIds !== null) {
+    idFilter = { in: funderPosterIds };
+  }
+
+  const metadataFilter =
+    Object.keys(metadataWhere).length > 0
+      ? { posterMetadata: { is: metadataWhere } }
+      : {};
+
+  const idClause = idFilter ? { id: idFilter } : {};
+
+  const whereClause = {
+    status: "published",
+    ...searchFilter,
+    ...sourceFilter,
+    ...metadataFilter,
+    ...idClause,
+  };
+
   const rawPosters =
     (await prisma.poster.findMany({
-      where: {
-        status: "published",
-        ...searchFilter,
-        ...dateFilter,
-        ...sourceFilter,
-      },
+      where: whereClause,
       orderBy: isSortByViews ? { publishedAt: "desc" } : orderBy,
       skip,
       take: limitNum,
@@ -130,56 +262,16 @@ export default defineEventHandler(async (event) => {
   markStep("db-findMany");
 
   const count = await prisma.poster.count({
-    where: {
-      status: "published",
-      ...searchFilter,
-      ...dateFilter,
-      ...sourceFilter,
-    },
+    where: whereClause,
   });
   markStep("db-count");
 
-  // const { umamiWebsiteId } = useRuntimeConfig();
-  // const umamiToken = await getUmamiToken();
-  // const endAt = String(Date.now());
-  // markStep("umami-auth");
-
-  // const viewsResults = await Promise.all(
-  //   rawPosters.map(async (poster) => {
-  //     if (!umamiToken || !umamiWebsiteId) return null;
-  //     try {
-  //       const params = new URLSearchParams({
-  //         startAt: "0",
-  //         endAt,
-  //         path: `/discover/${poster.id}`,
-  //       });
-  //       const data = await $fetch<{ visits: number }>(
-  //         `https://umami.fairdataihub.org/api/websites/${umamiWebsiteId}/stats?${params}`,
-  //         { headers: { Authorization: `Bearer ${umamiToken}` } },
-  //       );
-
-  //       return data.visits ?? null;
-  //     } catch {
-  //       return null;
-  //     }
-  //   }),
-  // );
-  // markStep("umami-views");
-
-  const posters = rawPosters.map(
-    ({ posterMetadata, _count, ...poster }, i) => ({
-      ...poster,
-      keywords: posterMetadata?.subjects ?? [],
-      likes: _count?.likes ?? 0,
-      // views: viewsResults[i] ?? 0,
-    }),
-  );
+  const posters = rawPosters.map(({ posterMetadata, _count, ...poster }) => ({
+    ...poster,
+    keywords: posterMetadata?.subjects ?? [],
+    likes: _count?.likes ?? 0,
+  }));
   markStep("poster-map");
-
-  // if (isSortByViews) {
-  // posters.sort((a, b) => (b.views ?? 0) - (a.views ?? 0));
-  // }
-  // markStep("post-sort");
 
   const totalDurationMs = Date.now() - requestStartedAt;
   event.node.res.setHeader(

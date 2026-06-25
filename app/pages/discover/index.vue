@@ -1,7 +1,5 @@
 <script setup lang="ts">
 import dayjs from "dayjs";
-import { getLocalTimeZone, parseDate } from "@internationalized/date";
-import type { CalendarDate } from "@internationalized/date";
 
 const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Discover Posters - Posters.science")}&description=${encodeURIComponent("Find and explore scientific posters on a variety of topics.")}&app=posters-science&org=fairdataihub`;
 
@@ -16,40 +14,67 @@ useSeoMeta({
 const route = useRoute();
 const router = useRouter();
 
-const sourceFilterValue = ref<string[]>(
-  route.query.source
-    ? String(route.query.source)
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean)
-    : [],
-);
+function parseStringList(value: unknown): string[] {
+  if (!value) return [];
 
-const dateFilterValue = shallowRef<{
-  start: CalendarDate | undefined;
-  end: CalendarDate | undefined;
-}>({
-  start: route.query.dateFrom
-    ? parseDate(route.query.dateFrom as string)
-    : undefined,
-  end: route.query.dateTo ? parseDate(route.query.dateTo as string) : undefined,
-});
+  return String(value)
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
 
-const dateFrom = computed(() =>
-  dateFilterValue.value.start
-    ? dateFilterValue.value.start.toDate(getLocalTimeZone()).toISOString()
-    : undefined,
-);
+function parseNumberList(value: unknown): number[] {
+  return parseStringList(value)
+    .map((s) => parseInt(s, 10))
+    .filter((n) => Number.isFinite(n));
+}
 
-const dateTo = computed(() =>
-  dateFilterValue.value.end
-    ? dateFilterValue.value.end.toDate(getLocalTimeZone()).toISOString()
-    : undefined,
+const sourceFilterValue = ref<string[]>(parseStringList(route.query.source));
+const languageFilterValue = ref<string[]>(
+  parseStringList(route.query.language),
 );
+const licenseFilterValue = ref<string[]>(parseStringList(route.query.license));
+const publicationYearFilterValue = ref<number[]>(
+  parseNumberList(route.query.publicationYear),
+);
+const institutionFilterValue = ref<string[]>(
+  parseStringList(route.query.institution),
+);
+const funderFilterValue = ref<string[]>(parseStringList(route.query.funder));
 
 const sourceParam = computed(() =>
   sourceFilterValue.value.length > 0
     ? sourceFilterValue.value.join(",")
+    : undefined,
+);
+
+const languageParam = computed(() =>
+  languageFilterValue.value.length > 0
+    ? languageFilterValue.value.join(",")
+    : undefined,
+);
+
+const licenseParam = computed(() =>
+  licenseFilterValue.value.length > 0
+    ? licenseFilterValue.value.join(",")
+    : undefined,
+);
+
+const publicationYearParam = computed(() =>
+  publicationYearFilterValue.value.length > 0
+    ? publicationYearFilterValue.value.join(",")
+    : undefined,
+);
+
+const institutionParam = computed(() =>
+  institutionFilterValue.value.length > 0
+    ? institutionFilterValue.value.join(",")
+    : undefined,
+);
+
+const funderParam = computed(() =>
+  funderFilterValue.value.length > 0
+    ? funderFilterValue.value.join(",")
     : undefined,
 );
 
@@ -62,9 +87,18 @@ type Poster = {
   publishedAt: Date | null;
   created: Date;
   updated: Date;
-  // views: number;
   likes: number;
   automated: boolean;
+};
+
+type FacetOption = { value: string; label: string; count: number };
+type YearFacetOption = { value: number; label: string; count: number };
+type FacetsResponse = {
+  languages: FacetOption[];
+  licenses: FacetOption[];
+  publicationYears: YearFacetOption[];
+  institutions: FacetOption[];
+  funders: FacetOption[];
 };
 
 const PAGE_SIZE = 9;
@@ -89,11 +123,25 @@ const mapPosters = (apiPosters: Poster[]) => {
     publishedAt: poster.publishedAt ? new Date(poster.publishedAt) : null,
     created: poster.created ? poster.created : new Date(),
     updated: poster.updated ? poster.updated : new Date(),
-    // views: typeof poster.views === "number" ? poster.views : 0,
     likes: typeof poster.likes === "number" ? poster.likes : 0,
     automated: typeof poster.automated === "boolean" ? poster.automated : false,
   }));
 };
+
+const { data: facetData } = await useFetch<FacetsResponse>(
+  "/api/discover/facets",
+);
+
+const facetOptions = computed<FacetsResponse>(
+  () =>
+    facetData.value ?? {
+      languages: [],
+      licenses: [],
+      publicationYears: [],
+      institutions: [],
+      funders: [],
+    },
+);
 
 const { data, error, status } = await useFetch("/api/discover", {
   query: {
@@ -101,9 +149,12 @@ const { data, error, status } = await useFetch("/api/discover", {
     page,
     limit: PAGE_SIZE,
     sortBy,
-    dateFrom,
-    dateTo,
     source: sourceParam,
+    language: languageParam,
+    license: licenseParam,
+    publicationYear: publicationYearParam,
+    institution: institutionParam,
+    funder: funderParam,
   },
 });
 
@@ -116,27 +167,50 @@ watch(sortBy, () => {
   page.value = 1;
 });
 
-watch(dateFilterValue, () => {
-  page.value = 1;
-});
-
-watch(sourceFilterValue, () => {
-  page.value = 1;
-});
+watch(
+  [
+    sourceFilterValue,
+    languageFilterValue,
+    licenseFilterValue,
+    publicationYearFilterValue,
+    institutionFilterValue,
+    funderFilterValue,
+  ],
+  () => {
+    page.value = 1;
+  },
+  { deep: true },
+);
 
 watch(
-  [page, committedSearch, sortBy, dateFilterValue, sourceFilterValue],
+  [
+    page,
+    committedSearch,
+    sortBy,
+    sourceFilterValue,
+    languageFilterValue,
+    licenseFilterValue,
+    publicationYearFilterValue,
+    institutionFilterValue,
+    funderFilterValue,
+  ],
   () => {
     const query: Record<string, string> = {};
     if (page.value !== 1) query.page = String(page.value);
     if (committedSearch.value) query.search = committedSearch.value;
     if (sortBy.value !== "Newest First") query.sortBy = sortBy.value;
-    if (dateFilterValue.value.start)
-      query.dateFrom = dateFilterValue.value.start.toString();
-    if (dateFilterValue.value.end)
-      query.dateTo = dateFilterValue.value.end.toString();
     if (sourceFilterValue.value.length > 0)
       query.source = sourceFilterValue.value.join(",");
+    if (languageFilterValue.value.length > 0)
+      query.language = languageFilterValue.value.join(",");
+    if (licenseFilterValue.value.length > 0)
+      query.license = licenseFilterValue.value.join(",");
+    if (publicationYearFilterValue.value.length > 0)
+      query.publicationYear = publicationYearFilterValue.value.join(",");
+    if (institutionFilterValue.value.length > 0)
+      query.institution = institutionFilterValue.value.join(",");
+    if (funderFilterValue.value.length > 0)
+      query.funder = funderFilterValue.value.join(",");
     router.replace({ query });
   },
   { deep: true },
@@ -160,16 +234,116 @@ if (error.value) {
 const totalFiltered = computed(() => total.value);
 
 const showMobileFilter = ref(false);
-const hasActiveFilters = computed(
-  () => !!dateFilterValue.value.start || sourceFilterValue.value.length > 0,
-);
-const activeFilterCount = computed(() => {
-  let count = 0;
-  if (dateFilterValue.value.start) count++;
-  if (sourceFilterValue.value.length > 0) count++;
 
-  return count;
+// Lookup maps so badge labels can show human-friendly names
+// (e.g. "en" -> "English", lowercased institution -> display name).
+const languageLabelMap = computed(
+  () => new Map(facetOptions.value.languages.map((o) => [o.value, o.label])),
+);
+const institutionLabelMap = computed(
+  () => new Map(facetOptions.value.institutions.map((o) => [o.value, o.label])),
+);
+
+const SOURCE_LABELS: Record<string, string> = {
+  zenodo: "Zenodo",
+  figshare: "Figshare",
+  user_submitted: "User-submitted",
+};
+
+type ActiveFilter = {
+  key: string;
+  label: string;
+  onRemove: () => void;
+};
+
+const activeFilters = computed<ActiveFilter[]>(() => {
+  const out: ActiveFilter[] = [];
+
+  for (const v of institutionFilterValue.value) {
+    out.push({
+      key: `institution:${v}`,
+      label: `Institution: ${institutionLabelMap.value.get(v) ?? v}`,
+      onRemove: () => {
+        institutionFilterValue.value = institutionFilterValue.value.filter(
+          (x) => x !== v,
+        );
+      },
+    });
+  }
+
+  for (const v of funderFilterValue.value) {
+    out.push({
+      key: `funder:${v}`,
+      label: `Funder: ${v}`,
+      onRemove: () => {
+        funderFilterValue.value = funderFilterValue.value.filter(
+          (x) => x !== v,
+        );
+      },
+    });
+  }
+
+  for (const v of sourceFilterValue.value) {
+    out.push({
+      key: `source:${v}`,
+      label: `Source: ${SOURCE_LABELS[v] ?? v}`,
+      onRemove: () => {
+        sourceFilterValue.value = sourceFilterValue.value.filter(
+          (x) => x !== v,
+        );
+      },
+    });
+  }
+
+  for (const v of publicationYearFilterValue.value) {
+    out.push({
+      key: `year:${v}`,
+      label: `Year: ${v}`,
+      onRemove: () => {
+        publicationYearFilterValue.value =
+          publicationYearFilterValue.value.filter((x) => x !== v);
+      },
+    });
+  }
+
+  for (const v of languageFilterValue.value) {
+    out.push({
+      key: `language:${v}`,
+      label: `Language: ${languageLabelMap.value.get(v) ?? v}`,
+      onRemove: () => {
+        languageFilterValue.value = languageFilterValue.value.filter(
+          (x) => x !== v,
+        );
+      },
+    });
+  }
+
+  for (const v of licenseFilterValue.value) {
+    out.push({
+      key: `license:${v}`,
+      label: `License: ${v}`,
+      onRemove: () => {
+        licenseFilterValue.value = licenseFilterValue.value.filter(
+          (x) => x !== v,
+        );
+      },
+    });
+  }
+
+  return out;
 });
+
+const activeFilterCount = computed(() => activeFilters.value.length);
+const hasActiveFilters = computed(() => activeFilterCount.value > 0);
+
+function clearAllFilters() {
+  sourceFilterValue.value = [];
+  languageFilterValue.value = [];
+  licenseFilterValue.value = [];
+  publicationYearFilterValue.value = [];
+  institutionFilterValue.value = [];
+  funderFilterValue.value = [];
+}
 </script>
 
 <template>
@@ -193,15 +367,36 @@ const activeFilterCount = computed(() => {
       <div class="hidden w-80 flex-shrink-0 md:block">
         <UCard class="sticky top-4">
           <template #header>
-            <div class="flex items-center justify-between">
-              <h3 class="text-lg font-semibold">Filters</h3>
-            </div>
+            <h3 class="text-lg font-semibold">Filters</h3>
           </template>
 
           <div class="space-y-6">
-            <DiscoverPublishedDateFilter v-model="dateFilterValue" />
+            <DiscoverInstitutionFilter
+              v-model="institutionFilterValue"
+              :options="facetOptions.institutions"
+            />
+
+            <DiscoverFunderFilter
+              v-model="funderFilterValue"
+              :options="facetOptions.funders"
+            />
 
             <DiscoverSourceFilter v-model="sourceFilterValue" />
+
+            <DiscoverPublicationYearFilter
+              v-model="publicationYearFilterValue"
+              :options="facetOptions.publicationYears"
+            />
+
+            <DiscoverLanguageFilter
+              v-model="languageFilterValue"
+              :options="facetOptions.languages"
+            />
+
+            <DiscoverLicenseFilter
+              v-model="licenseFilterValue"
+              :options="facetOptions.licenses"
+            />
           </div>
         </UCard>
       </div>
@@ -231,12 +426,32 @@ const activeFilterCount = computed(() => {
             v-show="showMobileFilter"
             class="mt-2 space-y-6 rounded-lg border p-4"
           >
-            <DiscoverPublishedDateFilter
-              v-model="dateFilterValue"
-              :number-of-months="1"
+            <DiscoverInstitutionFilter
+              v-model="institutionFilterValue"
+              :options="facetOptions.institutions"
+            />
+
+            <DiscoverFunderFilter
+              v-model="funderFilterValue"
+              :options="facetOptions.funders"
             />
 
             <DiscoverSourceFilter v-model="sourceFilterValue" />
+
+            <DiscoverPublicationYearFilter
+              v-model="publicationYearFilterValue"
+              :options="facetOptions.publicationYears"
+            />
+
+            <DiscoverLanguageFilter
+              v-model="languageFilterValue"
+              :options="facetOptions.languages"
+            />
+
+            <DiscoverLicenseFilter
+              v-model="licenseFilterValue"
+              :options="facetOptions.licenses"
+            />
           </div>
         </div>
 
@@ -274,6 +489,36 @@ const activeFilterCount = computed(() => {
               class="w-34"
             />
           </div>
+        </div>
+
+        <div
+          v-if="hasActiveFilters"
+          class="flex flex-wrap items-center gap-2 pb-4"
+        >
+          <span class="text-sm text-gray-500">Active filters:</span>
+
+          <UBadge
+            v-for="filter in activeFilters"
+            :key="filter.key"
+            color="primary"
+            variant="subtle"
+            size="md"
+            trailing-icon="i-lucide-x"
+            class="cursor-pointer"
+            :title="`Remove filter: ${filter.label}`"
+            @click="filter.onRemove"
+          >
+            {{ filter.label }}
+          </UBadge>
+
+          <UButton
+            color="neutral"
+            variant="ghost"
+            size="xs"
+            @click="clearAllFilters"
+          >
+            Clear all
+          </UButton>
         </div>
 
         <UiSpinner :loading="status === 'pending'" overlay>
@@ -346,11 +591,6 @@ const activeFilterCount = computed(() => {
                       class="flex items-center justify-between border-t border-gray-100 pt-2 text-sm"
                     >
                       <div class="flex items-center gap-4">
-                        <!-- <span class="flex items-center gap-1">
-                          <Icon name="heroicons:eye" />
-                          {{ poster.views }}
-                        </span> -->
-
                         <span class="flex items-center gap-1">
                           <Icon name="heroicons:heart" />
                           {{ poster.likes }}

@@ -14,11 +14,10 @@ useSeoMeta({
 const { data } = await useFetch("/api/discover/metrics");
 
 // Animated counters
-const displayFunded = ref(0);
-const displaySubjects = ref(0);
 const displayInstitutions = ref(0);
 const displayLanguages = ref(0);
 const displayResearchers = ref(0);
+const displayFunders = ref(0);
 
 const animateCount = (target: number, output: Ref<number>) => {
   if (!target) return;
@@ -34,14 +33,13 @@ const animateCount = (target: number, output: Ref<number>) => {
 };
 
 onMounted(() => {
-  animateCount(data.value?.world.funded ?? 0, displayFunded);
-  animateCount(data.value?.world.uniqueSubjectCount ?? 0, displaySubjects);
+  animateCount(data.value?.world.researcherCount ?? 0, displayResearchers);
   animateCount(
     data.value?.world.uniqueInstitutionCount ?? 0,
     displayInstitutions,
   );
   animateCount(data.value?.world.languageCount ?? 0, displayLanguages);
-  animateCount(data.value?.world.researcherCount ?? 0, displayResearchers);
+  animateCount(data.value?.world.funderCount ?? 0, displayFunders);
 });
 
 // Dark mode label color
@@ -354,6 +352,17 @@ const publicationYearChartOption = computed<ECOption>(() => {
   };
 });
 
+// Last updated metrics timestamp
+const lastUpdated = computed(() => {
+  const ts = data.value?.generatedAt;
+  if (!ts) return null;
+
+  return new Date(ts).toLocaleString("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+});
+
 // Open science identifier coverage (DOI / ORCID / ROR)
 const openScience = computed(() => {
   const w = data.value?.world;
@@ -366,12 +375,12 @@ const openScience = computed(() => {
     items: [
       { label: "With a DOI", pct: pct(w?.withDoi), count: w?.withDoi ?? 0 },
       {
-        label: "With an ORCID author",
+        label: "With at least 1 ORCID author",
         pct: pct(w?.withOrcid),
         count: w?.withOrcid ?? 0,
       },
       {
-        label: "With a ROR institution",
+        label: "With at least 1 ROR institution",
         pct: pct(w?.withRor),
         count: w?.withRor ?? 0,
       },
@@ -384,15 +393,47 @@ const openScience = computed(() => {
   <div class="mx-auto flex w-full max-w-screen-xl flex-col gap-10 px-6 pb-10">
     <UPageCTA
       title="Metrics"
-      description="Explore the research archived on Posters.science"
+      description="Analytics & Insights about Posters.science"
       variant="naked"
     />
 
-    <!-- Archive Growth -->
+    <!-- Poster counts: manually shared vs auto-indexed -->
     <section class="flex flex-col gap-4 lg:-mt-16">
+      <div class="grid grid-cols-2 gap-4">
+        <UCard>
+          <div class="flex flex-col items-center gap-1 py-2 text-center">
+            <div class="text-3xl font-bold text-pink-600">
+              {{ (data?.platform.manualCount ?? 0).toLocaleString() }}
+            </div>
+
+            <p class="text-sm font-medium">Manually Shared</p>
+
+            <p class="text-muted text-xs">Uploaded directly by researchers</p>
+          </div>
+        </UCard>
+
+        <UCard>
+          <div class="flex flex-col items-center gap-1 py-2 text-center">
+            <div class="text-3xl font-bold text-pink-600">
+              {{ (data?.platform.automatedCount ?? 0).toLocaleString() }}
+            </div>
+
+            <p class="text-sm font-medium">Auto-Indexed</p>
+
+            <p class="text-muted text-xs">
+              Discovered and indexed from repositories
+            </p>
+          </div>
+        </UCard>
+      </div>
+    </section>
+
+    <!-- Archive Growth -->
+    <section class="flex flex-col gap-4">
       <h2 class="text-xl font-semibold">Archive Growth</h2>
 
-      <ClientOnly>
+      <!-- Monthly Poster Registrations -->
+      <ClientOnly v-if="false">
         <UCard>
           <template #header>
             <h3 class="text-base font-semibold">
@@ -432,62 +473,22 @@ const openScience = computed(() => {
           <USkeleton class="h-96 w-full rounded-xl" />
         </template>
       </ClientOnly>
-
-      <div class="grid grid-cols-2 gap-4">
-        <UCard>
-          <div class="flex flex-col items-center gap-1 py-2 text-center">
-            <div class="text-3xl font-bold text-pink-600">
-              {{ (data?.platform.manualCount ?? 0).toLocaleString() }}
-            </div>
-
-            <p class="text-sm font-medium">Manually Shared</p>
-
-            <p class="text-muted text-xs">Uploaded directly by researchers</p>
-          </div>
-        </UCard>
-
-        <UCard>
-          <div class="flex flex-col items-center gap-1 py-2 text-center">
-            <div class="text-3xl font-bold text-pink-600">
-              {{ (data?.platform.automatedCount ?? 0).toLocaleString() }}
-            </div>
-
-            <p class="text-sm font-medium">Auto-Indexed</p>
-
-            <p class="text-muted text-xs">
-              Discovered and indexed from repositories
-            </p>
-          </div>
-        </UCard>
-      </div>
     </section>
 
     <!-- Research at a Glance -->
     <section class="flex flex-col gap-4">
       <h2 class="text-xl font-semibold">Research at a Glance</h2>
 
-      <div class="grid grid-cols-2 gap-4 lg:grid-cols-3">
+      <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <UCard>
           <div class="flex flex-col items-center gap-1 py-2 text-center">
             <div class="text-3xl font-bold text-pink-600">
-              {{ displayFunded.toLocaleString() }}
+              {{ displayResearchers.toLocaleString() }}
             </div>
 
-            <p class="text-sm font-medium">Funded Posters</p>
+            <p class="text-sm font-medium">Researchers</p>
 
-            <p class="text-muted text-xs">With public funding references</p>
-          </div>
-        </UCard>
-
-        <UCard>
-          <div class="flex flex-col items-center gap-1 py-2 text-center">
-            <div class="text-3xl font-bold text-pink-600">
-              {{ displaySubjects.toLocaleString() }}
-            </div>
-
-            <p class="text-sm font-medium">Unique Topics</p>
-
-            <p class="text-muted text-xs">Distinct research subjects</p>
+            <p class="text-muted text-xs">Distinct authors represented</p>
           </div>
         </UCard>
 
@@ -499,7 +500,7 @@ const openScience = computed(() => {
 
             <p class="text-sm font-medium">Institutions</p>
 
-            <p class="text-muted text-xs">Unique affiliated organizations</p>
+            <p class="text-muted text-xs">Unique author affiliations</p>
           </div>
         </UCard>
 
@@ -518,24 +519,12 @@ const openScience = computed(() => {
         <UCard>
           <div class="flex flex-col items-center gap-1 py-2 text-center">
             <div class="text-3xl font-bold text-pink-600">
-              {{ displayResearchers.toLocaleString() }}
+              {{ displayFunders.toLocaleString() }}
             </div>
 
-            <p class="text-sm font-medium">Researchers</p>
+            <p class="text-sm font-medium">Unique Funders</p>
 
-            <p class="text-muted text-xs">Distinct authors represented</p>
-          </div>
-        </UCard>
-
-        <UCard>
-          <div class="flex flex-col items-center gap-1 py-2 text-center">
-            <div class="text-3xl font-bold text-pink-600">
-              {{ (data?.world.avgAuthorsPerPoster ?? 0).toFixed(2) }}
-            </div>
-
-            <p class="text-sm font-medium">Avg Authors / Poster</p>
-
-            <p class="text-muted text-xs">Average authors per poster</p>
+            <p class="text-muted text-xs">Funders represented or mentioned</p>
           </div>
         </UCard>
       </div>
@@ -779,5 +768,9 @@ const openScience = computed(() => {
         </template>
       </ClientOnly>
     </section>
+
+    <p v-if="lastUpdated" class="text-muted text-center text-sm">
+      Last updated {{ lastUpdated }}
+    </p>
   </div>
 </template>
