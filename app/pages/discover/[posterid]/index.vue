@@ -1,6 +1,5 @@
 <!-- eslint-disable @typescript-eslint/no-explicit-any -->
 <script setup lang="ts">
-import dayjs from "dayjs";
 import licenses from "@/assets/data/licenses.json";
 import notFoundAnimation from "@/assets/animations/404-not-found.json";
 import {
@@ -115,12 +114,8 @@ const poster = ref({
     uri: conf?.conferenceUri ?? "",
     series: conf?.conferenceSeries ?? "",
     dates: {
-      start: conf?.conferenceStartDate
-        ? new Date(conf.conferenceStartDate)
-        : undefined,
-      end: conf?.conferenceEndDate
-        ? new Date(conf.conferenceEndDate)
-        : undefined,
+      start: conf?.conferenceStartDate ?? null,
+      end: conf?.conferenceEndDate ?? null,
     },
   },
 });
@@ -149,6 +144,7 @@ const posterSource = computed(() => {
   const imageUrl = api?.imageUrl ?? "";
   if (doi.startsWith("10.6084/") || imageUrl.includes("/figshare_"))
     return "figshare";
+
   return "zenodo";
 });
 
@@ -170,6 +166,13 @@ const languageDisplay = computed(() => {
     return poster.value.language;
   }
 });
+
+const conferenceDateDisplay = computed(() =>
+  formatConferenceDateRange(
+    poster.value.conference.dates.start,
+    poster.value.conference.dates.end,
+  ),
+);
 
 const posterTitle = poster.value.title;
 const posterDescription = (
@@ -580,10 +583,7 @@ const tabItems = [
                       </div>
 
                       <div
-                        v-if="
-                          poster.conference.dates.start ||
-                          poster.conference.dates.end
-                        "
+                        v-if="conferenceDateDisplay"
                         class="flex items-center gap-2"
                       >
                         <Icon
@@ -594,30 +594,7 @@ const tabItems = [
                         <span class="text-gray-500">Dates:</span>
 
                         <span class="font-medium">
-                          <template v-if="poster.conference.dates.start">
-                            {{
-                              dayjs(poster.conference.dates.start).format(
-                                "MMM D",
-                              )
-                            }}
-                          </template>
-
-                          <template
-                            v-if="
-                              poster.conference.dates.start &&
-                              poster.conference.dates.end
-                            "
-                          >
-                            -
-                          </template>
-
-                          <template v-if="poster.conference.dates.end">
-                            {{
-                              dayjs(poster.conference.dates.end).format(
-                                "MMM D, YYYY",
-                              )
-                            }}
-                          </template>
+                          {{ conferenceDateDisplay }}
                         </span>
                       </div>
 
