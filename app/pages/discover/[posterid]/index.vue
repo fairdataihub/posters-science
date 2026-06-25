@@ -284,7 +284,7 @@ const NuxtSchemaPoster: WithContext<ScholarlyArticle> = {
     },
   ],
   keywords: poster.value?.keywords?.length ? poster.value.keywords : undefined,
-  license: poster.value?.license || undefined,
+  license: licenseInfo.value?.reference || undefined,
   publisher: poster.value?.publisher
     ? { "@type": "Organization", name: poster.value.publisher }
     : undefined,
@@ -293,7 +293,12 @@ const NuxtSchemaPoster: WithContext<ScholarlyArticle> = {
   url: discoverUrl.value || undefined,
   version: poster.value?.version || undefined,
 };
-
+console.log(
+  "cleanSchema(NuxtSchemaPoster):",
+  JSON.stringify(cleanSchema(NuxtSchemaPoster), null, 2),
+);
+console.log("doi", poster.value.doi);
+console.log("citations", NuxtSchemaPoster.citation);
 useSchemaOrg([cleanSchema(NuxtSchemaPoster)]);
 
 const handleLike = async () => {
