@@ -249,6 +249,9 @@ const NuxtSchemaPoster: WithContext<ScholarlyArticle> = {
   inLanguage: poster.value?.language || "en",
   keywords: poster.value?.keywords?.length ? poster.value.keywords : undefined,
   license: poster.value?.license || undefined,
+  publisher: poster.value?.publisher
+    ? { "@type": "Organization", name: poster.value.publisher }
+    : undefined,
   mainEntityOfPage: {
     "@type": "WebPage",
     "@id": `https://posters.science/discover/${poster.value.id}`,
@@ -256,6 +259,18 @@ const NuxtSchemaPoster: WithContext<ScholarlyArticle> = {
   name: poster.value?.title || undefined,
   url: `https://posters.science/discover/${poster.value.id}`,
   version: poster.value?.version || undefined,
+  interactionStatistic: [
+    {
+      "@type": "InteractionCounter",
+      interactionType: { "@type": "LikeAction" },
+      userInteractionCount: poster.value.likes,
+    },
+    {
+      "@type": "InteractionCounter",
+      interactionType: { "@type": "ViewAction" },
+      userInteractionCount: poster.value.views,
+    },
+  ],
 };
 
 useSchemaOrg([NuxtSchemaPoster]);
