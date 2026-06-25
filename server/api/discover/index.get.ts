@@ -184,8 +184,13 @@ export default defineEventHandler(async (event) => {
 
   let funderPosterIds: number[] | null = null;
   if (funderCanonicalValues.length > 0) {
-    const rawFunders = await prisma.$queryRaw<Array<{ funder: string }>>`
-      SELECT DISTINCT fr->>'funderName' AS funder
+    // Fetch distinct (poster, raw funder) pairs in a single scan and
+    // canonicalize in JS, collecting the poster IDs whose funder maps to a
+    // wanted bucket. Mirrors the pattern used by /api/discover/facets.
+    const funderRows = await prisma.$queryRaw<
+      Array<{ poster_id: number; funder: string }>
+    >`
+      SELECT DISTINCT p.id AS poster_id, fr->>'funderName' AS funder
       FROM "PosterMetadata" pm
       JOIN "Poster" p ON pm."posterId" = p.id
       CROSS JOIN LATERAL jsonb_array_elements(
@@ -198,25 +203,14 @@ export default defineEventHandler(async (event) => {
         AND fr->>'funderName' <> ''
     `;
     const wanted = new Set(funderCanonicalValues);
-    const matchingRaw = rawFunders
-      .map((r) => r.funder)
-      .filter((raw) => wanted.has(canonicalizeOrg(raw, true)));
-    if (matchingRaw.length === 0) return EMPTY_RESPONSE;
-
-    const posterRows = await prisma.$queryRaw<Array<{ poster_id: number }>>`
-      SELECT DISTINCT p.id AS poster_id
-      FROM "PosterMetadata" pm
-      JOIN "Poster" p ON pm."posterId" = p.id
-      CROSS JOIN LATERAL jsonb_array_elements(
-        CASE WHEN pm."fundingReferences" IS NOT NULL
-              AND jsonb_typeof(pm."fundingReferences") = 'array'
-             THEN pm."fundingReferences" ELSE '[]'::jsonb END
-      ) AS fr
-      WHERE p.status = 'published'
-        AND fr->>'funderName' = ANY(${matchingRaw}::text[])
-    `;
-    funderPosterIds = posterRows.map((r) => Number(r.poster_id));
-    if (funderPosterIds.length === 0) return EMPTY_RESPONSE;
+    const matchingIds = new Set<number>();
+    for (const row of funderRows) {
+      if (wanted.has(canonicalizeOrg(row.funder, true))) {
+        matchingIds.add(Number(row.poster_id));
+      }
+    }
+    if (matchingIds.size === 0) return EMPTY_RESPONSE;
+    funderPosterIds = [...matchingIds];
   }
   markStep("funder-filter");
 
