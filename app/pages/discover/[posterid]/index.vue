@@ -36,10 +36,12 @@ const conf = api?.conference;
 const liked = ref(api?.liked ?? false);
 
 const liking = ref(false);
-
 const poster = ref({
   id: api?.id ?? posterId,
   automated: api?.automated ?? false,
+  citations: (api?.relatedIdentifiers ?? []).filter(
+    (ri: any) => ri.relationType === "Cites",
+  ),
   title: api?.title ?? "Untitled Poster",
   description: api?.description ?? "",
   imageUrl:
@@ -249,9 +251,9 @@ const NuxtSchemaPoster: WithContext<ScholarlyArticle> = {
         sameAs: author.orcid || undefined,
       }))
     : undefined,
-  citation: poster.value.references
-    ?.map((r: any) => r.doi || r.url || r.title)
-    .filter(Boolean),
+  citation: poster.value?.citations?.length
+    ? poster.value.citations.map((citation: any) => citation.relatedIdentifier)
+    : undefined,
   datePublished: poster.value?.publishedAt?.toISOString() || undefined,
   description: poster.value?.description || undefined,
   funder: poster.value.funding?.length
@@ -297,8 +299,7 @@ console.log(
   "cleanSchema(NuxtSchemaPoster):",
   JSON.stringify(cleanSchema(NuxtSchemaPoster), null, 2),
 );
-console.log("doi", poster.value.doi);
-console.log("citations", NuxtSchemaPoster.citation);
+
 useSchemaOrg([cleanSchema(NuxtSchemaPoster)]);
 
 const handleLike = async () => {
