@@ -125,7 +125,7 @@ const poster = ref({
   },
 });
 
-const zenodoUrl = computed(() => {
+const resolvedPosterUrl = computed(() => {
   if (!poster.value.doi) return null;
   const isZenodoDoi = poster.value.doi.includes("/zenodo.");
   if (!isZenodoDoi) return `https://doi.org/${poster.value.doi}`;
@@ -172,6 +172,12 @@ const languageDisplay = computed(() => {
   }
 });
 
+const discoverUrl = computed(() =>
+  poster.value?.id
+    ? `https://posters.science/discover/${poster.value.id}`
+    : null,
+);
+
 const posterTitle = poster.value.title;
 const posterDescription = (
   poster.value.description ||
@@ -187,9 +193,40 @@ useSeoMeta({
   ogImage,
 });
 
+// Recursively removes `undefined`, `null`, and empty array values from a schema object to eliminate noise in the structured data output.
+const cleanSchema = (value: any): any => {
+  if (Array.isArray(value)) {
+    const filtered = value
+      .map(cleanSchema)
+      .filter(
+        (v) =>
+          v !== undefined &&
+          v !== null &&
+          !(Array.isArray(v) && v.length === 0),
+      );
+
+    return filtered.length > 0 ? filtered : undefined;
+  }
+
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value)
+        .map(([k, v]) => [k, cleanSchema(v)])
+        .filter(
+          ([, v]) =>
+            v !== undefined &&
+            v !== null &&
+            !(Array.isArray(v) && v.length === 0),
+        ),
+    );
+  }
+
+  return value;
+};
+
 const NuxtSchemaPoster: WithContext<ScholarlyArticle> = {
   "@context": "https://schema.org",
-  "@id": poster.value?.doi ? `https://doi.org/${poster.value.doi}` : undefined,
+  "@id": resolvedPosterUrl.value || undefined,
   "@type": "ScholarlyArticle",
   about: poster.value?.domain
     ? {
@@ -197,7 +234,7 @@ const NuxtSchemaPoster: WithContext<ScholarlyArticle> = {
         name: poster.value.domain,
       }
     : undefined,
-  abstract: poster.value?.description || "No description available.",
+  abstract: poster.value?.description || undefined,
   author: poster.value?.authors?.length
     ? poster.value.authors.map((author: any) => ({
         "@type": "Person",
@@ -209,36 +246,23 @@ const NuxtSchemaPoster: WithContext<ScholarlyArticle> = {
               name: author.affiliation,
             }
           : undefined,
-        sameAs: author.orcid ? `https://orcid.org/${author.orcid}` : undefined,
+        sameAs: author.orcid || undefined,
       }))
     : undefined,
   citation: poster.value.references
     ?.map((r: any) => r.doi || r.url || r.title)
     .filter(Boolean),
   datePublished: poster.value?.publishedAt?.toISOString() || undefined,
+  description: poster.value?.description || undefined,
   funder: poster.value.funding?.length
     ? poster.value.funding.map((f: any) => ({
         "@type": "Organization",
         name: f.agency,
-        identifier: f.grantNumber
-          ? {
-              "@type": "PropertyValue",
-              propertyID: "grantNumber",
-              value: f.grantNumber,
-            }
-          : undefined,
         url: f.awardUri || undefined,
       }))
     : undefined,
   headline: poster.value?.title || undefined,
-  identifier: poster.value?.doi
-    ? {
-        "@type": "PropertyValue",
-        propertyID: "DOI",
-        value: poster.value.doi,
-        url: `https://doi.org/${poster.value.doi}`,
-      }
-    : undefined,
+  identifier: resolvedPosterUrl.value || undefined,
   image: poster.value?.imageUrl
     ? {
         "@type": "ImageObject",
@@ -247,18 +271,6 @@ const NuxtSchemaPoster: WithContext<ScholarlyArticle> = {
       }
     : undefined,
   inLanguage: poster.value?.language || "en",
-  keywords: poster.value?.keywords?.length ? poster.value.keywords : undefined,
-  license: poster.value?.license || undefined,
-  publisher: poster.value?.publisher
-    ? { "@type": "Organization", name: poster.value.publisher }
-    : undefined,
-  mainEntityOfPage: {
-    "@type": "WebPage",
-    "@id": `https://posters.science/discover/${poster.value.id}`,
-  },
-  name: poster.value?.title || undefined,
-  url: `https://posters.science/discover/${poster.value.id}`,
-  version: poster.value?.version || undefined,
   interactionStatistic: [
     {
       "@type": "InteractionCounter",
@@ -271,9 +283,18 @@ const NuxtSchemaPoster: WithContext<ScholarlyArticle> = {
       userInteractionCount: poster.value.views,
     },
   ],
+  keywords: poster.value?.keywords?.length ? poster.value.keywords : undefined,
+  license: poster.value?.license || undefined,
+  publisher: poster.value?.publisher
+    ? { "@type": "Organization", name: poster.value.publisher }
+    : undefined,
+  mainEntityOfPage: discoverUrl.value || undefined,
+  name: poster.value?.title || undefined,
+  url: discoverUrl.value || undefined,
+  version: poster.value?.version || undefined,
 };
 
-useSchemaOrg([NuxtSchemaPoster]);
+useSchemaOrg([cleanSchema(NuxtSchemaPoster)]);
 
 const handleLike = async () => {
   if (!loggedIn.value) {
@@ -503,7 +524,11 @@ const tabItems = [
               </div>
 
               <div class="flex items-center gap-2">
-                <NuxtLink v-if="zenodoUrl" :to="zenodoUrl" target="_blank">
+                <NuxtLink
+                  v-if="resolvedPosterUrl"
+                  :to="resolvedPosterUrl"
+                  target="_blank"
+                >
                   <UButton
                     color="primary"
                     variant="solid"
@@ -544,7 +569,11 @@ const tabItems = [
               "
               class="hidden sm:col-span-3 sm:flex sm:items-start sm:justify-center"
             >
-              <NuxtLink v-if="zenodoUrl" :to="zenodoUrl" target="_blank">
+              <NuxtLink
+                v-if="resolvedPosterUrl"
+                :to="resolvedPosterUrl"
+                target="_blank"
+              >
                 <img
                   :src="poster.imageUrl"
                   alt="Poster thumbnail"
