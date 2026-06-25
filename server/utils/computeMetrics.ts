@@ -1,91 +1,14 @@
 import type { PrismaClient } from "../../shared/generated/client";
 import iso6391 from "../../shared/data/iso-639-1.json";
+import {
+  NULL_CONFERENCE,
+  canonicalizeOrg,
+  isFunderExcluded,
+  isLicenseNoise,
+  normalizeLicense,
+} from "./canonicalize";
 
 const languageNames = new Map(iso6391.map((l) => [l.code, l.name]));
-
-// Rights statements that aren't real licenses; excluded from the distribution.
-const EXCLUDED_LICENSES = new Set([
-  "in copyright",
-  "copyright not evaluated",
-  "all rights reserved",
-  "other-at",
-]);
-
-function normalizeLicense(raw: string): string {
-  const s = raw
-    .trim()
-    .toLowerCase()
-    .replace(/[\s_]+/g, "-");
-  if (/cc0|cc-zero|public-domain/.test(s)) return "CC0-1.0";
-  if (/^cc-by-nc-nd-4/.test(s) || s === "cc-by-nc-nd") return "CC-BY-NC-ND-4.0";
-  if (/^cc-by-nc-sa-4/.test(s) || s === "cc-by-nc-sa") return "CC-BY-NC-SA-4.0";
-  if (/^cc-by-nc-4/.test(s) || s === "cc-by-nc") return "CC-BY-NC-4.0";
-  if (/^cc-by-nd-4/.test(s) || s === "cc-by-nd") return "CC-BY-ND-4.0";
-  if (/^cc-by-sa-4/.test(s) || s === "cc-by-sa") return "CC-BY-SA-4.0";
-  if (/^cc-by-4/.test(s) || s === "cc-by") return "CC-BY-4.0";
-  if (/apache-?2/.test(s)) return "Apache-2.0";
-  if (s === "mit") return "MIT";
-
-  return raw.trim();
-}
-
-// Strip trailing qualifiers so publisher variants merge into one entry,
-// e.g. "Figshare (United Kingdom)" / "figshare.com" / "Figshare" -> "Figshare".
-function cleanPublisherName(raw: string): string {
-  const cleaned = raw
-    .trim()
-    .replace(/\s*\([^)]*\)\s*$/, "") // drop trailing "(United Kingdom)", "(EPA)", etc.
-    .replace(/\.(com|org|net|io|edu|gov)$/i, "") // drop trailing TLD, e.g. "figshare.com"
-    .trim();
-
-  return cleaned || raw.trim();
-}
-
-// Canonical names for organizations that show up under many name variants in
-// source metadata, so a chart doesn't split one entity across many bars. Rules
-// marked funderOnly are only safe in a funding context: "NSF <grant#>" means the
-// agency, but "NSF Unidata" as a publisher is a distinct program, not the agency.
-type OrgAlias = {
-  canonical: string;
-  pattern: RegExp;
-  exclude?: RegExp;
-  funderOnly?: boolean;
-};
-
-const ORG_ALIASES: OrgAlias[] = [
-  {
-    canonical: "U.S. Environmental Protection Agency",
-    pattern: /environmental protection agency/i,
-  },
-  {
-    canonical: "U.S. National Science Foundation",
-    pattern: /national science foundation|\bnsf\b|^directorate for /i,
-    // Keep other countries' science foundations and NSF-named events separate.
-    exclude:
-      /swiss|swedish|china|chinese|korea|natural science|meeting|conference|workshop|symposium/i,
-    funderOnly: true,
-  },
-  {
-    canonical: "National Institutes of Health",
-    // "NIH", "National Institute of Health" (a common misspelling) and the
-    // correct "National Institutes of Health" all denote the US agency. The
-    // named sub-institutes ("National Cancer Institute", etc.) don't match
-    // this pattern, so they stay as their own distinct entries.
-    pattern: /national institutes? of health|\bnih\b/i,
-  },
-];
-
-function canonicalizeOrg(raw: string, isFunder = false): string {
-  const cleaned = cleanPublisherName(raw);
-  for (const alias of ORG_ALIASES) {
-    if (alias.funderOnly && !isFunder) continue;
-    if (alias.pattern.test(cleaned) && !alias.exclude?.test(cleaned)) {
-      return alias.canonical;
-    }
-  }
-
-  return cleaned;
-}
 
 // Collapse a distribution to its top N entries plus a single "Other" bucket
 function topWithOther(
@@ -99,9 +22,6 @@ function topWithOther(
 
   return head;
 }
-
-const NULL_CONFERENCE =
-  /^(not\s+specified|n\/a|no\s+specified|sin\s+especif[ia]r|none|unknown|not\s+available|unspecified|-)$/i;
 
 // Computes the full metrics payload from the database. Takes a PrismaClient so
 // it can run both inside Nitro (the API route, with the auto-imported singleton)
@@ -240,7 +160,10 @@ export async function computeMetrics(client: PrismaClient) {
       ) sub
       WHERE institution IS NOT NULL AND institution != ''
         AND trim(institution) !~ '^[0-9]+$'
-        AND lower(trim(institution)) <> 'institution name'
+        AND lower(trim(institution)) NOT IN (
+          'institution name', 'null', 'unknown', 'none', 'n/a',
+          'not specified', 'notspecified'
+        )
     `,
 
     // 14) top 10 institutions by poster count
@@ -267,7 +190,10 @@ export async function computeMetrics(client: PrismaClient) {
       ) sub
       WHERE institution IS NOT NULL AND institution != ''
         AND trim(institution) !~ '^[0-9]+$'
-        AND lower(trim(institution)) <> 'institution name'
+        AND lower(trim(institution)) NOT IN (
+          'institution name', 'null', 'unknown', 'none', 'n/a',
+          'not specified', 'notspecified'
+        )
       ORDER BY poster_count DESC
       LIMIT 10
     `,
@@ -357,8 +283,9 @@ export async function computeMetrics(client: PrismaClient) {
     `,
 
     // 19) distinct (poster, funder) pairs; canonicalized and counted in JS so
-    // funder-name variants roll up to one entity
-    // without double-counting posters that cite the same funder twice
+    // funder-name variants roll up to one entity. Placeholder values
+    // ("not specified", "FUNDER", "no funding", etc.) are filtered out in JS
+    // via isFunderExcluded so the denylist stays in one place.
     client.$queryRaw<Array<{ poster_id: number; funder: string }>>`
       SELECT DISTINCT p.id AS poster_id, fr->>'funderName' AS funder
       FROM "PosterMetadata" pm
@@ -371,7 +298,6 @@ export async function computeMetrics(client: PrismaClient) {
       WHERE p.status = 'published'
         AND fr->>'funderName' IS NOT NULL
         AND fr->>'funderName' <> ''
-        AND lower(fr->>'funderName') <> 'unknown funder'
     `,
 
     // 20) count of distinct languages
@@ -397,11 +323,13 @@ export async function computeMetrics(client: PrismaClient) {
     return { month: key, count: trendMap.get(key) ?? 0 };
   });
 
-  // Normalize and merge license variants
+  // Normalize and merge license variants. isLicenseNoise drops the SPDX
+  // denylist plus prose-as-license values (grant text, citations, URLs).
   const licenseMap = new Map<string, number>();
   for (const r of licenseDistributionRaw) {
-    const key = normalizeLicense(r.license!);
-    if (EXCLUDED_LICENSES.has(key.toLowerCase())) continue;
+    if (!r.license) continue;
+    const key = normalizeLicense(r.license);
+    if (isLicenseNoise(key)) continue;
     licenseMap.set(key, (licenseMap.get(key) ?? 0) + r._count._all);
   }
   const licenses = topWithOther(
@@ -449,8 +377,11 @@ export async function computeMetrics(client: PrismaClient) {
   const creatorStats = creatorStatsResult[0];
 
   // Roll up funder-name variants to canonical orgs, counting distinct posters.
+  // Drop placeholder funder values ("not specified", "FUNDER", "no funding"
+  // etc.) before canonicalization so they don't get rolled into a real org.
   const funderPosters = new Map<string, Set<number>>();
   for (const r of funderPairsRaw) {
+    if (isFunderExcluded(r.funder)) continue;
     const name = canonicalizeOrg(r.funder, true);
     if (!name) continue;
     let set = funderPosters.get(name);
