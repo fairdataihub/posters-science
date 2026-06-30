@@ -4,13 +4,12 @@ type Option = { value: number; label: string; count: number };
 const props = defineProps<{ options: Option[] }>();
 const modelValue = defineModel<number[]>({ required: true });
 
-function toggle(value: number) {
-  if (modelValue.value.includes(value)) {
-    modelValue.value = modelValue.value.filter((v) => v !== value);
-  } else {
-    modelValue.value = [...modelValue.value, value];
-  }
-}
+const items = computed(() =>
+  props.options.map((o) => ({
+    value: o.value,
+    label: `${o.label} (${o.count})`,
+  })),
+);
 </script>
 
 <template>
@@ -21,14 +20,16 @@ function toggle(value: number) {
       No publication year data yet.
     </div>
 
-    <div v-else class="flex max-h-60 flex-col gap-2 overflow-y-auto pr-1">
-      <UCheckbox
-        v-for="opt in props.options"
-        :key="opt.value"
-        :model-value="modelValue.includes(opt.value)"
-        :label="`${opt.label} (${opt.count})`"
-        @update:model-value="toggle(opt.value)"
-      />
-    </div>
+    <USelectMenu
+      v-else
+      v-model="modelValue"
+      :items="items"
+      value-key="value"
+      multiple
+      searchable
+      :search-input="{ placeholder: 'Search years...', icon: 'i-lucide-search' }"
+      placeholder="Any year"
+      class="w-full"
+    />
   </div>
 </template>
