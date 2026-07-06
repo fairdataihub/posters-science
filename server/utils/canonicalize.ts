@@ -173,3 +173,39 @@ export function isFunderExcluded(raw: string): boolean {
 
   return false;
 }
+
+// Subjects come from mixed taxonomies (ANZSRC-style Fields of Research, free
+// text, etc.). "not elsewhere classified" is a catch-all suffix on real fields
+// (e.g. "Artificial intelligence not elsewhere classified") rather than a
+// meaningful label on its own, so we strip it and let the remaining field name
+// merge with its base subject. Also handles the ", n.e.c." dotted abbreviation.
+const NEC_PATTERNS: RegExp[] = [
+  /[\s,;:-]*\bnot\s+elsewhere\s+classified\b/gi,
+  /[\s,;:-]*\bn\.e\.c\.?\b/gi,
+];
+
+export function normalizeSubject(raw: string): string {
+  let s = raw;
+  for (const p of NEC_PATTERNS) s = s.replace(p, "");
+
+  // Collapse whitespace and trim separators orphaned by the strip above (e.g. a
+  // trailing "." left after removing "n.e.c" or "... classified.").
+  return s
+    .replace(/\s+/g, " ")
+    .replace(/^[\s.,;:-]+|[\s.,;:-]+$/g, "")
+    .trim();
+}
+
+// True when a subject should not appear in the wordcloud. Empty strings (which
+// is what a standalone "not elsewhere classified" collapses to after
+// normalizeSubject) are dropped. SUBJECT_DENYLIST is seeded empty and left as
+// the single place to add future placeholder terms ("unknown", "n/a", etc.).
+const SUBJECT_DENYLIST = new Set<string>([]);
+
+export function isSubjectExcluded(raw: string): boolean {
+  const trimmed = raw.trim();
+  if (!trimmed) return true;
+  if (SUBJECT_DENYLIST.has(trimmed.toLowerCase())) return true;
+
+  return false;
+}

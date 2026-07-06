@@ -5,7 +5,9 @@ import {
   canonicalizeOrg,
   isFunderExcluded,
   isLicenseNoise,
+  isSubjectExcluded,
   normalizeLicense,
+  normalizeSubject,
 } from "./canonicalize";
 
 const languageNames = new Map(iso6391.map((l) => [l.code, l.name]));
@@ -40,7 +42,7 @@ export async function computeMetrics(client: PrismaClient) {
     publisherDistribution,
     conferenceYearDistribution,
     topConferencesRaw,
-    topSubjects,
+    subjectDistributionRaw,
     uniqueInstitutionResult,
     topInstitutions,
     publicationYearDistribution,
@@ -123,7 +125,9 @@ export async function computeMetrics(client: PrismaClient) {
       take: 30, // fetch more to have enough after filtering
     }),
 
-    // 11) top 20 subjects
+    // 11) subject distribution (fetch more than the final top 20 so casing
+    // variants and "not elsewhere classified" forms below rank 20 can merge in
+    // JS before the top-20 slice)
     client.$queryRaw<Array<{ subject: string; count: number }>>`
       SELECT unnest(subjects) AS subject, COUNT(*)::int AS count
       FROM "PosterMetadata" pm
@@ -133,7 +137,7 @@ export async function computeMetrics(client: PrismaClient) {
         AND array_length(subjects, 1) > 0
       GROUP BY subject
       ORDER BY count DESC
-      LIMIT 20
+      LIMIT 100
     `,
 
     // 13) count of distinct institutions from creators[].affiliation JSON.
@@ -365,6 +369,26 @@ export async function computeMetrics(client: PrismaClient) {
     .slice(0, 10)
     .map(({ displayName, count }) => ({ name: displayName, count }));
 
+  // Strip "not elsewhere classified" suffixes, drop empties, and merge subject
+  // case-variants (e.g. "Machine Learning" + "machine learning"). Rows arrive
+  // count-desc, so the first (highest-count) casing supplies the display label.
+  const subjectMap = new Map<string, { displayName: string; count: number }>();
+  for (const r of subjectDistributionRaw) {
+    const display = normalizeSubject(r.subject);
+    if (isSubjectExcluded(display)) continue;
+    const key = display.toLowerCase();
+    const existing = subjectMap.get(key);
+    if (existing) {
+      existing.count += r.count;
+    } else {
+      subjectMap.set(key, { displayName: display, count: r.count });
+    }
+  }
+  const subjects = [...subjectMap.values()]
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 20)
+    .map(({ displayName, count }) => ({ subject: displayName, count }));
+
   // Filter null conference names
   const conferences = topConferencesRaw
     .filter(
@@ -429,7 +453,7 @@ export async function computeMetrics(client: PrismaClient) {
         count: r._count._all,
       })),
       publishers,
-      subjects: topSubjects,
+      subjects,
       institutions: topInstitutions,
       publishedTotal: manualCount + automatedCount,
       publicationYears,
