@@ -430,8 +430,6 @@ const openScience = computed(() => {
 
     <!-- Archive Growth -->
     <section class="flex flex-col gap-4">
-      <h2 class="text-xl font-semibold">Archive Growth</h2>
-
       <!-- Monthly Poster Registrations -->
       <ClientOnly v-if="false">
         <UCard>
