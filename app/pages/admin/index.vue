@@ -26,6 +26,7 @@ type StatsResponse = {
     draft: number;
     downloaded: number;
     published: number;
+    tombstoned: number;
   };
 };
 
@@ -44,6 +45,8 @@ type PosterRow = {
   id: number;
   title: string;
   status: string;
+  tombstone: boolean;
+  tombedReason: string;
   publishedAt: string | null;
   created: string;
   user: {
@@ -254,19 +257,74 @@ const posterColumns: ColumnDef<PosterRow>[] = [
 ];
 
 const confirmDeletePosterId = ref<number | null>(null);
+const tombstoneReason = ref("");
+const isDeletingPoster = ref(false);
+const restoringPosterId = ref<number | null>(null);
+
+const posterToDelete = computed(
+  () => posters.value.find((p) => p.id === confirmDeletePosterId.value) ?? null,
+);
+
+function closeDeletePosterModal() {
+  confirmDeletePosterId.value = null;
+  tombstoneReason.value = "";
+}
 
 async function deletePoster() {
-  const poster = posters.value.find(
-    (p) => p.id === confirmDeletePosterId.value,
-  );
+  // Guard against a double click firing multiple DELETE requests before the
+  // first one resolves and closes the modal.
+  if (isDeletingPoster.value) return;
+
+  const poster = posterToDelete.value;
   if (!poster) return;
+
+  // Published posters are retired (tombstoned) with a required reason;
+  // drafts and downloads are hard-deleted.
+  const isPublished = poster.status === "published";
+  if (isPublished && tombstoneReason.value.trim() === "") {
+    toast.add({
+      title: "A reason is required to retire this poster",
+      color: "error",
+    });
+
+    return;
+  }
+
+  isDeletingPoster.value = true;
   try {
-    await $fetch(`/api/admin/posters/${poster.id}`, { method: "DELETE" });
-    toast.add({ title: `"${poster.title}" deleted`, color: "success" });
-    confirmDeletePosterId.value = null;
+    await $fetch(`/api/admin/posters/${poster.id}`, {
+      method: "DELETE",
+      body: isPublished ? { reason: tombstoneReason.value.trim() } : undefined,
+    });
+    toast.add({
+      title: `"${poster.title}" ${isPublished ? "retired" : "deleted"}`,
+      color: "success",
+    });
+    closeDeletePosterModal();
     await Promise.all([refreshPosters(), refreshStats(), refreshAuditLog()]);
   } catch {
-    toast.add({ title: "Failed to delete poster", color: "error" });
+    toast.add({
+      title: `Failed to ${isPublished ? "retire" : "delete"} poster`,
+      color: "error",
+    });
+  } finally {
+    isDeletingPoster.value = false;
+  }
+}
+
+async function restorePoster(poster: PosterRow) {
+  // Guard against a double click firing multiple restore requests.
+  if (restoringPosterId.value !== null) return;
+
+  restoringPosterId.value = poster.id;
+  try {
+    await $fetch(`/api/admin/posters/${poster.id}/restore`, { method: "POST" });
+    toast.add({ title: `"${poster.title}" restored`, color: "success" });
+    await Promise.all([refreshPosters(), refreshStats(), refreshAuditLog()]);
+  } catch {
+    toast.add({ title: "Failed to restore poster", color: "error" });
+  } finally {
+    restoringPosterId.value = null;
   }
 }
 
@@ -288,6 +346,8 @@ const auditTotal = computed(() => auditData.value?.total ?? 0);
 
 const actionLabels: Record<string, string> = {
   DELETE_POSTER: "Deleted poster",
+  TOMBSTONE_POSTER: "Retired poster",
+  RESTORE_POSTER: "Restored poster",
   DELETE_USER: "Deleted user",
   UPDATE_USER_ROLE: "Updated role",
 };
@@ -300,8 +360,16 @@ const auditColumns: ColumnDef<AuditLogRow>[] = [
     header: "Action",
   },
   { accessorKey: "entityId", header: "Entity ID" },
+  { id: "reason", header: "Reason", enableSorting: false },
   { accessorKey: "created", header: "Date" },
 ];
+
+// Pulls the retire reason out of an audit entry's free-form details JSON.
+function auditReason(log: AuditLogRow): string {
+  const reason = log.details?.reason;
+
+  return typeof reason === "string" ? reason : "";
+}
 
 // Helpers
 
@@ -310,6 +378,7 @@ const statusItems = [
   { label: "Draft", value: "draft" },
   { label: "Downloaded", value: "downloaded" },
   { label: "Published", value: "published" },
+  { label: "Tombstoned", value: "tombstoned" },
 ];
 
 function statusColor(s: string) {
@@ -356,7 +425,7 @@ const tabs = [
     <h1 class="mb-8 text-3xl font-bold">Admin Panel</h1>
 
     <!-- Stats cards -->
-    <div class="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
+    <div class="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
       <UCard>
         <p class="text-muted text-sm">Total Users</p>
 
@@ -374,6 +443,16 @@ const tabs = [
 
         <p v-else class="mt-1 text-2xl font-bold">
           {{ stats?.posters.published ?? "-" }}
+        </p>
+      </UCard>
+
+      <UCard>
+        <p class="text-muted text-sm">Tombstoned Posters</p>
+
+        <USpinner v-if="statsStatus === 'pending'" size="sm" class="mt-1" />
+
+        <p v-else class="mt-1 text-2xl font-bold">
+          {{ stats?.posters.tombstoned ?? "-" }}
         </p>
       </UCard>
 
@@ -571,6 +650,16 @@ const tabs = [
 
           <template #status-cell="{ row }">
             <UBadge
+              v-if="row.original.tombstone"
+              color="warning"
+              variant="subtle"
+              size="sm"
+            >
+              Tombstoned
+            </UBadge>
+
+            <UBadge
+              v-else
               :color="statusColor(row.original.status)"
               variant="subtle"
               size="sm"
@@ -600,10 +689,29 @@ const tabs = [
           <template #posterActions-cell="{ row }">
             <div class="flex justify-end">
               <UButton
+                v-if="row.original.tombstone"
                 size="xs"
-                color="error"
+                color="neutral"
                 variant="outline"
-                icon="material-symbols:delete"
+                icon="material-symbols:restore-from-trash"
+                label="Restore"
+                :loading="restoringPosterId === row.original.id"
+                :disabled="restoringPosterId !== null"
+                @click="restorePoster(row.original)"
+              />
+
+              <UButton
+                v-else
+                size="xs"
+                :color="
+                  row.original.status === 'published' ? 'warning' : 'error'
+                "
+                variant="outline"
+                :icon="
+                  row.original.status === 'published'
+                    ? 'material-symbols:archive'
+                    : 'material-symbols:delete'
+                "
                 @click="confirmDeletePosterId = row.original.id"
               />
             </div>
@@ -663,6 +771,30 @@ const tabs = [
             }}</span>
           </template>
 
+          <template #reason-cell="{ row }">
+            <UPopover
+              v-if="
+                row.original.action === 'TOMBSTONE_POSTER' &&
+                auditReason(row.original)
+              "
+              mode="hover"
+            >
+              <span class="line-clamp-2 max-w-xs cursor-help text-sm">
+                {{ auditReason(row.original) }}
+              </span>
+
+              <template #content>
+                <p
+                  class="max-h-64 max-w-sm overflow-y-auto p-3 text-sm break-words whitespace-pre-wrap"
+                >
+                  {{ auditReason(row.original) }}
+                </p>
+              </template>
+            </UPopover>
+
+            <span v-else class="text-muted text-xs">-</span>
+          </template>
+
           <template #created-cell="{ row }">
             {{ formatDate(row.original.created) }}
           </template>
@@ -703,27 +835,59 @@ const tabs = [
       </template>
     </UModal>
 
-    <!-- Delete poster modal -->
+    <!-- Delete / retire poster modal -->
     <UModal
       :open="confirmDeletePosterId !== null"
-      title="Delete Poster"
-      description="This will permanently delete the poster and all associated metadata. This cannot be undone."
+      :title="
+        posterToDelete?.status === 'published'
+          ? 'Retire Poster'
+          : 'Delete Poster'
+      "
+      :description="
+        posterToDelete?.status === 'published'
+          ? 'This hides the poster from public view but preserves the record. A reason is required, and it can be restored later.'
+          : 'This will permanently delete the poster and all associated metadata. This cannot be undone.'
+      "
       @update:open="
         (v) => {
-          if (!v) confirmDeletePosterId = null;
+          if (!v && !isDeletingPoster) closeDeletePosterModal();
         }
       "
     >
+      <template v-if="posterToDelete?.status === 'published'" #body>
+        <UFormField label="Reason for retiring" required>
+          <UTextarea
+            v-model="tombstoneReason"
+            :rows="3"
+            placeholder="Explain why this poster is being retired"
+            class="w-full"
+          />
+        </UFormField>
+      </template>
+
       <template #footer>
         <div class="flex justify-end gap-2">
           <UButton
             color="neutral"
             variant="outline"
             label="Cancel"
-            @click="confirmDeletePosterId = null"
+            :disabled="isDeletingPoster"
+            @click="closeDeletePosterModal"
           />
 
-          <UButton color="error" label="Delete" @click="deletePoster" />
+          <UButton
+            color="error"
+            :label="
+              posterToDelete?.status === 'published' ? 'Retire' : 'Delete'
+            "
+            :loading="isDeletingPoster"
+            :disabled="
+              isDeletingPoster ||
+              (posterToDelete?.status === 'published' &&
+                tombstoneReason.trim() === '')
+            "
+            @click="deletePoster"
+          />
         </div>
       </template>
     </UModal>

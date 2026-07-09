@@ -15,6 +15,13 @@ const { loggedIn } = useUserSession();
 const toast = useToast();
 const { siteEnv } = useRuntimeConfig().public;
 
+// Shares the global feedback modal state owned by the default layout, so we can
+// open the same "Share Your Feedback" dialog from this page.
+const feedbackOpen = useState("feedbackOpen", () => false);
+function openFeedback() {
+  feedbackOpen.value = true;
+}
+
 const { data: apiData, error } = await useFetch(`/api/discover/${posterId}`);
 
 if (error.value) {
@@ -977,6 +984,23 @@ const tabItems = [
                 </div>
               </div>
             </UCard>
+
+            <UAlert
+              color="info"
+              variant="soft"
+              icon="material-symbols:info-outline"
+              title="Is this your poster?"
+              description="Would you like it removed from our platform? Reach out and let us know this is your poster and that you would like it taken down."
+            >
+              <template #actions>
+                <UButton
+                  color="info"
+                  size="sm"
+                  label="Contact us"
+                  @click="openFeedback"
+                />
+              </template>
+            </UAlert>
           </div>
         </div>
       </UContainer>
