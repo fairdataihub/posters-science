@@ -1,12 +1,14 @@
 import { canonicalizeOrg, normalizeLicense } from "../../utils/canonicalize";
 
+// Filters arrive as repeated query params (?institution=a&institution=b), so
+// h3's getQuery yields a string (single value) or string[] (repeated). Each
+// entry is one whole value: never split on commas, because institution and
+// funder names legitimately contain them.
 function parseList(value: unknown): string[] {
-  if (!value) return [];
+  if (value == null) return [];
+  const arr = Array.isArray(value) ? value : [value];
 
-  return String(value)
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
+  return arr.map((s) => String(s).trim()).filter(Boolean);
 }
 
 const EMPTY_RESPONSE = { posters: [] as never[], total: 0 };
@@ -82,12 +84,9 @@ export default defineEventHandler(async (event) => {
   markStep("sort-setup");
 
   const validSources = ["zenodo", "figshare", "user_submitted"];
-  const sourceValues = source
-    ? String(source)
-        .split(",")
-        .map((s) => s.trim().toLowerCase())
-        .filter((s) => validSources.includes(s))
-    : [];
+  const sourceValues = parseList(source)
+    .map((s) => s.toLowerCase())
+    .filter((s) => validSources.includes(s));
 
   const isFigshare = {
     OR: [

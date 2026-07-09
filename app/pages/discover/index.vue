@@ -14,13 +14,15 @@ useSeoMeta({
 const route = useRoute();
 const router = useRouter();
 
+// Filters use repeated query params (?institution=a&institution=b), so a
+// route query value is a string (single) or string[] (repeated). Each entry is
+// one whole value: never split on commas, because institution and funder names
+// legitimately contain them.
 function parseStringList(value: unknown): string[] {
-  if (!value) return [];
+  if (value == null) return [];
+  const arr = Array.isArray(value) ? value : [value];
 
-  return String(value)
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
+  return arr.map((s) => String(s).trim()).filter(Boolean);
 }
 
 function parseNumberList(value: unknown): number[] {
@@ -42,40 +44,34 @@ const institutionFilterValue = ref<string[]>(
 );
 const funderFilterValue = ref<string[]>(parseStringList(route.query.funder));
 
+// Send each selection as a repeated query param (ofetch serializes non-empty
+// arrays that way); undefined omits the param entirely when nothing is selected.
 const sourceParam = computed(() =>
-  sourceFilterValue.value.length > 0
-    ? sourceFilterValue.value.join(",")
-    : undefined,
+  sourceFilterValue.value.length > 0 ? sourceFilterValue.value : undefined,
 );
 
 const languageParam = computed(() =>
-  languageFilterValue.value.length > 0
-    ? languageFilterValue.value.join(",")
-    : undefined,
+  languageFilterValue.value.length > 0 ? languageFilterValue.value : undefined,
 );
 
 const licenseParam = computed(() =>
-  licenseFilterValue.value.length > 0
-    ? licenseFilterValue.value.join(",")
-    : undefined,
+  licenseFilterValue.value.length > 0 ? licenseFilterValue.value : undefined,
 );
 
 const publicationYearParam = computed(() =>
   publicationYearFilterValue.value.length > 0
-    ? publicationYearFilterValue.value.join(",")
+    ? publicationYearFilterValue.value
     : undefined,
 );
 
 const institutionParam = computed(() =>
   institutionFilterValue.value.length > 0
-    ? institutionFilterValue.value.join(",")
+    ? institutionFilterValue.value
     : undefined,
 );
 
 const funderParam = computed(() =>
-  funderFilterValue.value.length > 0
-    ? funderFilterValue.value.join(",")
-    : undefined,
+  funderFilterValue.value.length > 0 ? funderFilterValue.value : undefined,
 );
 
 type Poster = {
@@ -195,22 +191,24 @@ watch(
     funderFilterValue,
   ],
   () => {
-    const query: Record<string, string> = {};
+    // Write selections as repeated query params (arrays) so comma-containing
+    // values (institution/funder names) round-trip intact through the URL.
+    const query: Record<string, string | string[] | number[]> = {};
     if (page.value !== 1) query.page = String(page.value);
     if (committedSearch.value) query.search = committedSearch.value;
     if (sortBy.value !== "Newest First") query.sortBy = sortBy.value;
     if (sourceFilterValue.value.length > 0)
-      query.source = sourceFilterValue.value.join(",");
+      query.source = sourceFilterValue.value;
     if (languageFilterValue.value.length > 0)
-      query.language = languageFilterValue.value.join(",");
+      query.language = languageFilterValue.value;
     if (licenseFilterValue.value.length > 0)
-      query.license = licenseFilterValue.value.join(",");
+      query.license = licenseFilterValue.value;
     if (publicationYearFilterValue.value.length > 0)
-      query.publicationYear = publicationYearFilterValue.value.join(",");
+      query.publicationYear = publicationYearFilterValue.value;
     if (institutionFilterValue.value.length > 0)
-      query.institution = institutionFilterValue.value.join(",");
+      query.institution = institutionFilterValue.value;
     if (funderFilterValue.value.length > 0)
-      query.funder = funderFilterValue.value.join(",");
+      query.funder = funderFilterValue.value;
     router.replace({ query });
   },
   { deep: true },
