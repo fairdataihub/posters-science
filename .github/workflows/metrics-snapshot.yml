@@ -1,0 +1,39 @@
+# GitHub Actions workflow for refreshing the precomputed metrics snapshot.
+# Runs computeMetrics() and stores the result in a MetricsSnapshot row.
+name: Refresh metrics snapshot
+
+concurrency:
+  group: metrics-snapshot
+  cancel-in-progress: true
+
+on:
+  schedule:
+    - cron: "0 8 * * *"
+  workflow_dispatch:
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        env: [prd, stg]
+    environment: ${{ matrix.env }} # resolves DATABASE_URL per environment
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm metrics:snapshot

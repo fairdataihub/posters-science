@@ -1,6 +1,6 @@
 import { buildPosterJson } from "./buildPosterJson";
 import { isValidOrcidChecksum, validateOrcidExists } from "#shared/utils/orcid";
-import isoLanguages from "../../app/assets/data/iso-639-1.json";
+import isoLanguages from "#shared/data/iso-639-1.json";
 
 const ISO639_1_TO_3: Record<string, string> = Object.fromEntries(
   isoLanguages.filter((l) => l.alpha3).map((l) => [l.code, l.alpha3]),

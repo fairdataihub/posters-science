@@ -1,13 +1,12 @@
 <!-- eslint-disable @typescript-eslint/no-explicit-any -->
 <script setup lang="ts">
-import dayjs from "dayjs";
 import licenses from "@/assets/data/licenses.json";
 import notFoundAnimation from "@/assets/animations/404-not-found.json";
 import {
   RESOURCE_TYPE_OPTIONS,
   RELATION_TYPE_OPTIONS,
 } from "@/utils/poster_schema";
-import type { WithContext, Poster } from "schema-dts";
+import type { WithContext, ScholarlyArticle } from "schema-dts";
 
 const route = useRoute();
 const posterId = route.params.posterid as string;
@@ -115,17 +114,13 @@ const poster = ref({
     uri: conf?.conferenceUri ?? "",
     series: conf?.conferenceSeries ?? "",
     dates: {
-      start: conf?.conferenceStartDate
-        ? new Date(conf.conferenceStartDate)
-        : undefined,
-      end: conf?.conferenceEndDate
-        ? new Date(conf.conferenceEndDate)
-        : undefined,
+      start: conf?.conferenceStartDate ?? null,
+      end: conf?.conferenceEndDate ?? null,
     },
   },
 });
 
-const zenodoUrl = computed(() => {
+const resolvedPosterUrl = computed(() => {
   if (!poster.value.doi) return null;
   const isZenodoDoi = poster.value.doi.includes("/zenodo.");
   if (!isZenodoDoi) return `https://doi.org/${poster.value.doi}`;
@@ -149,6 +144,7 @@ const posterSource = computed(() => {
   const imageUrl = api?.imageUrl ?? "";
   if (doi.startsWith("10.6084/") || imageUrl.includes("/figshare_"))
     return "figshare";
+
   return "zenodo";
 });
 
@@ -171,6 +167,19 @@ const languageDisplay = computed(() => {
   }
 });
 
+const conferenceDateDisplay = computed(() =>
+  formatConferenceDateRange(
+    poster.value.conference.dates.start,
+    poster.value.conference.dates.end,
+  ),
+);
+
+const discoverUrl = computed(() =>
+  poster.value?.id
+    ? `https://posters.science/discover/${poster.value.id}`
+    : null,
+);
+
 const posterTitle = poster.value.title;
 const posterDescription = (
   poster.value.description ||
@@ -186,17 +195,108 @@ useSeoMeta({
   ogImage,
 });
 
-const NuxtSchemaPoster: WithContext<Poster> = {
-  name: poster.value?.title,
-  "@context": "https://schema.org",
-  "@id": `https://doi.org/${poster.value?.doi}`,
-  "@type": "Poster",
-  abstract: poster.value?.description || "No description available.",
-  sameAs: poster.value?.doi ? `https://doi.org/${poster.value.doi}` : undefined,
-  url: `https://posters.science/discover/${poster.value.id}`,
+// Recursively removes `undefined`, `null`, and empty array values from a schema object to eliminate noise in the structured data output.
+const cleanSchema = (value: any): any => {
+  if (Array.isArray(value)) {
+    const filtered = value
+      .map(cleanSchema)
+      .filter(
+        (v) =>
+          v !== undefined &&
+          v !== null &&
+          !(Array.isArray(v) && v.length === 0),
+      );
+
+    return filtered.length > 0 ? filtered : undefined;
+  }
+
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value)
+        .map(([k, v]) => [k, cleanSchema(v)])
+        .filter(
+          ([, v]) =>
+            v !== undefined &&
+            v !== null &&
+            !(Array.isArray(v) && v.length === 0),
+        ),
+    );
+  }
+
+  return value;
 };
 
-useSchemaOrg([NuxtSchemaPoster]);
+const NuxtSchemaPoster: WithContext<ScholarlyArticle> = {
+  "@context": "https://schema.org",
+  "@id": resolvedPosterUrl.value || undefined,
+  "@type": "ScholarlyArticle",
+  about: poster.value?.domain
+    ? {
+        "@type": "Thing",
+        name: poster.value.domain,
+      }
+    : undefined,
+  abstract: poster.value?.description || undefined,
+  author: poster.value?.authors?.length
+    ? poster.value.authors.map((author: any) => ({
+        "@type": "Person",
+        givenName: author.givenName,
+        familyName: author.familyName,
+        affiliation: author.affiliation
+          ? {
+              "@type": "Organization",
+              name: author.affiliation,
+            }
+          : undefined,
+        sameAs: author.orcid || undefined,
+      }))
+    : undefined,
+  citation: poster.value.references
+    ?.map((r: any) => r.doi || r.url || r.title)
+    .filter(Boolean),
+  datePublished: poster.value?.publishedAt?.toISOString() || undefined,
+  description: poster.value?.description || undefined,
+  funder: poster.value.funding?.length
+    ? poster.value.funding.map((f: any) => ({
+        "@type": "Organization",
+        name: f.agency,
+        url: f.awardUri || undefined,
+      }))
+    : undefined,
+  headline: poster.value?.title || undefined,
+  identifier: resolvedPosterUrl.value || undefined,
+  image: poster.value?.imageUrl
+    ? {
+        "@type": "ImageObject",
+        url: poster.value.imageUrl,
+        contentUrl: poster.value.imageUrl,
+      }
+    : undefined,
+  inLanguage: poster.value?.language || "en",
+  interactionStatistic: [
+    {
+      "@type": "InteractionCounter",
+      interactionType: { "@type": "LikeAction" },
+      userInteractionCount: poster.value.likes,
+    },
+    {
+      "@type": "InteractionCounter",
+      interactionType: { "@type": "ViewAction" },
+      userInteractionCount: poster.value.views,
+    },
+  ],
+  keywords: poster.value?.keywords?.length ? poster.value.keywords : undefined,
+  license: poster.value?.license || undefined,
+  publisher: poster.value?.publisher
+    ? { "@type": "Organization", name: poster.value.publisher }
+    : undefined,
+  mainEntityOfPage: discoverUrl.value || undefined,
+  name: poster.value?.title || undefined,
+  url: discoverUrl.value || undefined,
+  version: poster.value?.version || undefined,
+};
+
+useSchemaOrg([cleanSchema(NuxtSchemaPoster)]);
 
 const handleLike = async () => {
   if (!loggedIn.value) {
@@ -426,7 +526,11 @@ const tabItems = [
               </div>
 
               <div class="flex items-center gap-2">
-                <NuxtLink v-if="zenodoUrl" :to="zenodoUrl" target="_blank">
+                <NuxtLink
+                  v-if="resolvedPosterUrl"
+                  :to="resolvedPosterUrl"
+                  target="_blank"
+                >
                   <UButton
                     color="primary"
                     variant="solid"
@@ -467,7 +571,11 @@ const tabItems = [
               "
               class="hidden sm:col-span-3 sm:flex sm:items-start sm:justify-center"
             >
-              <NuxtLink v-if="zenodoUrl" :to="zenodoUrl" target="_blank">
+              <NuxtLink
+                v-if="resolvedPosterUrl"
+                :to="resolvedPosterUrl"
+                target="_blank"
+              >
                 <img
                   :src="poster.imageUrl"
                   alt="Poster thumbnail"
@@ -580,10 +688,7 @@ const tabItems = [
                       </div>
 
                       <div
-                        v-if="
-                          poster.conference.dates.start ||
-                          poster.conference.dates.end
-                        "
+                        v-if="conferenceDateDisplay"
                         class="flex items-center gap-2"
                       >
                         <Icon
@@ -594,30 +699,7 @@ const tabItems = [
                         <span class="text-gray-500">Dates:</span>
 
                         <span class="font-medium">
-                          <template v-if="poster.conference.dates.start">
-                            {{
-                              dayjs(poster.conference.dates.start).format(
-                                "MMM D",
-                              )
-                            }}
-                          </template>
-
-                          <template
-                            v-if="
-                              poster.conference.dates.start &&
-                              poster.conference.dates.end
-                            "
-                          >
-                            -
-                          </template>
-
-                          <template v-if="poster.conference.dates.end">
-                            {{
-                              dayjs(poster.conference.dates.end).format(
-                                "MMM D, YYYY",
-                              )
-                            }}
-                          </template>
+                          {{ conferenceDateDisplay }}
                         </span>
                       </div>
 

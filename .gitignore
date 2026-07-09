@@ -36,3 +36,6 @@ shared/generated/*
 
 # Automated poster extraction
 merged/
+
+# Database snapshots
+db-snapshots

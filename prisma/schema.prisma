@@ -228,6 +228,16 @@ model AdminAuditLog {
     @@index([created])
 }
 
+model MetricsSnapshot {
+    id Int @id @default(autoincrement())
+
+    payload Json
+
+    generatedAt DateTime @default(now())
+
+    @@index([generatedAt])
+}
+
 model ExtractionJob {
     // This record and the files will only be removed after the poster is published or a doi is submitted
     id String @id @default(cuid(2))

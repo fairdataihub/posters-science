@@ -1,5 +1,5 @@
 import * as z from "zod";
-import isoLanguages from "@/assets/data/iso-639-1.json";
+import isoLanguages from "#shared/data/iso-639-1.json";
 import licenses from "@/assets/data/licenses.json";
 import identifierTypes from "@/assets/data/identifier-types.json";
 import relationTypes from "@/assets/data/relation-types.json";
