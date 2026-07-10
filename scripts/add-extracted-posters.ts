@@ -432,7 +432,7 @@ async function main() {
         where: {
           poster: {
             automated: true,
-            published: true,
+            status: "published",
           },
           doi: {
             equals: mapped.doi,
@@ -455,7 +455,7 @@ async function main() {
           where: {
             poster: {
               automated: true,
-              published: true,
+              status: "published",
               title: {
                 equals: title,
                 mode: "insensitive",
