@@ -282,6 +282,7 @@ async function main() {
   let created = 0;
   let updated = 0;
   let errored = 0;
+  let skipped = 0;
 
   for (let i = 0; i < allFiles.length; i++) {
     const filePath = allFiles[i];
@@ -301,6 +302,13 @@ async function main() {
     }
 
     const mapped = mapToDbFields(data);
+
+    if (!mapped.doi) {
+      console.log(`    [skipped] Missing DOI: ${path.basename(filePath)}`);
+      skipped++;
+      continue;
+    }
+
     const imageUrl = getImageUrl(filePath, mapped.doi, data._license_blocked);
 
     // The unique key is the DOI URL (https://doi.org/<doi>)
@@ -412,7 +420,7 @@ async function main() {
   }
 
   console.log(
-    `\n🎉 Done. Created: ${created}, Updated: ${updated}, Errored: ${errored}\n`,
+    `\n🎉 Done. Created: ${created}, Updated: ${updated}, Skipped: ${skipped}, Errored: ${errored}\n`,
   );
 }
 
