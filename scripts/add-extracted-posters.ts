@@ -15,9 +15,10 @@ const prisma = new PrismaClient({ adapter });
  * Optional:
  *   --dir     path to merged folder (default: ./merged)
  *   --limit   max number of posters to import (default: all)
+ *   --error-report path to JSON error report output
  *
- * Posters are upserted by DOI URL (https://doi.org/<doi>).
- * If a poster with the same DOI already exists it will be updated; otherwise created.
+ * Posters are matched by DOI when available.
+ * If DOI is missing, fallback matching uses case-insensitive title + identifiers overlap.
  */
 function getArg(name: string): string | undefined {
   const idx = process.argv.indexOf(`--${name}`);
@@ -296,11 +297,86 @@ function collectJsonFiles(mergedDir: string): string[] {
   return files;
 }
 
+function normalizeIdentifierValue(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toLowerCase();
+
+  return normalized.length > 0 ? normalized : null;
+}
+
+function collectIdentifierTokens(identifiers: unknown): Set<string> {
+  const tokens = new Set<string>();
+  if (!Array.isArray(identifiers)) return tokens;
+
+  for (const raw of identifiers) {
+    if (!raw || typeof raw !== "object") continue;
+
+    const entry = raw as {
+      identifier?: unknown;
+      identifierType?: unknown;
+      nameIdentifier?: unknown;
+      nameIdentifierType?: unknown;
+      relatedIdentifier?: unknown;
+      relatedIdentifierType?: unknown;
+    };
+
+    const identifier =
+      normalizeIdentifierValue(entry.identifier) ??
+      normalizeIdentifierValue(entry.nameIdentifier) ??
+      normalizeIdentifierValue(entry.relatedIdentifier);
+
+    if (!identifier) continue;
+
+    const type =
+      normalizeIdentifierValue(entry.identifierType) ??
+      normalizeIdentifierValue(entry.nameIdentifierType) ??
+      normalizeIdentifierValue(entry.relatedIdentifierType) ??
+      "unknown";
+
+    tokens.add(`${type}|${identifier}`);
+  }
+
+  return tokens;
+}
+
+function hasIdentifierOverlap(a: Set<string>, b: Set<string>): boolean {
+  if (a.size === 0 || b.size === 0) return false;
+
+  for (const token of a) {
+    if (b.has(token)) return true;
+  }
+
+  return false;
+}
+
+type ErrorReportItem = {
+  index: number;
+  filePath: string;
+  fileName: string;
+  phase: "parse" | "upsert";
+  message: string;
+  doi: string | null;
+  title: string | null;
+  publisher: string | null;
+};
+
+function createDefaultErrorReportPath(cwd: string): string {
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+
+  return path.join(
+    cwd,
+    "reports",
+    `add-extracted-posters-errors-${stamp}.json`,
+  );
+}
+
 async function main() {
   const userId = "0";
   const limitArg = getArg("limit");
   const limit = limitArg ? Number(limitArg) : Infinity;
   const mergedDir = getArg("dir") ?? path.join(process.cwd(), "merged");
+  const errorReportPath =
+    getArg("error-report") ?? createDefaultErrorReportPath(process.cwd());
 
   console.log(`\n Importing posters for userId: ${userId}`);
 
@@ -310,7 +386,7 @@ async function main() {
   let created = 0;
   let updated = 0;
   let errored = 0;
-  let skipped = 0;
+  const erroredItems: ErrorReportItem[] = [];
 
   for (let i = 0; i < allFiles.length; i++) {
     const filePath = allFiles[i];
@@ -323,19 +399,23 @@ async function main() {
     let data: JsonPoster;
     try {
       data = JSON.parse(raw) as JsonPoster;
-    } catch {
+    } catch (err: any) {
       console.warn(`     Could not parse ${filePath}`);
+      erroredItems.push({
+        index: i,
+        filePath,
+        fileName: path.basename(filePath),
+        phase: "parse",
+        message: err?.message ?? "Could not parse JSON",
+        doi: null,
+        title: null,
+        publisher: null,
+      });
       errored++;
       continue;
     }
 
     const mapped = mapToDbFields(data);
-
-    if (!mapped.doi) {
-      console.log(`    [skipped] Missing DOI: ${path.basename(filePath)}`);
-      skipped++;
-      continue;
-    }
 
     const imageUrl = getImageUrl(
       filePath,
@@ -344,18 +424,60 @@ async function main() {
       data._license_blocked,
     );
 
-    // The unique key is the DOI URL (https://doi.org/<doi>)
-    const existingMetadata = mapped.doi
-      ? await prisma.posterMetadata.findFirst({
+    let existingMetadata: { posterId: number } | null = null;
+
+    if (mapped.doi) {
+      // Primary match path: DOI
+      existingMetadata = await prisma.posterMetadata.findFirst({
+        where: {
+          poster: {
+            automated: true,
+            published: true,
+          },
+          doi: {
+            equals: mapped.doi,
+            mode: "insensitive",
+          },
+        },
+        select: { posterId: true },
+      });
+    }
+
+    if (!existingMetadata && !mapped.doi) {
+      // Fallback match path for no-DOI records: title + identifiers overlap.
+      const title = mapped.posterTitle.trim();
+      const incomingIdentifierTokens = collectIdentifierTokens(
+        mapped.identifiers,
+      );
+
+      if (title.length > 0 && incomingIdentifierTokens.size > 0) {
+        const candidates = await prisma.posterMetadata.findMany({
           where: {
-            doi: {
-              equals: mapped.doi,
-              mode: "insensitive",
+            poster: {
+              automated: true,
+              published: true,
+              title: {
+                equals: title,
+                mode: "insensitive",
+              },
             },
           },
-          select: { posterId: true },
-        })
-      : null;
+          select: {
+            posterId: true,
+            identifiers: true,
+          },
+        });
+
+        const match = candidates.find((candidate) =>
+          hasIdentifierOverlap(
+            incomingIdentifierTokens,
+            collectIdentifierTokens(candidate.identifiers),
+          ),
+        );
+
+        existingMetadata = match ? { posterId: match.posterId } : null;
+      }
+    }
 
     const metadataPayload = {
       doi: mapped.doi,
@@ -448,12 +570,39 @@ async function main() {
       }
     } catch (err: any) {
       console.warn(`    Failed: ${filePath}\n      ${err?.message}`);
+      erroredItems.push({
+        index: i,
+        filePath,
+        fileName: path.basename(filePath),
+        phase: "upsert",
+        message: err?.message ?? "Unknown upsert error",
+        doi: mapped.doi,
+        title: mapped.posterTitle,
+        publisher: mapped.publisher,
+      });
       errored++;
     }
   }
 
+  if (erroredItems.length > 0) {
+    const reportPayload = {
+      generatedAt: new Date().toISOString(),
+      mergedDir,
+      totals: {
+        created,
+        updated,
+        errored,
+      },
+      items: erroredItems,
+    };
+
+    fs.mkdirSync(path.dirname(errorReportPath), { recursive: true });
+    fs.writeFileSync(errorReportPath, JSON.stringify(reportPayload, null, 2));
+    console.log(`Error report written to: ${errorReportPath}`);
+  }
+
   console.log(
-    `\n🎉 Done. Created: ${created}, Updated: ${updated}, Skipped: ${skipped}, Errored: ${errored}\n`,
+    `\n🎉 Done. Created: ${created}, Updated: ${updated}, Errored: ${errored}\n`,
   );
 }
 
