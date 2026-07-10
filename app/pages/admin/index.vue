@@ -850,7 +850,7 @@ const tabs = [
       "
       @update:open="
         (v) => {
-          if (!v && !isDeletingPoster) closeDeletePosterModal();
+          if (!v) closeDeletePosterModal();
         }
       "
     >
@@ -871,7 +871,6 @@ const tabs = [
             color="neutral"
             variant="outline"
             label="Cancel"
-            :disabled="isDeletingPoster"
             @click="closeDeletePosterModal"
           />
 
