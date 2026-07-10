@@ -10,7 +10,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const poster = await prisma.poster.findFirst({
-    where: { id: posterId, status: "published" },
+    where: { id: posterId, status: "published", tombstone: false },
     select: { id: true },
   });
 

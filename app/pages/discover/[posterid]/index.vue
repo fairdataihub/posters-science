@@ -15,6 +15,13 @@ const { loggedIn } = useUserSession();
 const toast = useToast();
 const { siteEnv } = useRuntimeConfig().public;
 
+// Shares the global feedback modal state owned by the default layout, so we can
+// open the same "Share Your Feedback" dialog from this page.
+const feedbackOpen = useState("feedbackOpen", () => false);
+function openFeedback() {
+  feedbackOpen.value = true;
+}
+
 const { data: apiData, error } = await useFetch(`/api/discover/${posterId}`);
 
 if (error.value) {

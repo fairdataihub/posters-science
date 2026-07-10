@@ -24,7 +24,11 @@ export default defineEventHandler(async (event) => {
           ],
         }
       : {}),
-    ...(status ? { status } : {}),
+    ...(status === "tombstoned"
+      ? { tombstone: true }
+      : status
+        ? { status }
+        : {}),
   };
 
   const [posters, total] = await Promise.all([
@@ -34,6 +38,8 @@ export default defineEventHandler(async (event) => {
         id: true,
         title: true,
         status: true,
+        tombstone: true,
+        tombedReason: true,
         publishedAt: true,
         created: true,
         user: {
