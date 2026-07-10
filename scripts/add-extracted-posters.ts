@@ -125,7 +125,21 @@ function mapToDbFields(data: JsonPoster) {
   const doiRaw = doiEntry?.identifier;
   const doi = typeof doiRaw === "string" ? doiRaw.toLowerCase() : null;
 
-  const publisher = "Zenodo";
+  const publisherName =
+    typeof data.publisher === "string"
+      ? data.publisher
+      : data.publisher && typeof data.publisher === "object"
+        ? (data.publisher as { name?: unknown }).name
+        : null;
+
+  const publisher =
+    typeof publisherName === "string" && publisherName.trim().length > 0
+      ? publisherName.trim()
+      : doi && /figshare/i.test(doi)
+        ? "Figshare"
+        : doi && /zenodo/i.test(doi)
+          ? "Zenodo"
+          : null;
 
   const publicationYear = data.publicationYear ?? null;
 
@@ -228,6 +242,7 @@ function mapToDbFields(data: JsonPoster) {
 function getImageUrl(
   filePath: string,
   doi: string | null,
+  publisher?: unknown,
   licenseBlocked?: boolean,
 ): string {
   const basename = path.basename(filePath); // e.g. "12345678_complete.json"
@@ -239,11 +254,24 @@ function getImageUrl(
 
   if (!doi) return "";
 
-  const lower = doi.toLowerCase();
+  const publisherName =
+    typeof publisher === "string"
+      ? publisher
+      : publisher && typeof publisher === "object"
+        ? (publisher as { name?: unknown }).name
+        : null;
+
+  const publisherText = typeof publisherName === "string" ? publisherName : "";
   let source: "zenodo" | "figshare" | null = null;
 
-  if (lower.includes("zenodo")) source = "zenodo";
-  else if (lower.includes("figshare")) source = "figshare";
+  // Prefer publisher metadata first, then DOI/path fallbacks.
+  if (/figshare/i.test(publisherText)) source = "figshare";
+  else if (/zenodo/i.test(publisherText)) source = "zenodo";
+  else if (/zenodo/i.test(doi)) source = "zenodo";
+  else if (/figshare/i.test(doi)) source = "figshare";
+  else if (/\/zenodo\//i.test(filePath)) source = "zenodo";
+  else if (/\/figshare\//i.test(filePath)) source = "figshare";
+
   if (!source) return "";
 
   return `https://cdn.posters.science/thumbnails/a/${source}_${id}.jpeg`;
@@ -309,7 +337,12 @@ async function main() {
       continue;
     }
 
-    const imageUrl = getImageUrl(filePath, mapped.doi, data._license_blocked);
+    const imageUrl = getImageUrl(
+      filePath,
+      mapped.doi,
+      data.publisher,
+      data._license_blocked,
+    );
 
     // The unique key is the DOI URL (https://doi.org/<doi>)
     const existingMetadata = mapped.doi
