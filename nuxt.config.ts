@@ -2,11 +2,35 @@
 export default defineNuxtConfig({
   compatibilityDate: "2025-01-16",
   css: ["~/assets/css/main.css"],
-  devtools: { enabled: true },
   dayjs: {
     defaultLocale: "en",
     defaultTimezone: "America/Los_Angeles",
     plugins: ["relativeTime", "utc", "timezone"],
+  },
+  devtools: { enabled: true },
+  echarts: {
+    charts: ["BarChart", "PieChart", "LineChart"],
+    components: [
+      "DatasetComponent",
+      "GridComponent",
+      "TooltipComponent",
+      "ToolboxComponent",
+      "TitleComponent",
+      "LegendComponent",
+    ],
+  },
+  eslint: {},
+  icon: {
+    collections: [
+      "heroicons",
+      "lucide",
+      "material-symbols",
+      "simple-icons",
+      "vscode-icons",
+    ],
+  },
+  image: {
+    // Options
   },
   modules: [
     "@nuxt/ui",
@@ -20,31 +44,51 @@ export default defineNuxtConfig({
     "@nuxtjs/sitemap",
     "nuxt-schema-org",
   ],
-  icon: {
-    collections: [
-      "heroicons",
-      "lucide",
-      "material-symbols",
-      "simple-icons",
-      "vscode-icons",
-    ],
-  },
-  vite: {
-    optimizeDeps: {
-      include: [
-        "@inspira-ui/plugins", // CJS
-        "@internationalized/date",
-        "clsx",
-        "dayjs", // CJS
-        "dayjs/plugin/relativeTime", // CJS
-        "dayjs/plugin/timezone", // CJS
-        "dayjs/plugin/updateLocale", // CJS
-        "dayjs/plugin/utc", // CJS
-        "motion-v",
-        "vue3-lottie",
-        "zod",
-      ],
+  nitro: {
+    moduleSideEffects: ["@prisma/client", ".prisma/client"],
+    rollupConfig: {
+      external: ["@prisma/client", ".prisma/client"],
     },
+    experimental: {
+      openAPI: true,
+    },
+    openAPI: {
+      meta: {
+        title: "Posters.science API Documentation",
+        description: "API Documentation for Posters.science",
+      },
+      route: "/_docs/openapi.json",
+    },
+  },
+  robots: {
+    groups: [
+      {
+        userAgent: "*",
+        allow: "/",
+        disallow: [
+          "/admin/",
+          "/api/",
+          "/dashboard/",
+          "/forgot-password/",
+          "/liked/",
+          "/login/",
+          "/profile/",
+          "/share/",
+          "/signup/",
+        ],
+        contentUsage: {
+          bots: "y",
+          "train-ai": "n",
+          "ai-output": "n",
+          search: "y",
+        },
+        contentSignal: {
+          search: "yes",
+          "ai-input": "no",
+          "ai-train": "no",
+        },
+      },
+    ],
   },
   // Runtime config values can be overridden at container startup using NUXT_ prefixed env vars.
   // This works because Nuxt scans for NUXT_* env vars when the app starts (not at build time)
@@ -79,36 +123,21 @@ export default defineNuxtConfig({
       siteEnv: "",
     },
   },
-
-  eslint: {},
-  echarts: {
-    charts: ["BarChart", "PieChart", "LineChart"],
-    components: [
-      "DatasetComponent",
-      "GridComponent",
-      "TooltipComponent",
-      "ToolboxComponent",
-      "TitleComponent",
-      "LegendComponent",
-    ],
-  },
-  nitro: {
-    moduleSideEffects: ["@prisma/client", ".prisma/client"],
-    rollupConfig: {
-      external: ["@prisma/client", ".prisma/client"],
+  vite: {
+    optimizeDeps: {
+      include: [
+        "@inspira-ui/plugins", // CJS
+        "@internationalized/date",
+        "clsx",
+        "dayjs", // CJS
+        "dayjs/plugin/relativeTime", // CJS
+        "dayjs/plugin/timezone", // CJS
+        "dayjs/plugin/updateLocale", // CJS
+        "dayjs/plugin/utc", // CJS
+        "motion-v",
+        "vue3-lottie",
+        "zod",
+      ],
     },
-    experimental: {
-      openAPI: true,
-    },
-    openAPI: {
-      meta: {
-        title: "Posters.science API Documentation",
-        description: "API Documentation for Posters.science",
-      },
-      route: "/_docs/openapi.json",
-    },
-  },
-  image: {
-    // Options
   },
 });
