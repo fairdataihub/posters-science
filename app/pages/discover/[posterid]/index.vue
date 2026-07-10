@@ -984,23 +984,6 @@ const tabItems = [
                 </div>
               </div>
             </UCard>
-
-            <UAlert
-              color="info"
-              variant="soft"
-              icon="material-symbols:info-outline"
-              title="Is this your poster?"
-              description="Would you like it removed from our platform? Reach out and let us know this is your poster and that you would like it taken down."
-            >
-              <template #actions>
-                <UButton
-                  color="info"
-                  size="sm"
-                  label="Contact us"
-                  @click="openFeedback"
-                />
-              </template>
-            </UAlert>
           </div>
         </div>
       </UContainer>
