@@ -66,6 +66,67 @@ type JsonPoster = {
   _license_blocked?: boolean;
 };
 
+function sanitizeText(value: string): string {
+  let out = "";
+
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+
+    // Remove ASCII control chars except tab/newline/carriage return.
+    if (
+      (code >= 0x00 && code <= 0x08) ||
+      code === 0x0b ||
+      code === 0x0c ||
+      (code >= 0x0e && code <= 0x1f) ||
+      code === 0x7f
+    ) {
+      continue;
+    }
+
+    // Keep only valid surrogate pairs; drop unpaired surrogates.
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const nextCode = i + 1 < value.length ? value.charCodeAt(i + 1) : -1;
+      if (nextCode >= 0xdc00 && nextCode <= 0xdfff) {
+        out += value[i] + value[i + 1];
+        i++;
+      }
+      continue;
+    }
+
+    if (code >= 0xdc00 && code <= 0xdfff) {
+      continue;
+    }
+
+    out += value[i];
+  }
+
+  return out;
+}
+
+function sanitizeValue<T>(value: T): T {
+  if (typeof value === "string") {
+    return sanitizeText(value) as T;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeValue(item)) as T;
+  }
+
+  if (value instanceof Date || value === null || value === undefined) {
+    return value;
+  }
+
+  if (typeof value === "object") {
+    const sanitizedEntries = Object.entries(
+      value as Record<string, unknown>,
+    ).map(([key, val]) => [key, sanitizeValue(val)]);
+
+    return Object.fromEntries(sanitizedEntries) as T;
+  }
+
+  return value;
+}
+
 function mapToDbFields(data: JsonPoster) {
   const creators = (data.creators ?? []).map((creator: any) => {
     // affiliation can be string[] or object[] depending on source
@@ -204,7 +265,7 @@ function mapToDbFields(data: JsonPoster) {
     caption: c.caption ?? "",
   }));
 
-  return {
+  return sanitizeValue({
     creators,
     imageCaptions,
     posterContent,
@@ -237,7 +298,7 @@ function mapToDbFields(data: JsonPoster) {
     conferenceAcronym,
     conferenceSeries,
     domain,
-  };
+  });
 }
 
 function getImageUrl(
