@@ -86,6 +86,8 @@ export default defineEventHandler(async (event) => {
     creators: (meta?.creators as any[]) ?? [],
     fundingReferences: (meta?.fundingReferences as any[]) ?? [],
     relatedIdentifiers: (meta?.relatedIdentifiers as any[]) ?? [],
+    submissionAbstract:
+      (meta?.posterContent as any)?.submissionAbstract ?? null,
     conference: {
       conferenceName: meta?.conferenceName ?? null,
       conferenceAcronym: meta?.conferenceAcronym ?? null,

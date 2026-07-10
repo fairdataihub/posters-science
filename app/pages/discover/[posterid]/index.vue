@@ -35,10 +35,12 @@ const conf = api?.conference;
 const liked = ref(api?.liked ?? false);
 
 const liking = ref(false);
-
 const poster = ref({
   id: api?.id ?? posterId,
   automated: api?.automated ?? false,
+  citations: (api?.relatedIdentifiers ?? []).filter(
+    (ri: any) => ri.relationType === "Cites",
+  ),
   title: api?.title ?? "Untitled Poster",
   description: api?.description ?? "",
   imageUrl:
@@ -71,6 +73,7 @@ const poster = ref({
   }),
   publishedAt: api?.publishedAt ? new Date(api.publishedAt) : undefined,
   version: api?.version ?? null,
+  submissionAbstract: api?.submissionAbstract ?? null,
   doi: api?.doi ?? null,
   license: api?.license ?? null,
   publisher: api?.publisher ?? null,
@@ -226,6 +229,10 @@ const cleanSchema = (value: any): any => {
   return value;
 };
 
+const citationIdentifiers = poster.value?.citations?.length
+  ? poster.value.citations.map((citation: any) => citation.relatedIdentifier)
+  : undefined;
+
 const NuxtSchemaPoster: WithContext<ScholarlyArticle> = {
   "@context": "https://schema.org",
   "@id": resolvedPosterUrl.value || undefined,
@@ -236,7 +243,7 @@ const NuxtSchemaPoster: WithContext<ScholarlyArticle> = {
         name: poster.value.domain,
       }
     : undefined,
-  abstract: poster.value?.description || undefined,
+  abstract: poster.value?.submissionAbstract || undefined,
   author: poster.value?.authors?.length
     ? poster.value.authors.map((author: any) => ({
         "@type": "Person",
@@ -251,9 +258,7 @@ const NuxtSchemaPoster: WithContext<ScholarlyArticle> = {
         sameAs: author.orcid || undefined,
       }))
     : undefined,
-  citation: poster.value.references
-    ?.map((r: any) => r.doi || r.url || r.title)
-    .filter(Boolean),
+  citation: citationIdentifiers,
   datePublished: poster.value?.publishedAt?.toISOString() || undefined,
   description: poster.value?.description || undefined,
   funder: poster.value.funding?.length
@@ -286,7 +291,7 @@ const NuxtSchemaPoster: WithContext<ScholarlyArticle> = {
     },
   ],
   keywords: poster.value?.keywords?.length ? poster.value.keywords : undefined,
-  license: poster.value?.license || undefined,
+  license: licenseInfo.value?.reference || undefined,
   publisher: poster.value?.publisher
     ? { "@type": "Organization", name: poster.value.publisher }
     : undefined,
