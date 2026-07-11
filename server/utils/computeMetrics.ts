@@ -53,15 +53,20 @@ export async function computeMetrics(client: PrismaClient) {
     languageCountResult,
   ] = await Promise.all([
     // 1) count of published posters that are manually shared
-    client.poster.count({ where: { status: "published", automated: false } }),
+    client.poster.count({
+      where: { status: "published", tombstone: false, automated: false },
+    }),
     // 2) count of published posters that are auto-indexed
-    client.poster.count({ where: { status: "published", automated: true } }),
+    client.poster.count({
+      where: { status: "published", tombstone: false, automated: true },
+    }),
 
     // 3) monthly trend (last 13 months, client fills full 12-month window)
     client.$queryRaw<Array<{ month: Date; count: number }>>`
       SELECT DATE_TRUNC('month', created) AS month, COUNT(*)::int AS count
       FROM "Poster"
       WHERE status = 'published'
+        AND tombstone = false
         AND created >= NOW() - INTERVAL '13 months'
       GROUP BY month
       ORDER BY month ASC
@@ -70,7 +75,10 @@ export async function computeMetrics(client: PrismaClient) {
     // 5) top 10 domains
     client.posterMetadata.groupBy({
       by: ["domain"],
-      where: { poster: { status: "published" }, domain: { not: null } },
+      where: {
+        poster: { status: "published", tombstone: false },
+        domain: { not: null },
+      },
       _count: { _all: true },
       orderBy: { _count: { domain: "desc" } },
       take: 10,
@@ -79,7 +87,10 @@ export async function computeMetrics(client: PrismaClient) {
     // 6) full language distribution (collapsed to top 3 + "Other" below)
     client.posterMetadata.groupBy({
       by: ["language"],
-      where: { poster: { status: "published" }, language: { not: null } },
+      where: {
+        poster: { status: "published", tombstone: false },
+        language: { not: null },
+      },
       _count: { _all: true },
       orderBy: { _count: { language: "desc" } },
     }),
@@ -87,7 +98,10 @@ export async function computeMetrics(client: PrismaClient) {
     // 7) top 50 licenses
     client.posterMetadata.groupBy({
       by: ["license"],
-      where: { poster: { status: "published" }, license: { not: null } },
+      where: {
+        poster: { status: "published", tombstone: false },
+        license: { not: null },
+      },
       _count: { _all: true },
       orderBy: { _count: { license: "desc" } },
       take: 50, // fetch more before normalization merges duplicates
@@ -97,7 +111,10 @@ export async function computeMetrics(client: PrismaClient) {
     // highest-count variant supplies the display name)
     client.posterMetadata.groupBy({
       by: ["publisher"],
-      where: { poster: { status: "published" }, publisher: { not: null } },
+      where: {
+        poster: { status: "published", tombstone: false },
+        publisher: { not: null },
+      },
       _count: { _all: true },
       orderBy: { _count: { publisher: "desc" } },
     }),
@@ -106,7 +123,7 @@ export async function computeMetrics(client: PrismaClient) {
     client.posterMetadata.groupBy({
       by: ["conferenceYear"],
       where: {
-        poster: { status: "published" },
+        poster: { status: "published", tombstone: false },
         conferenceYear: { not: null },
       },
       _count: { _all: true },
@@ -117,7 +134,7 @@ export async function computeMetrics(client: PrismaClient) {
     client.posterMetadata.groupBy({
       by: ["conferenceName"],
       where: {
-        poster: { status: "published" },
+        poster: { status: "published", tombstone: false },
         conferenceName: { not: null },
       },
       _count: { _all: true },
@@ -133,6 +150,7 @@ export async function computeMetrics(client: PrismaClient) {
       FROM "PosterMetadata" pm
       JOIN "Poster" p ON pm."posterId" = p.id
       WHERE p.status = 'published'
+        AND p.tombstone = false
         AND subjects IS NOT NULL
         AND array_length(subjects, 1) > 0
       GROUP BY subject
@@ -161,6 +179,7 @@ export async function computeMetrics(client: PrismaClient) {
                THEN creator->'affiliation' ELSE '[]'::jsonb END
         ) AS aff
         WHERE p.status = 'published'
+          AND p.tombstone = false
       ) sub
       WHERE institution IS NOT NULL AND institution != ''
         AND trim(institution) !~ '^[0-9]+$'
@@ -190,6 +209,7 @@ export async function computeMetrics(client: PrismaClient) {
                THEN creator->'affiliation' ELSE '[]'::jsonb END
         ) AS aff
         WHERE p.status = 'published'
+          AND p.tombstone = false
         GROUP BY institution
       ) sub
       WHERE institution IS NOT NULL AND institution != ''
@@ -206,7 +226,7 @@ export async function computeMetrics(client: PrismaClient) {
     client.posterMetadata.groupBy({
       by: ["publicationYear"],
       where: {
-        poster: { status: "published" },
+        poster: { status: "published", tombstone: false },
         publicationYear: { not: null, gte: 2000, lte: currentYear },
       },
       _count: { _all: true },
@@ -219,6 +239,7 @@ export async function computeMetrics(client: PrismaClient) {
       FROM "PosterMetadata" pm
       JOIN "Poster" p ON pm."posterId" = p.id
       WHERE p.status = 'published'
+        AND p.tombstone = false
         AND pm.doi IS NOT NULL
         AND pm.doi <> ''
     `,
@@ -256,6 +277,7 @@ export async function computeMetrics(client: PrismaClient) {
         JOIN "Poster" p ON pm."posterId" = p.id
         CROSS JOIN LATERAL jsonb_array_elements(pm.creators) AS cr
         WHERE p.status = 'published'
+          AND p.tombstone = false
           AND jsonb_typeof(pm.creators) = 'array'
       )
       SELECT
@@ -282,6 +304,7 @@ export async function computeMetrics(client: PrismaClient) {
              THEN creator->'affiliation' ELSE '[]'::jsonb END
       ) AS aff
       WHERE p.status = 'published'
+        AND p.tombstone = false
         AND aff->>'affiliationIdentifierScheme' = 'ROR'
         AND aff->>'affiliationIdentifier' <> ''
     `,
@@ -300,6 +323,7 @@ export async function computeMetrics(client: PrismaClient) {
              THEN pm."fundingReferences" ELSE '[]'::jsonb END
       ) AS fr
       WHERE p.status = 'published'
+        AND p.tombstone = false
         AND fr->>'funderName' IS NOT NULL
         AND fr->>'funderName' <> ''
     `,
@@ -310,6 +334,7 @@ export async function computeMetrics(client: PrismaClient) {
       FROM "PosterMetadata" pm
       JOIN "Poster" p ON pm."posterId" = p.id
       WHERE p.status = 'published'
+        AND p.tombstone = false
         AND pm.language IS NOT NULL
         AND pm.language <> ''
     `,

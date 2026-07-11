@@ -2,6 +2,7 @@ export default defineEventHandler(async () => {
   const manual = await prisma.poster.count({
     where: {
       status: "published",
+      tombstone: false,
       automated: false,
     },
   });
@@ -9,6 +10,7 @@ export default defineEventHandler(async () => {
   const automation = await prisma.poster.count({
     where: {
       status: "published",
+      tombstone: false,
       automated: true,
     },
   });

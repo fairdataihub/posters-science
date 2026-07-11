@@ -111,6 +111,9 @@ model Poster {
 
     automated Boolean @default(false) // Whether the poster was created through automated extraction or manual submission
 
+    tombstone    Boolean @default(false) // true = retired/soft-deleted, hidden from public views
+    tombedReason String  @default("") // Why the poster was retired
+
     likes Like[] @relation("PosterLikes")
 }
 

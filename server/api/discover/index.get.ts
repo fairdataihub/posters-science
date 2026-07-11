@@ -139,7 +139,7 @@ export default defineEventHandler(async (event) => {
   if (licenseCanonicalValues.length > 0) {
     const rawLicenses = await prisma.posterMetadata.findMany({
       where: {
-        poster: { status: "published" },
+        poster: { status: "published", tombstone: false },
         license: { not: null },
       },
       select: { license: true },
@@ -169,6 +169,7 @@ export default defineEventHandler(async (event) => {
              THEN creator->'affiliation' ELSE '[]'::jsonb END
       ) AS aff
       WHERE p.status = 'published'
+        AND p.tombstone = false
         AND lower(trim(
           CASE
             WHEN jsonb_typeof(aff) = 'object' THEN aff->>'name'
@@ -198,6 +199,7 @@ export default defineEventHandler(async (event) => {
              THEN pm."fundingReferences" ELSE '[]'::jsonb END
       ) AS fr
       WHERE p.status = 'published'
+        AND p.tombstone = false
         AND fr->>'funderName' IS NOT NULL
         AND fr->>'funderName' <> ''
     `;
@@ -235,6 +237,7 @@ export default defineEventHandler(async (event) => {
 
   const whereClause = {
     status: "published",
+    tombstone: false,
     ...searchFilter,
     ...sourceFilter,
     ...metadataFilter,
