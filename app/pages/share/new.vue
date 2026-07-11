@@ -13,6 +13,9 @@ useSeoMeta({
   ogImage,
 });
 
+const { siteEnv } = useRuntimeConfig().public;
+const toast = useToast();
+
 const status = ref(0);
 const isUploading = ref(false);
 const selectedFiles = ref<File[]>([]);
@@ -34,6 +37,40 @@ interface JobStatusResponse {
   error: string | null;
 }
 
+// Staging-only: build a poster.json with missing mandatory fields as "MISSING"
+// and download it for the user. Failures are non-blocking so the redirect to the
+// edit page still happens.
+const downloadPosterJson = async (posterId: number): Promise<void> => {
+  try {
+    const response = await fetch(
+      `/api/poster/${posterId}/poster-json?fillMissing=1`,
+      { credentials: "include" },
+    );
+
+    if (!response.ok) {
+      throw new Error(`Request failed (${response.status})`);
+    }
+
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "poster.json";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    console.error("[downloadPosterJson]", err);
+    toast.add({
+      title: "Download Failed",
+      description:
+        "Could not download poster.json. Opening the editor instead.",
+      color: "error",
+    });
+  }
+};
+
 const pollJobStatus = async (jobId: string): Promise<void> => {
   try {
     const response = await $fetch<JobStatusResponse>(
@@ -49,6 +86,11 @@ const pollJobStatus = async (jobId: string): Promise<void> => {
     ) {
       status.value = 4; // Complete
       window.umami?.track("upload_completed", { posterId: response.posterId });
+
+      if (siteEnv === "staging") {
+        await downloadPosterJson(response.posterId);
+      }
+
       navigateTo(`/share/${response.posterId}`);
 
       return;
