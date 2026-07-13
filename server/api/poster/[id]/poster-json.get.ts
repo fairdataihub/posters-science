@@ -62,5 +62,8 @@ export default defineEventHandler(async (event) => {
     setHeader(event, "Content-Disposition", "attachment; filename=poster.json");
   }
 
+  // format the JSON output with indentation for readability
+  posterJson = JSON.parse(JSON.stringify(posterJson, null, 2));
+
   return posterJson;
 });

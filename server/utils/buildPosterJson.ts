@@ -209,7 +209,8 @@ export function fillMissingMandatoryFields(
     filled.creators = [{ name: "MISSING" }];
   if (!isNonEmptyArray(filled.titles)) filled.titles = [{ title: "MISSING" }];
   if (typeof filled.publicationYear !== "number") {
-    filled.publicationYear = new Date().getFullYear();
+    // filled.publicationYear = new Date().getFullYear();
+    filled.publicationYear = "MISSING";
   }
   if (!isNonEmptyArray(filled.subjects)) {
     filled.subjects = [{ subject: "MISSING" }];
@@ -232,7 +233,8 @@ export function fillMissingMandatoryFields(
     conf.conferenceName = "MISSING";
   }
   if (typeof conf.conferenceYear !== "number") {
-    conf.conferenceYear = new Date().getFullYear();
+    // conf.conferenceYear = new Date().getFullYear();
+    conf.conferenceYear = "MISSING";
   }
   filled.conference = conf;
 
