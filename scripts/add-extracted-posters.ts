@@ -252,18 +252,27 @@ function mapToDbFields(data: JsonPoster) {
   const submittedDateStr = submittedDateRaw?.split("/")[0] ?? null;
   const submittedAt = submittedDateStr ? new Date(submittedDateStr) : issuedAt;
 
+  // License-blocked posters withhold their thumbnail (see getImageUrl), so any
+  // extracted content-derived fields must be blanked out too rather than leaking
+  // poster content the license doesn't allow us to show.
+  const licenseBlocked = data._license_blocked === true;
+
   // Real JSON uses "content" field; fall back to empty sections
-  const posterContent = data.content ?? {};
+  const posterContent = licenseBlocked ? {} : (data.content ?? {});
 
-  const imageCaptions = (data.imageCaptions ?? []).map((c: any) => ({
-    ...(c.id ? { id: c.id } : {}),
-    caption: c.caption ?? "",
-  }));
+  const imageCaptions = licenseBlocked
+    ? []
+    : (data.imageCaptions ?? []).map((c: any) => ({
+        ...(c.id ? { id: c.id } : {}),
+        caption: c.caption ?? "",
+      }));
 
-  const tableCaptions = (data.tableCaptions ?? []).map((c: any) => ({
-    ...(c.id ? { id: c.id } : {}),
-    caption: c.caption ?? "",
-  }));
+  const tableCaptions = licenseBlocked
+    ? []
+    : (data.tableCaptions ?? []).map((c: any) => ({
+        ...(c.id ? { id: c.id } : {}),
+        caption: c.caption ?? "",
+      }));
 
   return sanitizeValue({
     creators,

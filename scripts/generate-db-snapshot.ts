@@ -2,9 +2,10 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import "dotenv/config";
 import { PrismaPg } from "@prisma/adapter-pg";
-import { PrismaClient } from "../shared/generated/client";
+import { PrismaClient, type PosterMetadata } from "../shared/generated/client";
+import { buildPosterJson } from "../server/utils/buildPosterJson";
 
-const DEFAULT_CHUNK_SIZE = 5000;
+const DEFAULT_CHUNK_SIZE = 1000;
 const DEFAULT_OUTPUT_ROOT = "db-snapshots";
 
 function resolveDiscoverBaseUrl(explicitBaseUrl?: string): string {
@@ -49,44 +50,44 @@ type PosterRow = {
   description: string;
   imageUrl: string;
   publishedAt: Date | null;
-  posterMetadata: {
-    doi: string | null;
-    identifiers: unknown;
-    creators: unknown;
-    publisher: string | null;
-    publicationYear: number | null;
-    subjects: string[];
-    domain: string | null;
-    language: string | null;
-    version: string | null;
-    size: string | null;
-    format: string | null;
-    license: string | null;
-    fundingReferences: unknown;
-    conferenceName: string | null;
-    conferenceLocation: string | null;
-    conferenceUri: string | null;
-    conferenceIdentifier: string | null;
-    conferenceIdentifierType: string | null;
-    conferenceYear: number | null;
-    conferenceStartDate: string | null;
-    conferenceEndDate: string | null;
-    conferenceAcronym: string | null;
-    conferenceSeries: string | null;
-    dates: unknown;
-    relatedIdentifiers: unknown;
-  } | null;
+  posterMetadata: PosterMetadata | null;
 };
 
 function sanitizePoster(row: PosterRow) {
+  // A dicebear imageUrl means the real thumbnail is being withheld (broken
+  // extraction, or a restrictive license), so extracted content-derived
+  // fields should be blanked out too rather than leaking poster content.
+  const isBrokenImage = row.imageUrl.includes("dicebear");
+  const posterMetadata =
+    row.posterMetadata && isBrokenImage
+      ? {
+          ...row.posterMetadata,
+          posterContent: [],
+          tableCaptions: [],
+          imageCaptions: [],
+        }
+      : row.posterMetadata;
+
+  const posterJson = posterMetadata
+    ? buildPosterJson(posterMetadata, {
+        title: row.title,
+        description: row.description,
+      })
+    : {
+        ...(row.title && { titles: [{ title: row.title }] }),
+        ...(row.description && {
+          descriptions: [
+            { description: row.description, descriptionType: "Other" },
+          ],
+        }),
+      };
+
   return {
     id: row.id,
     posterUrl: `${discoverBaseUrl}/discover/${row.id}`,
-    title: row.title,
-    description: row.description,
     imageUrl: row.imageUrl,
     publishedAt: row.publishedAt,
-    posterMetadata: row.posterMetadata,
+    posterJson,
   };
 }
 
@@ -128,35 +129,7 @@ async function main() {
           description: true,
           imageUrl: true,
           publishedAt: true,
-          posterMetadata: {
-            select: {
-              doi: true,
-              identifiers: true,
-              creators: true,
-              publisher: true,
-              publicationYear: true,
-              subjects: true,
-              domain: true,
-              language: true,
-              version: true,
-              size: true,
-              format: true,
-              license: true,
-              fundingReferences: true,
-              conferenceName: true,
-              conferenceLocation: true,
-              conferenceUri: true,
-              conferenceIdentifier: true,
-              conferenceIdentifierType: true,
-              conferenceYear: true,
-              conferenceStartDate: true,
-              conferenceEndDate: true,
-              conferenceAcronym: true,
-              conferenceSeries: true,
-              dates: true,
-              relatedIdentifiers: true,
-            },
-          },
+          posterMetadata: true,
         },
       });
 
