@@ -60,10 +60,10 @@ export default defineEventHandler(async (event) => {
 
     setHeader(event, "Content-Type", "application/json");
     setHeader(event, "Content-Disposition", "attachment; filename=poster.json");
-  }
 
-  // format the JSON output with indentation for readability
-  posterJson = JSON.parse(JSON.stringify(posterJson, null, 2));
+    // format the JSON for readability
+    return JSON.stringify(posterJson, null, 2);
+  }
 
   return posterJson;
 });
