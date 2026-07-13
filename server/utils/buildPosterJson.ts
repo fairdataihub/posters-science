@@ -208,10 +208,13 @@ export function fillMissingMandatoryFields(
   if (!isNonEmptyArray(filled.creators))
     filled.creators = [{ name: "MISSING" }];
   if (!isNonEmptyArray(filled.titles)) filled.titles = [{ title: "MISSING" }];
-  if (typeof filled.publicationYear !== "number") {
-    // filled.publicationYear = new Date().getFullYear();
-    filled.publicationYear = "MISSING";
-  }
+
+  // if (typeof filled.publicationYear !== "number") {
+  //   filled.publicationYear = new Date().getFullYear();
+  // }
+
+  filled.publicationYear = "MISSING";
+
   if (!isNonEmptyArray(filled.subjects)) {
     filled.subjects = [{ subject: "MISSING" }];
   }
@@ -225,17 +228,22 @@ export function fillMissingMandatoryFields(
   }
 
   // conference: preserve any partial data, fill only the required subfields
-  const conf =
-    filled.conference && typeof filled.conference === "object"
-      ? { ...(filled.conference as Record<string, unknown>) }
-      : {};
-  if (typeof conf.conferenceName !== "string" || conf.conferenceName === "") {
-    conf.conferenceName = "MISSING";
-  }
-  if (typeof conf.conferenceYear !== "number") {
-    // conf.conferenceYear = new Date().getFullYear();
-    conf.conferenceYear = "MISSING";
-  }
+  // const conf =
+  //   filled.conference && typeof filled.conference === "object"
+  //     ? { ...(filled.conference as Record<string, unknown>) }
+  //     : {};
+  // if (typeof conf.conferenceName !== "string" || conf.conferenceName === "") {
+  //   conf.conferenceName = "MISSING";
+  // }
+  // if (typeof conf.conferenceYear !== "number") {
+  //   conf.conferenceYear = new Date().getFullYear();
+  // }
+
+  const conf = {
+    conferenceName: "MISSING",
+    conferenceYear: "MISSING",
+  };
+
   filled.conference = conf;
 
   if (!isNonEmptyArray(filled.formats)) filled.formats = ["MISSING"];
