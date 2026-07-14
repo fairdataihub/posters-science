@@ -92,6 +92,32 @@ export default defineNuxtConfig({
   },
   site: {
     url: process.env.NUXT_SITE_URL || "http://localhost:3000",
+    name: "Posters.science",
+  },
+  sitemap: {
+    sitemaps: {
+      pages: {
+        includeAppSources: true,
+        exclude: [
+          "/admin/**",
+          "/dashboard/**",
+          "/forgot-password/**",
+          "/liked/**",
+          "/login/**",
+          "/profile/**",
+          "/reset-password/**",
+          "/share/**",
+          "/signup/**",
+          "/verify-email/**",
+          "/zenodo-auth-error/**",
+          "/discover/[poster-id]/**",
+          "/schemas/**",
+        ],
+      },
+      posters: {
+        sources: ["/api/__sitemap__/posters"],
+      },
+    },
   },
   // Runtime config values can be overridden at container startup using NUXT_ prefixed env vars.
   // This works because Nuxt scans for NUXT_* env vars when the app starts (not at build time)
