@@ -90,6 +90,9 @@ export default defineNuxtConfig({
       },
     ],
   },
+  site: {
+    url: process.env.NUXT_SITE_URL || "http://localhost:3000",
+  },
   // Runtime config values can be overridden at container startup using NUXT_ prefixed env vars.
   // This works because Nuxt scans for NUXT_* env vars when the app starts (not at build time)
   // and automatically maps them to runtimeConfig keys:
