@@ -72,6 +72,7 @@ function sanitizePoster(row: PosterRow) {
     ? buildPosterJson(posterMetadata, {
         title: row.title,
         description: row.description,
+        includePublisher: true,
       })
     : {
         ...(row.title && { titles: [{ title: row.title }] }),
