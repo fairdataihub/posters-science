@@ -1,23 +1,41 @@
 export default defineSitemapEventHandler(async () => {
-  // Fetch all published posters
-  console.log("Fetching published posters for sitemap...");
-  let posters = [];
-  try {
-    posters = await prisma.poster.findMany({
-      where: { status: "published" },
-      select: { id: true },
-    });
-  } catch (error) {
-    console.error("Error fetching posters for sitemap:", error);
+  const { siteEnv } = useRuntimeConfig();
 
+  if (siteEnv === "staging") {
     return [];
   }
 
-  console.log(
-    `Found ${posters.length} published posters for sitemap generation.`,
-  );
+  try {
+    const posters = await prisma.poster.findMany({
+      where: {
+        status: "published",
+      },
+      select: {
+        id: true,
+        updated: true,
+        imageUrl: true,
+      },
+      orderBy: {
+        id: "asc",
+      },
+    });
 
-  return posters.map((poster) => ({
-    loc: `/discover/${poster.id}`,
-  }));
+    return posters.map((poster) => ({
+      loc: `/discover/${poster.id}`,
+      ...(poster.updated && {
+        lastmod: poster.updated.toISOString(),
+      }),
+      ...(poster.imageUrl && {
+        images: [
+          {
+            loc: poster.imageUrl,
+          },
+        ],
+      }),
+    }));
+  } catch (error) {
+    console.error("Failed to generate poster sitemap:", error);
+
+    return [];
+  }
 });

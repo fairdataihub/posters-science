@@ -1,4 +1,21 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
+// Protected routes that should not be indexed by search engines or crawlers.
+const PROTECTED_ROUTES = [
+  "/admin",
+  "/api",
+  "/dashboard",
+  "/forgot-password",
+  "/liked",
+  "/login",
+  "/profile",
+  "/reset-password",
+  "/share/new",
+  "/signup",
+  "/verify-email",
+  "/zenodo-auth-error",
+  "/404",
+];
+
 export default defineNuxtConfig({
   compatibilityDate: "2025-01-16",
   css: ["~/assets/css/main.css"],
@@ -65,17 +82,7 @@ export default defineNuxtConfig({
       {
         userAgent: "*",
         allow: "/",
-        disallow: [
-          "/admin/",
-          "/api/",
-          "/dashboard/",
-          "/forgot-password/",
-          "/liked/",
-          "/login/",
-          "/profile/",
-          "/share/",
-          "/signup/",
-        ],
+        disallow: PROTECTED_ROUTES,
         contentUsage: {
           bots: "y",
           "train-ai": "n",
@@ -98,24 +105,11 @@ export default defineNuxtConfig({
     sitemaps: {
       pages: {
         includeAppSources: true,
-        exclude: [
-          "/admin/**",
-          "/dashboard/**",
-          "/forgot-password/**",
-          "/liked/**",
-          "/login/**",
-          "/profile/**",
-          "/reset-password/**",
-          "/share/**",
-          "/signup/**",
-          "/verify-email/**",
-          "/zenodo-auth-error/**",
-          "/discover/[poster-id]/**",
-          "/schemas/**",
-        ],
+        exclude: PROTECTED_ROUTES,
       },
       posters: {
         sources: ["/api/__sitemap__/posters"],
+        chunks: 10000, // Chunk size should be increased to 25000 once total poster count exceeds 100k
       },
     },
   },
