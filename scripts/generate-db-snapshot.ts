@@ -115,7 +115,7 @@ async function main() {
   try {
     while (true) {
       const rows: PosterRow[] = await prisma.poster.findMany({
-        where: { status: "published" },
+        where: { status: "published", tombstone: false },
         orderBy: { id: "asc" },
         ...(cursorId
           ? {

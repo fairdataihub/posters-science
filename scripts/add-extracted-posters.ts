@@ -456,6 +456,7 @@ async function main() {
   let created = 0;
   let updated = 0;
   let errored = 0;
+  let skipped = 0;
   const erroredItems: ErrorReportItem[] = [];
 
   for (let i = 0; i < allFiles.length; i++) {
@@ -494,7 +495,10 @@ async function main() {
       data._license_blocked,
     );
 
-    let existingMetadata: { posterId: number } | null = null;
+    let existingMetadata: {
+      posterId: number;
+      poster: { tombstone: boolean; tombedReason: string };
+    } | null = null;
 
     if (mapped.doi) {
       // Primary match path: DOI
@@ -509,7 +513,10 @@ async function main() {
             mode: "insensitive",
           },
         },
-        select: { posterId: true },
+        select: {
+          posterId: true,
+          poster: { select: { tombstone: true, tombedReason: true } },
+        },
       });
     }
 
@@ -535,6 +542,7 @@ async function main() {
           select: {
             posterId: true,
             identifiers: true,
+            poster: { select: { tombstone: true, tombedReason: true } },
           },
         });
 
@@ -545,8 +553,23 @@ async function main() {
           ),
         );
 
-        existingMetadata = match ? { posterId: match.posterId } : null;
+        existingMetadata = match
+          ? {
+              posterId: match.posterId,
+              poster: match.poster,
+            }
+          : null;
       }
+    }
+
+    // Tombstoned posters were deliberately retired by an admin (e.g. license
+    // or content issue). Re-importing must not resurrect or overwrite them.
+    if (existingMetadata?.poster.tombstone) {
+      skipped++;
+      console.log(
+        `    [skipped] ${existingMetadata.posterId} - tombstoned (${existingMetadata.poster.tombedReason || "no reason recorded"})`,
+      );
+      continue;
     }
 
     const metadataPayload = {
@@ -661,6 +684,7 @@ async function main() {
       totals: {
         created,
         updated,
+        skipped,
         errored,
       },
       items: erroredItems,
@@ -672,7 +696,7 @@ async function main() {
   }
 
   console.log(
-    `\n🎉 Done. Created: ${created}, Updated: ${updated}, Errored: ${errored}\n`,
+    `\n🎉 Done. Created: ${created}, Updated: ${updated}, Skipped (tombstoned): ${skipped}, Errored: ${errored}\n`,
   );
 }
 
