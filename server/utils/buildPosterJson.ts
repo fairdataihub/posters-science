@@ -13,9 +13,12 @@ export function buildPosterJson(
     zenodoDoi?: string;
     publishedAt?: Date;
     includePublisher?: boolean;
+    useStoredPublicationYear?: boolean;
   },
 ) {
-  const currentPublicationYear = new Date().getFullYear();
+  const publicationYear = options?.useStoredPublicationYear
+    ? (meta.publicationYear ?? new Date().getFullYear())
+    : new Date().getFullYear();
 
   const doi = meta.doi ?? undefined;
   let prefix: string | undefined;
@@ -157,7 +160,7 @@ export function buildPosterJson(
     ...(mergedIdentifiers && { identifiers: mergedIdentifiers }),
     creators: cleanCreators(meta.creators),
     ...(publisher && { publisher }),
-    publicationYear: currentPublicationYear,
+    publicationYear,
     subjects: (meta.subjects ?? [])
       .filter((s) => s !== "")
       .map((s) => ({ subject: s })),

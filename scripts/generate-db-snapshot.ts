@@ -73,6 +73,7 @@ function sanitizePoster(row: PosterRow) {
         title: row.title,
         description: row.description,
         includePublisher: true,
+        useStoredPublicationYear: true,
       })
     : {
         ...(row.title && { titles: [{ title: row.title }] }),
