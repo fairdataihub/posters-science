@@ -24,6 +24,7 @@
     "test:upload": "npx tsx scripts/upload-test-posters.ts",
     "test:dummy": "npx tsx scripts/create-dummy-posters.ts",
     "scripts:add:posters": "npx tsx scripts/add-extracted-posters.ts",
+    "scripts:generate-db-snapshot": "npx tsx scripts/generate-db-snapshot.ts",
     "metrics:snapshot": "npx tsx scripts/compute-metrics-snapshot.ts"
   },
   "dependencies": {

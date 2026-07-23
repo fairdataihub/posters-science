@@ -112,6 +112,12 @@ const ORG_ALIASES: OrgAlias[] = [
     canonical: "National Institutes of Health",
     pattern: /national institutes? of health|\bnih\b/i,
   },
+  {
+    // Special case to unify typod entries and formal entries while
+    // showing domain ("PosterPresentation s.com", "PosterPresentations.co m")
+    canonical: "PosterPresentations.com",
+    pattern: /posterpresentation/i,
+  },
 ];
 
 export function canonicalizeOrg(raw: string, isFunder = false): string {

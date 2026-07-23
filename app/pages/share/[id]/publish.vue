@@ -605,10 +605,15 @@ async function handleArchive() {
       </div>
 
       <p class="mb-5 text-sm">
-        <ULink to="https://zenodo.org" target="_blank" class="text-primary underline">Zenodo</ULink>
-        is a free and open-source general-purpose repository developed
-        and maintained by the European Organization for Nuclear Research (CERN)
-        in partnership with OpenAIRE. It is one of the most popular repositories
+        <ULink
+          to="https://zenodo.org"
+          target="_blank"
+          class="text-primary underline"
+          >Zenodo</ULink
+        >
+        is a free and open-source general-purpose repository developed and
+        maintained by the European Organization for Nuclear Research (CERN) in
+        partnership with OpenAIRE. It is one of the most popular repositories
         for sharing posters.
       </p>
 
@@ -806,7 +811,7 @@ async function handleArchive() {
                 <USelectMenu
                   v-model="selectedLicense"
                   :items="LICENSE_OPTIONS_WITH_SUGGESTED"
-                  value-key="value"
+                  :value-key="`value`"
                   placeholder="Select a license"
                   class="w-full max-w-md"
                   :virtualize="true"

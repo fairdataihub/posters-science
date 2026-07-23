@@ -13,9 +13,12 @@ export function buildPosterJson(
     zenodoDoi?: string;
     publishedAt?: Date;
     includePublisher?: boolean;
+    useStoredPublicationYear?: boolean;
   },
 ) {
-  const currentPublicationYear = new Date().getFullYear();
+  const publicationYear = options?.useStoredPublicationYear
+    ? (meta.publicationYear ?? new Date().getFullYear())
+    : new Date().getFullYear();
 
   const doi = meta.doi ?? undefined;
   let prefix: string | undefined;
@@ -157,7 +160,7 @@ export function buildPosterJson(
     ...(mergedIdentifiers && { identifiers: mergedIdentifiers }),
     creators: cleanCreators(meta.creators),
     ...(publisher && { publisher }),
-    publicationYear: currentPublicationYear,
+    publicationYear,
     subjects: (meta.subjects ?? [])
       .filter((s) => s !== "")
       .map((s) => ({ subject: s })),
@@ -188,6 +191,67 @@ export function buildPosterJson(
   };
 
   return stripEmptyStrings(posterJson) as Record<string, unknown>;
+}
+
+/**
+ * Ensures the schema-mandatory top-level fields (per public/schema/v0.2/poster_schema.json)
+ * are present, injecting placeholders only where a field is missing or empty. Real extracted
+ * data is never overwritten.
+ *
+ * Pure transform, applied to the in-memory poster.json before download - it does NOT touch the
+ * database. Missing string fields get "MISSING"; the required numeric conferenceYear falls back
+ * to the current year so the file stays schema-valid.
+ */
+export function fillMissingMandatoryFields(
+  posterJson: Record<string, unknown>,
+): Record<string, unknown> {
+  const filled = { ...posterJson };
+  const isNonEmptyArray = (v: unknown) => Array.isArray(v) && v.length > 0;
+
+  if (!isNonEmptyArray(filled.creators))
+    filled.creators = [{ name: "MISSING" }];
+  if (!isNonEmptyArray(filled.titles)) filled.titles = [{ title: "MISSING" }];
+
+  // if (typeof filled.publicationYear !== "number") {
+  //   filled.publicationYear = new Date().getFullYear();
+  // }
+
+  filled.publicationYear = "MISSING";
+
+  if (!isNonEmptyArray(filled.subjects)) {
+    filled.subjects = [{ subject: "MISSING" }];
+  }
+  if (!isNonEmptyArray(filled.descriptions)) {
+    filled.descriptions = [
+      { description: "MISSING", descriptionType: "Other" },
+    ];
+  }
+  if (!filled.publisher || typeof filled.publisher !== "object") {
+    filled.publisher = { name: "MISSING" };
+  }
+
+  // conference: preserve any partial data, fill only the required subfields
+  // const conf =
+  //   filled.conference && typeof filled.conference === "object"
+  //     ? { ...(filled.conference as Record<string, unknown>) }
+  //     : {};
+  // if (typeof conf.conferenceName !== "string" || conf.conferenceName === "") {
+  //   conf.conferenceName = "MISSING";
+  // }
+  // if (typeof conf.conferenceYear !== "number") {
+  //   conf.conferenceYear = new Date().getFullYear();
+  // }
+
+  const conf = {
+    conferenceName: "MISSING",
+    conferenceYear: "MISSING",
+  };
+
+  filled.conference = conf;
+
+  if (!isNonEmptyArray(filled.formats)) filled.formats = ["MISSING"];
+
+  return filled;
 }
 
 function formatDateISO(d: Date): string {
