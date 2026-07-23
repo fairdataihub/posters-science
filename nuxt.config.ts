@@ -123,36 +123,6 @@ export default defineNuxtConfig({
       route: "/_docs/openapi.json",
     },
   },
-  robots: {
-    groups: [
-      {
-        userAgent: "*",
-        allow: "/",
-        disallow: [
-          "/admin/",
-          "/api/",
-          "/dashboard/",
-          "/forgot-password/",
-          "/liked/",
-          "/login/",
-          "/profile/",
-          "/share/",
-          "/signup/",
-        ],
-        contentUsage: {
-          bots: "y",
-          "train-ai": "n",
-          "ai-output": "n",
-          search: "y",
-        },
-        contentSignal: {
-          search: "yes",
-          "ai-input": "no",
-          "ai-train": "no",
-        },
-      },
-    ],
-  },
   // Runtime config values can be overridden at container startup using NUXT_ prefixed env vars.
   // This works because Nuxt scans for NUXT_* env vars when the app starts (not at build time)
   // and automatically maps them to runtimeConfig keys:
