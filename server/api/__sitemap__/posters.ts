@@ -1,5 +1,7 @@
 export default defineSitemapEventHandler(async () => {
-  const { siteEnv } = useRuntimeConfig();
+  const {
+    public: { siteEnv },
+  } = useRuntimeConfig();
 
   if (siteEnv === "staging") {
     return [];
@@ -9,6 +11,7 @@ export default defineSitemapEventHandler(async () => {
     const posters = await prisma.poster.findMany({
       where: {
         status: "published",
+        tombstone: false,
       },
       select: {
         id: true,
