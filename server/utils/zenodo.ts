@@ -1465,14 +1465,21 @@ async function deleteZenodoDraftFileIfPresent(
   }
 }
 
+type ZenodoDraftFileEntry = {
+  key?: string;
+  links?: {
+    content?: string;
+    commit?: string;
+  };
+};
+
 async function initializeZenodoDraftFile(
   depositionId: number,
   zenodoToken: string,
   filename: string,
 ) {
   const authHeader = ["Bearer", zenodoToken].join(" ");
-
-  return fetch(
+  const response = await fetch(
     `${config.zenodoApiEndpoint}/records/${depositionId}/draft/files`,
     {
       method: "POST",
@@ -1483,6 +1490,22 @@ async function initializeZenodoDraftFile(
       body: JSON.stringify([{ key: filename }]),
     },
   );
+
+  if (!response.ok) {
+    return { success: false as const, response };
+  }
+
+  const data = (await response.json()) as { entries?: ZenodoDraftFileEntry[] };
+  const entry = data.entries?.find((file) => file.key === filename);
+
+  if (!entry?.links?.content || !entry.links.commit) {
+    return {
+      success: false as const,
+      error: `Zenodo did not return content/commit links for draft file "${filename}"`,
+    };
+  }
+
+  return { success: true as const, entry };
 }
 
 async function uploadFileToZenodoDraft(
@@ -1504,17 +1527,21 @@ async function uploadFileToZenodoDraft(
       await deleteZenodoDraftFileIfPresent(depositionId, zenodoToken, filename);
     }
 
-    const initResponse = await initializeZenodoDraftFile(
+    const initialized = await initializeZenodoDraftFile(
       depositionId,
       zenodoToken,
       filename,
     );
 
-    if (!initResponse.ok) {
-      lastError = await getZenodoErrorMessage(
-        `Failed to initialize draft file "${filename}"`,
-        initResponse,
-      );
+    if (!initialized.success) {
+      if ("response" in initialized) {
+        lastError = await getZenodoErrorMessage(
+          `Failed to initialize draft file "${filename}"`,
+          initialized.response!,
+        );
+      } else {
+        lastError = initialized.error;
+      }
       console.log(`[Zenodo] ${lastError}`);
 
       if (attempt === 1) {
@@ -1530,18 +1557,21 @@ async function uploadFileToZenodoDraft(
       return { success: false, error: lastError };
     }
 
-    const contentResponse = await fetch(
-      `${config.zenodoApiEndpoint}/records/${depositionId}/draft/files/${encodeURIComponent(filename)}/content`,
-      {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/octet-stream",
-          "Content-Length": String(content.byteLength),
-          Authorization: authHeader,
-        },
-        body: content,
-      },
+    const contentUrl = initialized.entry.links!.content!;
+    const commitUrl = initialized.entry.links!.commit!;
+    console.log(
+      `[Zenodo] Draft file "${filename}" initialized with content and commit links`,
     );
+
+    const contentResponse = await fetch(contentUrl, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/octet-stream",
+        "Content-Length": String(content.byteLength),
+        Authorization: authHeader,
+      },
+      body: content,
+    });
 
     if (!contentResponse.ok) {
       lastError = await getZenodoErrorMessage(
@@ -1558,15 +1588,12 @@ async function uploadFileToZenodoDraft(
       return { success: false, error: lastError };
     }
 
-    const commitResponse = await fetch(
-      `${config.zenodoApiEndpoint}/records/${depositionId}/draft/files/${encodeURIComponent(filename)}/commit`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: authHeader,
-        },
+    const commitResponse = await fetch(commitUrl, {
+      method: "POST",
+      headers: {
+        Authorization: authHeader,
       },
-    );
+    });
 
     if (!commitResponse.ok) {
       lastError = await getZenodoErrorMessage(
