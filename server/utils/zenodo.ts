@@ -1588,7 +1588,15 @@ async function uploadFileToZenodoDraft(
       return { success: false, error: lastError };
     }
 
-    const commitResponse = await fetch(commitUrl, {
+    const contentData = (await contentResponse
+      .json()
+      .catch(() => null)) as ZenodoDraftFileEntry | null;
+    const uploadedCommitUrl = contentData?.links?.commit ?? commitUrl;
+    console.log(
+      `[Zenodo] Draft file "${filename}" content uploaded: key=${contentData?.key ?? "unknown"}, hasCommit=${!!contentData?.links?.commit}`,
+    );
+
+    const commitResponse = await fetch(uploadedCommitUrl, {
       method: "POST",
       headers: {
         Authorization: authHeader,
