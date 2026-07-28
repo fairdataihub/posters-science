@@ -500,9 +500,13 @@ export async function beginZenodoPublication(
     publishedAt: zenodoSharedAt,
     includePublisher: true,
   });
-  const posterJsonBlob = new Blob([JSON.stringify(posterJson, null, 2)], {
-    type: "application/json",
-  });
+  const posterJsonEncoded = new TextEncoder().encode(
+    JSON.stringify(posterJson, null, 2),
+  );
+  const posterJsonBytes = posterJsonEncoded.buffer.slice(
+    posterJsonEncoded.byteOffset,
+    posterJsonEncoded.byteOffset + posterJsonEncoded.byteLength,
+  );
 
   console.log(`[Zenodo] Uploading poster.json to bucket: ${bucketUrl}`);
 
@@ -510,7 +514,7 @@ export async function beginZenodoPublication(
     bucketUrl,
     tokenRecord.accessToken,
     "poster.json",
-    posterJsonBlob,
+    posterJsonBytes,
   );
 
   if (!uploadResult.success) {
@@ -1412,53 +1416,90 @@ async function getWorkingDeposition(
   }
 }
 
+function shouldRetryZenodoUpload(errorMessage: string): boolean {
+  const lower = errorMessage.toLowerCase();
+
+  return (
+    lower.includes("file upload transfer failed") ||
+    lower.includes("please try again") ||
+    lower.includes(" 500 ") ||
+    lower.includes(" 502 ") ||
+    lower.includes(" 503 ") ||
+    lower.includes(" 504 ")
+  );
+}
+
 async function uploadFileToZenodoBucket(
   bucketUrl: string,
   zenodoToken: string,
   filename: string,
-  content: Blob,
+  content: ArrayBuffer,
 ) {
   console.log(`[Zenodo] Uploading file "${filename}" to bucket: ${bucketUrl}`);
 
-  try {
-    const response = await fetch(`${bucketUrl}/${filename}`, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/octet-stream",
-        "Content-Length": String(content.size),
-        Authorization: `Bearer ${zenodoToken}`,
-      },
-      body: content,
-    });
+  const maxAttempts = 3;
+  let lastError = "";
 
-    if (!response.ok) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const response = await fetch(
+        `${bucketUrl}/${encodeURIComponent(filename)}`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/octet-stream",
+            "Content-Length": String(content.byteLength),
+            Authorization: `Bearer ${zenodoToken}`,
+          },
+          body: content,
+        },
+      );
+
+      if (!response.ok) {
+        console.log(
+          `[Zenodo] Failed to upload file "${filename}" (status: ${response.status}, attempt ${attempt}/${maxAttempts})`,
+        );
+
+        const errorMsg = await getZenodoErrorMessage(
+          `Failed to upload file "${filename}"`,
+          response,
+        );
+
+        console.log(`[Zenodo] ${errorMsg}`);
+        lastError = errorMsg;
+
+        if (attempt < maxAttempts && shouldRetryZenodoUpload(errorMsg)) {
+          await new Promise((resolve) => setTimeout(resolve, attempt * 1000));
+          continue;
+        }
+
+        return { success: false, error: errorMsg };
+      }
+
+      const data = await response.json();
+
+      console.log(`[Zenodo] Uploaded file "${filename}" successfully`);
+
+      return { success: true, data };
+    } catch (error) {
       console.log(
-        `[Zenodo] Failed to upload file "${filename}" (status: ${response.status})`,
+        `[Zenodo] Error uploading file "${filename}" (attempt ${attempt}/${maxAttempts}):`,
+        error,
       );
 
-      const errorMsg = await getZenodoErrorMessage(
-        `Failed to upload file "${filename}"`,
-        response,
-      );
+      lastError = `Failed to upload file "${filename}": ${(error as Error).message}`;
 
-      console.log(`[Zenodo] ${errorMsg}`);
-
-      return { success: false, error: errorMsg };
+      if (attempt < maxAttempts) {
+        await new Promise((resolve) => setTimeout(resolve, attempt * 1000));
+        continue;
+      }
     }
-
-    const data = await response.json();
-
-    console.log(`[Zenodo] Uploaded file "${filename}" successfully`);
-
-    return { success: true, data };
-  } catch (error) {
-    console.log(`[Zenodo] Error uploading file "${filename}":`, error);
-
-    return {
-      success: false,
-      error: `Failed to upload file "${filename}": ${(error as Error).message}`,
-    };
   }
+
+  return {
+    success: false,
+    error: lastError || `Failed to upload file "${filename}"`,
+  };
 }
 
 async function publishZenodoDeposition(
