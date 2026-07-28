@@ -508,10 +508,10 @@ export async function beginZenodoPublication(
     posterJsonEncoded.byteOffset + posterJsonEncoded.byteLength,
   );
 
-  console.log(`[Zenodo] Uploading poster.json to bucket: ${bucketUrl}`);
+  console.log(`[Zenodo] Uploading poster.json to draft: ${newDepositionId}`);
 
-  const uploadResult = await uploadFileToZenodoBucket(
-    bucketUrl,
+  const uploadResult = await uploadFileToZenodoDraft(
+    newDepositionId,
     tokenRecord.accessToken,
     "poster.json",
     posterJsonBytes,
@@ -770,6 +770,8 @@ export async function beginZenodoPublication(
 async function createZenodoDeposition(zenodoToken: string) {
   console.log("[Zenodo] Creating new deposition");
 
+  const authHeader = ["Bearer", zenodoToken].join(" ");
+
   try {
     const response = await fetch(
       `${config.zenodoApiEndpoint}/deposit/depositions`,
@@ -777,7 +779,7 @@ async function createZenodoDeposition(zenodoToken: string) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${zenodoToken}`,
+          Authorization: authHeader,
         },
         body: JSON.stringify({}),
       },
@@ -812,6 +814,8 @@ async function createZenodoDeposition(zenodoToken: string) {
 async function getZenodoDeposition(depositionId: number, zenodoToken: string) {
   console.log(`[Zenodo] Fetching deposition: ${depositionId}`);
 
+  const authHeader = ["Bearer", zenodoToken].join(" ");
+
   try {
     // Will return 404 if the depositionId is a draft and in the "unsubmitted" state
     const response = await fetch(
@@ -819,7 +823,7 @@ async function getZenodoDeposition(depositionId: number, zenodoToken: string) {
       {
         method: "GET",
         headers: {
-          Authorization: `Bearer ${zenodoToken}`,
+          Authorization: authHeader,
         },
       },
     );
@@ -835,7 +839,7 @@ async function getZenodoDeposition(depositionId: number, zenodoToken: string) {
         {
           method: "GET",
           headers: {
-            Authorization: `Bearer ${zenodoToken}`,
+            Authorization: authHeader,
           },
         },
       );
@@ -879,13 +883,15 @@ async function deleteFileFromZenodo(
     `[Zenodo] Deleting file "${filename}" from deposition: ${depositionId}`,
   );
 
+  const authHeader = ["Bearer", zenodoToken].join(" ");
+
   try {
     const response = await fetch(
       `${config.zenodoApiEndpoint}/records/${depositionId}/draft/files/${filename}`,
       {
         method: "DELETE",
         headers: {
-          Authorization: `Bearer ${zenodoToken}`,
+          Authorization: authHeader,
         },
       },
     );
@@ -1187,6 +1193,8 @@ async function updateRdmMetadata(
     "submissionAbstract" | "rawFunding" | "dbRelated" | "presentedDates"
   >,
 ): Promise<{ success: boolean; error?: string }> {
+  const authHeader = ["Bearer", zenodoToken].join(" ");
+
   try {
     const payload = buildFullRdmPayload(
       posterTitle,
@@ -1206,7 +1214,7 @@ async function updateRdmMetadata(
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${zenodoToken}`,
+            Authorization: authHeader,
           },
           body: JSON.stringify(body),
         },
@@ -1288,13 +1296,15 @@ async function createNewVersionDeposition(
 ) {
   console.log(`[Zenodo] Creating new version for deposition: ${depositionId}`);
 
+  const authHeader = ["Bearer", zenodoToken].join(" ");
+
   try {
     const response = await fetch(
       `${config.zenodoApiEndpoint}/deposit/depositions/${depositionId}/actions/newversion`,
       {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${zenodoToken}`,
+          Authorization: authHeader,
         },
       },
     );
@@ -1429,71 +1439,150 @@ function shouldRetryZenodoUpload(errorMessage: string): boolean {
   );
 }
 
-async function uploadFileToZenodoBucket(
-  bucketUrl: string,
+async function deleteZenodoDraftFileIfPresent(
+  depositionId: number,
+  zenodoToken: string,
+  filename: string,
+) {
+  const authHeader = ["Bearer", zenodoToken].join(" ");
+  const response = await fetch(
+    `${config.zenodoApiEndpoint}/records/${depositionId}/draft/files/${encodeURIComponent(filename)}`,
+    {
+      method: "DELETE",
+      headers: {
+        Authorization: authHeader,
+      },
+    },
+  );
+
+  if (!response.ok && response.status !== 404) {
+    const errorMsg = await getZenodoErrorMessage(
+      `Failed to delete draft file "${filename}"`,
+      response,
+    );
+
+    console.warn(`[Zenodo] ${errorMsg}`);
+  }
+}
+
+async function initializeZenodoDraftFile(
+  depositionId: number,
+  zenodoToken: string,
+  filename: string,
+) {
+  const authHeader = ["Bearer", zenodoToken].join(" ");
+
+  return fetch(
+    `${config.zenodoApiEndpoint}/records/${depositionId}/draft/files`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: authHeader,
+      },
+      body: JSON.stringify([{ key: filename }]),
+    },
+  );
+}
+
+async function uploadFileToZenodoDraft(
+  depositionId: number,
   zenodoToken: string,
   filename: string,
   content: ArrayBuffer,
 ) {
-  console.log(`[Zenodo] Uploading file "${filename}" to bucket: ${bucketUrl}`);
+  console.log(
+    `[Zenodo] Uploading file "${filename}" to RDM draft: ${depositionId}`,
+  );
 
   const maxAttempts = 3;
+  const authHeader = ["Bearer", zenodoToken].join(" ");
   let lastError = "";
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      const response = await fetch(
-        `${bucketUrl}/${encodeURIComponent(filename)}`,
-        {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/octet-stream",
-            "Content-Length": String(content.byteLength),
-            Authorization: `Bearer ${zenodoToken}`,
-          },
-          body: content,
-        },
+    if (attempt > 1) {
+      await deleteZenodoDraftFileIfPresent(depositionId, zenodoToken, filename);
+    }
+
+    const initResponse = await initializeZenodoDraftFile(
+      depositionId,
+      zenodoToken,
+      filename,
+    );
+
+    if (!initResponse.ok) {
+      lastError = await getZenodoErrorMessage(
+        `Failed to initialize draft file "${filename}"`,
+        initResponse,
       );
+      console.log(`[Zenodo] ${lastError}`);
 
-      if (!response.ok) {
-        console.log(
-          `[Zenodo] Failed to upload file "${filename}" (status: ${response.status}, attempt ${attempt}/${maxAttempts})`,
+      if (attempt === 1) {
+        await deleteZenodoDraftFileIfPresent(
+          depositionId,
+          zenodoToken,
+          filename,
         );
-
-        const errorMsg = await getZenodoErrorMessage(
-          `Failed to upload file "${filename}"`,
-          response,
-        );
-
-        console.log(`[Zenodo] ${errorMsg}`);
-        lastError = errorMsg;
-
-        if (attempt < maxAttempts && shouldRetryZenodoUpload(errorMsg)) {
-          await new Promise((resolve) => setTimeout(resolve, attempt * 1000));
-          continue;
-        }
-
-        return { success: false, error: errorMsg };
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        continue;
       }
 
-      const data = await response.json();
+      return { success: false, error: lastError };
+    }
 
-      console.log(`[Zenodo] Uploaded file "${filename}" successfully`);
+    const contentResponse = await fetch(
+      `${config.zenodoApiEndpoint}/records/${depositionId}/draft/files/${encodeURIComponent(filename)}/content`,
+      {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "Content-Length": String(content.byteLength),
+          Authorization: authHeader,
+        },
+        body: content,
+      },
+    );
 
-      return { success: true, data };
-    } catch (error) {
-      console.log(
-        `[Zenodo] Error uploading file "${filename}" (attempt ${attempt}/${maxAttempts}):`,
-        error,
+    if (!contentResponse.ok) {
+      lastError = await getZenodoErrorMessage(
+        `Failed to upload file "${filename}"`,
+        contentResponse,
       );
+      console.log(`[Zenodo] ${lastError} (attempt ${attempt}/${maxAttempts})`);
 
-      lastError = `Failed to upload file "${filename}": ${(error as Error).message}`;
-
-      if (attempt < maxAttempts) {
+      if (attempt < maxAttempts && shouldRetryZenodoUpload(lastError)) {
         await new Promise((resolve) => setTimeout(resolve, attempt * 1000));
         continue;
       }
+
+      return { success: false, error: lastError };
     }
+
+    const commitResponse = await fetch(
+      `${config.zenodoApiEndpoint}/records/${depositionId}/draft/files/${encodeURIComponent(filename)}/commit`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: authHeader,
+        },
+      },
+    );
+
+    if (!commitResponse.ok) {
+      lastError = await getZenodoErrorMessage(
+        `Failed to commit draft file "${filename}"`,
+        commitResponse,
+      );
+      console.log(`[Zenodo] ${lastError}`);
+
+      return { success: false, error: lastError };
+    }
+
+    const data = await commitResponse.json();
+
+    console.log(`[Zenodo] Uploaded file "${filename}" successfully`);
+
+    return { success: true, data };
   }
 
   return {
@@ -1508,6 +1597,8 @@ async function publishZenodoDeposition(
 ) {
   console.log(`[Zenodo] Publishing deposition: ${depositionId}`);
 
+  const authHeader = ["Bearer", zenodoToken].join(" ");
+
   try {
     const response = await fetch(
       `${config.zenodoApiEndpoint}/deposit/depositions/${depositionId}/actions/publish`,
@@ -1515,7 +1606,7 @@ async function publishZenodoDeposition(
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${zenodoToken}`,
+          Authorization: authHeader,
         },
       },
     );
