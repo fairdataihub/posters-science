@@ -71,7 +71,7 @@ type Repository =
 // Check for repository query param (e.g., after Zenodo OAuth redirect).
 // "zenodo" is intentionally excluded while the Zenodo flow is disabled below -
 // add `queryRepo === "zenodo" ||` back when re-enabling it.
-const ZENODO_DISABLED = true;
+const ZENODO_DISABLED = false;
 const queryRepo = useRoute().query.repository;
 const requestedRepository: Repository =
   queryRepo === "zenodo" ||
