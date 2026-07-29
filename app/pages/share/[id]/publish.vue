@@ -71,13 +71,19 @@ type Repository =
 // Check for repository query param (e.g., after Zenodo OAuth redirect).
 // "zenodo" is intentionally excluded while the Zenodo flow is disabled below -
 // add `queryRepo === "zenodo" ||` back when re-enabling it.
+const ZENODO_DISABLED = true;
 const queryRepo = useRoute().query.repository;
-const selectedRepository = ref<Repository>(
+const requestedRepository: Repository =
+  queryRepo === "zenodo" ||
   queryRepo === "zenodo-simulated" ||
-    queryRepo === "figshare" ||
-    queryRepo === "download"
+  queryRepo === "figshare" ||
+  queryRepo === "download"
     ? queryRepo
-    : null,
+    : null;
+const selectedRepository = ref<Repository>(
+  requestedRepository === "zenodo" && ZENODO_DISABLED
+    ? null
+    : requestedRepository,
 );
 
 const repositories = [
@@ -86,10 +92,8 @@ const repositories = [
     name: "Zenodo",
     icon: "i-simple-icons-zenodo",
     description: "General-purpose open repository",
-    // Temporarily disabled while we resolve issues with the Zenodo publish
-    // workflow. To restore: set `enabled: true` and remove `unavailable`.
-    enabled: false,
-    unavailable: true,
+    enabled: !ZENODO_DISABLED,
+    unavailable: ZENODO_DISABLED,
   },
   {
     id: "zenodo-simulated" as const,
@@ -571,6 +575,7 @@ async function handleArchive() {
       </p>
 
       <UAlert
+        v-if="ZENODO_DISABLED"
         color="warning"
         variant="subtle"
         icon="i-lucide-triangle-alert"
