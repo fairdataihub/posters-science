@@ -42,6 +42,19 @@ const conf = api?.conference;
 const liked = ref(api?.liked ?? false);
 
 const liking = ref(false);
+
+const getDicebearUrl = (seed: string) =>
+  `https://api.dicebear.com/9.x/shapes/svg?seed=${seed}`;
+
+const onImageError = (event: Event, seed: string) => {
+  const img = event.target as HTMLImageElement;
+  const fallbackUrl = getDicebearUrl(seed);
+
+  if (img.src === fallbackUrl) return;
+
+  img.src = fallbackUrl;
+};
+
 const poster = ref({
   id: api?.id ?? posterId,
   automated: api?.automated ?? false,
@@ -50,9 +63,7 @@ const poster = ref({
   ),
   title: api?.title ?? "Untitled Poster",
   description: api?.description ?? "",
-  imageUrl:
-    api?.imageUrl ||
-    `https://api.dicebear.com/9.x/shapes/svg?seed=${api?.id ?? posterId}`,
+  imageUrl: api?.imageUrl || getDicebearUrl(api?.id ?? posterId),
   authors: (api?.creators ?? []).map((creator: any) => {
     const rawName: string = creator.name ?? "";
     const givenName =
@@ -592,6 +603,7 @@ const tabItems = [
                   :src="poster.imageUrl"
                   alt="Poster thumbnail"
                   class="max-h-64 w-full rounded-lg object-contain shadow-sm transition-all hover:shadow-lg"
+                  @error="onImageError($event, poster.id)"
                 />
               </NuxtLink>
             </div>

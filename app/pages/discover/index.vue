@@ -107,14 +107,28 @@ const total = ref(0);
 const searchQuery = ref((route.query.search as string) || "");
 const committedSearch = ref((route.query.search as string) || "");
 
+const getDicebearUrl = (poster: Pick<Poster, "id" | "title">) =>
+  `https://api.dicebear.com/9.x/shapes/svg?seed=${poster.id ?? poster.title}`;
+
+const onImageError = (event: Event, poster: Pick<Poster, "id" | "title">) => {
+  const img = event.target as HTMLImageElement;
+  console.error("Image failed to load, using fallback URL.", {
+    posterId: poster.id,
+    posterTitle: poster.title,
+  });
+  const fallbackUrl = getDicebearUrl(poster);
+
+  if (img.src === fallbackUrl) return;
+
+  img.src = fallbackUrl;
+};
+
 const mapPosters = (apiPosters: Poster[]) => {
   return apiPosters.map((poster) => ({
     id: poster.id,
     title: poster.title ?? "Untitled poster",
     description: poster.description ?? "",
-    imageUrl:
-      poster.imageUrl ||
-      `https://api.dicebear.com/9.x/shapes/svg?seed=${poster.id ?? poster.title}`,
+    imageUrl: poster.imageUrl || getDicebearUrl(poster),
     keywords: Array.isArray(poster.keywords) ? poster.keywords : [],
     publishedAt: poster.publishedAt ? new Date(poster.publishedAt) : null,
     created: poster.created ? poster.created : new Date(),
@@ -536,6 +550,7 @@ function clearAllFilters() {
                       :src="poster.imageUrl"
                       :alt="poster.title"
                       class="h-48 w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                      @error="onImageError($event, poster)"
                     />
 
                     <UTooltip

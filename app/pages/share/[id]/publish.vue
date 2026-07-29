@@ -227,15 +227,16 @@ const existingDepositions = ref<
   {
     id: number;
     title: string;
-    state: string;
-    submitted: boolean;
-    conceptrecid: string;
+    isPublished: boolean;
+    conceptDoi?: string;
   }[]
 >([]);
 
+// Drafts and published records behave very differently here (a draft is reused
+// in place, a published record gets a new version) so label them apart.
 const selectableDepositions = computed(() =>
   existingDepositions.value.map((d) => ({
-    label: `${d.title} (${d.id})`,
+    label: `${d.title} (${d.id})${d.isPublished ? "" : " (draft)"}`,
     value: d.id,
   })),
 );
@@ -287,13 +288,9 @@ const defaultSteps = (): ArchiveStep[] => [
 
 const archiveSteps = ref<ArchiveStep[]>(defaultSteps());
 
-const zenodoRecordUrl = computed(() => {
-  const links = archiveResult.value?.links as
-    | Record<string, string>
-    | undefined;
-
-  return links?.latest_html ?? "";
-});
+const zenodoRecordUrl = computed(
+  () => (archiveResult.value?.recordUrl as string | undefined) ?? "",
+);
 
 const { data: posterData, error: posterError } = await useFetch(
   `/api/poster/${id}`,
@@ -438,7 +435,18 @@ async function handleArchive() {
     });
 
     if (!response.ok || !response.body) {
-      archiveError.value = "Failed to connect to the server.";
+      // Surface what the server actually said - this branch also catches the
+      // "Invalid Zenodo token, please sign in again" 400, which is otherwise
+      // indistinguishable from the server being unreachable.
+      const detail = (await response.json().catch(() => null)) as {
+        statusMessage?: string;
+        message?: string;
+      } | null;
+
+      archiveError.value =
+        detail?.statusMessage ||
+        detail?.message ||
+        `Request failed (${response.status} ${response.statusText})`;
 
       return;
     }
@@ -622,10 +630,15 @@ async function handleArchive() {
       </div>
 
       <p class="mb-5 text-sm">
-        <ULink to="https://zenodo.org" target="_blank" class="text-primary underline">Zenodo</ULink>
-        is a free and open-source general-purpose repository developed
-        and maintained by the European Organization for Nuclear Research (CERN)
-        in partnership with OpenAIRE. It is one of the most popular repositories
+        <ULink
+          to="https://zenodo.org"
+          target="_blank"
+          class="text-primary underline"
+          >Zenodo</ULink
+        >
+        is a free and open-source general-purpose repository developed and
+        maintained by the European Organization for Nuclear Research (CERN) in
+        partnership with OpenAIRE. It is one of the most popular repositories
         for sharing posters.
       </p>
 
@@ -823,7 +836,7 @@ async function handleArchive() {
                 <USelectMenu
                   v-model="selectedLicense"
                   :items="LICENSE_OPTIONS_WITH_SUGGESTED"
-                  value-key="value"
+                  :value-key="`value`"
                   placeholder="Select a license"
                   class="w-full max-w-md"
                   :virtualize="true"
