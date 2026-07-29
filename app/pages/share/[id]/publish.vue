@@ -68,11 +68,12 @@ type Repository =
   | "download"
   | null;
 
-// Check for repository query param (e.g., after Zenodo OAuth redirect)
+// Check for repository query param (e.g., after Zenodo OAuth redirect).
+// "zenodo" is intentionally excluded while the Zenodo flow is disabled below -
+// add `queryRepo === "zenodo" ||` back when re-enabling it.
 const queryRepo = useRoute().query.repository;
 const selectedRepository = ref<Repository>(
-  queryRepo === "zenodo" ||
-    queryRepo === "zenodo-simulated" ||
+  queryRepo === "zenodo-simulated" ||
     queryRepo === "figshare" ||
     queryRepo === "download"
     ? queryRepo
@@ -85,7 +86,10 @@ const repositories = [
     name: "Zenodo",
     icon: "i-simple-icons-zenodo",
     description: "General-purpose open repository",
-    enabled: true,
+    // Temporarily disabled while we resolve issues with the Zenodo publish
+    // workflow. To restore: set `enabled: true` and remove `unavailable`.
+    enabled: false,
+    unavailable: true,
   },
   {
     id: "zenodo-simulated" as const,
@@ -558,6 +562,15 @@ async function handleArchive() {
         following options:
       </p>
 
+      <UAlert
+        color="warning"
+        variant="subtle"
+        icon="i-lucide-triangle-alert"
+        class="mb-6"
+        title="Zenodo submissions are temporarily unavailable"
+        description="We are currently experiencing issues with the Zenodo publishing workflow and are actively working on a fix. Submitting to Zenodo is paused for now, so please check back later. In the meantime, you can download your poster files and metadata to archive them elsewhere."
+      />
+
       <div class="grid grid-cols-3 gap-4 md:grid-cols-3">
         <UButton
           v-for="repo in visibleRepositories"
@@ -586,7 +599,11 @@ async function handleArchive() {
             Beta
           </UBadge>
 
-          <UBadge v-if="!repo.enabled" color="neutral" variant="subtle">
+          <UBadge v-if="repo.unavailable" color="warning" variant="subtle">
+            Temporarily Unavailable
+          </UBadge>
+
+          <UBadge v-else-if="!repo.enabled" color="neutral" variant="subtle">
             Coming Soon
           </UBadge>
         </UButton>
