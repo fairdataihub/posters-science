@@ -7,9 +7,54 @@ const ISO639_1_TO_3: Record<string, string> = Object.fromEntries(
 );
 const config = useRuntimeConfig();
 
+const MAX_USER_FACING_BODY = 300;
+
 /**
- * Extracts a useful error string from a failed Zenodo API response,
- * including the response body which contains validation details.
+ * Condenses a Zenodo response body into something a user can read. Zenodo
+ * error bodies carry the useful part in `message` and `errors[]`; anything else
+ * (an HTML 502 page, a full record) is truncated rather than shown whole.
+ */
+function summarizeZenodoBody(body: string): string {
+  if (!body) return "";
+
+  try {
+    const parsed = JSON.parse(body) as {
+      message?: string;
+      errors?: { field?: string; messages?: string[]; message?: string }[];
+    };
+    const parts: string[] = [];
+
+    if (parsed.message) parts.push(parsed.message);
+
+    for (const error of parsed.errors ?? []) {
+      const detail = error.messages?.join(" ") ?? error.message;
+
+      if (detail)
+        parts.push(error.field ? `${error.field}: ${detail}` : detail);
+    }
+
+    if (parts.length > 0) {
+      const joined = parts.join(" ");
+
+      return joined.length > MAX_USER_FACING_BODY
+        ? `${joined.slice(0, MAX_USER_FACING_BODY)}…`
+        : joined;
+    }
+  } catch {
+    // not JSON - fall through to plain truncation
+  }
+
+  const flattened = body.replace(/\s+/g, " ").trim();
+
+  return flattened.length > MAX_USER_FACING_BODY
+    ? `${flattened.slice(0, MAX_USER_FACING_BODY)}…`
+    : flattened;
+}
+
+/**
+ * Extracts a useful error string from a failed Zenodo API response.
+ * The full body goes to the log for debugging; the returned string is shown to
+ * the user, so it carries only the condensed validation detail.
  */
 async function getZenodoErrorMessage(
   operation: string,
@@ -23,7 +68,15 @@ async function getZenodoErrorMessage(
     // ignore body read errors
   }
 
-  return `${operation}: ${response.status} ${response.statusText}${body ? ` - ${body}` : ""}`;
+  if (body) {
+    console.error(
+      `[Zenodo] ${operation}: ${response.status} ${response.statusText} - ${body}`,
+    );
+  }
+
+  const summary = summarizeZenodoBody(body);
+
+  return `${operation}: ${response.status} ${response.statusText}${summary ? ` - ${summary}` : ""}`;
 }
 
 async function getZenodoToken(userId: string) {
@@ -45,71 +98,150 @@ async function getZenodoToken(userId: string) {
   return tokenRecord;
 }
 
-export async function validateZenodoToken(userId: string) {
-  console.log(`[Zenodo] Validating token for user: ${userId}`);
+function zenodoAuthHeader(zenodoToken: string) {
+  return `Bearer ${zenodoToken}`;
+}
 
-  let message = "";
-  let zenodoToken = false;
-  const existingDepositions = [];
-  const tokenRecord = await getZenodoToken(userId);
+// Zenodo's default serializer on draft endpoints is the legacy deposit shape
+// (top-level doi, conceptrecid, state/submitted) rather than what Invenio's API docs state
+// This asks for the RDM representation explicitly. The
+// readers below still tolerate both, in case an endpoint ignores the header.
+const RDM_ACCEPT = "application/vnd.inveniordm.v1+json";
 
-  if (tokenRecord) {
-    // Token exists, ensure is still valid
-    console.log("[Zenodo] Checking token validity against Zenodo API");
+function rdmHeaders(zenodoToken: string, extra?: Record<string, string>) {
+  return {
+    Accept: RDM_ACCEPT,
+    Authorization: zenodoAuthHeader(zenodoToken),
+    ...extra,
+  };
+}
 
-    const zenodoTokenInfo = await fetch(
-      `${config.zenodoApiEndpoint}/deposit/depositions`,
-      {
-        headers: {
-          Authorization: `Bearer ${tokenRecord.accessToken}`,
-        },
-      },
-    );
+export type ZenodoUserRecord = {
+  id: number;
+  title: string;
+  isPublished: boolean;
+  conceptDoi?: string;
+};
 
-    if (!zenodoTokenInfo.ok) {
-      // Token invalid or expired
-      console.log(
-        `[Zenodo] Token invalid or expired (status: ${zenodoTokenInfo.status}), deleting token`,
-      );
+// Maps an InvenioRDM /user/records search body to the shape of the publish UI
+function parseUserRecords(body: unknown): ZenodoUserRecord[] {
+  const hits = (body as { hits?: { hits?: RdmRecord[] } })?.hits?.hits;
+  const records: ZenodoUserRecord[] = [];
 
-      message = "Zenodo token is invalid or expired";
-      await prisma.zenodoToken.delete({
-        where: {
-          userId,
-        },
-      });
-    } else {
-      // Token valid - refresh it to extend the session
-      console.log("[Zenodo] Token valid, refreshing to extend session");
+  for (const hit of hits ?? []) {
+    const id = Number(hit.id);
 
-      await refreshZenodoToken(userId, tokenRecord.refreshToken);
+    if (!Number.isFinite(id)) continue;
 
-      zenodoToken = true;
-      message = "Zenodo token is valid";
+    const conceptDoi = extractConceptDoi(hit);
 
-      const responseData = await zenodoTokenInfo.json();
-
-      console.log(`[Zenodo] Found ${responseData.length} existing depositions`);
-
-      for (const deposition of responseData) {
-        existingDepositions.push({
-          id: deposition.id,
-          title: deposition.metadata.title,
-          state: deposition.state,
-          submitted: deposition.submitted,
-          conceptrecid: deposition.conceptrecid,
-        });
-      }
-    }
-  } else {
-    console.log(`[Zenodo] No token found for user: ${userId}`);
-
-    message = "No Zenodo token found";
+    records.push({
+      id,
+      title: hit.metadata?.title ?? "Untitled deposit",
+      isPublished: extractIsPublished(hit),
+      ...(conceptDoi && { conceptDoi }),
+    });
   }
 
-  console.log(`[Zenodo] Validation result: ${message}`);
+  return records;
+}
 
-  return { zenodoToken, message, existingDepositions };
+// Validates the stored token against the InvenioRDM API, refreshing it on success.
+// Pass `includeRecords: false` to skip building the (unused) record list - the
+// publish route only needs the boolean.
+export async function validateZenodoToken(
+  userId: string,
+  options?: { includeRecords?: boolean },
+) {
+  const includeRecords = options?.includeRecords ?? true;
+
+  console.log(`[Zenodo] Validating token for user: ${userId}`);
+
+  let zenodoToken = false;
+  let existingDepositions: ZenodoUserRecord[] = [];
+  const tokenRecord = await getZenodoToken(userId);
+
+  if (!tokenRecord) {
+    console.log(`[Zenodo] No token found for user: ${userId}`);
+
+    return {
+      zenodoToken,
+      message: "No Zenodo token found",
+      existingDepositions,
+    };
+  }
+
+  // One request serves as both the validity probe and (when asked) the record
+  // list, so a publish never pays for a listing it discards.
+  console.log("[Zenodo] Checking token validity against the InvenioRDM API");
+
+  // Zenodo caps this endpoint's page size at 25 and 400s above it, so the
+  // dropdown shows the 25 most recent records
+  const query = new URLSearchParams({
+    sort: "newest",
+    size: includeRecords ? "25" : "1",
+    page: "1",
+    allversions: "false",
+  });
+
+  const probe = await fetch(
+    `${config.zenodoApiEndpoint}/user/records?${query.toString()}`,
+    { headers: rdmHeaders(tokenRecord.accessToken) },
+  );
+
+  if (probe.status === 401 || probe.status === 403) {
+    // Drop it so the UI offers a reconnect.
+    const message =
+      probe.status === 403
+        ? "Zenodo rejected this token (403). Your Zenodo connection may need re-authorizing - disconnect and sign in again."
+        : "Zenodo token is invalid or expired";
+
+    console.log(
+      `[Zenodo] Token rejected (status: ${probe.status}), deleting token`,
+    );
+
+    await prisma.zenodoToken.delete({ where: { userId } });
+
+    return { zenodoToken, message, existingDepositions };
+  }
+
+  if (!probe.ok) {
+    // Transient (5xx, rate limit, network blip). Keep the token since deleting it would force a needless re-OAuth.
+    console.warn(
+      `[Zenodo] ${await getZenodoErrorMessage("Token check failed", probe)} - keeping token`,
+    );
+
+    return {
+      zenodoToken,
+      message: "Could not reach Zenodo, please try again shortly",
+      existingDepositions,
+    };
+  }
+
+  if (includeRecords) {
+    existingDepositions = parseUserRecords(
+      await probe.json().catch(() => null),
+    );
+
+    console.log(
+      `[Zenodo] Found ${existingDepositions.length} existing records`,
+    );
+  }
+
+  // Token valid so refresh it to extend the session.
+  console.log("[Zenodo] Token valid, refreshing to extend session");
+
+  await refreshZenodoToken(userId, tokenRecord.refreshToken);
+
+  zenodoToken = true;
+
+  console.log("[Zenodo] Validation result: Zenodo token is valid");
+
+  return {
+    zenodoToken,
+    message: "Zenodo token is valid",
+    existingDepositions,
+  };
 }
 
 async function refreshZenodoToken(userId: string, refreshToken: string) {
@@ -144,7 +276,14 @@ async function refreshZenodoToken(userId: string, refreshToken: string) {
       },
     });
   } else {
-    console.log(`[Zenodo] Token refresh failed (status: ${refresh.status})`);
+    // The current access token still works, but without the body
+    // there is no way to tell a rotated/expired refresh token from a config
+    // problem and a persistent failure ends in a forced reconnect.
+    const body = await refresh.text().catch(() => "");
+
+    console.warn(
+      `[Zenodo] Token refresh failed (status: ${refresh.status})${body ? ` - ${body}` : ""}`,
+    );
   }
 }
 
@@ -192,6 +331,43 @@ function extractRorId(
   return affiliationIdentifier.replace(/.*ror\.org\//i, "").trim() || undefined;
 }
 
+// Binds a poster to its InvenioRDM record. depositionId carries a global unique
+// index, so picking a record another poster already owns surfaces as P2002 -
+// worth naming, since the generic message is useless to the user.
+async function linkZenodoDeposition(
+  posterId: number,
+  userId: string,
+  recordId: number,
+  published?: { doi?: string },
+) {
+  const state = {
+    userId,
+    depositionId: recordId,
+    status: published ? "published" : "draft",
+    ...(published?.doi && { lastPublishedZenodoDoi: published.doi }),
+  };
+
+  try {
+    await prisma.zenodoDeposition.upsert({
+      where: { posterId },
+      create: { posterId, ...state },
+      update: state,
+    });
+
+    return { success: true as const };
+  } catch (error) {
+    if ((error as { code?: string }).code === "P2002") {
+      const msg = `Zenodo record ${recordId} is already linked to another poster`;
+
+      console.error(`[Zenodo] ${msg}`);
+
+      return { success: false as const, error: msg };
+    }
+
+    throw error;
+  }
+}
+
 export async function beginZenodoPublication(
   posterId: string,
   mode: string,
@@ -229,65 +405,71 @@ export async function beginZenodoPublication(
     message: "Preparing deposition...",
   });
 
-  console.log("[Zenodo] Getting working deposition");
+  // Load the poster before touching Zenodo. Bailing after a draft exists would
+  // leave an orphaned draft on the user's account.
+  const posterInt = parseInt(posterId);
 
-  const status = await getWorkingDeposition(
+  console.log(`[Zenodo] Fetching poster and metadata for: ${posterId}`);
+
+  const poster = await prisma.poster.findUnique({
+    where: { id: posterInt },
+    include: { posterMetadata: true },
+  });
+
+  if (!poster || !poster.posterMetadata) {
+    console.log(`[Zenodo] Poster or metadata not found for: ${posterId}`);
+
+    return { success: false, error: "Poster or metadata not found" };
+  }
+
+  console.log("[Zenodo] Acquiring working draft");
+
+  const status = await acquireWorkingDraft(
     mode,
-    existingDepositionId!,
+    existingDepositionId,
     tokenRecord.accessToken,
+    {
+      title: poster.title,
+      creators: buildRdmCreators(
+        Array.isArray(poster.posterMetadata.creators)
+          ? (poster.posterMetadata.creators as InvenioCreator[])
+          : [],
+        { skipRorIds: true },
+      ),
+    },
   );
 
   if (!status.success) {
-    console.log(
-      `[Zenodo] Failed to get working deposition: ${JSON.stringify(status.error)}`,
-    );
+    console.log(`[Zenodo] Failed to acquire working draft: ${status.error}`);
 
     return { success: false, error: status.error };
   }
 
-  const deposition = status.data;
+  const draft = status.data;
+  const recordId = Number(draft.id);
 
-  // Set the bucket url and doi (using record_id over id because it is the id of the current deposition)
-  // const addUploadType = !!deposition?.metadata?.upload_type;
-  const newDepositionId = deposition.record_id;
-  const bucketUrl = deposition.links.bucket;
-  const { doi } = deposition.metadata.prereserve_doi;
+  if (!Number.isFinite(recordId)) {
+    return {
+      success: false,
+      error: "Zenodo returned a draft without a usable record id",
+    };
+  }
 
-  const draftUrl = `${config.zenodoEndpoint}/deposit/${newDepositionId}`;
+  const draftUrl = `${config.zenodoEndpoint}/uploads/${recordId}`;
 
-  console.log(
-    `[Zenodo] Working deposition ready - id: ${newDepositionId}, doi: ${doi}, bucket: ${bucketUrl}`,
-  );
+  console.log(`[Zenodo] Working draft ready - record ${recordId}`);
   console.log(`[Zenodo] Draft URL: ${draftUrl}`);
 
-  // Update zenodoDeposition information
-  const posterInt = parseInt(posterId);
-  const zenResponse = await prisma.zenodoDeposition.findFirst({
-    where: {
-      posterId: posterInt,
-    },
-  });
+  const purged = await purgeDraftFiles(recordId, tokenRecord.accessToken);
 
-  if (zenResponse) {
-    await prisma.zenodoDeposition.update({
-      where: { id: zenResponse.id },
-      data: {
-        lastPublishedZenodoDoi: zenResponse.lastPublishedZenodoDoi || "",
-        status: "draft",
-        posterId: posterInt,
-        userId,
-        depositionId: newDepositionId,
-      },
-    });
-  } else {
-    await prisma.zenodoDeposition.create({
-      data: {
-        status: "draft",
-        posterId: posterInt,
-        userId,
-        depositionId: newDepositionId,
-      },
-    });
+  if (!purged.success) {
+    return { success: false, error: purged.error };
+  }
+
+  const linked = await linkZenodoDeposition(posterInt, userId, recordId);
+
+  if (!linked.success) {
+    return { success: false, error: linked.error };
   }
 
   await onProgress?.({
@@ -303,26 +485,12 @@ export async function beginZenodoPublication(
     message: "Loading poster data...",
   });
 
-  // Fetch poster with metadata from DB
-  console.log(`[Zenodo] Fetching poster and metadata for: ${posterId}`);
-
-  const poster = await prisma.poster.findUnique({
-    where: { id: parseInt(posterId) },
-    include: { posterMetadata: true },
-  });
-
-  if (!poster || !poster.posterMetadata) {
-    console.log(`[Zenodo] Poster or metadata not found for: ${posterId}`);
-
-    return { success: false, error: "Poster or metadata not found" };
-  }
-
   // Persist license to DB if provided so poster.json and the record stay in sync
   if (license) {
     console.log(`[Zenodo] Saving license to posterMetadata: ${license}`);
 
     await prisma.posterMetadata.update({
-      where: { posterId: parseInt(posterId) },
+      where: { posterId: posterInt },
       data: { license },
     });
 
@@ -435,12 +603,22 @@ export async function beginZenodoPublication(
     submissionAbstract?: string;
   } | null;
 
-  console.log(
-    `[Zenodo] Updating metadata via InvenioRDM for deposition: ${newDepositionId}`,
-  );
+  // Bump the version before the metadata PUT: `meta` is passed by reference
+  // into the payload builder, so bumping afterwards would send Zenodo the old
+  // version while the DB recorded the new one.
+  if (!meta.version) {
+    meta.version = mode === "new" ? "1" : null;
+  } else if (mode === "existing") {
+    const prev = parseInt(meta.version as string, 10);
+    if (!isNaN(prev)) {
+      meta.version = String(prev + 1);
+    }
+  }
+
+  console.log(`[Zenodo] Updating metadata via InvenioRDM [record ${recordId}]`);
 
   const metadataResult = await updateRdmMetadata(
-    newDepositionId,
+    recordId,
     tokenRecord.accessToken,
     poster.title,
     poster.description,
@@ -451,12 +629,19 @@ export async function beginZenodoPublication(
       rawFunding,
       dbRelated: Array.isArray(rawRelated) ? rawRelated : [],
       presentedDates: zenodoDates,
+      // A PUT to /draft is a full replacement, so echo back a DOI the draft
+      // already carries. Only when one actually exists: a new draft comes back
+      // with `pids: {}`, and sending that empty object asserts "no PIDs" rather
+      // than "leave alone", which blocks the reserve that follows.
+      ...(draft.pids?.doi?.identifier && {
+        pids: draft.pids as Record<string, unknown>,
+      }),
     },
   );
 
   if (!metadataResult.success) {
     console.error(
-      `[Zenodo] Metadata update failed for deposition ${newDepositionId}: ${metadataResult.error}`,
+      `[Zenodo] Metadata update failed [record ${recordId}]: ${metadataResult.error}`,
     );
 
     await onProgress?.({
@@ -468,14 +653,24 @@ export async function beginZenodoPublication(
     return { success: false, error: metadataResult.error };
   }
 
-  if (!meta.version) {
-    meta.version = mode === "new" ? "1" : null;
-  } else if (mode === "existing") {
-    const prev = parseInt(meta.version as string, 10);
-    if (!isNaN(prev)) {
-      meta.version = String(prev + 1);
-    }
+  // Reserved after the metadata PUT because that PUT replaces the whole record.
+  const reserved = await ensureReservedDoi(
+    recordId,
+    tokenRecord.accessToken,
+    draft,
+  );
+
+  if (!reserved.success) {
+    await onProgress?.({
+      step: "upload_metadata",
+      status: "error",
+      message: reserved.error,
+    });
+
+    return { success: false, error: reserved.error };
   }
+
+  const doi = reserved.doi;
 
   await onProgress?.({
     step: "upload_metadata",
@@ -490,7 +685,7 @@ export async function beginZenodoPublication(
     message: "Uploading poster files...",
   });
 
-  // Build poster.json from DB data and upload to Zenodo bucket
+  // Build poster.json from DB data and upload it to the draft
   console.log(`[Zenodo] Building poster.json for poster: ${posterId}`);
 
   const posterJson = buildPosterJson(poster.posterMetadata, {
@@ -508,10 +703,10 @@ export async function beginZenodoPublication(
     posterJsonEncoded.byteOffset + posterJsonEncoded.byteLength,
   );
 
-  console.log(`[Zenodo] Uploading poster.json to draft: ${newDepositionId}`);
+  console.log(`[Zenodo] Uploading poster.json [record ${recordId}]`);
 
   const uploadResult = await uploadFileToZenodoDraft(
-    newDepositionId,
+    recordId,
     tokenRecord.accessToken,
     "poster.json",
     posterJsonBytes,
@@ -536,58 +731,47 @@ export async function beginZenodoPublication(
     return { success: false, error: "Poster file not found for upload" };
   }
 
-  console.log(
-    `[Zenodo] Fetching poster file from BunnyCDN: ${extractionJob.filePath}`,
+  const posterFileName = sanitizeZenodoFileKey(
+    extractionJob.fileName || "poster.pdf",
   );
-
-  const posterFileRes = await fetch(
-    `${config.bunnyPrivateStorage}/${extractionJob.filePath}`,
-    { headers: { AccessKey: config.bunnyPrivateStorageKey } },
-  );
-
-  if (!posterFileRes.ok) {
-    console.log(
-      `[Zenodo] Failed to fetch poster file from BunnyCDN: ${posterFileRes.status}`,
-    );
-
-    return {
-      success: false,
-      error: "Failed to retrieve poster file from storage",
-    };
-  }
-
-  const posterFileName = extractionJob.fileName || "poster.pdf";
-  const posterFileContentLength = posterFileRes.headers.get("Content-Length");
+  const posterFileUrl = `${config.bunnyPrivateStorage}/${extractionJob.filePath}`;
 
   console.log(
-    `[Zenodo] Uploading poster file "${posterFileName}" to bucket: ${bucketUrl}`,
+    `[Zenodo] Uploading poster file "${posterFileName}" [record ${recordId}] from ${extractionJob.filePath}`,
   );
 
-  const posterFileUploadRes = await fetch(`${bucketUrl}/${posterFileName}`, {
-    method: "PUT",
-    // @ts-expect-error required when body is a ReadableStream
-    duplex: "half",
-    headers: {
-      "Content-Type": "application/octet-stream",
-      ...(posterFileContentLength
-        ? { "Content-Length": posterFileContentLength }
-        : {}),
-      Authorization: `Bearer ${tokenRecord.accessToken}`,
+  const posterFileUpload = await uploadFileToZenodoDraft(
+    recordId,
+    tokenRecord.accessToken,
+    posterFileName,
+    {
+      // Re-opened once per attempt: a consumed stream cannot be replayed, so a
+      // retry has to pull the file from storage again.
+      open: async () => {
+        const res = await fetch(posterFileUrl, {
+          headers: { AccessKey: config.bunnyPrivateStorageKey },
+        });
+
+        if (!res.ok || !res.body) {
+          throw new Error(
+            `Failed to retrieve poster file from storage (status: ${res.status})`,
+          );
+        }
+
+        return {
+          body: res.body,
+          contentLength: res.headers.get("Content-Length") ?? undefined,
+        };
+      },
     },
-    body: posterFileRes.body,
-  });
+  );
 
-  if (!posterFileUploadRes.ok) {
+  if (!posterFileUpload.success) {
     console.log(
-      `[Zenodo] Failed to upload poster file "${posterFileName}" (status: ${posterFileUploadRes.status})`,
+      `[Zenodo] Failed to upload poster file "${posterFileName}": ${posterFileUpload.error}`,
     );
 
-    const errorMsg = await getZenodoErrorMessage(
-      `Failed to upload file "${posterFileName}"`,
-      posterFileUploadRes,
-    );
-
-    return { success: false, error: errorMsg };
+    return { success: false, error: posterFileUpload.error };
   }
 
   console.log(`[Zenodo] Uploaded poster file "${posterFileName}" successfully`);
@@ -605,52 +789,48 @@ export async function beginZenodoPublication(
     message: "Publishing to Zenodo...",
   });
 
-  // Publish the deposition
-  console.log(`[Zenodo] About to publish deposition: ${newDepositionId}`);
+  // Publish the draft
+  console.log(`[Zenodo] About to publish record: ${recordId}`);
   console.log(`[Zenodo] Inspect draft before publish: ${draftUrl}`);
 
-  const publishResult = await publishZenodoDeposition(
+  const publishResult = await publishRdmDraft(
     tokenRecord.accessToken,
-    newDepositionId,
+    recordId,
   );
 
   if (!publishResult.success) {
-    console.log(
-      `[Zenodo] Publication failed for deposition: ${newDepositionId}`,
-    );
+    console.log(`[Zenodo] Publication failed [record ${recordId}]`);
 
     return { success: false, error: publishResult.error };
   }
 
-  // Ensure we update the record for this poster if one exists, otherwise create a new one
-  const existing = await prisma.zenodoDeposition.findFirst({
-    where: { posterId: posterInt },
-  });
+  const published = publishResult.data;
+  const publishedDoi = published.doi;
 
-  if (existing) {
-    await prisma.zenodoDeposition.update({
-      where: { id: existing.id },
-      data: {
-        lastPublishedZenodoDoi: publishResult.data.doi,
-        status: "published",
-        posterId: posterInt,
-        userId,
-        depositionId: publishResult.data.id,
-      },
-    });
-  } else {
-    await prisma.zenodoDeposition.create({
-      data: {
-        lastPublishedZenodoDoi: publishResult.data.doi,
-        status: "published",
-        posterId: posterInt,
-        userId,
-        depositionId: publishResult.data.id,
-      },
-    });
+  // A record without a DOI would otherwise leave a publicly published poster with no identifier.
+  if (!publishedDoi) {
+    console.error(
+      `[Zenodo] Published record ${published.recordId} is missing a DOI in the response`,
+    );
+
+    return {
+      success: false,
+      error: `Zenodo published record ${published.recordId} but returned no DOI`,
+    };
   }
 
-  // Move thumbnail from private to public storage before publishing
+  const linkedPublished = await linkZenodoDeposition(
+    posterInt,
+    userId,
+    published.recordId,
+    { doi: publishedDoi },
+  );
+
+  if (!linkedPublished.success) {
+    return { success: false, error: linkedPublished.error };
+  }
+
+  // Move the thumbnail from private to public storage now the record is live
   const posterWithImage = await prisma.poster.findUnique({
     where: { id: posterInt },
     select: { imageUrl: true },
@@ -727,16 +907,6 @@ export async function beginZenodoPublication(
     },
   });
 
-  const publishedDoi = publishResult.data.doi;
-
-  if (!publishedDoi) {
-    console.error(
-      `[Zenodo] Published deposition ${newDepositionId} is missing a DOI in the response`,
-    );
-
-    return { success: false, error: "Published deposition is missing a DOI" };
-  }
-
   const alreadyHasDoi = metaIdentifiers.some(
     (i) => i.identifier === publishedDoi && i.identifierType === "DOI",
   );
@@ -760,163 +930,419 @@ export async function beginZenodoPublication(
     message: "Published!",
   });
 
-  console.log(
-    `[Zenodo] Publication successful for deposition: ${newDepositionId}`,
-  );
+  console.log(`[Zenodo] Publication successful [record ${published.recordId}]`);
 
-  return { success: true, data: publishResult.data };
+  return { success: true, data: published };
 }
 
-async function createZenodoDeposition(zenodoToken: string) {
-  console.log("[Zenodo] Creating new deposition");
+// Zenodo does not serialize every RDM endpoint the same way: /api/records/{id}
+// returns native InvenioRDM (pids/parent/versions), while others - the DOI
+// reserve endpoint among them - return the legacy deposit shape (top-level doi,
+// conceptrecid, state/submitted). Both are RDM endpoints but only the response
+// serializer differs, so the readers below accept either.
+type RdmRecord = {
+  id?: string | number;
+  is_published?: boolean;
+  status?: string;
+  pids?: { doi?: { identifier?: string } };
+  parent?: {
+    id?: string | number;
+    pids?: { doi?: { identifier?: string } };
+  };
+  versions?: { index?: number; is_latest?: boolean };
+  links?: {
+    self?: string;
+    self_html?: string;
+    record_html?: string;
+    latest_html?: string;
+    reserve_doi?: string;
+    publish?: string;
+    files?: string;
+    versions?: string;
+  };
+  // Legacy deposit serialization
+  doi?: string;
+  conceptdoi?: string;
+  conceptrecid?: string | number;
+  submitted?: boolean;
+  state?: string;
+  metadata?: { title?: string; doi?: string };
+};
 
-  const authHeader = ["Bearer", zenodoToken].join(" ");
+function extractRecordDoi(record: RdmRecord | null): string | undefined {
+  return (
+    record?.pids?.doi?.identifier ||
+    record?.doi ||
+    record?.metadata?.doi
+  )?.trim();
+}
+
+function extractConceptDoi(record: RdmRecord | null): string | undefined {
+  return (record?.parent?.pids?.doi?.identifier || record?.conceptdoi)?.trim();
+}
+
+function extractConceptRecordId(record: RdmRecord | null): number | undefined {
+  const raw = record?.parent?.id ?? record?.conceptrecid;
+  const id = Number(raw);
+
+  return Number.isFinite(id) ? id : undefined;
+}
+
+function extractIsPublished(record: RdmRecord | null): boolean {
+  return !!(record?.is_published ?? record?.submitted ?? false);
+}
+
+// Seed metadata for a fresh draft: only fields that cannot hit a controlled
+// vocabulary. Anything ROR/funder/licence/subject-backed can 400 and leave us
+// with no draft at all, so the full payload goes through updateRdmMetadata
+// instead, which already knows how to retry a vocabulary rejection.
+type RdmDraftSeed = { title: string; creators: object[] };
+
+function parseRdmRecord(body: string): RdmRecord | null {
+  try {
+    return JSON.parse(body) as RdmRecord;
+  } catch {
+    return null;
+  }
+}
+
+function rdmGet(path: string, zenodoToken: string) {
+  return fetch(`${config.zenodoApiEndpoint}${path}`, {
+    headers: rdmHeaders(zenodoToken),
+  });
+}
+
+async function createRdmDraft(zenodoToken: string, seed: RdmDraftSeed) {
+  console.log("[Zenodo] Creating new InvenioRDM draft");
+
+  const body = {
+    access: { record: "public", files: "public" },
+    files: { enabled: true },
+    metadata: {
+      title: seed.title,
+      resource_type: { id: "poster" },
+      publisher: "Zenodo",
+      publication_date: new Date().toISOString().slice(0, 10),
+      creators: seed.creators,
+    },
+  };
+
+  try {
+    const response = await fetch(`${config.zenodoApiEndpoint}/records`, {
+      method: "POST",
+      headers: rdmHeaders(zenodoToken, {
+        "Content-Type": "application/json",
+      }),
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const errorMsg = await getZenodoErrorMessage(
+        "Failed to create Zenodo draft",
+        response,
+      );
+
+      console.error(`[Zenodo] ${errorMsg}`);
+
+      return { success: false as const, error: errorMsg };
+    }
+
+    const data = (await response.json()) as RdmRecord;
+
+    console.log(`[Zenodo] New draft created (record ${data.id})`);
+
+    return { success: true as const, data };
+  } catch (error) {
+    const errorMsg = `Failed to create Zenodo draft: ${(error as Error).message}`;
+
+    console.error(`[Zenodo] ${errorMsg}`);
+
+    return { success: false as const, error: errorMsg };
+  }
+}
+
+async function createRdmVersion(zenodoToken: string, recordId: number) {
+  console.log(`[Zenodo] Creating new version of record: ${recordId}`);
 
   try {
     const response = await fetch(
-      `${config.zenodoApiEndpoint}/deposit/depositions`,
+      `${config.zenodoApiEndpoint}/records/${recordId}/versions`,
       {
         method: "POST",
-        headers: {
+        headers: rdmHeaders(zenodoToken, {
           "Content-Type": "application/json",
-          Authorization: authHeader,
-        },
-        body: JSON.stringify({}),
+        }),
       },
     );
 
     if (!response.ok) {
       const errorMsg = await getZenodoErrorMessage(
-        "Failed to create deposition",
+        `Failed to create a new version [record ${recordId}]`,
         response,
       );
 
-      console.log(`[Zenodo] ${errorMsg}`);
+      console.error(`[Zenodo] ${errorMsg}`);
 
-      return { success: false, error: errorMsg };
+      return { success: false as const, error: errorMsg };
     }
 
-    const data = await response.json();
+    const data = (await response.json()) as RdmRecord;
 
-    console.log(`[Zenodo] New deposition created (id: ${data.id})`);
-
-    return { success: true, data };
-  } catch (error) {
-    console.log("[Zenodo] Failed to create deposition:", error);
-
-    return {
-      success: false,
-      error: `Failed to create deposition: ${(error as Error).message}`,
-    };
-  }
-}
-
-async function getZenodoDeposition(depositionId: number, zenodoToken: string) {
-  console.log(`[Zenodo] Fetching deposition: ${depositionId}`);
-
-  const authHeader = ["Bearer", zenodoToken].join(" ");
-
-  try {
-    // Will return 404 if the depositionId is a draft and in the "unsubmitted" state
-    const response = await fetch(
-      `${config.zenodoApiEndpoint}/records/${depositionId}/versions/latest`,
-      {
-        method: "GET",
-        headers: {
-          Authorization: authHeader,
-        },
-      },
+    console.log(
+      `[Zenodo] New version draft created (record ${data.id}) from ${recordId}`,
     );
 
-    if (response.status === 404) {
-      // Check if the deposition is a draft already and return that
-      console.log(
-        `[Zenodo] Deposition ${depositionId} not found as record, checking as draft`,
-      );
-
-      const draftResponse = await fetch(
-        `${config.zenodoApiEndpoint}/deposit/depositions/${depositionId}`,
-        {
-          method: "GET",
-          headers: {
-            Authorization: authHeader,
-          },
-        },
-      );
-
-      if (!draftResponse.ok) {
-        // Deposition not found
-        console.log(
-          `[Zenodo] Deposition ${depositionId} not found as draft either`,
-        );
-
-        return {
-          success: false,
-          error: `Deposition with ID ${depositionId} not found`,
-        };
-      }
-
-      console.log(`[Zenodo] Found deposition ${depositionId} as draft`);
-
-      return { success: true, data: await draftResponse.json() };
-    }
-
-    console.log(`[Zenodo] Found deposition ${depositionId} as record`);
-
-    return { success: true, data: await response.json() };
+    return { success: true as const, data };
   } catch (error) {
-    console.log(`[Zenodo] Error fetching deposition ${depositionId}:`, error);
+    const errorMsg = `Failed to create a new version [record ${recordId}]: ${(error as Error).message}`;
 
-    return {
-      success: false,
-      error: `Failed to fetch deposition ${depositionId}: ${(error as Error).message}`,
-    };
+    console.error(`[Zenodo] ${errorMsg}`);
+
+    return { success: false as const, error: errorMsg };
   }
 }
 
-async function deleteFileFromZenodo(
-  depositionId: number,
+// Resolves the draft we publish into. State comes from HTTP status rather than
+// a response field: the RDM API has no legacy "submitted" flag, and the id the
+// client sent came from a list that may be stale.
+async function acquireWorkingDraft(
+  mode: string,
+  depositionId: number | undefined,
   zenodoToken: string,
-  filename: string,
-) {
-  console.log(
-    `[Zenodo] Deleting file "${filename}" from deposition: ${depositionId}`,
+  seed: RdmDraftSeed,
+): Promise<
+  { success: true; data: RdmRecord } | { success: false; error: string }
+> {
+  if (mode === "new") {
+    return createRdmDraft(zenodoToken, seed);
+  }
+
+  console.log(`[Zenodo] Resolving existing Zenodo record: ${depositionId}`);
+
+  let published: Response;
+
+  try {
+    published = await rdmGet(`/records/${depositionId}`, zenodoToken);
+  } catch (error) {
+    return {
+      success: false,
+      error: `Failed to look up Zenodo record ${depositionId}: ${(error as Error).message}`,
+    };
+  }
+
+  if (published.status === 401 || published.status === 403) {
+    return {
+      success: false,
+      error: `Zenodo rejected your credentials while looking up record ${depositionId} (status: ${published.status}). Your Zenodo connection may need re-authorizing. Disconnect and sign in again.`,
+    };
+  }
+
+  if (published.ok) {
+    // Published: version from the *latest* version. RDM rejects POST /versions
+    // on anything else, and the dropdown can point at an older one.
+    const record = (await published.json()) as RdmRecord;
+    let latestId = Number(record.id);
+    const latest = await rdmGet(
+      `/records/${depositionId}/versions/latest`,
+      zenodoToken,
+    );
+
+    if (latest.ok) {
+      const resolved = Number(((await latest.json()) as RdmRecord).id);
+
+      if (Number.isFinite(resolved)) latestId = resolved;
+    } else {
+      console.warn(
+        `[Zenodo] Could not resolve latest version of record ${depositionId} (status: ${latest.status}), versioning from ${latestId}`,
+      );
+    }
+
+    if (!Number.isFinite(latestId)) {
+      return {
+        success: false,
+        error: `Zenodo record ${depositionId} returned an unusable record id`,
+      };
+    }
+
+    console.log(
+      `[Zenodo] Record ${depositionId} is published, creating a new version from ${latestId}`,
+    );
+
+    return createRdmVersion(zenodoToken, latestId);
+  }
+
+  if (published.status === 404) {
+    // Not published - it may be an unpublished draft we can reuse in place.
+    const draft = await rdmGet(`/records/${depositionId}/draft`, zenodoToken);
+
+    if (draft.ok) {
+      console.log(
+        `[Zenodo] Record ${depositionId} is an unpublished draft, reusing it`,
+      );
+
+      return { success: true, data: (await draft.json()) as RdmRecord };
+    }
+
+    if (draft.status === 404) {
+      return {
+        success: false,
+        error: `Zenodo record ${depositionId} was not found, or is not yours`,
+      };
+    }
+
+    return {
+      success: false,
+      error: await getZenodoErrorMessage(
+        `Failed to look up Zenodo draft ${depositionId}`,
+        draft,
+      ),
+    };
+  }
+
+  return {
+    success: false,
+    error: await getZenodoErrorMessage(
+      `Failed to look up Zenodo record ${depositionId}`,
+      published,
+    ),
+  };
+}
+
+// Clears any files already attached to the draft. A new-version draft comes
+// back empty, but a reused draft can still hold files from an earlier run under
+// different names, which would otherwise be published alongside the new ones.
+async function purgeDraftFiles(recordId: number, zenodoToken: string) {
+  const authHeader = zenodoAuthHeader(zenodoToken);
+  const listing = await fetch(
+    `${config.zenodoApiEndpoint}/records/${recordId}/draft/files`,
+    { headers: { Authorization: authHeader } },
   );
 
-  const authHeader = ["Bearer", zenodoToken].join(" ");
-
-  try {
-    const response = await fetch(
-      `${config.zenodoApiEndpoint}/records/${depositionId}/draft/files/${filename}`,
-      {
-        method: "DELETE",
-        headers: {
-          Authorization: authHeader,
-        },
-      },
+  if (!listing.ok) {
+    console.warn(
+      `[Zenodo] Could not list draft files [record ${recordId}] (status: ${listing.status})`,
     );
 
-    if (!response.ok) {
+    return { success: true as const };
+  }
+
+  const entries =
+    (
+      (await listing.json().catch(() => null)) as {
+        entries?: ZenodoDraftFileEntry[];
+      } | null
+    )?.entries ?? [];
+
+  for (const entry of entries) {
+    if (!entry.key) continue;
+
+    const target =
+      entry.links?.self ??
+      `${config.zenodoApiEndpoint}/records/${recordId}/draft/files/${encodeURIComponent(entry.key)}`;
+
+    const response = await fetch(target, {
+      method: "DELETE",
+      headers: { Authorization: authHeader },
+    });
+
+    if (!response.ok && response.status !== 404) {
       const errorMsg = await getZenodoErrorMessage(
-        `Failed to delete file "${filename}"`,
+        `Failed to delete stale draft file "${entry.key}" [record ${recordId}]`,
         response,
       );
 
-      console.log(`[Zenodo] ${errorMsg}`);
+      console.error(`[Zenodo] ${errorMsg}`);
 
-      return { success: false, error: errorMsg };
+      return { success: false as const, error: errorMsg };
     }
 
-    console.log(`[Zenodo] Deleted file "${filename}" successfully`);
+    console.log(
+      `[Zenodo] Deleted stale draft file "${entry.key}" [record ${recordId}]`,
+    );
+  }
 
-    return { success: true };
+  return { success: true as const };
+}
+
+// InvenioRDM does not mint a DOI when a draft is created, and poster.json
+// embeds the DOI before it is uploaded so it has to be reserved explicitly.
+async function ensureReservedDoi(
+  recordId: number,
+  zenodoToken: string,
+  draft?: RdmRecord,
+) {
+  const known = draft?.pids?.doi?.identifier;
+
+  if (known) {
+    console.log(
+      `[Zenodo] Draft already carries a reserved DOI: ${known} [record ${recordId}]`,
+    );
+
+    return { success: true as const, doi: known };
+  }
+
+  // Prefer the link Zenodo handed us.
+  const url =
+    draft?.links?.reserve_doi ??
+    `${config.zenodoApiEndpoint}/records/${recordId}/draft/pids/doi`;
+
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: rdmHeaders(zenodoToken, {
+        "Content-Type": "application/json",
+      }),
+    });
+
+    // Read as text so the raw body can go into the error - a reserve that
+    // succeeds without a DOI is undiagnosable otherwise.
+    // Read as text so the full body can go to the log even when it is not the
+    // shape we expected.
+    const rawBody = await response.text().catch(() => "");
+    const doi = extractRecordDoi(parseRdmRecord(rawBody));
+
+    if (response.ok && doi) {
+      console.log(`[Zenodo] Reserved DOI ${doi} [record ${recordId}]`);
+
+      return { success: true as const, doi };
+    }
+
+    console.error(
+      `[Zenodo] DOI reservation returned no usable DOI [record ${recordId}] (status: ${response.status}) - ${rawBody}`,
+    );
+
+    const reserveError = response.ok
+      ? `Zenodo accepted the DOI reservation but returned no DOI [record ${recordId}]`
+      : `Failed to reserve a DOI [record ${recordId}]: ${response.status} ${response.statusText}${summarizeZenodoBody(rawBody) ? ` - ${summarizeZenodoBody(rawBody)}` : ""}`;
+
+    // Some deployments reject a second reserve instead of returning the
+    // existing one so reead the draft before giving up.
+    const refreshed = await rdmGet(`/records/${recordId}/draft`, zenodoToken);
+
+    if (refreshed.ok) {
+      const refreshedDraft = parseRdmRecord(
+        await refreshed.text().catch(() => ""),
+      );
+      const refreshedDoi = extractRecordDoi(refreshedDraft);
+
+      if (refreshedDoi) {
+        console.log(
+          `[Zenodo] Draft already carried DOI ${refreshedDoi} despite reserve failing [record ${recordId}]`,
+        );
+
+        return { success: true as const, doi: refreshedDoi };
+      }
+    }
+
+    console.error(`[Zenodo] ${reserveError}`);
+
+    return { success: false as const, error: reserveError };
   } catch (error) {
-    console.log(`[Zenodo] Error deleting file "${filename}":`, error);
+    const errorMsg = `Failed to reserve a DOI [record ${recordId}]: ${(error as Error).message}`;
 
-    return {
-      success: false,
-      error: `Failed to delete file "${filename}": ${(error as Error).message}`,
-    };
+    console.error(`[Zenodo] ${errorMsg}`);
+
+    return { success: false as const, error: errorMsg };
   }
 }
 
@@ -1049,6 +1475,9 @@ type RdmExtras = {
     type: { id: string };
     description?: string;
   }[];
+  // Echoed back on the PUT so a full replacement update cannot drop a DOI the
+  // draft already carries.
+  pids?: Record<string, unknown>;
 };
 
 // Builds a complete InvenioRDM PUT payload directly from DB data.
@@ -1176,13 +1605,14 @@ function buildFullRdmPayload(
     ...(Object.keys(customFields).length > 0 && {
       custom_fields: customFields,
     }),
+    ...(options?.pids && { pids: options.pids }),
   };
 }
 
 // PUTs a complete InvenioRDM metadata payload for the given deposition.
 // This is the sole metadata update path - replaces the legacy deposit API entirely.
 async function updateRdmMetadata(
-  depositionId: number,
+  recordId: number,
   zenodoToken: string,
   posterTitle: string,
   posterDescription: string,
@@ -1190,11 +1620,13 @@ async function updateRdmMetadata(
   creators: InvenioCreator[],
   extras?: Pick<
     RdmExtras,
-    "submissionAbstract" | "rawFunding" | "dbRelated" | "presentedDates"
+    | "submissionAbstract"
+    | "rawFunding"
+    | "dbRelated"
+    | "presentedDates"
+    | "pids"
   >,
 ): Promise<{ success: boolean; error?: string }> {
-  const authHeader = ["Bearer", zenodoToken].join(" ");
-
   try {
     const payload = buildFullRdmPayload(
       posterTitle,
@@ -1204,18 +1636,17 @@ async function updateRdmMetadata(
       { ...extras },
     );
     console.log(
-      `[Zenodo] RDM metadata: sending InvenioRDM payload for deposition ${depositionId}: ${JSON.stringify(payload, null, 2)}`,
+      `[Zenodo] RDM metadata: sending InvenioRDM payload [record ${recordId}]: ${JSON.stringify(payload, null, 2)}`,
     );
 
     const putDraft = async (body: object) => {
       const res = await fetch(
-        `${config.zenodoApiEndpoint}/records/${depositionId}/draft`,
+        `${config.zenodoApiEndpoint}/records/${recordId}/draft`,
         {
           method: "PUT",
-          headers: {
+          headers: rdmHeaders(zenodoToken, {
             "Content-Type": "application/json",
-            Authorization: authHeader,
-          },
+          }),
           body: JSON.stringify(body),
         },
       );
@@ -1251,7 +1682,12 @@ async function updateRdmMetadata(
       return /invalid value/i.test(res.body);
     };
 
+    // Kept so a failing retry still reports what originally went wrong.
+    let vocabularyRejection = "";
+
     if (isVocabularyRejection(put)) {
+      vocabularyRejection = `${put.status} - ${put.body}`;
+
       console.warn(
         `[Zenodo] RDM metadata: ROR/funder vocabulary rejection (status: ${put.status}) - ${put.body}. Retrying without ROR/funder IDs.`,
       );
@@ -1271,158 +1707,23 @@ async function updateRdmMetadata(
     }
 
     if (!put.ok) {
-      const msg = `RDM metadata PUT failed (status: ${put.status}) - ${put.body}`;
+      const msg = vocabularyRejection
+        ? `RDM metadata PUT failed [record ${recordId}] (status: ${put.status}) - ${put.body} (first attempt was rejected with ${vocabularyRejection})`
+        : `RDM metadata PUT failed [record ${recordId}] (status: ${put.status}) - ${put.body}`;
+
       console.error(`[Zenodo] ${msg}`);
 
       return { success: false, error: msg };
     }
 
-    console.log(
-      `[Zenodo] RDM metadata: success for deposition ${depositionId}`,
-    );
+    console.log(`[Zenodo] RDM metadata: success [record ${recordId}]`);
 
     return { success: true };
   } catch (err) {
-    const msg = `RDM metadata: unexpected error - ${(err as Error).message}`;
+    const msg = `RDM metadata: unexpected error [record ${recordId}] - ${(err as Error).message}`;
     console.error(`[Zenodo] ${msg}`, err);
 
     return { success: false, error: msg };
-  }
-}
-
-async function createNewVersionDeposition(
-  zenodoToken: string,
-  depositionId: number,
-) {
-  console.log(`[Zenodo] Creating new version for deposition: ${depositionId}`);
-
-  const authHeader = ["Bearer", zenodoToken].join(" ");
-
-  try {
-    const response = await fetch(
-      `${config.zenodoApiEndpoint}/deposit/depositions/${depositionId}/actions/newversion`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: authHeader,
-        },
-      },
-    );
-
-    if (!response.ok) {
-      const body = await response.text().catch(() => "");
-
-      console.log(
-        `[Zenodo] New version creation failed (status: ${response.status}) - ${body}`,
-      );
-
-      return {
-        success: false,
-        error: `Failed to create new version: ${response.status} ${response.statusText}${body ? ` - ${body}` : ""}`,
-      };
-    }
-
-    const data = await response.json();
-
-    console.log(
-      `[Zenodo] New version created (id: ${data.id}) for deposition: ${depositionId}`,
-    );
-
-    return { success: true, data };
-  } catch (error) {
-    console.log("[Zenodo] Error creating new version:", error);
-
-    return {
-      success: false,
-      error: `Failed to create new version: ${(error as Error).message}`,
-    };
-  }
-}
-
-async function getWorkingDeposition(
-  mode: string,
-  depositionId: number,
-  zenodoToken: string,
-) {
-  console.log(`[Zenodo] Getting working deposition (mode: ${mode})`);
-
-  if (mode === "new") {
-    // Create a new deposition on Zenodo
-    const newDeposition = await createZenodoDeposition(zenodoToken);
-
-    if (!newDeposition.success) {
-      return { success: false, error: newDeposition.error };
-    }
-
-    return { success: true, data: newDeposition.data };
-  } else {
-    // Use existing deposition (Creating new version)
-    console.log(`[Zenodo] Fetching existing deposition: ${depositionId}`);
-
-    const existingDeposition = await getZenodoDeposition(
-      depositionId!,
-      zenodoToken,
-    );
-
-    if (!existingDeposition.success) {
-      return { success: false, error: existingDeposition.error };
-    }
-
-    // If the deposition is stilla draft, delete its files
-    if (existingDeposition.data.submitted === false) {
-      console.log(
-        `[Zenodo] Deposition ${depositionId} is a draft, deleting ${existingDeposition.data.files.length} existing files`,
-      );
-
-      for (const file of existingDeposition.data.files) {
-        const status = await deleteFileFromZenodo(
-          depositionId!,
-          zenodoToken,
-          file.filename,
-        );
-
-        if (!status.success) {
-          return { success: false, error: status.error };
-        }
-      }
-
-      return { success: true, data: existingDeposition.data };
-    }
-
-    // If the deposition is submitted, create a new version
-    console.log(
-      `[Zenodo] Deposition ${depositionId} is submitted, creating new version`,
-    );
-
-    const newZenodoVersion = await createNewVersionDeposition(
-      zenodoToken,
-      depositionId!,
-    );
-
-    if (!newZenodoVersion.success) {
-      return { success: false, error: newZenodoVersion.error };
-    }
-
-    // Delete any files from the new version draft if present
-    if (newZenodoVersion.data.files && newZenodoVersion.data.files.length > 0) {
-      console.log(
-        `[Zenodo] Deleting ${newZenodoVersion.data.files.length} files from new version draft`,
-      );
-
-      for (const file of newZenodoVersion.data.files) {
-        const status = await deleteFileFromZenodo(
-          newZenodoVersion.data.id,
-          zenodoToken,
-          file.filename,
-        );
-
-        if (!status.success) {
-          return { success: false, error: status.error };
-        }
-      }
-    }
-
-    return { success: true, data: newZenodoVersion.data };
   }
 }
 
@@ -1440,24 +1741,23 @@ function shouldRetryZenodoUpload(errorMessage: string): boolean {
 }
 
 async function deleteZenodoDraftFileIfPresent(
-  depositionId: number,
+  recordId: number,
   zenodoToken: string,
   filename: string,
 ) {
-  const authHeader = ["Bearer", zenodoToken].join(" ");
   const response = await fetch(
-    `${config.zenodoApiEndpoint}/records/${depositionId}/draft/files/${encodeURIComponent(filename)}`,
+    `${config.zenodoApiEndpoint}/records/${recordId}/draft/files/${encodeURIComponent(filename)}`,
     {
       method: "DELETE",
       headers: {
-        Authorization: authHeader,
+        Authorization: zenodoAuthHeader(zenodoToken),
       },
     },
   );
 
   if (!response.ok && response.status !== 404) {
     const errorMsg = await getZenodoErrorMessage(
-      `Failed to delete draft file "${filename}"`,
+      `Failed to delete draft file "${filename}" [record ${recordId}]`,
       response,
     );
 
@@ -1468,24 +1768,46 @@ async function deleteZenodoDraftFileIfPresent(
 type ZenodoDraftFileEntry = {
   key?: string;
   links?: {
+    self?: string;
     content?: string;
     commit?: string;
   };
 };
 
+// Zenodo keys draft files by name, and a key cannot contain a path separator.
+function sanitizeZenodoFileKey(name: string): string {
+  const cleaned = name
+    .replace(/[\\/]+/g, "-")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return cleaned.length > 0 ? cleaned.slice(0, 255) : "poster.pdf";
+}
+
+// A file to upload. Streams have to arrive as a factory rather than a
+// ReadableStream: the retry loop may need the body more than once, and a
+// consumed stream cannot be replayed.
+type ZenodoUploadSource =
+  | ArrayBuffer
+  | {
+      open: () => Promise<{
+        body: ReadableStream<Uint8Array>;
+        contentLength?: string;
+      }>;
+    };
+
 async function initializeZenodoDraftFile(
-  depositionId: number,
+  recordId: number,
   zenodoToken: string,
   filename: string,
 ) {
-  const authHeader = ["Bearer", zenodoToken].join(" ");
   const response = await fetch(
-    `${config.zenodoApiEndpoint}/records/${depositionId}/draft/files`,
+    `${config.zenodoApiEndpoint}/records/${recordId}/draft/files`,
     {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: authHeader,
+        Authorization: zenodoAuthHeader(zenodoToken),
       },
       body: JSON.stringify([{ key: filename }]),
     },
@@ -1509,26 +1831,26 @@ async function initializeZenodoDraftFile(
 }
 
 async function uploadFileToZenodoDraft(
-  depositionId: number,
+  recordId: number,
   zenodoToken: string,
   filename: string,
-  content: ArrayBuffer,
+  source: ZenodoUploadSource,
 ) {
   console.log(
-    `[Zenodo] Uploading file "${filename}" to RDM draft: ${depositionId}`,
+    `[Zenodo] Uploading file "${filename}" to RDM draft [record ${recordId}]`,
   );
 
   const maxAttempts = 3;
-  const authHeader = ["Bearer", zenodoToken].join(" ");
+  const authHeader = zenodoAuthHeader(zenodoToken);
   let lastError = "";
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     if (attempt > 1) {
-      await deleteZenodoDraftFileIfPresent(depositionId, zenodoToken, filename);
+      await deleteZenodoDraftFileIfPresent(recordId, zenodoToken, filename);
     }
 
     const initialized = await initializeZenodoDraftFile(
-      depositionId,
+      recordId,
       zenodoToken,
       filename,
     );
@@ -1536,7 +1858,7 @@ async function uploadFileToZenodoDraft(
     if (!initialized.success) {
       if ("response" in initialized) {
         lastError = await getZenodoErrorMessage(
-          `Failed to initialize draft file "${filename}"`,
+          `Failed to initialize draft file "${filename}" [record ${recordId}]`,
           initialized.response!,
         );
       } else {
@@ -1545,11 +1867,7 @@ async function uploadFileToZenodoDraft(
       console.log(`[Zenodo] ${lastError}`);
 
       if (attempt === 1) {
-        await deleteZenodoDraftFileIfPresent(
-          depositionId,
-          zenodoToken,
-          filename,
-        );
+        await deleteZenodoDraftFileIfPresent(recordId, zenodoToken, filename);
         await new Promise((resolve) => setTimeout(resolve, 1000));
         continue;
       }
@@ -1563,19 +1881,73 @@ async function uploadFileToZenodoDraft(
       `[Zenodo] Draft file "${filename}" initialized with content and commit links`,
     );
 
-    const contentResponse = await fetch(contentUrl, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/octet-stream",
-        "Content-Length": String(content.byteLength),
-        Authorization: authHeader,
-      },
-      body: content,
-    });
+    let body: BodyInit;
+    let contentLength: string;
+    let streaming = false;
+
+    try {
+      if (source instanceof ArrayBuffer) {
+        body = source;
+        contentLength = String(source.byteLength);
+      } else {
+        const opened = await source.open();
+
+        if (opened.contentLength) {
+          body = opened.body;
+          contentLength = opened.contentLength;
+          streaming = true;
+        } else {
+          // Without a length undici falls back to chunked transfer encoding,
+          // which Zenodo's content endpoint does not reliably accept. Buffer
+          // this attempt instead of risking it.
+          const buffered = await new Response(opened.body).arrayBuffer();
+
+          body = buffered;
+          contentLength = String(buffered.byteLength);
+        }
+      }
+    } catch (error) {
+      lastError = `Failed to read file "${filename}" for upload [record ${recordId}]: ${(error as Error).message}`;
+      console.log(`[Zenodo] ${lastError} (attempt ${attempt}/${maxAttempts})`);
+
+      if (attempt < maxAttempts) {
+        await new Promise((resolve) => setTimeout(resolve, attempt * 1000));
+        continue;
+      }
+
+      return { success: false, error: lastError };
+    }
+
+    let contentResponse: Response;
+
+    try {
+      contentResponse = await fetch(contentUrl, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "Content-Length": contentLength,
+          Authorization: authHeader,
+        },
+        body,
+        ...(streaming && { duplex: "half" }),
+      } as RequestInit & { duplex?: "half" });
+    } catch (error) {
+      // A transport failure is retryable and streamed bodies
+      // break mid jounrey more often than buffered ones.
+      lastError = `Failed to upload file "${filename}" [record ${recordId}]: ${(error as Error).message}`;
+      console.log(`[Zenodo] ${lastError} (attempt ${attempt}/${maxAttempts})`);
+
+      if (attempt < maxAttempts) {
+        await new Promise((resolve) => setTimeout(resolve, attempt * 1000));
+        continue;
+      }
+
+      return { success: false, error: lastError };
+    }
 
     if (!contentResponse.ok) {
       lastError = await getZenodoErrorMessage(
-        `Failed to upload file "${filename}"`,
+        `Failed to upload file "${filename}" [record ${recordId}]`,
         contentResponse,
       );
       console.log(`[Zenodo] ${lastError} (attempt ${attempt}/${maxAttempts})`);
@@ -1596,85 +1968,135 @@ async function uploadFileToZenodoDraft(
       `[Zenodo] Draft file "${filename}" content uploaded: key=${contentData?.key ?? "unknown"}, hasCommit=${!!contentData?.links?.commit}`,
     );
 
-    const commitResponse = await fetch(uploadedCommitUrl, {
-      method: "POST",
-      headers: {
-        Authorization: authHeader,
-      },
-    });
+    let commitResponse: Response;
+
+    try {
+      commitResponse = await fetch(uploadedCommitUrl, {
+        method: "POST",
+        headers: {
+          Authorization: authHeader,
+        },
+      });
+    } catch (error) {
+      lastError = `Failed to commit draft file "${filename}" [record ${recordId}]: ${(error as Error).message}`;
+      console.log(`[Zenodo] ${lastError} (attempt ${attempt}/${maxAttempts})`);
+
+      if (attempt < maxAttempts) {
+        await new Promise((resolve) => setTimeout(resolve, attempt * 1000));
+        continue;
+      }
+
+      return { success: false, error: lastError };
+    }
 
     if (!commitResponse.ok) {
       lastError = await getZenodoErrorMessage(
-        `Failed to commit draft file "${filename}"`,
+        `Failed to commit draft file "${filename}" [record ${recordId}]`,
         commitResponse,
       );
-      console.log(`[Zenodo] ${lastError}`);
+      console.log(`[Zenodo] ${lastError} (attempt ${attempt}/${maxAttempts})`);
+
+      // Retrying restarts the whole attempt  (delete, re-init, re-upload) so a
+      // half registered file cannot mess with the next commit.
+      if (attempt < maxAttempts && shouldRetryZenodoUpload(lastError)) {
+        await new Promise((resolve) => setTimeout(resolve, attempt * 1000));
+        continue;
+      }
 
       return { success: false, error: lastError };
     }
 
     const data = await commitResponse.json();
 
-    console.log(`[Zenodo] Uploaded file "${filename}" successfully`);
+    console.log(
+      `[Zenodo] Uploaded file "${filename}" successfully [record ${recordId}]`,
+    );
 
     return { success: true, data };
   }
 
   return {
     success: false,
-    error: lastError || `Failed to upload file "${filename}"`,
+    error:
+      lastError || `Failed to upload file "${filename}" [record ${recordId}]`,
   };
 }
 
-async function publishZenodoDeposition(
-  zenodoToken: string,
-  depositionId: number,
-) {
-  console.log(`[Zenodo] Publishing deposition: ${depositionId}`);
+// The raw InvenioRDM record never leaves
+// this module so  UI work with these fields instead.
+export type ZenodoPublishResult = {
+  recordId: number;
+  doi?: string;
+  conceptDoi?: string;
+  conceptRecordId?: number;
+  recordUrl: string;
+};
 
-  const authHeader = ["Bearer", zenodoToken].join(" ");
+async function publishRdmDraft(zenodoToken: string, recordId: number) {
+  console.log(`[Zenodo] Publishing draft [record ${recordId}]`);
 
   try {
     const response = await fetch(
-      `${config.zenodoApiEndpoint}/deposit/depositions/${depositionId}/actions/publish`,
+      `${config.zenodoApiEndpoint}/records/${recordId}/draft/actions/publish`,
       {
         method: "POST",
-        headers: {
+        headers: rdmHeaders(zenodoToken, {
           "Content-Type": "application/json",
-          Authorization: authHeader,
-        },
+        }),
       },
     );
 
     if (!response.ok) {
-      const body = await response.text().catch(() => "");
+      const errorMsg = await getZenodoErrorMessage(
+        `Failed to publish [record ${recordId}]`,
+        response,
+      );
 
-      console.log(
-        `[Zenodo] Publish failed (status: ${response.status}) - ${body}`,
+      console.error(`[Zenodo] ${errorMsg}`);
+
+      return { success: false as const, error: errorMsg };
+    }
+
+    const rawBody = await response.text().catch(() => "");
+    const record = parseRdmRecord(rawBody);
+    const publishedId = Number(record?.id);
+
+    if (!Number.isFinite(publishedId)) {
+      console.error(
+        `[Zenodo] Publish response had no usable record id [record ${recordId}] - ${rawBody}`,
       );
 
       return {
-        success: false,
-        error: `Failed to publish deposition: ${response.status} ${response.statusText}${body ? ` - ${body}` : ""}`,
+        success: false as const,
+        error: `Zenodo published [record ${recordId}] but returned an unusable record id`,
       };
     }
 
-    const data = await response.json();
-
-    console.log(
-      `[Zenodo] Deposition ${depositionId} published at: ${data.links?.latest_html}`,
-    );
-    console.log(
-      `[Zenodo] Published record URL: ${data.links?.record_html ?? data.links?.latest_html}`,
-    );
-
-    return { success: true, data };
-  } catch (error) {
-    console.log("[Zenodo] Error publishing deposition:", error);
-
-    return {
-      success: false,
-      error: `Failed to publish deposition: ${(error as Error).message}`,
+    const conceptRecordId = extractConceptRecordId(record);
+    const data: ZenodoPublishResult = {
+      recordId: publishedId,
+      doi: extractRecordDoi(record),
+      conceptDoi: extractConceptDoi(record),
+      ...(conceptRecordId !== undefined && { conceptRecordId }),
+      // self_html is this exact version; latest_html redirects to whichever
+      // version is newest, which is not what the user just published.
+      recordUrl:
+        record?.links?.self_html ??
+        record?.links?.record_html ??
+        record?.links?.latest_html ??
+        "",
     };
+
+    console.log(
+      `[Zenodo] Published record ${data.recordId} - doi: ${data.doi}, concept doi: ${data.conceptDoi ?? "none"}, url: ${data.recordUrl}`,
+    );
+
+    return { success: true as const, data };
+  } catch (error) {
+    const errorMsg = `Failed to publish [record ${recordId}]: ${(error as Error).message}`;
+
+    console.error(`[Zenodo] ${errorMsg}`);
+
+    return { success: false as const, error: errorMsg };
   }
 }

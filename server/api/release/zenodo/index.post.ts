@@ -30,12 +30,15 @@ export default defineEventHandler(async (event) => {
 
   const { posterId, mode, existingDepositionId, license } = parsed.data;
 
-  const { zenodoToken } = await validateZenodoToken(userId);
+  // Publishing only needs the boolean, not the record list.
+  const { zenodoToken, message } = await validateZenodoToken(userId, {
+    includeRecords: false,
+  });
 
   if (!zenodoToken) {
     throw createError({
       statusCode: 400,
-      statusMessage: "Invalid Zenodo token, please sign in again",
+      statusMessage: message || "Invalid Zenodo token, please sign in again",
     });
   }
 
@@ -87,10 +90,14 @@ export default defineEventHandler(async (event) => {
   } catch (error) {
     console.error("[Zenodo] Unexpected error during publication:", error);
 
+    // Keep the real message: a generic string here makes shared screenshots
+    // untraceable, and this branch catches network throws and Prisma errors.
+    const detail = error instanceof Error ? error.message : String(error);
+
     sendEvent({
       step: "error",
       status: "error",
-      message: "An unexpected error occurred during publication",
+      message: `Unexpected error during publication: ${detail}`,
     });
   }
 

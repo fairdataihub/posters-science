@@ -16,15 +16,19 @@ export default defineEventHandler(async (event) => {
   const userId = user.id;
 
   // Check if Zenodo is configured
+  // redirectUri is checked too: without it Zenodo rejects the authorize request
+  // with a bare "invalid_request" that gives no hint about the cause.
   if (
     !config.zenodoClientId ||
     !config.zenodoEndpoint ||
-    !config.zenodoApiEndpoint
+    !config.zenodoApiEndpoint ||
+    !config.zenodoRedirectUri
   ) {
     console.log("[Zenodo] Missing config:", {
       hasClientId: !!config.zenodoClientId,
       hasEndpoint: !!config.zenodoEndpoint,
       hasApiEndpoint: !!config.zenodoApiEndpoint,
+      hasRedirectUri: !!config.zenodoRedirectUri,
     });
 
     return {
@@ -45,6 +49,8 @@ export default defineEventHandler(async (event) => {
   });
 
   const zenodoLoginURL = `${config.zenodoEndpoint}/oauth/authorize?${params.toString()}`;
+
+  console.log(`[Zenodo] Authorize URL: ${zenodoLoginURL}`);
 
   try {
     const { zenodoToken, message, existingDepositions } =
