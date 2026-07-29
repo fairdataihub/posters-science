@@ -8,6 +8,43 @@ const ISO639_1_TO_3: Record<string, string> = Object.fromEntries(
 const config = useRuntimeConfig();
 
 const MAX_USER_FACING_BODY = 300;
+// Logged bodies are bounded too: Zenodo echoes the whole record on some
+// responses, which carries creator names, ORCIDs and unpublished abstracts.
+const MAX_LOGGED_BODY = 1000;
+
+// Full request payloads carry personal data (names, ORCIDs, affiliations,
+// abstracts), so they are only logged when running locally.
+const logFullPayloads = config.siteEnv === "development";
+
+function truncateForLog(body: string): string {
+  return body.length > MAX_LOGGED_BODY
+    ? `${body.slice(0, MAX_LOGGED_BODY)}… (${body.length} bytes total)`
+    : body;
+}
+
+// Describes an RDM payload's shape for logs - which blocks are present and how
+// many entries each has, without the values themselves.
+function describeRdmPayload(payload: object): string {
+  const { metadata, custom_fields: customFields } = payload as {
+    metadata?: Record<string, unknown>;
+    custom_fields?: Record<string, unknown>;
+  };
+  const parts: string[] = [];
+
+  for (const [key, value] of Object.entries(metadata ?? {})) {
+    if (Array.isArray(value)) {
+      parts.push(`${key}[${value.length}]`);
+    } else if (value !== undefined && value !== null && value !== "") {
+      parts.push(key);
+    }
+  }
+
+  if (customFields) {
+    parts.push(`custom_fields{${Object.keys(customFields).join(",")}}`);
+  }
+
+  return parts.join(" ");
+}
 
 /**
  * Condenses a Zenodo response body into something a user can read. Zenodo
@@ -70,7 +107,7 @@ async function getZenodoErrorMessage(
 
   if (body) {
     console.error(
-      `[Zenodo] ${operation}: ${response.status} ${response.statusText} - ${body}`,
+      `[Zenodo] ${operation}: ${response.status} ${response.statusText} - ${truncateForLog(body)}`,
     );
   }
 
@@ -80,7 +117,9 @@ async function getZenodoErrorMessage(
 }
 
 async function getZenodoToken(userId: string) {
-  console.log(`[Zenodo] Looking up token for user: ${userId}`);
+  // User ids stay out of the logs; poster and record ids are enough to trace a
+  // publication and are not personal identifiers.
+  console.log("[Zenodo] Looking up stored token");
   const tokenRecord = await prisma.zenodoToken.findUnique({
     where: {
       userId,
@@ -88,12 +127,12 @@ async function getZenodoToken(userId: string) {
   });
 
   if (!tokenRecord) {
-    console.log(`[Zenodo] No token found for user: ${userId}`);
+    console.log("[Zenodo] No Zenodo token stored for this user");
 
     return null;
   }
 
-  console.log(`[Zenodo] Token found for user: ${userId}`);
+  console.log("[Zenodo] Stored token found");
 
   return tokenRecord;
 }
@@ -155,14 +194,14 @@ export async function validateZenodoToken(
 ) {
   const includeRecords = options?.includeRecords ?? true;
 
-  console.log(`[Zenodo] Validating token for user: ${userId}`);
+  console.log("[Zenodo] Validating stored token");
 
   let zenodoToken = false;
   let existingDepositions: ZenodoUserRecord[] = [];
   const tokenRecord = await getZenodoToken(userId);
 
   if (!tokenRecord) {
-    console.log(`[Zenodo] No token found for user: ${userId}`);
+    console.log("[Zenodo] No Zenodo token stored for this user");
 
     return {
       zenodoToken,
@@ -245,7 +284,7 @@ export async function validateZenodoToken(
 }
 
 async function refreshZenodoToken(userId: string, refreshToken: string) {
-  console.log(`[Zenodo] Refreshing token for user: ${userId}`);
+  console.log("[Zenodo] Refreshing token");
 
   const refreshBody = new URLSearchParams({
     grant_type: "refresh_token",
@@ -282,7 +321,7 @@ async function refreshZenodoToken(userId: string, refreshToken: string) {
     const body = await refresh.text().catch(() => "");
 
     console.warn(
-      `[Zenodo] Token refresh failed (status: ${refresh.status})${body ? ` - ${body}` : ""}`,
+      `[Zenodo] Token refresh failed (status: ${refresh.status})${body ? ` - ${truncateForLog(body)}` : ""}`,
     );
   }
 }
@@ -737,7 +776,7 @@ export async function beginZenodoPublication(
   const posterFileUrl = `${config.bunnyPrivateStorage}/${extractionJob.filePath}`;
 
   console.log(
-    `[Zenodo] Uploading poster file "${posterFileName}" [record ${recordId}] from ${extractionJob.filePath}`,
+    `[Zenodo] Uploading poster file "${posterFileName}" [record ${recordId}]`,
   );
 
   const posterFileUpload = await uploadFileToZenodoDraft(
@@ -1308,7 +1347,7 @@ async function ensureReservedDoi(
     }
 
     console.error(
-      `[Zenodo] DOI reservation returned no usable DOI [record ${recordId}] (status: ${response.status}) - ${rawBody}`,
+      `[Zenodo] DOI reservation returned no usable DOI [record ${recordId}] (status: ${response.status}) - ${truncateForLog(rawBody)}`,
     );
 
     const reserveError = response.ok
@@ -1636,8 +1675,14 @@ async function updateRdmMetadata(
       { ...extras },
     );
     console.log(
-      `[Zenodo] RDM metadata: sending InvenioRDM payload [record ${recordId}]: ${JSON.stringify(payload, null, 2)}`,
+      `[Zenodo] RDM metadata: sending payload [record ${recordId}] - ${describeRdmPayload(payload)}`,
     );
+
+    if (logFullPayloads) {
+      console.log(
+        `[Zenodo] RDM metadata payload [record ${recordId}]: ${JSON.stringify(payload, null, 2)}`,
+      );
+    }
 
     const putDraft = async (body: object) => {
       const res = await fetch(
@@ -1689,7 +1734,7 @@ async function updateRdmMetadata(
       vocabularyRejection = `${put.status} - ${put.body}`;
 
       console.warn(
-        `[Zenodo] RDM metadata: ROR/funder vocabulary rejection (status: ${put.status}) - ${put.body}. Retrying without ROR/funder IDs.`,
+        `[Zenodo] RDM metadata: ROR/funder vocabulary rejection (status: ${put.status}) - ${truncateForLog(put.body)}. Retrying without ROR/funder IDs.`,
       );
 
       const fallback = buildFullRdmPayload(
@@ -1699,9 +1744,12 @@ async function updateRdmMetadata(
         creators,
         { ...extras, skipRorIds: true, skipFunderIds: true },
       );
-      console.log(
-        `[Zenodo] RDM metadata: retry payload (name-only affiliations/funders): ${JSON.stringify(fallback, null, 2)}`,
-      );
+
+      if (logFullPayloads) {
+        console.log(
+          `[Zenodo] RDM metadata: retry payload (name-only affiliations/funders): ${JSON.stringify(fallback, null, 2)}`,
+        );
+      }
 
       put = await putDraft(fallback);
     }
@@ -2063,7 +2111,7 @@ async function publishRdmDraft(zenodoToken: string, recordId: number) {
 
     if (!Number.isFinite(publishedId)) {
       console.error(
-        `[Zenodo] Publish response had no usable record id [record ${recordId}] - ${rawBody}`,
+        `[Zenodo] Publish response had no usable record id [record ${recordId}] - ${truncateForLog(rawBody)}`,
       );
 
       return {
