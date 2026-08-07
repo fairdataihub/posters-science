@@ -5,10 +5,14 @@ interface RorResult {
   country: string;
 }
 
-const props = defineProps<{
-  open: boolean;
-  initialQuery: string;
-}>();
+const props = withDefaults(
+  defineProps<{
+    open: boolean;
+    initialQuery: string;
+    nameLabel?: string;
+  }>(),
+  { nameLabel: "affiliation" },
+);
 
 const emit = defineEmits<{
   (e: "update:open", value: boolean): void;
@@ -190,7 +194,7 @@ function selectResult(result: RorResult) {
     </template>
   </UDrawer>
 
-  <UModal v-model:open="confirmOpen" title="Replace affiliation name?">
+  <UModal v-model:open="confirmOpen" :title="`Replace ${nameLabel} name?`">
     <template #body>
       <p class="text-sm text-gray-600 dark:text-gray-400">
         The current name

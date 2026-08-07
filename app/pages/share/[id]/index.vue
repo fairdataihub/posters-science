@@ -18,6 +18,7 @@ import {
   normalizeNameIdentifierToUrl,
   normalizeAffiliationIdentifierToUrl,
   schemeUriForScheme,
+  isCanonicalSchemeUri,
   extractOrcidId,
   validateOrcidExists,
 } from "@/utils/poster_schema";
@@ -28,6 +29,8 @@ import {
 } from "@internationalized/date";
 import DatePicker from "~/components/ui/DatePicker.vue";
 import DateRangePicker from "~/components/ui/DateRangePicker.vue";
+
+type FundingReference = StrictFormSchema["fundingReferences"][number];
 
 definePageMeta({
   middleware: ["auth"],
@@ -56,6 +59,7 @@ const affiliationIdentifierErrors = ref<Record<string, string | undefined>>({});
 const orcidSearchOpenIndex = ref<number | null>(null);
 const rorSearchOpenIndex = ref<number | null>(null);
 const affiliationRorSearchOpen = ref<string | null>(null);
+const funderRorSearchOpen = ref<number | null>(null);
 const autofillHighlight = ref<Record<string, boolean>>({});
 
 function handleOrcidSelect(orcidUrl: string, cIndex: number) {
@@ -380,23 +384,33 @@ if (data.value) {
     if (meta.format) state.format = meta.format;
     if (meta.license) state.license = meta.license;
 
-    // Funding references - cast funderIdentifierType to enum
+    // Funding references - cast funderIdentifierType to enum, and back-fill the
+    // type/schemeUri pair for records saved before those were derived
     if (meta.fundingReferences?.length) {
-      state.fundingReferences = meta.fundingReferences.map((f: any) => ({
-        funderName: f.funderName || "",
-        funderIdentifier: f.funderIdentifier || "",
-        funderIdentifierType: f.funderIdentifierType as
-          | "Crossref Funder ID"
-          | "GRID"
-          | "ISNI"
-          | "ROR"
-          | "Other"
-          | undefined,
-        schemeUri: f.schemeUri || "",
-        awardNumber: f.awardNumber || "",
-        awardUri: f.awardUri || "",
-        awardTitle: f.awardTitle || "",
-      }));
+      state.fundingReferences = meta.fundingReferences.map((f: any) => {
+        const funder: FundingReference = {
+          funderName: f.funderName || "",
+          funderIdentifier: f.funderIdentifier || "",
+          funderIdentifierType: (f.funderIdentifierType ||
+            (f.funderIdentifier
+              ? inferFunderIdentifierType(f.funderIdentifier)
+              : undefined)) as FundingReference["funderIdentifierType"],
+          schemeUri: f.schemeUri || "",
+          awardNumber: f.awardNumber || "",
+          awardUri: f.awardUri || "",
+          awardTitle: f.awardTitle || "",
+        };
+
+        // The field is hidden for derivable types, so make sure the stored value
+        // matches the type rather than leaving a stale one the user cannot see
+        if (
+          funder.funderIdentifierType &&
+          funder.funderIdentifierType !== "Other"
+        )
+          syncFunderSchemeUri(funder);
+
+        return funder;
+      });
     }
 
     // Conference
@@ -928,11 +942,47 @@ function handleAffiliationRorSelect(
   }, 700);
 }
 
+// Keeps schemeUri in step with the identifier type. Every type except "Other" has a
+// canonical URI we can derive, so the field stays hidden for those.
+function syncFunderSchemeUri(
+  funder: FundingReference,
+  type = funder.funderIdentifierType,
+) {
+  if (!type) {
+    funder.schemeUri = "";
+
+    return;
+  }
+
+  if (type === "Other") {
+    // Drop an auto-derived value so the user supplies their own
+    if (isCanonicalSchemeUri(funder.schemeUri)) funder.schemeUri = "";
+
+    return;
+  }
+
+  funder.schemeUri = schemeUriForScheme(type) ?? funder.schemeUri;
+}
+
+// The ROR lookup only applies while the row is still empty or already ROR.
+// Once the row commits to another scheme (Crossref Funder ID, GRID, ISNI, Other) the
+// button would only produce a mismatched identifier, so hide it.
+function showFunderRorSearch(funder: FundingReference) {
+  const identifier = funder.funderIdentifier?.trim();
+  const type =
+    funder.funderIdentifierType ??
+    (identifier ? inferFunderIdentifierType(identifier) : undefined);
+
+  return !type || type === "ROR";
+}
+
 function handleFunderIdentifierTypeChange(value: string, fIndex: number) {
   const funder = state.fundingReferences[fIndex];
   if (!funder) return;
-  const uri = schemeUriForScheme(value);
-  if (uri) funder.schemeUri ||= uri;
+  syncFunderSchemeUri(
+    funder,
+    value as FundingReference["funderIdentifierType"],
+  );
 }
 
 function handleFunderIdentifierInput(value: string, fIndex: number) {
@@ -940,6 +990,34 @@ function handleFunderIdentifierInput(value: string, fIndex: number) {
   if (!funder) return;
   const inferred = inferFunderIdentifierType(value);
   if (inferred) funder.funderIdentifierType ||= inferred;
+  syncFunderSchemeUri(funder);
+}
+
+function clearFunderIdentifierType(fIndex: number) {
+  const funder = state.fundingReferences[fIndex];
+  if (!funder) return;
+  funder.funderIdentifierType = undefined;
+  syncFunderSchemeUri(funder);
+}
+
+function handleFunderRorSelect(
+  rorUrl: string,
+  displayName: string,
+  fIndex: number,
+) {
+  const funder = state.fundingReferences[fIndex];
+  if (funder) {
+    funder.funderName = displayName;
+    funder.funderIdentifier = rorUrl;
+    funder.funderIdentifierType = "ROR";
+    syncFunderSchemeUri(funder);
+  }
+  funderRorSearchOpen.value = null;
+  const key = `funder-${fIndex}`;
+  autofillHighlight.value[key] = true;
+  setTimeout(() => {
+    autofillHighlight.value[key] = false;
+  }, 700);
 }
 
 async function addSubjectAndFocus() {
@@ -2029,44 +2107,118 @@ const moveCreator = (index: number, direction: "up" | "down") => {
                     />
                   </div>
 
-                  <div class="grid gap-3 md:grid-cols-2">
-                    <UFormField
-                      :name="`fundingReferences.${fIndex}.funderIdentifier`"
-                      label="Funder Identifier"
-                    >
-                      <UInput
-                        v-model="funder.funderIdentifier"
-                        placeholder="https://ror.org/04xfq0f34"
-                        @update:model-value="
-                          (v) => handleFunderIdentifierInput(String(v), fIndex)
-                        "
-                      />
-                    </UFormField>
-
+                  <div class="grid items-start gap-3 md:grid-cols-2">
                     <UFormField
                       :name="`fundingReferences.${fIndex}.funderIdentifierType`"
                       label="Identifier Type"
                     >
-                      <USelect
-                        v-model="funder.funderIdentifierType"
-                        :items="FUNDER_IDENTIFIER_TYPE_OPTIONS"
-                        placeholder="Select a type"
+                      <div class="flex items-center gap-1">
+                        <USelect
+                          v-model="funder.funderIdentifierType"
+                          :items="FUNDER_IDENTIFIER_TYPE_OPTIONS"
+                          placeholder="Select a type"
+                          class="w-full"
+                          @update:model-value="
+                            (v) =>
+                              handleFunderIdentifierTypeChange(
+                                String(v),
+                                fIndex,
+                              )
+                          "
+                        />
+
+                        <UButton
+                          v-if="funder.funderIdentifierType"
+                          class="shrink-0"
+                          size="xs"
+                          color="neutral"
+                          variant="ghost"
+                          icon="i-lucide-x"
+                          aria-label="Clear identifier type"
+                          @click="clearFunderIdentifierType(fIndex)"
+                        />
+                      </div>
+                    </UFormField>
+
+                    <div class="flex gap-2">
+                      <UFormField
+                        :name="`fundingReferences.${fIndex}.funderIdentifier`"
+                        label="Funder Identifier"
                         class="w-full"
-                        @update:model-value="
-                          (v) =>
-                            handleFunderIdentifierTypeChange(String(v), fIndex)
+                      >
+                        <div class="relative">
+                          <div
+                            v-if="autofillHighlight[`funder-${fIndex}`]"
+                            class="orcid-autofill-ring pointer-events-none absolute inset-0 rounded-md"
+                          />
+
+                          <UInput
+                            v-model="funder.funderIdentifier"
+                            placeholder="https://ror.org/04xfq0f34"
+                            class="w-full"
+                            @update:model-value="
+                              (v) =>
+                                handleFunderIdentifierInput(String(v), fIndex)
+                            "
+                          >
+                            <template
+                              v-if="funder.funderIdentifier?.startsWith('http')"
+                              #trailing
+                            >
+                              <a
+                                :href="funder.funderIdentifier"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                class="hover:text-primary-500 flex items-center text-gray-400"
+                              >
+                                <UIcon
+                                  name="i-lucide-external-link"
+                                  class="size-4 cursor-pointer"
+                                />
+                              </a>
+                            </template>
+                          </UInput>
+                        </div>
+                      </UFormField>
+
+                      <UButton
+                        v-if="showFunderRorSearch(funder)"
+                        class="mt-6 shrink-0"
+                        size="xs"
+                        variant="outline"
+                        icon="i-lucide-search"
+                        label="Find ROR"
+                        @click="funderRorSearchOpen = fIndex"
+                      />
+
+                      <IdentifierRorSearch
+                        v-if="funderRorSearchOpen === fIndex"
+                        :open="funderRorSearchOpen === fIndex"
+                        :initial-query="funder.funderName"
+                        name-label="funder"
+                        @update:open="
+                          (v) => {
+                            if (!v) funderRorSearchOpen = null;
+                          }
+                        "
+                        @select="
+                          (rorUrl, displayName) =>
+                            handleFunderRorSelect(rorUrl, displayName, fIndex)
                         "
                       />
-                    </UFormField>
+                    </div>
                   </div>
 
                   <UFormField
+                    v-if="funder.funderIdentifierType === 'Other'"
                     :name="`fundingReferences.${fIndex}.schemeUri`"
                     label="Scheme URI"
+                    :required="!!funder.funderIdentifier"
+                    description="The base URI of the identifier scheme this funder ID belongs to."
                   >
                     <UInput
                       v-model="funder.schemeUri"
-                      placeholder="https://ror.org"
+                      placeholder="https://example.org/identifiers"
                       class="w-full"
                     />
                   </UFormField>
