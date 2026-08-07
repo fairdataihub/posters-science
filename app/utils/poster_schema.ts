@@ -183,6 +183,19 @@ export function schemeUriForScheme(scheme: string): string | undefined {
   }
 }
 
+// Canonical schemeURI values produced by schemeUriForScheme. Used to tell an
+// auto-derived scheme URI apart from one the user typed in themselves.
+const CANONICAL_SCHEME_URIS = new Set(
+  ["ORCID", "ISNI", "ROR", "GRID", "Crossref Funder ID"].map(
+    (scheme) => schemeUriForScheme(scheme)!,
+  ),
+);
+
+// True when the value is one of the canonical scheme URIs (i.e. it was auto-filled).
+export function isCanonicalSchemeUri(value: string | undefined): boolean {
+  return !!value && CANONICAL_SCHEME_URIS.has(value.trim());
+}
+
 // Converts a bare name identifier (ORCID, ISNI) to its full URL form per DataCite 4.7.
 // If the value is already a URL, returns it unchanged.
 export function normalizeNameIdentifierToUrl(
@@ -781,7 +794,19 @@ const StrictFundingSchema = z
   .refine((data) => !data.funderIdentifier || data.funderIdentifierType, {
     message: "Identifier type is required when identifier is provided",
     path: ["funderIdentifierType"],
-  });
+  })
+  // Every other identifier type has a canonical scheme URI we fill in automatically,
+  // so "Other" is the only case where the user has to supply one.
+  .refine(
+    (data) =>
+      data.funderIdentifierType !== "Other" ||
+      !data.funderIdentifier?.trim() ||
+      !!data.schemeUri?.trim(),
+    {
+      message: "Scheme URI is required when the identifier type is Other",
+      path: ["schemeUri"],
+    },
+  );
 
 const StrictConferenceSchema = z.object({
   conferenceName: z.string().min(1, { message: "Conference name is required" }),
