@@ -375,6 +375,25 @@ function clearAllFilters() {
       ]"
     />
 
+    <UAlert
+      icon="i-lucide-info"
+      color="info"
+      variant="soft"
+      title="Download the full poster record in bulk"
+      description="All poster records are archived on Zenodo in JSON format, making it convenient to download them for large scale analysis."
+      :actions="[
+        {
+          label: 'Read the Bulk Corpus guide',
+          to: 'https://docs.posters.science/docs/bulk-corpus.html',
+          target: '_blank',
+          icon: 'i-lucide-external-link',
+          trailing: true,
+          color: 'info',
+          variant: 'solid',
+        },
+      ]"
+    />
+
     <div class="flex gap-6">
       <div class="hidden w-80 flex-shrink-0 md:block">
         <UCard class="sticky top-4">
