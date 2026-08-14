@@ -1,6 +1,7 @@
 import { flattenError } from "zod";
 import {
   strictFormSchema,
+  schemeUriForScheme,
   type StrictFormSchema,
 } from "~~/app/utils/poster_schema";
 
@@ -116,7 +117,19 @@ export default defineEventHandler(async (event) => {
   const format = data.format || null;
   const version = data.version || null;
   const license = data.license || null;
-  const fundingReferences = data.fundingReferences ?? [];
+  // The review form derives schemeUri from the identifier type and hides the field for
+  // every type except "Other", so back-stop it here: a draft save skips validation, and
+  // older records were stored before the value was derived. Types without a canonical
+  // URI ("Other") are left alone for the user to fill in.
+  const fundingReferences = (
+    Array.isArray(data.fundingReferences) ? data.fundingReferences : []
+  ).map((funder) => {
+    if (funder.schemeUri?.trim() || !funder.funderIdentifierType) return funder;
+
+    const derived = schemeUriForScheme(funder.funderIdentifierType);
+
+    return derived ? { ...funder, schemeUri: derived } : funder;
+  });
 
   const { conference } = data;
   const conferenceName = conference?.conferenceName ?? null;

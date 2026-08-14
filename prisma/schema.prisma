@@ -141,7 +141,7 @@ model PosterMetadata {
 
     license String? // SPDX identifier
 
-    fundingReferences Json @default("[]") // [{ funderName: string, funderIdentifier: string, funderIdentifierType: string, awardNumber: string, awardUri: string, awardTitle: string }]
+    fundingReferences Json @default("[]") // [{ funderName: string, funderIdentifier: string, funderIdentifierType: string, schemeUri: string, awardNumber: string, awardUri: string, awardTitle: string }]
 
     conferenceName           String?
     conferenceLocation       String?
