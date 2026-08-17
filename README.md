@@ -87,7 +87,7 @@ flowchart TD
     G -.->|Optional| J["Deposit to Zenodo\nwith DOI"]
 ```
 
-**Text extraction.** PDF posters are processed by [pdfalto](https://github.com/kermitt2/pdfalto) for layout-aware text extraction. Image posters (JPG, PNG) are processed by [Qwen2-VL](https://huggingface.co/Qwen/Qwen2-VL-7B-Instruct), a vision-language model that reads text directly from the image. This is handled by the [extraction API](https://github.com/fairdataihub/posters-science-extraction-api).
+**Text extraction.** PDF posters are processed by [pdfplumber](https://github.com/jsvine/pdfplumber) for layout-aware text extraction. Image posters (JPG, PNG) are processed by a vision-language model that reads text directly from the image. This is handled by the [extraction API](https://github.com/fairdataihub/posters-science-extraction-api).
 
 **Metadata structuring.** The extracted raw text is structured into JSON by [Llama 3.1 8B](https://huggingface.co/fairdataihub/Llama-3.1-8B-Poster-Extraction) with parameters optimized for poster extraction. The output includes titles, authors, affiliations, content sections, and figure/table captions. See [poster2json](https://github.com/fairdataihub/poster2json) for the full extraction package.
 
@@ -100,7 +100,7 @@ flowchart TD
 | Frontend               | [Nuxt 3](https://nuxt.com/), [Nuxt UI](https://ui.nuxt.com/), [Tailwind CSS](https://tailwindcss.com/) |
 | Backend                | Nuxt server routes ([Nitro](https://nitro.build/))                                                     |
 | Database               | [PostgreSQL](https://www.postgresql.org/) via [Prisma](https://www.prisma.io/)                         |
-| Poster Extraction      | [poster2json](https://github.com/fairdataihub/poster2json) (Python, Llama 3.1, Qwen2-VL, pdfalto)      |
+| Poster Extraction      | [poster2json](https://github.com/fairdataihub/poster2json) (Python, Llama 3.1, pdfplumber)            |
 | File Storage           | CDN-backed object storage                                                                              |
 | Repository Integration | [Zenodo](https://zenodo.org/)                                                                          |
 | Deployment             | [Docker](https://www.docker.com/)                                                                      |
