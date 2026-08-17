@@ -77,8 +77,8 @@ When a user uploads a poster (PDF or image), the platform runs an automated extr
 flowchart TD
     A["User uploads poster\n(PDF or image)"] --> B["File stored securely"]
     B --> C{"File type?"}
-    C -->|PDF| D["Text extraction\nvia pdfalto"]
-    C -->|Image| E["Vision OCR\nvia Qwen2-VL"]
+    C -->|PDF| D["Text extraction\nvia pdfplumber"]
+    C -->|Image| E["Vision OCR"]
     D --> F["Llama 3.1 8B\n(optimized for poster extraction)"]
     E --> F
     F --> G["Structured JSON metadata\n(poster-json-schema, DataCite 4.7)"]
