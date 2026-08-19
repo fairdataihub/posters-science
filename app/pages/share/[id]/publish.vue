@@ -227,6 +227,26 @@ async function handleSimulatedArchive() {
 // Deposition selection state
 const depositionMode = ref<"new" | "existing">("new");
 const selectedDeposition = ref<number | undefined>(undefined);
+const manualDepositionId = ref("");
+const linkedDepositionId = ref<number | undefined>(undefined);
+const linkedDeposition = ref<{
+  id: number;
+  title: string;
+  version?: string;
+  doi?: string;
+  url: string;
+  isDraft: boolean;
+} | null>(null);
+const previousVersionLicense = ref("");
+const isPosterVersion = ref(false);
+
+const linkedDepositionDescription = computed(() => {
+  if (!linkedDeposition.value) return "";
+
+  return linkedDeposition.value.version
+    ? `${linkedDeposition.value.title} (Version ${linkedDeposition.value.version})`
+    : linkedDeposition.value.title;
+});
 const existingDepositions = ref<
   {
     id: number;
@@ -257,7 +277,15 @@ const depositionModeOptions = [
 ];
 
 watch(depositionMode, () => {
-  selectedDeposition.value = undefined;
+  if (!linkedDepositionId.value) selectedDeposition.value = undefined;
+});
+
+const effectiveDepositionId = computed(() => {
+  if (linkedDepositionId.value) return linkedDepositionId.value;
+  if (selectedDeposition.value) return selectedDeposition.value;
+  const manual = Number.parseInt(manualDepositionId.value, 10);
+
+  return Number.isFinite(manual) && manual > 0 ? manual : undefined;
 });
 
 const readyToArchive = computed(
@@ -265,7 +293,7 @@ const readyToArchive = computed(
     !!selectedLicense.value &&
     (depositionMode.value === "new" ||
       (depositionMode.value === "existing" &&
-        selectedDeposition.value !== undefined)),
+        effectiveDepositionId.value !== undefined)),
 );
 
 // Archive progress state
@@ -346,6 +374,17 @@ watch(
     zenodoConfigError.value = !data?.zenodoLoginURL;
     existingDepositions.value = (data?.existingDepositions ??
       []) as typeof existingDepositions.value;
+    linkedDepositionId.value = data?.linkedDepositionId;
+    linkedDeposition.value = data?.linkedDeposition ?? null;
+    previousVersionLicense.value = data?.suggestedLicense ?? "";
+    if (!selectedLicense.value && previousVersionLicense.value) {
+      selectedLicense.value = previousVersionLicense.value;
+    }
+    isPosterVersion.value = Boolean(data?.isVersion);
+    if (isPosterVersion.value) depositionMode.value = "existing";
+    if (linkedDepositionId.value) {
+      selectedDeposition.value = linkedDepositionId.value;
+    }
     zenodoLoading.value = false;
   },
 );
@@ -433,7 +472,7 @@ async function handleArchive() {
       body: JSON.stringify({
         posterId: id,
         mode: depositionMode.value,
-        existingDepositionId: selectedDeposition.value,
+        existingDepositionId: effectiveDepositionId.value,
         license: selectedLicense.value || undefined,
       }),
     });
@@ -810,32 +849,98 @@ async function handleArchive() {
 
           <div>
             <p class="text-muted mb-4 text-sm">
-              Is your poster already published on Zenodo or would you like to
-              create a new Zenodo publication?
+              {{
+                isPosterVersion
+                  ? "This will be published as a new version of an existing Zenodo record."
+                  : "Is your poster already published on Zenodo or would you like to create a new Zenodo publication?"
+              }}
             </p>
 
             <div>
               <URadioGroup
+                v-if="!isPosterVersion"
                 v-model="depositionMode"
                 :items="depositionModeOptions"
               />
 
               <!-- Existing deposition selector -->
               <div v-if="depositionMode === 'existing'" class="mt-4">
-                <p class="text-muted mb-2 text-sm">Select your Zenodo record</p>
+                <UAlert
+                  v-if="linkedDepositionId"
+                  color="success"
+                  variant="soft"
+                  icon="i-lucide-link"
+                  title="Zenodo record selected automatically"
+                >
+                  <template #description>
+                    <div class="flex flex-col items-start gap-2">
+                      <p>
+                        {{
+                          linkedDepositionDescription ||
+                          `Zenodo record ${linkedDepositionId}`
+                        }}
+                      </p>
 
-                <USelect
-                  v-model="selectedDeposition"
-                  :items="selectableDepositions"
-                  placeholder="Choose a deposition..."
-                  class="w-full max-w-md"
-                />
+                      <UButton
+                        v-if="linkedDeposition?.url"
+                        :to="linkedDeposition.url"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        color="neutral"
+                        variant="outline"
+                        size="xs"
+                        trailing-icon="i-lucide-external-link"
+                      >
+                        {{
+                          linkedDeposition.isDraft
+                            ? "Review draft on Zenodo"
+                            : "View record on Zenodo"
+                        }}
+                      </UButton>
+                    </div>
+                  </template>
+                </UAlert>
+
+                <template v-else>
+                  <p class="text-muted mb-2 text-sm">
+                    Select your Zenodo record
+                  </p>
+
+                  <USelect
+                    v-model="selectedDeposition"
+                    :items="selectableDepositions"
+                    placeholder="Choose a recent record..."
+                    class="w-full max-w-md"
+                  />
+
+                  <div class="mt-3 max-w-md">
+                    <p class="text-muted mb-2 text-sm">
+                      Or enter a Zenodo record ID
+                    </p>
+
+                    <UInput
+                      v-model="manualDepositionId"
+                      inputmode="numeric"
+                      placeholder="e.g. 12345678"
+                      class="w-full"
+                      :disabled="selectedDeposition !== undefined"
+                    />
+                  </div>
+                </template>
               </div>
 
               <!-- License selection -->
               <div class="mt-4">
                 <p class="text-muted mb-2 text-sm">
                   License <span class="text-error">*</span>
+                </p>
+
+                <p
+                  v-if="previousVersionLicense"
+                  class="text-muted mb-2 text-xs"
+                >
+                  Preselected from the previous version. You can change it for
+                  this version if needed.
                 </p>
 
                 <USelectMenu

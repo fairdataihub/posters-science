@@ -16,6 +16,15 @@ const MAX_LOGGED_BODY = 1000;
 // abstracts), so they are only logged when running locally.
 const logFullPayloads = config.siteEnv === "development";
 
+type FundingReference = {
+  funderName?: string;
+  funderIdentifier?: string;
+  funderIdentifierType?: string;
+  awardNumber?: string;
+  awardUri?: string;
+  awardTitle?: string;
+};
+
 function truncateForLog(body: string): string {
   return body.length > MAX_LOGGED_BODY
     ? `${body.slice(0, MAX_LOGGED_BODY)}… (${body.length} bytes total)`
@@ -326,6 +335,51 @@ async function refreshZenodoToken(userId: string, refreshToken: string) {
   }
 }
 
+/**
+ * Discards an unpublished InvenioRDM draft that is linked to a local poster.
+ * A missing draft is already in the desired state, so retries remain safe.
+ */
+export async function discardZenodoDraft(userId: string, recordId: number) {
+  const tokenRecord = await getZenodoToken(userId);
+
+  if (!tokenRecord) {
+    return {
+      success: false as const,
+      error:
+        "Reconnect your Zenodo account before deleting this version draft.",
+    };
+  }
+
+  let response: Response;
+
+  try {
+    response = await fetch(
+      `${config.zenodoApiEndpoint}/records/${recordId}/draft`,
+      {
+        method: "DELETE",
+        headers: rdmHeaders(tokenRecord.accessToken),
+      },
+    );
+  } catch (error) {
+    return {
+      success: false as const,
+      error: `Could not reach Zenodo while deleting draft ${recordId}: ${(error as Error).message}`,
+    };
+  }
+
+  if (response.ok || response.status === 404) {
+    return { success: true as const };
+  }
+
+  return {
+    success: false as const,
+    error: await getZenodoErrorMessage(
+      `Failed to delete Zenodo draft ${recordId}`,
+      response,
+    ),
+  };
+}
+
 export type PublicationProgressEvent = {
   step: string;
   status: "in_progress" | "completed" | "error";
@@ -419,15 +473,6 @@ export async function beginZenodoPublication(
     `[Zenodo] Beginning publication for poster: ${posterId}, mode: ${mode}, depositionId: ${existingDepositionId}`,
   );
 
-  if (mode === "existing" && !existingDepositionId) {
-    console.log("[Zenodo] Missing deposition ID for existing mode");
-
-    return {
-      success: false,
-      error: "Existing deposition ID is required for 'existing' mode",
-    };
-  }
-
   // Get the user's Zenodo token
   const tokenRecord = await getZenodoToken(userId);
 
@@ -451,8 +496,8 @@ export async function beginZenodoPublication(
   console.log(`[Zenodo] Fetching poster and metadata for: ${posterId}`);
 
   const poster = await prisma.poster.findUnique({
-    where: { id: posterInt },
-    include: { posterMetadata: true },
+    where: { id: posterInt, userId },
+    include: { posterMetadata: true, zenodoDepositions: true },
   });
 
   if (!poster || !poster.posterMetadata) {
@@ -461,11 +506,59 @@ export async function beginZenodoPublication(
     return { success: false, error: "Poster or metadata not found" };
   }
 
+  const rawFunding = Array.isArray(poster.posterMetadata.fundingReferences)
+    ? (poster.posterMetadata.fundingReferences as FundingReference[])
+    : [];
+  const incompleteAwardIndex = rawFunding.findIndex(
+    (funding) =>
+      !!funding.awardUri?.trim() &&
+      !funding.awardNumber?.trim() &&
+      !funding.awardTitle?.trim(),
+  );
+
+  if (incompleteAwardIndex >= 0) {
+    return {
+      success: false,
+      error: `Funding reference ${incompleteAwardIndex + 1}: Award title or award number is required when an award URI is provided. Review the poster metadata before publishing.`,
+    };
+  }
+
+  let effectiveDepositionId = existingDepositionId;
+
+  // A retry should resume the draft already linked to this local version. For
+  // a brand-new local version, fall back to the latest published predecessor's
+  // stored record so callers do not have to rediscover it client-side.
+  if (mode === "existing" && poster.zenodoDepositions?.status === "draft") {
+    effectiveDepositionId = poster.zenodoDepositions.depositionId;
+  } else if (
+    mode === "existing" &&
+    !effectiveDepositionId &&
+    poster.versionRootId
+  ) {
+    const predecessor = await prisma.poster.findFirst({
+      where: {
+        status: "published",
+        versionSequence: { lt: poster.versionSequence },
+        ...posterFamilyWhere(poster.versionRootId),
+      },
+      orderBy: { versionSequence: "desc" },
+      select: { zenodoDepositions: { select: { depositionId: true } } },
+    });
+    effectiveDepositionId = predecessor?.zenodoDepositions?.depositionId;
+  }
+
+  if (mode === "existing" && !effectiveDepositionId) {
+    return {
+      success: false,
+      error: "An existing Zenodo record is required for this version",
+    };
+  }
+
   console.log("[Zenodo] Acquiring working draft");
 
   const status = await acquireWorkingDraft(
     mode,
-    existingDepositionId,
+    effectiveDepositionId,
     tokenRecord.accessToken,
     {
       title: poster.title,
@@ -499,16 +592,84 @@ export async function beginZenodoPublication(
   console.log(`[Zenodo] Working draft ready - record ${recordId}`);
   console.log(`[Zenodo] Draft URL: ${draftUrl}`);
 
-  const purged = await purgeDraftFiles(recordId, tokenRecord.accessToken);
-
-  if (!purged.success) {
-    return { success: false, error: purged.error };
-  }
-
+  // Persist the working draft before any subsequent network operation. If a
+  // purge, metadata update, or upload fails, the next attempt can resume this
+  // exact draft instead of asking Zenodo to create another version.
   const linked = await linkZenodoDeposition(posterInt, userId, recordId);
 
   if (!linked.success) {
     return { success: false, error: linked.error };
+  }
+
+  // Zenodo publication happens before the final local transaction. If that
+  // transaction failed on an earlier attempt, the deposition row still tells
+  // us exactly which DOI was published; reconcile locally instead of creating
+  // yet another Zenodo version.
+  if (
+    poster.status !== "published" &&
+    poster.zenodoDepositions?.status === "published" &&
+    poster.zenodoDepositions.lastPublishedZenodoDoi
+  ) {
+    const publishedDoi = poster.zenodoDepositions.lastPublishedZenodoDoi;
+    const existingIdentifiers = Array.isArray(poster.posterMetadata.identifiers)
+      ? (poster.posterMetadata.identifiers as PosterIdentifier[])
+      : [];
+    const identifiers = existingIdentifiers.some(
+      (identifier) =>
+        identifier.identifier === publishedDoi &&
+        identifier.identifierType === "DOI",
+    )
+      ? existingIdentifiers
+      : [
+          { identifier: publishedDoi, identifierType: "DOI" },
+          ...existingIdentifiers,
+        ];
+    const rootId = posterFamilyRootId(poster);
+
+    await prisma.$transaction([
+      prisma.poster.updateMany({
+        where: posterFamilyWhere(rootId),
+        data: { isLatestVersion: false },
+      }),
+      prisma.poster.update({
+        where: { id: poster.id },
+        data: {
+          status: "published",
+          publishedAt: new Date(),
+          isLatestVersion: true,
+        },
+      }),
+      prisma.posterMetadata.update({
+        where: { posterId: poster.id },
+        data: {
+          doi: publishedDoi,
+          publisher: "Zenodo",
+          identifiers,
+        },
+      }),
+    ]);
+
+    return {
+      success: true,
+      data: {
+        recordId: poster.zenodoDepositions.depositionId,
+        doi: publishedDoi,
+        recordUrl: `${config.zenodoEndpoint}/records/${poster.zenodoDepositions.depositionId}`,
+      },
+    };
+  }
+
+  if (poster.versionRootId && mode !== "existing") {
+    return {
+      success: false,
+      error: "Poster versions must be published to an existing Zenodo record",
+    };
+  }
+
+  const purged = await purgeDraftFiles(recordId, tokenRecord.accessToken);
+
+  if (!purged.success) {
+    return { success: false, error: purged.error };
   }
 
   await onProgress?.({
@@ -587,15 +748,6 @@ export async function beginZenodoPublication(
     resourceTypeGeneral?: string;
   }[];
 
-  const rawFunding = meta.fundingReferences as {
-    funderName?: string;
-    funderIdentifier?: string;
-    funderIdentifierType?: string;
-    awardNumber?: string;
-    awardUri?: string;
-    awardTitle?: string;
-  }[];
-
   const datesArr = Array.isArray(meta.dates)
     ? (meta.dates as Array<{ date?: string; dateType?: string }>)
     : [];
@@ -645,13 +797,8 @@ export async function beginZenodoPublication(
   // Bump the version before the metadata PUT: `meta` is passed by reference
   // into the payload builder, so bumping afterwards would send Zenodo the old
   // version while the DB recorded the new one.
-  if (!meta.version) {
-    meta.version = mode === "new" ? "1" : null;
-  } else if (mode === "existing") {
-    const prev = parseInt(meta.version as string, 10);
-    if (!isNaN(prev)) {
-      meta.version = String(prev + 1);
-    }
+  if (!poster.automated) {
+    meta.version = posterVersionLabel(poster.versionSequence);
   }
 
   console.log(`[Zenodo] Updating metadata via InvenioRDM [record ${recordId}]`);
@@ -937,15 +1084,6 @@ export async function beginZenodoPublication(
     }
   }
 
-  await prisma.poster.update({
-    where: { id: posterInt },
-    data: {
-      status: "published",
-      publishedAt: new Date(),
-      ...(newImageUrl && { imageUrl: newImageUrl }),
-    },
-  });
-
   const alreadyHasDoi = metaIdentifiers.some(
     (i) => i.identifier === publishedDoi && i.identifierType === "DOI",
   );
@@ -953,15 +1091,31 @@ export async function beginZenodoPublication(
     ? metaIdentifiers
     : [{ identifier: publishedDoi, identifierType: "DOI" }, ...metaIdentifiers];
 
-  await prisma.posterMetadata.update({
-    where: { posterId: posterInt },
-    data: {
-      doi: publishedDoi,
-      publisher: "Zenodo",
-      identifiers: updatedIdentifiers,
-      ...(meta.version && { version: meta.version }),
-    },
-  });
+  const familyRootId = posterFamilyRootId(poster);
+  await prisma.$transaction([
+    prisma.poster.updateMany({
+      where: posterFamilyWhere(familyRootId),
+      data: { isLatestVersion: false },
+    }),
+    prisma.poster.update({
+      where: { id: posterInt },
+      data: {
+        status: "published",
+        publishedAt: new Date(),
+        isLatestVersion: true,
+        ...(newImageUrl && { imageUrl: newImageUrl }),
+      },
+    }),
+    prisma.posterMetadata.update({
+      where: { posterId: posterInt },
+      data: {
+        doi: publishedDoi,
+        publisher: "Zenodo",
+        identifiers: updatedIdentifiers,
+        ...(meta.version && { version: meta.version }),
+      },
+    }),
+  ]);
 
   await onProgress?.({
     step: "publish",
@@ -1495,14 +1649,7 @@ type RdmExtras = {
   skipRorIds?: boolean;
   skipFunderIds?: boolean;
   submissionAbstract?: string;
-  rawFunding?: {
-    funderName?: string;
-    funderIdentifier?: string;
-    funderIdentifierType?: string;
-    awardNumber?: string;
-    awardUri?: string;
-    awardTitle?: string;
-  }[];
+  rawFunding?: FundingReference[];
   dbRelated?: {
     relatedIdentifier?: string;
     relatedIdentifierType?: string;
@@ -1578,7 +1725,7 @@ function buildFullRdmPayload(
       const entry: Record<string, unknown> = {
         funder: { name: f.funderName, ...(rorId && { id: rorId }) },
       };
-      if (f.awardNumber?.trim() || f.awardUri?.trim()) {
+      if (f.awardNumber?.trim() || f.awardTitle?.trim()) {
         entry.award = {
           ...(f.awardNumber?.trim() && { number: f.awardNumber }),
           ...(f.awardTitle?.trim() && { title: { en: f.awardTitle } }),
