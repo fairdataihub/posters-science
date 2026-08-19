@@ -1,3 +1,5 @@
+import { discardZenodoDraft } from "../../../utils/zenodo";
+
 export default defineEventHandler(async (event) => {
   const session = await requireUserSession(event);
 
@@ -19,6 +21,9 @@ export default defineEventHandler(async (event) => {
       id: true,
       status: true,
       extractionJob: { select: { filePath: true } },
+      zenodoDepositions: {
+        select: { depositionId: true, status: true },
+      },
     },
   });
 
@@ -34,6 +39,28 @@ export default defineEventHandler(async (event) => {
       statusCode: 400,
       statusMessage: "Published posters cannot be deleted",
     });
+  }
+
+  if (poster.zenodoDepositions?.status === "published") {
+    throw createError({
+      statusCode: 409,
+      statusMessage:
+        "This version has already been published to Zenodo and cannot be deleted as a draft",
+    });
+  }
+
+  if (poster.zenodoDepositions?.status === "draft") {
+    const discarded = await discardZenodoDraft(
+      user.id,
+      poster.zenodoDepositions.depositionId,
+    );
+
+    if (!discarded.success) {
+      throw createError({
+        statusCode: 502,
+        statusMessage: discarded.error,
+      });
+    }
   }
 
   const filePath = poster.extractionJob?.filePath;
