@@ -2254,6 +2254,10 @@ const moveCreator = (index: number, direction: "up" | "down") => {
                       />
                     </UFormField>
                   </div>
+
+                  <p class="text-muted text-sm">
+                    An award URI requires an award number or award title.
+                  </p>
                 </div>
 
                 <UButton

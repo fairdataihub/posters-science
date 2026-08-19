@@ -806,6 +806,17 @@ const StrictFundingSchema = z
       message: "Scheme URI is required when the identifier type is Other",
       path: ["schemeUri"],
     },
+  )
+  .refine(
+    (data) =>
+      !data.awardUri?.trim() ||
+      !!data.awardNumber?.trim() ||
+      !!data.awardTitle?.trim(),
+    {
+      message:
+        "Award title or award number is required when an award URI is provided",
+      path: ["awardUri"],
+    },
   );
 
 const StrictConferenceSchema = z.object({
