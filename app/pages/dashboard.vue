@@ -24,6 +24,8 @@ type Poster = {
   imageUrl: string;
   automated: boolean;
   status: "draft" | "downloaded" | "published";
+  tombstone: boolean;
+  tombedReason: string;
   versionSequence: number;
   publishedAt: Date | null;
   created: Date;
@@ -332,7 +334,21 @@ function startVersionExtractionPolling(jobId: string) {
         pollingVersionJobId.value = null;
         await refreshPosterList();
         if (!keepPanelOpen && response.posterId) {
-          await navigateTo(`/share/${response.posterId}`);
+          const completedPoster = posters.value.find(
+            (poster) => poster.activeVersionDraft?.id === response.posterId,
+          );
+          const completedDraft = completedPoster?.activeVersionDraft;
+
+          toast.add({
+            title: completedDraft
+              ? `Version ${completedDraft.versionSequence} is ready to review`
+              : "Your new version is ready to review",
+            description: completedPoster
+              ? `Metadata extraction finished for ${completedPoster.title}. Select the poster to continue reviewing it.`
+              : "Metadata extraction finished. Select the poster to continue reviewing it.",
+            color: "success",
+            icon: "i-lucide-circle-check",
+          });
         }
 
         return;
@@ -517,13 +533,27 @@ onMounted(() => {
 onBeforeUnmount(stopVersionExtractionPolling);
 
 function openPoster(poster: Poster) {
+  if (poster.tombstone) return;
+
   if (poster.activeVersionDraft) {
-    openVersionModal(poster);
+    openVersionWorkflow(poster);
   } else if (poster.status === "published") {
     void navigateTo(`/discover/${poster.rootPosterId}`);
   } else {
     void navigateTo(`/share/${poster.id}`);
   }
+}
+
+function openVersionWorkflow(poster: Poster) {
+  const draft = poster.activeVersionDraft;
+
+  if (isVersionReviewReady(draft) && draft) {
+    void navigateTo(`/share/${draft.id}`);
+
+    return;
+  }
+
+  openVersionModal(poster);
 }
 
 const regeneratingThumbnailIds = ref<number[]>([]);
@@ -693,7 +723,13 @@ const getImage = (poster: Poster) => {
         v-for="(poster, index) in posters"
         :key="poster.rootPosterId ?? index + 1"
         variant="ghost"
-        class="group h-50 cursor-pointer overflow-hidden rounded-none border-t border-b border-gray-100 transition-all duration-300 max-md:h-auto max-md:rounded-xl max-md:border max-md:bg-white max-md:shadow-sm max-md:hover:shadow-md dark:max-md:border-gray-800 dark:max-md:bg-gray-950"
+        class="group h-50 overflow-hidden rounded-none border-t border-b border-gray-100 transition-all duration-300 max-md:h-auto max-md:rounded-xl max-md:border max-md:bg-white max-md:shadow-sm dark:max-md:border-gray-800 dark:max-md:bg-gray-950"
+        :class="
+          poster.tombstone
+            ? 'cursor-not-allowed opacity-70'
+            : 'cursor-pointer max-md:hover:shadow-md'
+        "
+        :aria-disabled="poster.tombstone"
         @click="openPoster(poster)"
       >
         <div
@@ -708,7 +744,8 @@ const getImage = (poster: Poster) => {
                 `https://api.dicebear.com/9.x/shapes/svg?seed=${poster.id}`
               "
               :alt="poster.title"
-              class="max-h-[150px] w-full object-contain p-2 transition-transform duration-300 group-hover:scale-105 max-md:h-full max-md:max-h-none max-md:p-3"
+              class="max-h-[150px] w-full object-contain p-2 transition-transform duration-300 max-md:h-full max-md:max-h-none max-md:p-3"
+              :class="{ 'group-hover:scale-105': !poster.tombstone }"
             />
           </div>
 
@@ -826,7 +863,11 @@ const getImage = (poster: Poster) => {
 
               <div class="flex items-center gap-2 max-md:flex-wrap">
                 <UTooltip
-                  v-if="poster.status === 'published' && !poster.automated"
+                  v-if="
+                    poster.status === 'published' &&
+                    !poster.automated &&
+                    !poster.tombstone
+                  "
                   :text="versionActionTooltip(poster)"
                 >
                   <span class="inline-flex" @click.stop>
@@ -845,7 +886,7 @@ const getImage = (poster: Poster) => {
                       "
                       size="xs"
                       :disabled="versionActionDisabled(poster)"
-                      @click="openVersionModal(poster)"
+                      @click="openVersionWorkflow(poster)"
                     />
                   </span>
                 </UTooltip>
@@ -889,7 +930,26 @@ const getImage = (poster: Poster) => {
                   @click.stop="openDeleteModal(poster)"
                 />
 
+                <UTooltip
+                  v-if="poster.tombstone"
+                  :text="
+                    poster.tombedReason
+                      ? `Reason: ${poster.tombedReason}`
+                      : 'This poster has been removed from public discovery.'
+                  "
+                >
+                  <UBadge
+                    color="error"
+                    variant="solid"
+                    size="sm"
+                    icon="i-lucide-archive-x"
+                  >
+                    Tombstoned
+                  </UBadge>
+                </UTooltip>
+
                 <UBadge
+                  v-else
                   :color="
                     poster.status === 'published'
                       ? 'success'
