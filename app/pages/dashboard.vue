@@ -22,7 +22,9 @@ type Poster = {
   title: string;
   description: string;
   imageUrl: string;
+  automated: boolean;
   status: "draft" | "downloaded" | "published";
+  versionSequence: number;
   publishedAt: Date | null;
   created: Date;
   updated: Date;
@@ -31,9 +33,25 @@ type Poster = {
     publicationYear: number | null;
     doi: string | null;
     license: string | null;
+    version: string | null;
   };
   extractionJob?: {
+    id?: string;
     status: string;
+    completed?: boolean;
+    error?: string | null;
+  } | null;
+  rootPosterId: number;
+  versionCount: number;
+  activeVersionDraft?: {
+    id: number;
+    versionSequence: number;
+    extractionJob?: {
+      id?: string;
+      status: string;
+      completed?: boolean;
+      error?: string | null;
+    } | null;
   } | null;
 };
 
@@ -58,6 +76,455 @@ const modalPublisher = ref("");
 const isSaving = ref(false);
 const doiError = ref("");
 const toast = useToast();
+
+const versionModalOpen = ref(false);
+const versionPoster = ref<Poster | null>(null);
+const versionFileMode = ref<"reuse" | "upload">("reuse");
+const versionMetadataMode = ref<"copy" | "extract">("copy");
+const versionFiles = ref<File[]>([]);
+const creatingVersion = ref(false);
+const versionError = ref("");
+const versionPollingError = ref("");
+const retryingVersionExtraction = ref(false);
+const deleteVersionModalOpen = ref(false);
+const deletingVersionDraft = ref(false);
+const pollingVersionJobId = ref<string | null>(null);
+let versionPollTimer: ReturnType<typeof setTimeout> | undefined;
+let versionPollGeneration = 0;
+
+const versionFileOptions = [
+  {
+    label: "Reuse the current poster file",
+    description:
+      "For a new release where the poster is unchanged but its supplemental metadata need to be updated.",
+    value: "reuse",
+  },
+  {
+    label: "Upload a new PDF or image",
+    description:
+      "For a revised poster with changes to its content, design, or file.",
+    value: "upload",
+  },
+];
+const versionMetadataOptions = [
+  {
+    label: "Start with the existing metadata",
+    description:
+      "Best for smaller poster revisions. The copied metadata remains editable during review.",
+    value: "copy",
+  },
+  {
+    label: "Extract metadata from the new poster file",
+    description:
+      "Best when the poster content changed enough that the existing metadata may be outdated.",
+    value: "extract",
+  },
+];
+
+function isVersionExtracting(draft: Poster["activeVersionDraft"]): boolean {
+  return (
+    draft?.extractionJob?.status === "pending-extraction" ||
+    draft?.extractionJob?.status === "processing"
+  );
+}
+
+function isVersionExtractionFailed(
+  draft: Poster["activeVersionDraft"],
+): boolean {
+  return draft?.extractionJob?.status === "failed";
+}
+
+function isVersionReviewReady(draft: Poster["activeVersionDraft"]): boolean {
+  return Boolean(
+    draft &&
+    (!draft.extractionJob ||
+      draft.extractionJob.completed ||
+      draft.extractionJob.status === "completed"),
+  );
+}
+
+const currentVersionDraft = computed(
+  () => versionPoster.value?.activeVersionDraft ?? null,
+);
+const versionPanelState = computed<"setup" | "extracting" | "ready" | "failed">(
+  () => {
+    if (!currentVersionDraft.value) return "setup";
+    if (isVersionExtractionFailed(currentVersionDraft.value)) return "failed";
+    if (isVersionExtracting(currentVersionDraft.value)) return "extracting";
+
+    return "ready";
+  },
+);
+const versionExtractionStatus = computed(() => {
+  const status = currentVersionDraft.value?.extractionJob?.status;
+  if (status === "pending-extraction") {
+    return {
+      title: "Waiting for extraction to start",
+      description:
+        "The job is saved in the queue. The extraction service will claim it automatically.",
+    };
+  }
+  if (status === "processing") {
+    return {
+      title: "Extracting poster metadata",
+      description:
+        "The extraction service is analyzing the poster and saving the fields you’ll review and edit next.",
+    };
+  }
+
+  return {
+    title: "Preparing your version",
+    description: "The version draft is being prepared.",
+  };
+});
+
+const extractingVersionPoster = computed(() =>
+  posters.value.find((poster) =>
+    isVersionExtracting(poster.activeVersionDraft),
+  ),
+);
+
+function versionActionDisabled(poster: Poster) {
+  return Boolean(
+    extractingVersionPoster.value &&
+    !isVersionExtracting(poster.activeVersionDraft) &&
+    extractingVersionPoster.value.rootPosterId !== poster.rootPosterId,
+  );
+}
+
+function versionActionLabel(poster: Poster) {
+  if (isVersionExtracting(poster.activeVersionDraft)) {
+    return "View extraction progress";
+  }
+  if (isVersionExtractionFailed(poster.activeVersionDraft)) {
+    return "View extraction error";
+  }
+  if (poster.activeVersionDraft) return "Review new version";
+
+  return "Publish new version";
+}
+
+function versionActionTooltip(poster: Poster) {
+  if (isVersionExtracting(poster.activeVersionDraft)) {
+    return "Open the version panel to view metadata extraction progress.";
+  }
+  if (isVersionExtractionFailed(poster.activeVersionDraft)) {
+    return "Open the version panel to view the extraction error.";
+  }
+  if (
+    extractingVersionPoster.value &&
+    extractingVersionPoster.value.rootPosterId !== poster.rootPosterId
+  ) {
+    return `Wait for metadata extraction on “${extractingVersionPoster.value.title}” to finish.`;
+  }
+
+  return poster.activeVersionDraft
+    ? "Review the version draft before publishing it."
+    : "Create a new version of this poster.";
+}
+
+function displayedVersion(poster: Poster) {
+  if (poster.status !== "published") return null;
+  if (!poster.automated) return String(poster.versionSequence);
+
+  return poster.posterMetadata.version?.trim() || null;
+}
+
+watch(versionFileMode, (mode) => {
+  versionError.value = "";
+  if (mode === "reuse") {
+    versionMetadataMode.value = "copy";
+    versionFiles.value = [];
+  }
+});
+
+function openVersionModal(poster: Poster) {
+  versionPoster.value = poster;
+  if (!poster.activeVersionDraft) {
+    versionFileMode.value = "reuse";
+    versionMetadataMode.value = "copy";
+    versionFiles.value = [];
+  }
+  versionError.value = "";
+  versionPollingError.value = "";
+  versionModalOpen.value = true;
+
+  const activeJob = poster.activeVersionDraft?.extractionJob?.id;
+  if (activeJob && isVersionExtracting(poster.activeVersionDraft)) {
+    startVersionExtractionPolling(activeJob);
+  }
+}
+
+function updateLocalVersionJob(
+  posterId: number | undefined,
+  status: string,
+  completed: boolean,
+  error?: string | null,
+) {
+  if (!posterId) return;
+
+  for (const poster of posters.value) {
+    if (poster.activeVersionDraft?.id === posterId) {
+      poster.activeVersionDraft.extractionJob = {
+        ...poster.activeVersionDraft.extractionJob,
+        status,
+        completed,
+        error,
+      };
+
+      return;
+    }
+  }
+}
+
+async function refreshPosterList() {
+  const openRootId = versionPoster.value?.rootPosterId;
+  await refresh();
+  posters.value = (data.value ?? []) as unknown as Poster[];
+  if (openRootId) {
+    versionPoster.value =
+      posters.value.find((poster) => poster.rootPosterId === openRootId) ??
+      null;
+  }
+}
+
+function stopVersionExtractionPolling() {
+  versionPollGeneration += 1;
+  pollingVersionJobId.value = null;
+  if (versionPollTimer) {
+    clearTimeout(versionPollTimer);
+    versionPollTimer = undefined;
+  }
+}
+
+function startVersionExtractionPolling(jobId: string) {
+  if (pollingVersionJobId.value === jobId) return;
+
+  stopVersionExtractionPolling();
+  pollingVersionJobId.value = jobId;
+  const generation = versionPollGeneration;
+
+  const checkStatus = async () => {
+    if (generation !== versionPollGeneration) return;
+
+    try {
+      const response = await $fetch<{
+        completed: boolean;
+        status: string;
+        posterId?: number;
+        error?: string | null;
+      }>(`/api/poster/job/${jobId}`);
+
+      if (generation !== versionPollGeneration) return;
+
+      versionPollingError.value = "";
+      updateLocalVersionJob(
+        response.posterId,
+        response.status,
+        response.completed,
+        response.error,
+      );
+
+      if (response.completed && response.status === "completed") {
+        const keepPanelOpen =
+          versionModalOpen.value &&
+          currentVersionDraft.value?.extractionJob?.id === jobId;
+        pollingVersionJobId.value = null;
+        await refreshPosterList();
+        if (!keepPanelOpen && response.posterId) {
+          await navigateTo(`/share/${response.posterId}`);
+        }
+
+        return;
+      }
+
+      if (response.status === "failed") {
+        pollingVersionJobId.value = null;
+        await refreshPosterList();
+        toast.add({
+          title: "Metadata extraction failed",
+          description: response.error || "Open the version panel for details.",
+          color: "error",
+        });
+
+        return;
+      }
+    } catch (error) {
+      if (generation !== versionPollGeneration) return;
+
+      versionPollingError.value =
+        error instanceof Error
+          ? `Could not refresh the extraction status: ${error.message}`
+          : "Could not refresh the extraction status. Retrying…";
+    }
+
+    if (generation === versionPollGeneration) {
+      versionPollTimer = setTimeout(checkStatus, 3000);
+    }
+  };
+
+  void checkStatus();
+}
+
+async function reviewVersionDraft() {
+  const draftId = currentVersionDraft.value?.id;
+  if (draftId) {
+    versionModalOpen.value = false;
+    await navigateTo(`/share/${draftId}`);
+  }
+}
+
+async function retryVersionExtraction() {
+  const jobId = currentVersionDraft.value?.extractionJob?.id;
+  const posterId = currentVersionDraft.value?.id;
+  if (!jobId || !posterId) return;
+
+  retryingVersionExtraction.value = true;
+  versionPollingError.value = "";
+
+  try {
+    const response = await $fetch<{
+      status: string;
+      completed: boolean;
+      error?: string | null;
+    }>(`/api/poster/job/${jobId}/retry`, { method: "POST" });
+
+    updateLocalVersionJob(
+      posterId,
+      response.status,
+      response.completed,
+      response.error,
+    );
+    startVersionExtractionPolling(jobId);
+  } catch (error) {
+    versionPollingError.value =
+      error instanceof Error
+        ? error.message
+        : "Could not restart metadata extraction.";
+  } finally {
+    retryingVersionExtraction.value = false;
+  }
+}
+
+async function deleteVersionDraft() {
+  const draft = currentVersionDraft.value;
+  if (!draft) return;
+
+  const jobId = draft.extractionJob?.id;
+  const wasExtracting = isVersionExtracting(draft);
+  deletingVersionDraft.value = true;
+  versionPollingError.value = "";
+  stopVersionExtractionPolling();
+
+  try {
+    await $fetch(`/api/poster/${draft.id}`, { method: "DELETE" });
+
+    deleteVersionModalOpen.value = false;
+    versionModalOpen.value = false;
+    versionPoster.value = null;
+    await refreshPosterList();
+    toast.add({
+      title: "Version draft deleted",
+      description: `Version ${draft.versionSequence} was deleted. Your published poster was not changed.`,
+      color: "success",
+    });
+  } catch (error) {
+    const message =
+      (error as { data?: { statusMessage?: string }; statusMessage?: string })
+        ?.data?.statusMessage ||
+      (error as { statusMessage?: string })?.statusMessage ||
+      "There was a problem deleting the version draft.";
+
+    toast.add({
+      title: "Could not delete version draft",
+      description: message,
+      color: "error",
+    });
+
+    if (wasExtracting && jobId) startVersionExtractionPolling(jobId);
+  } finally {
+    deletingVersionDraft.value = false;
+  }
+}
+
+async function createVersion() {
+  if (!versionPoster.value) return;
+  if (versionFileMode.value === "upload" && !versionFiles.value[0]) {
+    versionError.value = "Choose a PDF or image for the new version.";
+
+    return;
+  }
+
+  const file = versionFiles.value[0];
+  if (file && file.size > 10 * 1024 * 1024) {
+    versionError.value = "File must be 10MB or smaller.";
+
+    return;
+  }
+
+  creatingVersion.value = true;
+  versionError.value = "";
+  try {
+    const body = new FormData();
+    body.append("fileMode", versionFileMode.value);
+    body.append("metadataMode", versionMetadataMode.value);
+    if (file) body.append("file", file);
+
+    const response = await $fetch<{
+      posterId: number;
+      versionSequence: number;
+      extractionJobId?: string;
+      extractionStatus?: string;
+      reviewReady: boolean;
+    }>(`/api/poster/${versionPoster.value.rootPosterId}/versions`, {
+      method: "POST",
+      body,
+    });
+
+    versionPoster.value.activeVersionDraft = {
+      id: response.posterId,
+      versionSequence: response.versionSequence,
+      extractionJob: response.extractionJobId
+        ? {
+            id: response.extractionJobId,
+            status: response.extractionStatus ?? "pending-extraction",
+            completed: response.reviewReady,
+          }
+        : null,
+    };
+    if (!response.reviewReady && response.extractionJobId) {
+      startVersionExtractionPolling(response.extractionJobId);
+    }
+  } catch (error) {
+    versionError.value =
+      error instanceof Error
+        ? error.message
+        : "Could not create the new version.";
+  } finally {
+    creatingVersion.value = false;
+  }
+}
+
+onMounted(() => {
+  const activeJob =
+    extractingVersionPoster.value?.activeVersionDraft?.extractionJob?.id;
+
+  if (activeJob) {
+    startVersionExtractionPolling(activeJob);
+  }
+});
+
+onBeforeUnmount(stopVersionExtractionPolling);
+
+function openPoster(poster: Poster) {
+  if (poster.activeVersionDraft) {
+    openVersionModal(poster);
+  } else if (poster.status === "published") {
+    void navigateTo(`/discover/${poster.rootPosterId}`);
+  } else {
+    void navigateTo(`/share/${poster.id}`);
+  }
+}
 
 const regeneratingThumbnailIds = ref<number[]>([]);
 const thumbnailCacheBust = reactive<Record<number, number>>({});
@@ -224,10 +691,10 @@ const getImage = (poster: Poster) => {
     <UPageList class="max-md:flex max-md:flex-col max-md:gap-4">
       <UPageCard
         v-for="(poster, index) in posters"
-        :key="index + 1"
+        :key="poster.rootPosterId ?? index + 1"
         variant="ghost"
         class="group h-50 cursor-pointer overflow-hidden rounded-none border-t border-b border-gray-100 transition-all duration-300 max-md:h-auto max-md:rounded-xl max-md:border max-md:bg-white max-md:shadow-sm max-md:hover:shadow-md dark:max-md:border-gray-800 dark:max-md:bg-gray-950"
-        @click="navigateTo(`/share/${poster.id}`)"
+        @click="openPoster(poster)"
       >
         <div
           class="flex h-full gap-8 max-md:h-auto max-md:flex-col max-md:gap-0"
@@ -252,6 +719,60 @@ const getImage = (poster: Poster) => {
               <h3 class="line-clamp-2 text-lg font-semibold">
                 {{ poster.title || "No title available" }}
               </h3>
+
+              <p v-if="poster.versionCount > 1" class="text-muted text-xs">
+                {{ poster.versionCount }} published versions
+              </p>
+
+              <div class="flex flex-wrap items-center gap-2">
+                <UBadge
+                  v-if="displayedVersion(poster)"
+                  color="neutral"
+                  variant="soft"
+                  size="sm"
+                  class="w-fit"
+                >
+                  Version {{ displayedVersion(poster) }}
+                </UBadge>
+
+                <UBadge
+                  v-if="isVersionExtracting(poster.activeVersionDraft)"
+                  color="info"
+                  variant="soft"
+                  size="sm"
+                  icon="i-lucide-loader-circle"
+                  class="w-fit"
+                >
+                  Version {{ poster.activeVersionDraft?.versionSequence }}
+                  extraction in progress
+                </UBadge>
+
+                <UBadge
+                  v-else-if="
+                    isVersionExtractionFailed(poster.activeVersionDraft)
+                  "
+                  color="error"
+                  variant="soft"
+                  size="sm"
+                  icon="i-lucide-circle-alert"
+                  class="w-fit"
+                >
+                  Version {{ poster.activeVersionDraft?.versionSequence }}
+                  extraction failed
+                </UBadge>
+
+                <UBadge
+                  v-else-if="isVersionReviewReady(poster.activeVersionDraft)"
+                  color="success"
+                  variant="soft"
+                  size="sm"
+                  icon="i-lucide-circle-check"
+                  class="w-fit"
+                >
+                  Version {{ poster.activeVersionDraft?.versionSequence }} ready
+                  to review
+                </UBadge>
+              </div>
 
               <div class="flex flex-col gap-1">
                 <p
@@ -304,6 +825,31 @@ const getImage = (poster: Poster) => {
               </div>
 
               <div class="flex items-center gap-2 max-md:flex-wrap">
+                <UTooltip
+                  v-if="poster.status === 'published' && !poster.automated"
+                  :text="versionActionTooltip(poster)"
+                >
+                  <span class="inline-flex" @click.stop>
+                    <UButton
+                      color="primary"
+                      variant="subtle"
+                      :label="versionActionLabel(poster)"
+                      :icon="
+                        isVersionExtracting(poster.activeVersionDraft)
+                          ? 'i-lucide-activity'
+                          : isVersionExtractionFailed(poster.activeVersionDraft)
+                            ? 'i-lucide-circle-alert'
+                            : poster.activeVersionDraft
+                              ? 'heroicons:pencil-square'
+                              : 'heroicons:arrow-up-tray'
+                      "
+                      size="xs"
+                      :disabled="versionActionDisabled(poster)"
+                      @click="openVersionModal(poster)"
+                    />
+                  </span>
+                </UTooltip>
+
                 <UButton
                   v-if="poster.status === 'downloaded'"
                   color="secondary"
@@ -404,6 +950,284 @@ const getImage = (poster: Poster) => {
     </div>
 
     <!-- Delete draft modal -->
+    <USlideover
+      v-model:open="versionModalOpen"
+      :title="
+        versionPanelState === 'setup'
+          ? 'Publish a New Version'
+          : `Version ${currentVersionDraft?.versionSequence ?? ''}`
+      "
+      :description="
+        versionPanelState === 'setup'
+          ? 'Choose the file and metadata for the next version.'
+          : `New version of ${versionPoster?.title ?? 'your poster'}`
+      "
+      side="right"
+      class="w-full max-w-2xl"
+      :dismissible="!creatingVersion && !deletingVersionDraft"
+      :close="!creatingVersion && !deletingVersionDraft"
+    >
+      <template #body>
+        <div
+          v-if="versionPanelState === 'setup'"
+          class="flex min-h-full flex-col"
+        >
+          <div class="space-y-5">
+            <p class="text-muted text-sm">
+              Create the next version of
+              <span class="text-highlighted font-medium">{{
+                versionPoster?.title
+              }}</span
+              >. You'll review all metadata before publishing.
+            </p>
+
+            <p class="text-muted text-sm">
+              Choose the option that matches what changed. If neither the poster
+              file nor its metadata needs updating, you do not need to publish a
+              new version.
+            </p>
+
+            <UFormField label="Poster file">
+              <URadioGroup
+                v-model="versionFileMode"
+                :items="versionFileOptions"
+              />
+            </UFormField>
+
+            <UiFileUpload
+              v-if="versionFileMode === 'upload'"
+              @on-change="versionFiles = $event"
+            >
+              <UiFileUploadGrid />
+            </UiFileUpload>
+
+            <UFormField v-if="versionFileMode === 'upload'" label="Metadata">
+              <URadioGroup
+                v-model="versionMetadataMode"
+                :items="versionMetadataOptions"
+              />
+            </UFormField>
+
+            <UAlert
+              v-if="versionError"
+              color="error"
+              variant="soft"
+              title="Could not create version"
+              :description="versionError"
+            />
+          </div>
+
+          <div class="bg-default sticky bottom-0 z-10 mt-auto pt-5">
+            <UAlert
+              color="primary"
+              variant="soft"
+              icon="i-lucide-git-branch"
+              :title="`You’re creating version ${(versionPoster?.versionSequence ?? 0) + 1}`"
+              description="Version numbers are assigned automatically and increase by one with each published version."
+            />
+          </div>
+        </div>
+
+        <div v-else-if="versionPanelState === 'extracting'" class="space-y-6">
+          <div class="space-y-2">
+            <div class="flex items-center justify-between gap-3">
+              <h3 class="font-medium">
+                {{ versionExtractionStatus.title }}
+              </h3>
+
+              <UBadge color="info" variant="soft">
+                Version {{ currentVersionDraft?.versionSequence }}
+              </UBadge>
+            </div>
+
+            <p class="text-muted text-sm">
+              {{ versionExtractionStatus.description }}
+            </p>
+          </div>
+
+          <UProgress color="primary" size="md" animation="carousel" />
+
+          <p class="text-muted text-sm">
+            {{
+              currentVersionDraft?.extractionJob?.status ===
+              "pending-extraction"
+                ? "This status will change automatically when the extraction service claims the job."
+                : "This status will change to ready for review after the extracted fields have been saved."
+            }}
+          </p>
+
+          <UAlert
+            v-if="versionPollingError"
+            color="warning"
+            variant="soft"
+            title="Status temporarily unavailable"
+            :description="`${versionPollingError} We’ll keep trying automatically.`"
+          />
+
+          <p class="text-muted text-sm">
+            You can close this panel, refresh the dashboard, or leave this page.
+            Extraction will continue, and this panel will show the latest status
+            when you return.
+          </p>
+        </div>
+
+        <div v-else-if="versionPanelState === 'ready'" class="space-y-5">
+          <UAlert
+            color="success"
+            variant="soft"
+            icon="i-lucide-circle-check"
+            :title="`Version ${currentVersionDraft?.versionSequence} is ready to review`"
+            description="Metadata preparation is complete. Continue to review and edit the extracted metadata before publishing."
+          />
+
+          <p class="text-muted text-sm">
+            Your published poster remains unchanged until you finish reviewing
+            this draft and publish it to Zenodo.
+          </p>
+        </div>
+
+        <div v-else class="space-y-5">
+          <UAlert
+            color="error"
+            variant="soft"
+            icon="i-lucide-circle-alert"
+            title="Metadata extraction failed"
+            :description="
+              currentVersionDraft?.extractionJob?.error ||
+              'The extraction service could not process this poster file.'
+            "
+          />
+
+          <p class="text-muted text-sm">
+            The published poster has not been changed. Retrying uses the same
+            version draft and stored poster file.
+          </p>
+
+          <UAlert
+            v-if="versionPollingError"
+            color="warning"
+            variant="soft"
+            title="Could not retry extraction"
+            :description="versionPollingError"
+          />
+        </div>
+      </template>
+
+      <template #footer>
+        <div
+          v-if="versionPanelState === 'setup'"
+          class="flex w-full justify-end gap-3"
+        >
+          <UButton
+            variant="outline"
+            :disabled="creatingVersion"
+            @click="versionModalOpen = false"
+          >
+            Cancel
+          </UButton>
+
+          <UButton
+            color="primary"
+            :loading="creatingVersion"
+            @click="createVersion"
+          >
+            Create Version Draft
+          </UButton>
+        </div>
+
+        <div
+          v-else
+          class="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <UButton
+            color="error"
+            variant="soft"
+            icon="i-lucide-trash-2"
+            :disabled="retryingVersionExtraction"
+            @click="deleteVersionModalOpen = true"
+          >
+            Delete Version Draft
+          </UButton>
+
+          <div class="flex flex-wrap justify-end gap-3">
+            <UButton variant="outline" @click="versionModalOpen = false">
+              Close
+            </UButton>
+
+            <UButton
+              v-if="versionPanelState === 'ready'"
+              color="primary"
+              icon="i-lucide-arrow-right"
+              trailing
+              @click="reviewVersionDraft"
+            >
+              Review Metadata
+            </UButton>
+
+            <UButton
+              v-else-if="versionPanelState === 'failed'"
+              color="primary"
+              icon="i-lucide-refresh-cw"
+              :loading="retryingVersionExtraction"
+              @click="retryVersionExtraction"
+            >
+              Retry Extraction
+            </UButton>
+          </div>
+        </div>
+      </template>
+    </USlideover>
+
+    <UModal
+      v-model:open="deleteVersionModalOpen"
+      title="Delete Version Draft?"
+      :dismissible="!deletingVersionDraft"
+      :close="!deletingVersionDraft"
+    >
+      <template #body>
+        <div class="space-y-3 text-sm">
+          <p>
+            Delete version
+            <span class="font-medium">{{
+              currentVersionDraft?.versionSequence
+            }}</span>
+            of
+            <span class="font-medium">{{
+              versionPoster?.title || "this poster"
+            }}</span
+            >?
+          </p>
+
+          <p class="text-muted">
+            This removes the version draft, its stored poster file, metadata,
+            and extraction progress. Any linked unpublished Zenodo draft will
+            also be discarded. The published poster and its earlier versions
+            will not be changed. This cannot be undone.
+          </p>
+        </div>
+      </template>
+
+      <template #footer>
+        <div class="flex w-full justify-end gap-3">
+          <UButton
+            variant="outline"
+            :disabled="deletingVersionDraft"
+            @click="deleteVersionModalOpen = false"
+          >
+            Cancel
+          </UButton>
+
+          <UButton
+            color="error"
+            :loading="deletingVersionDraft"
+            @click="deleteVersionDraft"
+          >
+            Delete Version Draft
+          </UButton>
+        </div>
+      </template>
+    </UModal>
+
     <UModal v-model:open="deleteModalOpen" title="Delete Draft Poster">
       <template #body>
         <p class="text-sm">
