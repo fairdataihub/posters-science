@@ -331,6 +331,9 @@ const { data: posterData, error: posterError } = await useFetch(
     method: "GET",
   },
 );
+const posterDetailsUrl = computed(
+  () => `/discover/${posterData.value?.rootPosterId ?? id}`,
+);
 
 if (posterError.value) {
   console.error("Poster fetch error:", posterError.value);
@@ -819,7 +822,7 @@ async function handleArchive() {
                 View on Zenodo
               </UButton>
 
-              <UButton variant="outline" :to="`/share/${id}`">
+              <UButton variant="outline" :to="posterDetailsUrl">
                 View Poster Details
               </UButton>
             </div>
