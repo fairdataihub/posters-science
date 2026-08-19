@@ -139,7 +139,11 @@ export default defineEventHandler(async (event) => {
   if (licenseCanonicalValues.length > 0) {
     const rawLicenses = await prisma.posterMetadata.findMany({
       where: {
-        poster: { status: "published", tombstone: false },
+        poster: {
+          status: "published",
+          tombstone: false,
+          isLatestVersion: true,
+        },
         license: { not: null },
       },
       select: { license: true },
@@ -170,6 +174,7 @@ export default defineEventHandler(async (event) => {
       ) AS aff
       WHERE p.status = 'published'
         AND p.tombstone = false
+        AND p."isLatestVersion" = true
         AND lower(trim(
           CASE
             WHEN jsonb_typeof(aff) = 'object' THEN aff->>'name'
@@ -200,6 +205,7 @@ export default defineEventHandler(async (event) => {
       ) AS fr
       WHERE p.status = 'published'
         AND p.tombstone = false
+        AND p."isLatestVersion" = true
         AND fr->>'funderName' IS NOT NULL
         AND fr->>'funderName' <> ''
     `;
@@ -238,6 +244,7 @@ export default defineEventHandler(async (event) => {
   const whereClause = {
     status: "published",
     tombstone: false,
+    isLatestVersion: true,
     ...searchFilter,
     ...sourceFilter,
     ...metadataFilter,
@@ -259,6 +266,9 @@ export default defineEventHandler(async (event) => {
         _count: {
           select: { likes: true },
         },
+        versionRoot: {
+          select: { _count: { select: { likes: true } } },
+        },
       },
     })) || [];
   markStep("db-findMany");
@@ -268,11 +278,14 @@ export default defineEventHandler(async (event) => {
   });
   markStep("db-count");
 
-  const posters = rawPosters.map(({ posterMetadata, _count, ...poster }) => ({
-    ...poster,
-    keywords: posterMetadata?.subjects ?? [],
-    likes: _count?.likes ?? 0,
-  }));
+  const posters = rawPosters.map(
+    ({ posterMetadata, _count, versionRoot, ...poster }) => ({
+      ...poster,
+      id: poster.versionRootId ?? poster.id,
+      keywords: posterMetadata?.subjects ?? [],
+      likes: versionRoot?._count.likes ?? _count?.likes ?? 0,
+    }),
+  );
   markStep("poster-map");
 
   const totalDurationMs = Date.now() - requestStartedAt;

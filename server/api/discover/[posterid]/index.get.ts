@@ -8,8 +8,38 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: "Invalid poster ID" });
   }
 
+  const requested = await prisma.poster.findFirst({
+    where: { id: posterId, status: "published" },
+    select: { id: true, versionRootId: true },
+  });
+
+  if (!requested) {
+    throw createError({ statusCode: 404, statusMessage: "Poster not found" });
+  }
+
+  const rootPosterId = posterFamilyRootId(requested);
+  const root = await prisma.poster.findFirst({
+    where: { id: rootPosterId, tombstone: false },
+    select: { id: true },
+  });
+
+  if (!root) {
+    throw createError({ statusCode: 404, statusMessage: "Poster not found" });
+  }
+
+  const requestedSequence = Number.parseInt(
+    String(getQuery(event).version ?? ""),
+    10,
+  );
   const poster = await prisma.poster.findFirst({
-    where: { id: posterId, status: "published", tombstone: false },
+    where: {
+      status: "published",
+      ...posterFamilyWhere(rootPosterId),
+      ...(Number.isFinite(requestedSequence)
+        ? { versionSequence: requestedSequence }
+        : { isLatestVersion: true }),
+    },
+    orderBy: { versionSequence: "desc" },
     include: {
       user: { select: { givenName: true, familyName: true } },
       posterMetadata: true,
@@ -29,10 +59,11 @@ export default defineEventHandler(async (event) => {
   const liked = userId
     ? Boolean(
         await prisma.like.findUnique({
-          where: { userId_posterId: { userId, posterId } },
+          where: { userId_posterId: { userId, posterId: rootPosterId } },
         }),
       )
     : false;
+  const likes = await prisma.like.count({ where: { posterId: rootPosterId } });
 
   const { umamiWebsiteId } = useRuntimeConfig();
 
@@ -59,11 +90,25 @@ export default defineEventHandler(async (event) => {
     }
   }
 
+  const versions = await prisma.poster.findMany({
+    where: { status: "published", ...posterFamilyWhere(rootPosterId) },
+    orderBy: { versionSequence: "desc" },
+    select: {
+      versionSequence: true,
+      publishedAt: true,
+      posterMetadata: { select: { version: true, doi: true } },
+    },
+  });
+
   return {
-    id: poster.id,
+    id: rootPosterId,
+    versionPosterId: poster.id,
+    versionSequence: poster.versionSequence,
+    isLatestVersion: poster.isLatestVersion,
+    versions,
     automated: poster.automated,
     views,
-    likes: poster._count.likes,
+    likes,
     liked,
     title: poster.title,
     description: poster.description,

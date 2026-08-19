@@ -3,6 +3,7 @@ export default defineEventHandler(async () => {
     where: {
       status: "published",
       tombstone: false,
+      isLatestVersion: true,
       automated: false,
     },
   });
@@ -11,6 +12,7 @@ export default defineEventHandler(async () => {
     where: {
       status: "published",
       tombstone: false,
+      isLatestVersion: true,
       automated: true,
     },
   });

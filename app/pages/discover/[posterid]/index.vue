@@ -15,14 +15,12 @@ const { loggedIn } = useUserSession();
 const toast = useToast();
 const { siteEnv } = useRuntimeConfig().public;
 
-// Shares the global feedback modal state owned by the default layout, so we can
-// open the same "Share Your Feedback" dialog from this page.
-const feedbackOpen = useState("feedbackOpen", () => false);
-function openFeedback() {
-  feedbackOpen.value = true;
-}
-
-const { data: apiData, error } = await useFetch(`/api/discover/${posterId}`);
+const versionQuery = Array.isArray(route.query.version)
+  ? route.query.version[0]
+  : route.query.version;
+const { data: apiData, error } = await useFetch(
+  `/api/discover/${posterId}${versionQuery ? `?version=${encodeURIComponent(versionQuery)}` : ""}`,
+);
 
 if (error.value) {
   console.error(error.value);
@@ -38,6 +36,11 @@ if (error.value) {
 
 const api = apiData.value as any;
 const conf = api?.conference;
+const versionHistory = (api?.versions ?? []) as Array<{
+  versionSequence: number;
+  publishedAt?: string | null;
+  posterMetadata?: { version?: string | null; doi?: string | null } | null;
+}>;
 
 const liked = ref(api?.liked ?? false);
 
@@ -870,6 +873,49 @@ const tabItems = [
           </div>
 
           <div class="flex flex-col gap-4">
+            <UCard v-if="versionHistory.length > 1">
+              <template #header>
+                <h3 class="text-lg font-semibold">Version History</h3>
+              </template>
+
+              <div class="space-y-2">
+                <a
+                  v-for="entry in versionHistory"
+                  :key="entry.versionSequence"
+                  :href="`/discover/${posterId}?version=${entry.versionSequence}`"
+                  class="border-default hover:bg-elevated flex items-center justify-between rounded-lg border px-3 py-2 text-sm"
+                >
+                  <span>
+                    Version
+                    {{
+                      api?.automated
+                        ? entry.posterMetadata?.version || "Unspecified"
+                        : entry.versionSequence
+                    }}
+                  </span>
+
+                  <UBadge
+                    :color="
+                      entry.versionSequence === api?.versionSequence
+                        ? 'primary'
+                        : 'neutral'
+                    "
+                    variant="soft"
+                  >
+                    {{
+                      entry.versionSequence === api?.versionSequence
+                        ? "Viewing"
+                        : entry.publishedAt
+                          ? new Intl.DateTimeFormat("en-US", {
+                              dateStyle: "medium",
+                            }).format(new Date(entry.publishedAt))
+                          : "Published"
+                    }}
+                  </UBadge>
+                </a>
+              </div>
+            </UCard>
+
             <UCard>
               <template #header>
                 <h3 class="text-lg font-semibold">Authors</h3>

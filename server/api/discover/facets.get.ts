@@ -53,7 +53,11 @@ export default defineEventHandler(async (event): Promise<FacetsResponse> => {
     prisma.posterMetadata.groupBy({
       by: ["language"],
       where: {
-        poster: { status: "published", tombstone: false },
+        poster: {
+          status: "published",
+          tombstone: false,
+          isLatestVersion: true,
+        },
         language: { not: null },
       },
       _count: { _all: true },
@@ -63,7 +67,11 @@ export default defineEventHandler(async (event): Promise<FacetsResponse> => {
     prisma.posterMetadata.groupBy({
       by: ["license"],
       where: {
-        poster: { status: "published", tombstone: false },
+        poster: {
+          status: "published",
+          tombstone: false,
+          isLatestVersion: true,
+        },
         license: { not: null },
       },
       _count: { _all: true },
@@ -73,7 +81,11 @@ export default defineEventHandler(async (event): Promise<FacetsResponse> => {
     prisma.posterMetadata.groupBy({
       by: ["publicationYear"],
       where: {
-        poster: { status: "published", tombstone: false },
+        poster: {
+          status: "published",
+          tombstone: false,
+          isLatestVersion: true,
+        },
         publicationYear: { not: null, gte: 2000, lte: currentYear },
       },
       _count: { _all: true },
@@ -100,6 +112,7 @@ export default defineEventHandler(async (event): Promise<FacetsResponse> => {
         ) AS aff
         WHERE p.status = 'published'
           AND p.tombstone = false
+          AND p."isLatestVersion" = true
         GROUP BY institution
       ) sub
       WHERE institution IS NOT NULL AND institution != ''
@@ -123,6 +136,7 @@ export default defineEventHandler(async (event): Promise<FacetsResponse> => {
       ) AS fr
       WHERE p.status = 'published'
         AND p.tombstone = false
+        AND p."isLatestVersion" = true
         AND fr->>'funderName' IS NOT NULL
         AND fr->>'funderName' <> ''
     `,
