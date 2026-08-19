@@ -616,6 +616,7 @@ const FormCreatorSchema = z.object({
 // Used to type the response from GET /api/poster/:id
 export const posterResponseSchema = z.object({
   id: z.number(),
+  rootPosterId: z.number().optional(),
   title: z.string().optional(),
   description: z.string().optional(),
   status: z.enum(["draft", "published"]).optional(),

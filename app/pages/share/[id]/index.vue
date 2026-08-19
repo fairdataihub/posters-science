@@ -162,22 +162,9 @@ if (data.value) {
 
   // Check if the poster is already published
   if (poster.status === "published" || poster.publishedAt) {
-    toast.add({
-      title: "Poster already published",
-      description:
-        "This poster has already been published! It is now viewable on the Discover page.",
-      color: "warning",
-    });
+    const rootPosterId = poster.rootPosterId ?? id;
 
-    // open the discover page for this poster in a new tab
-    window.open(`/discover/${id}`, "_blank");
-
-    await navigateTo("/dashboard");
-
-    throw createError({
-      statusCode: 400,
-      statusMessage: "Poster already published",
-    });
+    await navigateTo(`/discover/${rootPosterId}`, { replace: true });
   }
 
   if (poster.extractionJob) {
