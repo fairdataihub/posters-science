@@ -506,6 +506,69 @@ export async function beginZenodoPublication(
     return { success: false, error: "Poster or metadata not found" };
   }
 
+  // Zenodo may have accepted the publication even if our final local
+  // transaction failed. linkZenodoDeposition is deliberately marked
+  // published before that transaction, making this an idempotency marker.
+  // Reconcile it before acquiring a working draft so a retry cannot create an
+  // unnecessary next-version draft on Zenodo.
+  if (
+    poster.status !== "published" &&
+    poster.zenodoDepositions?.status === "published" &&
+    poster.zenodoDepositions.lastPublishedZenodoDoi
+  ) {
+    const publishedDoi = poster.zenodoDepositions.lastPublishedZenodoDoi;
+    const existingIdentifiers = Array.isArray(poster.posterMetadata.identifiers)
+      ? (poster.posterMetadata.identifiers as PosterIdentifier[])
+      : [];
+    const identifiers = existingIdentifiers.some(
+      (identifier) =>
+        identifier.identifier === publishedDoi &&
+        identifier.identifierType === "DOI",
+    )
+      ? existingIdentifiers
+      : [
+          { identifier: publishedDoi, identifierType: "DOI" },
+          ...existingIdentifiers,
+        ];
+    const rootId = posterFamilyRootId(poster);
+
+    console.log(
+      `[Zenodo] Reconciling local poster from published record ${poster.zenodoDepositions.depositionId}`,
+    );
+
+    await prisma.$transaction([
+      prisma.poster.updateMany({
+        where: posterFamilyWhere(rootId),
+        data: { isLatestVersion: false },
+      }),
+      prisma.poster.update({
+        where: { id: poster.id },
+        data: {
+          status: "published",
+          publishedAt: new Date(),
+          isLatestVersion: true,
+        },
+      }),
+      prisma.posterMetadata.update({
+        where: { posterId: poster.id },
+        data: {
+          doi: publishedDoi,
+          publisher: "Zenodo",
+          identifiers,
+        },
+      }),
+    ]);
+
+    return {
+      success: true,
+      data: {
+        recordId: poster.zenodoDepositions.depositionId,
+        doi: publishedDoi,
+        recordUrl: `${config.zenodoEndpoint}/records/${poster.zenodoDepositions.depositionId}`,
+      },
+    };
+  }
+
   const rawFunding = Array.isArray(poster.posterMetadata.fundingReferences)
     ? (poster.posterMetadata.fundingReferences as FundingReference[])
     : [];
@@ -599,64 +662,6 @@ export async function beginZenodoPublication(
 
   if (!linked.success) {
     return { success: false, error: linked.error };
-  }
-
-  // Zenodo publication happens before the final local transaction. If that
-  // transaction failed on an earlier attempt, the deposition row still tells
-  // us exactly which DOI was published; reconcile locally instead of creating
-  // yet another Zenodo version.
-  if (
-    poster.status !== "published" &&
-    poster.zenodoDepositions?.status === "published" &&
-    poster.zenodoDepositions.lastPublishedZenodoDoi
-  ) {
-    const publishedDoi = poster.zenodoDepositions.lastPublishedZenodoDoi;
-    const existingIdentifiers = Array.isArray(poster.posterMetadata.identifiers)
-      ? (poster.posterMetadata.identifiers as PosterIdentifier[])
-      : [];
-    const identifiers = existingIdentifiers.some(
-      (identifier) =>
-        identifier.identifier === publishedDoi &&
-        identifier.identifierType === "DOI",
-    )
-      ? existingIdentifiers
-      : [
-          { identifier: publishedDoi, identifierType: "DOI" },
-          ...existingIdentifiers,
-        ];
-    const rootId = posterFamilyRootId(poster);
-
-    await prisma.$transaction([
-      prisma.poster.updateMany({
-        where: posterFamilyWhere(rootId),
-        data: { isLatestVersion: false },
-      }),
-      prisma.poster.update({
-        where: { id: poster.id },
-        data: {
-          status: "published",
-          publishedAt: new Date(),
-          isLatestVersion: true,
-        },
-      }),
-      prisma.posterMetadata.update({
-        where: { posterId: poster.id },
-        data: {
-          doi: publishedDoi,
-          publisher: "Zenodo",
-          identifiers,
-        },
-      }),
-    ]);
-
-    return {
-      success: true,
-      data: {
-        recordId: poster.zenodoDepositions.depositionId,
-        doi: publishedDoi,
-        recordUrl: `${config.zenodoEndpoint}/records/${poster.zenodoDepositions.depositionId}`,
-      },
-    };
   }
 
   if (poster.versionRootId && mode !== "existing") {
