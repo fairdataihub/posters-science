@@ -23,3 +23,17 @@ export function validateDoi(input: string): string {
 
   return "";
 }
+
+export function resolveDoiUrl(input: string): string {
+  const doi = normalizeDoi(input);
+  const zenodoMatch = doi.match(/^10\.(5072|5281)\/zenodo\.(\d+)$/i);
+
+  if (zenodoMatch) {
+    const [, prefix, recordId] = zenodoMatch;
+    const host = prefix === "5072" ? "sandbox.zenodo.org" : "zenodo.org";
+
+    return `https://${host}/records/${recordId}`;
+  }
+
+  return `https://doi.org/${doi}`;
+}
