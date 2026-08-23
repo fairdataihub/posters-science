@@ -69,6 +69,9 @@ export default defineEventHandler(async (event) => {
         ? {
             id: activeVersionDraft.id,
             versionSequence: activeVersionDraft.versionSequence,
+            imageUrl: activeVersionDraft.imageUrl,
+            title: activeVersionDraft.title,
+            description: activeVersionDraft.description,
             extractionJob: activeVersionDraft.extractionJob,
           }
         : null,
