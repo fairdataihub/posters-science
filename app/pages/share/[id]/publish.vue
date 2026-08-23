@@ -14,6 +14,7 @@ const isProductionEnv = siteEnv === "production";
 
 // Shared license selection (used by Zenodo and simulated flows)
 const selectedLicense = ref("");
+const publicationVersion = ref("");
 
 // Download completion state
 const downloadComplete = ref(false);
@@ -240,19 +241,14 @@ const linkedDeposition = ref<{
 const previousVersionLicense = ref("");
 const isPosterVersion = ref(false);
 
-const linkedDepositionDescription = computed(() => {
-  if (!linkedDeposition.value) return "";
-
-  return linkedDeposition.value.version
-    ? `${linkedDeposition.value.title} (Version ${linkedDeposition.value.version})`
-    : linkedDeposition.value.title;
-});
 const existingDepositions = ref<
   {
     id: number;
     title: string;
     isPublished: boolean;
     conceptDoi?: string;
+    version?: string;
+    versionIndex?: number;
   }[]
 >([]);
 
@@ -291,6 +287,7 @@ const effectiveDepositionId = computed(() => {
 const readyToArchive = computed(
   () =>
     !!selectedLicense.value &&
+    (posterData.value?.automated || !!publicationVersion.value.trim()) &&
     (depositionMode.value === "new" ||
       (depositionMode.value === "existing" &&
         effectiveDepositionId.value !== undefined)),
@@ -333,6 +330,76 @@ const { data: posterData, error: posterError } = await useFetch(
 );
 const posterDetailsUrl = computed(
   () => `/discover/${posterData.value?.rootPosterId ?? id}`,
+);
+
+const selectedDepositionDetails = computed(() =>
+  existingDepositions.value.find(
+    (deposition) => deposition.id === effectiveDepositionId.value,
+  ),
+);
+
+function nextVersionLabel(version?: string, versionIndex?: number) {
+  const normalized = version?.trim();
+
+  if (normalized && /^\d+$/.test(normalized)) {
+    return String(Number.parseInt(normalized, 10) + 1);
+  }
+
+  if (versionIndex && Number.isInteger(versionIndex)) {
+    return String(versionIndex + 1);
+  }
+
+  return "";
+}
+
+const expectedPublicationVersion = computed(() => {
+  if (posterData.value?.automated) return "";
+
+  const localVersion = posterData.value?.posterMetadata?.version?.trim() ?? "";
+
+  if (depositionMode.value === "existing") {
+    const selected = selectedDepositionDetails.value;
+
+    if (selected) {
+      if (!selected.isPublished) {
+        return selected.version?.trim() || localVersion || "1";
+      }
+
+      return (
+        nextVersionLabel(selected.version, selected.versionIndex) ||
+        localVersion ||
+        "1"
+      );
+    }
+
+    if (
+      linkedDeposition.value &&
+      linkedDeposition.value.id === effectiveDepositionId.value
+    ) {
+      if (linkedDeposition.value.isDraft) {
+        return linkedDeposition.value.version?.trim() || localVersion || "1";
+      }
+
+      return nextVersionLabel(linkedDeposition.value.version) || localVersion;
+    }
+  }
+
+  return localVersion || "1";
+});
+
+// Keep the suggested value in sync with the chosen deposition until the user
+// deliberately replaces it with their own semantic version.
+watch(
+  expectedPublicationVersion,
+  (expected, previousExpected) => {
+    if (
+      !publicationVersion.value ||
+      publicationVersion.value === previousExpected
+    ) {
+      publicationVersion.value = expected;
+    }
+  },
+  { immediate: true },
 );
 
 if (posterError.value) {
@@ -477,6 +544,9 @@ async function handleArchive() {
         mode: depositionMode.value,
         existingDepositionId: effectiveDepositionId.value,
         license: selectedLicense.value || undefined,
+        version: posterData.value?.automated
+          ? undefined
+          : publicationVersion.value.trim(),
       }),
     });
 
@@ -552,7 +622,9 @@ async function handleArchive() {
         <UBreadcrumb
           :items="[
             { label: 'Dashboard', to: '/dashboard' },
-            { label: 'Upload Poster', to: '/share/new' },
+            ...(posterData?.versionRootId
+              ? []
+              : [{ label: 'Upload Poster', to: '/share/new' }]),
             { label: 'Review Metadata', to: `/share/${id}` },
             { label: 'Submit Poster' },
           ]"
@@ -878,10 +950,16 @@ async function handleArchive() {
                   <template #description>
                     <div class="flex flex-col items-start gap-2">
                       <p>
-                        {{
-                          linkedDepositionDescription ||
-                          `Zenodo record ${linkedDepositionId}`
-                        }}
+                        <span>
+                          {{
+                            linkedDeposition?.title ||
+                            `Zenodo record ${linkedDepositionId}`
+                          }}
+                        </span>
+
+                        <strong v-if="linkedDeposition?.version" class="ml-1">
+                          (Version {{ linkedDeposition.version }})
+                        </strong>
                       </p>
 
                       <UButton
@@ -930,6 +1008,21 @@ async function handleArchive() {
                     />
                   </div>
                 </template>
+              </div>
+
+              <!-- Version selection -->
+              <div v-if="!posterData?.automated" class="mt-4 max-w-md">
+                <p class="text-muted mb-2 text-sm">
+                  Version <span class="text-error">*</span>
+                </p>
+
+                <p class="text-muted mb-2 text-xs">Suggested version.</p>
+
+                <UInput
+                  v-model="publicationVersion"
+                  placeholder="Enter version"
+                  class="w-full"
+                />
               </div>
 
               <!-- License selection -->
