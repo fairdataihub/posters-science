@@ -7,6 +7,7 @@ const payloadSchema = z.object({
   mode: z.enum(["new", "existing"]).default("new"),
   existingDepositionId: z.number().optional(),
   license: z.string().optional(),
+  version: z.string().trim().min(1).max(100).optional(),
 });
 
 export default defineEventHandler(async (event) => {
@@ -28,7 +29,8 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  const { posterId, mode, existingDepositionId, license } = parsed.data;
+  const { posterId, mode, existingDepositionId, license, version } =
+    parsed.data;
 
   // Publishing only needs the boolean, not the record list.
   const { zenodoToken, message } = await validateZenodoToken(userId, {
@@ -71,6 +73,7 @@ export default defineEventHandler(async (event) => {
       userId,
       (progress) => sendEvent(progress),
       license,
+      version,
     );
 
     if (!status.success) {
