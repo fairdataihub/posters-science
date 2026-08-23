@@ -13,6 +13,9 @@ export default defineEventHandler(async (event) => {
 
   const job = await prisma.extractionJob.findFirst({
     where: { id: jobId, poster: { userId: user.id } },
+    include: {
+      poster: { select: { imageUrl: true, title: true, description: true } },
+    },
   });
 
   if (!job) {
@@ -120,5 +123,8 @@ export default defineEventHandler(async (event) => {
     completed: job.completed,
     posterId: job.posterId,
     error: job.error,
+    imageUrl: job.poster.imageUrl,
+    title: job.poster.title,
+    description: job.poster.description,
   };
 });
