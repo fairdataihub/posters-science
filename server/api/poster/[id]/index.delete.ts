@@ -20,7 +20,10 @@ export default defineEventHandler(async (event) => {
     select: {
       id: true,
       status: true,
-      extractionJob: { select: { filePath: true } },
+      versionRootId: true,
+      extractionJob: {
+        select: { filePath: true, status: true, completed: true },
+      },
       zenodoDepositions: {
         select: { depositionId: true, status: true },
       },
@@ -38,6 +41,19 @@ export default defineEventHandler(async (event) => {
     throw createError({
       statusCode: 400,
       statusMessage: "Published posters cannot be deleted",
+    });
+  }
+
+  const versionDraftReady =
+    !poster.extractionJob ||
+    poster.extractionJob.completed ||
+    poster.extractionJob.status === "completed";
+
+  if (poster.versionRootId !== null && !versionDraftReady) {
+    throw createError({
+      statusCode: 409,
+      statusMessage:
+        "Version drafts cannot be deleted until metadata extraction is ready for review",
     });
   }
 
