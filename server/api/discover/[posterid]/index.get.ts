@@ -27,25 +27,54 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, statusMessage: "Poster not found" });
   }
 
-  const requestedSequence = Number.parseInt(
-    String(getQuery(event).version ?? ""),
-    10,
-  );
-  const poster = await prisma.poster.findFirst({
-    where: {
-      status: "published",
-      ...posterFamilyWhere(rootPosterId),
-      ...(Number.isFinite(requestedSequence)
-        ? { versionSequence: requestedSequence }
-        : { isLatestVersion: true }),
-    },
-    orderBy: { versionSequence: "desc" },
-    include: {
-      user: { select: { givenName: true, familyName: true } },
-      posterMetadata: true,
-      _count: { select: { likes: true } },
-    },
-  });
+  const versionParam = getQuery(event).version;
+  const requestedVersion = (
+    Array.isArray(versionParam) ? versionParam[0] : versionParam
+  )
+    ?.toString()
+    .trim();
+  const requestedSequence = /^\d+$/.test(requestedVersion ?? "")
+    ? Number.parseInt(requestedVersion!, 10)
+    : undefined;
+  const posterInclude = {
+    user: { select: { givenName: true, familyName: true } },
+    posterMetadata: true,
+    _count: { select: { likes: true } },
+  } as const;
+
+  // Public URLs use the user-facing metadata label. The integer sequence is
+  // retained as a fallback for old links and records that predate version
+  // metadata.
+  let poster = requestedVersion
+    ? await prisma.poster.findFirst({
+        where: {
+          status: "published",
+          ...posterFamilyWhere(rootPosterId),
+          posterMetadata: { is: { version: requestedVersion } },
+        },
+        orderBy: { versionSequence: "desc" },
+        include: posterInclude,
+      })
+    : await prisma.poster.findFirst({
+        where: {
+          status: "published",
+          ...posterFamilyWhere(rootPosterId),
+          isLatestVersion: true,
+        },
+        orderBy: { versionSequence: "desc" },
+        include: posterInclude,
+      });
+
+  if (!poster && requestedSequence !== undefined) {
+    poster = await prisma.poster.findFirst({
+      where: {
+        status: "published",
+        ...posterFamilyWhere(rootPosterId),
+        versionSequence: requestedSequence,
+      },
+      include: posterInclude,
+    });
+  }
 
   if (!poster) {
     throw createError({ statusCode: 404, statusMessage: "Poster not found" });
