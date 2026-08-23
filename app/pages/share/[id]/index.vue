@@ -52,6 +52,7 @@ useSeoMeta({
 });
 
 const loading = ref(false);
+const isVersionedPoster = ref(false);
 const orcidErrors = ref<Record<string, string | undefined>>({});
 const orcidChecking = ref<Record<string, boolean | undefined>>({});
 const identifierTypeErrors = ref<Record<string, string | undefined>>({});
@@ -159,6 +160,7 @@ const { data, error } = await useFetch(`/api/poster/${id}`);
 
 if (data.value) {
   const poster = data.value as PosterResponse;
+  isVersionedPoster.value = poster.versionRootId != null;
 
   // Check if the poster is already published
   if (poster.status === "published" || poster.publishedAt) {
@@ -1029,17 +1031,43 @@ const moveCreator = (index: number, direction: "up" | "down") => {
 <template>
   <div class="mx-auto flex w-full max-w-screen-xl flex-col gap-6 px-6 pb-10">
     <UPageHeader
-      title="Review Metadata"
-      description="Review and edit the metadata we extracted for your poster submission. This metadata will be included in a poster.json file that will be shared along with your poster to make it more reusable and machine actionable. The metadata will also be registered in the Posters.science database to make your poster discoverable."
+      :description="
+        isVersionedPoster
+          ? 'You are reviewing metadata for a new version of this poster. The published version remains unchanged until you publish these changes.'
+          : 'Review and edit the metadata we extracted for your poster submission. This metadata will be included in a poster.json file that will be shared along with your poster to make it more reusable and machine actionable. The metadata will also be registered in the Posters.science database to make your poster discoverable.'
+      "
     >
       <template #headline>
         <UBreadcrumb
-          :items="[
-            { label: 'Dashboard', to: '/dashboard' },
-            { label: 'Upload Poster', to: '/share/new' },
-            { label: 'Review Metadata' },
-          ]"
+          :items="
+            isVersionedPoster
+              ? [
+                  { label: 'Dashboard', to: '/dashboard' },
+                  { label: 'Review Metadata' },
+                ]
+              : [
+                  { label: 'Dashboard', to: '/dashboard' },
+                  { label: 'Upload Poster', to: '/share/new' },
+                  { label: 'Review Metadata' },
+                ]
+          "
         />
+      </template>
+
+      <template #title>
+        <div class="flex flex-wrap items-end gap-3">
+          <h1>Review Metadata</h1>
+
+          <UBadge
+            v-if="isVersionedPoster"
+            color="primary"
+            variant="soft"
+            icon="i-lucide-git-branch"
+            class="mb-1"
+          >
+            New version
+          </UBadge>
+        </div>
       </template>
     </UPageHeader>
 
