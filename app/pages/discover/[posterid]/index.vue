@@ -6,6 +6,7 @@ import {
   RESOURCE_TYPE_OPTIONS,
   RELATION_TYPE_OPTIONS,
 } from "@/utils/poster_schema";
+import { resolveDoiUrl } from "@/utils/doi";
 import type { WithContext, ScholarlyArticle } from "schema-dts";
 
 const route = useRoute();
@@ -13,7 +14,6 @@ const posterId = route.params.posterid as string;
 
 const { loggedIn } = useUserSession();
 const toast = useToast();
-const { siteEnv } = useRuntimeConfig().public;
 
 const versionQuery = Array.isArray(route.query.version)
   ? route.query.version[0]
@@ -42,12 +42,42 @@ const versionHistory = (api?.versions ?? []) as Array<{
   posterMetadata?: { version?: string | null; doi?: string | null } | null;
 }>;
 
+function historyVersionLabel(entry: (typeof versionHistory)[number]) {
+  return (
+    entry.posterMetadata?.version?.trim() ||
+    (api?.automated ? "Unspecified" : String(entry.versionSequence))
+  );
+}
+
+function historyVersionUrl(entry: (typeof versionHistory)[number]) {
+  // The API resolves this as public metadata first, then as the internal
+  // sequence for older entries that do not have a public version label.
+  const version =
+    entry.posterMetadata?.version?.trim() || String(entry.versionSequence);
+
+  return `/discover/${posterId}?version=${encodeURIComponent(version)}`;
+}
+
 const liked = ref(api?.liked ?? false);
 
 const liking = ref(false);
 
 const getDicebearUrl = (seed: string) =>
   `https://api.dicebear.com/9.x/shapes/svg?seed=${seed}`;
+
+const relatedIdentifierUrl = (relatedIdentifier: {
+  relatedIdentifier?: string;
+  relatedIdentifierType?: string;
+}) => {
+  const identifier = relatedIdentifier.relatedIdentifier?.trim();
+  if (!identifier) return "";
+  if (/^https?:\/\//i.test(identifier)) return identifier;
+  if (relatedIdentifier.relatedIdentifierType === "DOI") {
+    return resolveDoiUrl(identifier);
+  }
+
+  return "";
+};
 
 const onImageError = (event: Event, seed: string) => {
   const img = event.target as HTMLImageElement;
@@ -118,11 +148,7 @@ const poster = ref({
       ri.relationType ??
       "References",
     doi: ri.relatedIdentifier ?? "",
-    url: ri.relatedIdentifier?.startsWith("http")
-      ? ri.relatedIdentifier
-      : ri.relatedIdentifier
-        ? `https://doi.org/${ri.relatedIdentifier}`
-        : "",
+    url: relatedIdentifierUrl(ri),
   })),
   funding: (api?.fundingReferences ?? []).map((f: any) => ({
     agency: f.funderName ?? "Unknown Funder",
@@ -146,20 +172,8 @@ const poster = ref({
 
 const resolvedPosterUrl = computed(() => {
   if (!poster.value.doi) return null;
-  const isZenodoDoi = poster.value.doi.includes("/zenodo.");
-  if (!isZenodoDoi) return `https://doi.org/${poster.value.doi}`;
 
-  const isSandboxDoi = poster.value.doi.startsWith("10.5072/");
-  const isSandboxEnv =
-    siteEnv === "staging" || siteEnv === "development" || siteEnv === "dev";
-
-  if (isSandboxDoi || isSandboxEnv) {
-    const recordId = poster.value.doi.split("/zenodo.")[1];
-
-    return `https://sandbox.zenodo.org/records/${recordId}`;
-  }
-
-  return `https://doi.org/${poster.value.doi}`;
+  return resolveDoiUrl(poster.value.doi);
 });
 
 const posterSource = computed(() => {
@@ -374,6 +388,15 @@ const tabItems = [
     icon: "fluent:clover-48-filled",
     slot: "overview",
   },
+  ...(versionHistory.length > 1
+    ? [
+        {
+          label: "Versions",
+          icon: "i-lucide-history",
+          slot: "versions",
+        },
+      ]
+    : []),
   {
     label: "Related resources",
     icon: "ooui:reference",
@@ -777,7 +800,7 @@ const tabItems = [
                           v-if="identifier.identifierType === 'DOI'"
                           :to="
                             identifier.identifierType === 'DOI'
-                              ? `https://doi.org/${identifier.identifier}`
+                              ? resolveDoiUrl(identifier.identifier)
                               : identifier.url
                           "
                           target="_blank"
@@ -832,6 +855,47 @@ const tabItems = [
                 </div>
               </template>
 
+              <template #versions>
+                <UCard class="mt-4">
+                  <template #header>
+                    <h2 class="text-xl font-semibold">Version History</h2>
+                  </template>
+
+                  <div class="space-y-2">
+                    <a
+                      v-for="entry in versionHistory"
+                      :key="entry.versionSequence"
+                      :href="historyVersionUrl(entry)"
+                      class="border-default hover:bg-elevated flex items-center justify-between rounded-lg border px-3 py-3 text-sm"
+                    >
+                      <span class="font-medium">
+                        Version
+                        {{ historyVersionLabel(entry) }}
+                      </span>
+
+                      <UBadge
+                        :color="
+                          entry.versionSequence === api?.versionSequence
+                            ? 'primary'
+                            : 'neutral'
+                        "
+                        variant="soft"
+                      >
+                        {{
+                          entry.versionSequence === api?.versionSequence
+                            ? "Viewing"
+                            : entry.publishedAt
+                              ? new Intl.DateTimeFormat("en-US", {
+                                  dateStyle: "medium",
+                                }).format(new Date(entry.publishedAt))
+                              : "Published"
+                        }}
+                      </UBadge>
+                    </a>
+                  </div>
+                </UCard>
+              </template>
+
               <template #references>
                 <div>
                   <UCard v-if="poster.references.length > 0" class="mt-4">
@@ -873,49 +937,6 @@ const tabItems = [
           </div>
 
           <div class="flex flex-col gap-4">
-            <UCard v-if="versionHistory.length > 1">
-              <template #header>
-                <h3 class="text-lg font-semibold">Version History</h3>
-              </template>
-
-              <div class="space-y-2">
-                <a
-                  v-for="entry in versionHistory"
-                  :key="entry.versionSequence"
-                  :href="`/discover/${posterId}?version=${entry.versionSequence}`"
-                  class="border-default hover:bg-elevated flex items-center justify-between rounded-lg border px-3 py-2 text-sm"
-                >
-                  <span>
-                    Version
-                    {{
-                      api?.automated
-                        ? entry.posterMetadata?.version || "Unspecified"
-                        : entry.versionSequence
-                    }}
-                  </span>
-
-                  <UBadge
-                    :color="
-                      entry.versionSequence === api?.versionSequence
-                        ? 'primary'
-                        : 'neutral'
-                    "
-                    variant="soft"
-                  >
-                    {{
-                      entry.versionSequence === api?.versionSequence
-                        ? "Viewing"
-                        : entry.publishedAt
-                          ? new Intl.DateTimeFormat("en-US", {
-                              dateStyle: "medium",
-                            }).format(new Date(entry.publishedAt))
-                          : "Published"
-                    }}
-                  </UBadge>
-                </a>
-              </div>
-            </UCard>
-
             <UCard>
               <template #header>
                 <h3 class="text-lg font-semibold">Authors</h3>
