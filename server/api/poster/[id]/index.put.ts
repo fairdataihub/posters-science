@@ -115,7 +115,6 @@ export default defineEventHandler(async (event) => {
   const relatedIdentifiers = data.relatedIdentifiers ?? [];
   const size = data.size || null;
   const format = data.format || null;
-  // Posters published through Posters.science use the immutable family sequence.
   // Preserve imported metadata versions only for automated posters, whose prior
   // version history is not known to us.
   const version = existingPoster.automated

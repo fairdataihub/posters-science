@@ -48,6 +48,9 @@ type Poster = {
   activeVersionDraft?: {
     id: number;
     versionSequence: number;
+    imageUrl: string;
+    title: string;
+    description: string;
     extractionJob?: {
       id?: string;
       status: string;
@@ -57,7 +60,34 @@ type Poster = {
   } | null;
 };
 
+type VersionJobStatusResponse = {
+  completed: boolean;
+  status: string;
+  posterId?: number;
+  error?: string | null;
+  imageUrl?: string;
+  title?: string;
+  description?: string;
+};
+
 const posters = ref<Poster[]>([]);
+const showTombstonedPosters = useCookie<boolean>(
+  "dashboard-show-tombstoned-posters",
+  {
+    default: () => true,
+    maxAge: 60 * 60 * 24 * 365,
+    sameSite: "lax",
+  },
+);
+
+const tombstonedPosterCount = computed(
+  () => posters.value.filter((poster) => poster.tombstone).length,
+);
+const visiblePosters = computed(() =>
+  showTombstonedPosters.value
+    ? posters.value
+    : posters.value.filter((poster) => !poster.tombstone),
+);
 
 const { data, error, refresh } = await useFetch("/api/poster");
 
@@ -78,6 +108,8 @@ const modalPublisher = ref("");
 const isSaving = ref(false);
 const doiError = ref("");
 const toast = useToast();
+const tombstoneModalOpen = ref(false);
+const tombstonedPoster = ref<Poster | null>(null);
 
 const versionModalOpen = ref(false);
 const versionPoster = ref<Poster | null>(null);
@@ -93,32 +125,35 @@ const deletingVersionDraft = ref(false);
 const pollingVersionJobId = ref<string | null>(null);
 let versionPollTimer: ReturnType<typeof setTimeout> | undefined;
 let versionPollGeneration = 0;
+const pollingVersionThumbnailJobId = ref<string | null>(null);
+let versionThumbnailPollTimer: ReturnType<typeof setTimeout> | undefined;
+let versionThumbnailPollGeneration = 0;
 
 const versionFileOptions = [
   {
-    label: "Reuse the current poster file",
+    label: "Keep the current poster file",
     description:
-      "For a new release where the poster is unchanged but its supplemental metadata need to be updated.",
+      "Choose this when the poster is unchanged but its supplemental metadata need to be updated.",
     value: "reuse",
   },
   {
-    label: "Upload a new PDF or image",
+    label: "Replace the poster file",
     description:
-      "For a revised poster with changes to its content, design, or file.",
+      "Upload a revised PDF or image when the poster itself has changed.",
     value: "upload",
   },
 ];
 const versionMetadataOptions = [
   {
-    label: "Start with the existing metadata",
+    label: "Keep and edit the current metadata",
     description:
-      "Best for smaller poster revisions. The copied metadata remains editable during review.",
+      "Best for smaller poster revisions. Copies the published metadata so you can make targeted edits without waiting for another extraction.",
     value: "copy",
   },
   {
-    label: "Extract metadata from the new poster file",
+    label: "Extract metadata from the replacement file",
     description:
-      "Best when the poster content changed enough that the existing metadata may be outdated.",
+      "Best when the poster content changed enough. Use the new poster to extract new metadata for your review.",
     value: "extract",
   },
 ];
@@ -170,19 +205,26 @@ const versionExtractionStatus = computed(() => {
     return {
       title: "Extracting poster metadata",
       description:
-        "The extraction service is analyzing the poster and saving the fields you’ll review and edit next.",
+        "The extraction service is analyzing the poster and saving the fields you'll review and edit next.",
     };
   }
 
   return {
-    title: "Preparing your version",
-    description: "The version draft is being prepared.",
+    title: "Preparing your edits",
+    description: "Your editable draft is being prepared.",
   };
 });
 
 const extractingVersionPoster = computed(() =>
   posters.value.find((poster) =>
     isVersionExtracting(poster.activeVersionDraft),
+  ),
+);
+const posterAwaitingDraftThumbnail = computed(() =>
+  posters.value.find(
+    (poster) =>
+      poster.activeVersionDraft?.extractionJob?.id &&
+      !poster.activeVersionDraft.imageUrl,
   ),
 );
 
@@ -199,19 +241,18 @@ function versionActionLabel(poster: Poster) {
     return "View extraction progress";
   }
   if (isVersionExtractionFailed(poster.activeVersionDraft)) {
-    return "View extraction error";
+    return "Resolve extraction issue";
   }
-  if (poster.activeVersionDraft) return "Review new version";
 
-  return "Publish new version";
+  return "Edit";
 }
 
 function versionActionTooltip(poster: Poster) {
   if (isVersionExtracting(poster.activeVersionDraft)) {
-    return "Open the version panel to view metadata extraction progress.";
+    return "Open the edit panel to view metadata extraction progress.";
   }
   if (isVersionExtractionFailed(poster.activeVersionDraft)) {
-    return "Open the version panel to view the extraction error.";
+    return "Open the edit panel to review the extraction issue.";
   }
   if (
     extractingVersionPoster.value &&
@@ -221,15 +262,17 @@ function versionActionTooltip(poster: Poster) {
   }
 
   return poster.activeVersionDraft
-    ? "Review the version draft before publishing it."
-    : "Create a new version of this poster.";
+    ? "Continue editing this published poster."
+    : "Edit this published poster. Publishing your changes creates a new version.";
 }
 
 function displayedVersion(poster: Poster) {
   if (poster.status !== "published") return null;
-  if (!poster.automated) return String(poster.versionSequence);
+  if (poster.automated) return poster.posterMetadata.version?.trim() || null;
 
-  return poster.posterMetadata.version?.trim() || null;
+  return (
+    poster.posterMetadata.version?.trim() || String(poster.versionSequence)
+  );
 }
 
 watch(versionFileMode, (mode) => {
@@ -279,6 +322,36 @@ function updateLocalVersionJob(
   }
 }
 
+function updateLocalVersionThumbnail(
+  posterId: number | undefined,
+  imageUrl: string | undefined,
+) {
+  if (!posterId || !imageUrl) return;
+
+  const poster = posters.value.find(
+    (candidate) => candidate.activeVersionDraft?.id === posterId,
+  );
+  if (poster?.activeVersionDraft) {
+    poster.activeVersionDraft.imageUrl = imageUrl;
+  }
+}
+
+function updateLocalVersionDetails(
+  posterId: number | undefined,
+  title: string | undefined,
+  description: string | undefined,
+) {
+  if (!posterId) return;
+
+  const draft = posters.value.find(
+    (poster) => poster.activeVersionDraft?.id === posterId,
+  )?.activeVersionDraft;
+  if (!draft) return;
+
+  if (title !== undefined) draft.title = title;
+  if (description !== undefined) draft.description = description;
+}
+
 async function refreshPosterList() {
   const openRootId = versionPoster.value?.rootPosterId;
   await refresh();
@@ -299,6 +372,58 @@ function stopVersionExtractionPolling() {
   }
 }
 
+function stopVersionThumbnailPolling() {
+  versionThumbnailPollGeneration += 1;
+  pollingVersionThumbnailJobId.value = null;
+  if (versionThumbnailPollTimer) {
+    clearTimeout(versionThumbnailPollTimer);
+    versionThumbnailPollTimer = undefined;
+  }
+}
+
+function startVersionThumbnailPolling(jobId: string) {
+  if (pollingVersionThumbnailJobId.value === jobId) return;
+
+  stopVersionThumbnailPolling();
+  pollingVersionThumbnailJobId.value = jobId;
+  const generation = versionThumbnailPollGeneration;
+  let attempts = 0;
+
+  const checkThumbnail = async () => {
+    if (generation !== versionThumbnailPollGeneration) return;
+
+    try {
+      const response = await $fetch<VersionJobStatusResponse>(
+        `/api/poster/job/${jobId}`,
+      );
+
+      if (generation !== versionThumbnailPollGeneration) return;
+      if (response.imageUrl) {
+        updateLocalVersionThumbnail(response.posterId, response.imageUrl);
+        pollingVersionThumbnailJobId.value = null;
+
+        return;
+      }
+    } catch {
+      // Keep the published thumbnail visible and retry while the draft
+      // thumbnail is being generated.
+    }
+
+    attempts += 1;
+    if (attempts >= 40) {
+      pollingVersionThumbnailJobId.value = null;
+
+      return;
+    }
+
+    if (generation === versionThumbnailPollGeneration) {
+      versionThumbnailPollTimer = setTimeout(checkThumbnail, 3000);
+    }
+  };
+
+  void checkThumbnail();
+}
+
 function startVersionExtractionPolling(jobId: string) {
   if (pollingVersionJobId.value === jobId) return;
 
@@ -310,12 +435,9 @@ function startVersionExtractionPolling(jobId: string) {
     if (generation !== versionPollGeneration) return;
 
     try {
-      const response = await $fetch<{
-        completed: boolean;
-        status: string;
-        posterId?: number;
-        error?: string | null;
-      }>(`/api/poster/job/${jobId}`);
+      const response = await $fetch<VersionJobStatusResponse>(
+        `/api/poster/job/${jobId}`,
+      );
 
       if (generation !== versionPollGeneration) return;
 
@@ -325,6 +447,12 @@ function startVersionExtractionPolling(jobId: string) {
         response.status,
         response.completed,
         response.error,
+      );
+      updateLocalVersionThumbnail(response.posterId, response.imageUrl);
+      updateLocalVersionDetails(
+        response.posterId,
+        response.title,
+        response.description,
       );
 
       if (response.completed && response.status === "completed") {
@@ -341,8 +469,8 @@ function startVersionExtractionPolling(jobId: string) {
 
           toast.add({
             title: completedDraft
-              ? `Version ${completedDraft.versionSequence} is ready to review`
-              : "Your new version is ready to review",
+              ? `Your edits for version ${completedDraft.versionSequence} are ready to review`
+              : "Your edits are ready to review",
             description: completedPoster
               ? `Metadata extraction finished for ${completedPoster.title}. Select the poster to continue reviewing it.`
               : "Metadata extraction finished. Select the poster to continue reviewing it.",
@@ -359,7 +487,7 @@ function startVersionExtractionPolling(jobId: string) {
         await refreshPosterList();
         toast.add({
           title: "Metadata extraction failed",
-          description: response.error || "Open the version panel for details.",
+          description: response.error || "Open the edit panel for details.",
           color: "error",
         });
 
@@ -427,21 +555,30 @@ async function deleteVersionDraft() {
   if (!draft) return;
 
   const jobId = draft.extractionJob?.id;
+  const rootPosterId = versionPoster.value?.rootPosterId;
   const wasExtracting = isVersionExtracting(draft);
+  const wasPollingThumbnail =
+    pollingVersionThumbnailJobId.value === draft.extractionJob?.id;
   deletingVersionDraft.value = true;
   versionPollingError.value = "";
   stopVersionExtractionPolling();
+  stopVersionThumbnailPolling();
 
   try {
     await $fetch(`/api/poster/${draft.id}`, { method: "DELETE" });
+
+    const dashboardPoster = posters.value.find(
+      (poster) => poster.rootPosterId === rootPosterId,
+    );
+    if (dashboardPoster) dashboardPoster.activeVersionDraft = null;
 
     deleteVersionModalOpen.value = false;
     versionModalOpen.value = false;
     versionPoster.value = null;
     await refreshPosterList();
     toast.add({
-      title: "Version draft deleted",
-      description: `Version ${draft.versionSequence} was deleted. Your published poster was not changed.`,
+      title: "Edits discarded",
+      description: `The draft for version ${draft.versionSequence} was deleted. Your published poster was not changed.`,
       color: "success",
     });
   } catch (error) {
@@ -449,15 +586,16 @@ async function deleteVersionDraft() {
       (error as { data?: { statusMessage?: string }; statusMessage?: string })
         ?.data?.statusMessage ||
       (error as { statusMessage?: string })?.statusMessage ||
-      "There was a problem deleting the version draft.";
+      "There was a problem discarding your edits.";
 
     toast.add({
-      title: "Could not delete version draft",
+      title: "Could not discard edits",
       description: message,
       color: "error",
     });
 
     if (wasExtracting && jobId) startVersionExtractionPolling(jobId);
+    if (wasPollingThumbnail && jobId) startVersionThumbnailPolling(jobId);
   } finally {
     deletingVersionDraft.value = false;
   }
@@ -466,7 +604,7 @@ async function deleteVersionDraft() {
 async function createVersion() {
   if (!versionPoster.value) return;
   if (versionFileMode.value === "upload" && !versionFiles.value[0]) {
-    versionError.value = "Choose a PDF or image for the new version.";
+    versionError.value = "Choose a replacement PDF or image.";
 
     return;
   }
@@ -481,6 +619,7 @@ async function createVersion() {
   creatingVersion.value = true;
   versionError.value = "";
   try {
+    const rootPosterId = versionPoster.value.rootPosterId;
     const body = new FormData();
     body.append("fileMode", versionFileMode.value);
     body.append("metadataMode", versionMetadataMode.value);
@@ -489,17 +628,23 @@ async function createVersion() {
     const response = await $fetch<{
       posterId: number;
       versionSequence: number;
+      imageUrl: string;
+      title: string;
+      description: string;
       extractionJobId?: string;
       extractionStatus?: string;
       reviewReady: boolean;
-    }>(`/api/poster/${versionPoster.value.rootPosterId}/versions`, {
+    }>(`/api/poster/${rootPosterId}/versions`, {
       method: "POST",
       body,
     });
 
-    versionPoster.value.activeVersionDraft = {
+    const activeVersionDraft: NonNullable<Poster["activeVersionDraft"]> = {
       id: response.posterId,
       versionSequence: response.versionSequence,
+      imageUrl: response.imageUrl,
+      title: response.title,
+      description: response.description,
       extractionJob: response.extractionJobId
         ? {
             id: response.extractionJobId,
@@ -508,14 +653,26 @@ async function createVersion() {
           }
         : null,
     };
+
+    const dashboardPoster = posters.value.find(
+      (poster) => poster.rootPosterId === rootPosterId,
+    );
+    if (dashboardPoster) {
+      dashboardPoster.activeVersionDraft = activeVersionDraft;
+      versionPoster.value = dashboardPoster;
+    } else if (versionPoster.value?.rootPosterId === rootPosterId) {
+      versionPoster.value.activeVersionDraft = activeVersionDraft;
+    }
+
     if (!response.reviewReady && response.extractionJobId) {
       startVersionExtractionPolling(response.extractionJobId);
     }
+    if (!response.imageUrl && response.extractionJobId) {
+      startVersionThumbnailPolling(response.extractionJobId);
+    }
   } catch (error) {
     versionError.value =
-      error instanceof Error
-        ? error.message
-        : "Could not create the new version.";
+      error instanceof Error ? error.message : "Could not prepare your edits.";
   } finally {
     creatingVersion.value = false;
   }
@@ -528,12 +685,26 @@ onMounted(() => {
   if (activeJob) {
     startVersionExtractionPolling(activeJob);
   }
+
+  const thumbnailJob =
+    posterAwaitingDraftThumbnail.value?.activeVersionDraft?.extractionJob?.id;
+  if (thumbnailJob) {
+    startVersionThumbnailPolling(thumbnailJob);
+  }
 });
 
-onBeforeUnmount(stopVersionExtractionPolling);
+onBeforeUnmount(() => {
+  stopVersionExtractionPolling();
+  stopVersionThumbnailPolling();
+});
 
 function openPoster(poster: Poster) {
-  if (poster.tombstone) return;
+  if (poster.tombstone) {
+    tombstonedPoster.value = poster;
+    tombstoneModalOpen.value = true;
+
+    return;
+  }
 
   if (poster.activeVersionDraft) {
     openVersionWorkflow(poster);
@@ -554,6 +725,13 @@ function openVersionWorkflow(poster: Poster) {
   }
 
   openVersionModal(poster);
+}
+
+function openDeleteVersionModal(poster: Poster) {
+  if (!isVersionReviewReady(poster.activeVersionDraft)) return;
+
+  versionPoster.value = poster;
+  deleteVersionModalOpen.value = true;
 }
 
 const regeneratingThumbnailIds = ref<number[]>([]);
@@ -694,6 +872,9 @@ async function savePublicationInfo() {
 }
 
 const getImage = (poster: Poster) => {
+  if (poster.activeVersionDraft?.imageUrl) {
+    return `/api/poster/${poster.activeVersionDraft.id}/thumbnail`;
+  }
   if (poster.status === "published") {
     return poster.imageUrl;
   }
@@ -701,13 +882,27 @@ const getImage = (poster: Poster) => {
 
   return `/api/poster/${poster.id}/thumbnail${bust ? `?t=${bust}` : ""}`;
 };
+
+const getCardTitle = (poster: Poster) =>
+  poster.activeVersionDraft?.title || poster.title;
+
+const CARD_TITLE_MAX_LENGTH = 80;
+const getCardDisplayTitle = (poster: Poster) => {
+  const title = getCardTitle(poster);
+
+  return title.length > CARD_TITLE_MAX_LENGTH
+    ? `${title.slice(0, CARD_TITLE_MAX_LENGTH).trimEnd()}…`
+    : title;
+};
+
+const getCardDescription = (poster: Poster) =>
+  poster.activeVersionDraft?.description ?? poster.description;
 </script>
 
 <template>
   <div class="mx-auto flex w-full max-w-screen-xl flex-col gap-6 px-6">
     <UPageHeader
       title="Dashboard"
-      description="Keep track of all your submitted posters."
       :links="[
         {
           label: 'Share a Poster',
@@ -716,21 +911,37 @@ const getImage = (poster: Poster) => {
           color: 'primary' as const,
         },
       ]"
-    />
+    >
+      <template #description>
+        <div class="flex w-full items-center justify-between gap-4">
+          <span>Keep track of all your submitted posters.</span>
+
+          <USwitch
+            v-if="tombstonedPosterCount > 0"
+            v-model="showTombstonedPosters"
+            :label="`Show tombstoned posters (${tombstonedPosterCount})`"
+            size="sm"
+          />
+        </div>
+      </template>
+    </UPageHeader>
 
     <UPageList class="max-md:flex max-md:flex-col max-md:gap-4">
       <UPageCard
-        v-for="(poster, index) in posters"
+        v-for="(poster, index) in visiblePosters"
         :key="poster.rootPosterId ?? index + 1"
         variant="ghost"
         class="group h-50 overflow-hidden rounded-none border-t border-b border-gray-100 transition-all duration-300 max-md:h-auto max-md:rounded-xl max-md:border max-md:bg-white max-md:shadow-sm dark:max-md:border-gray-800 dark:max-md:bg-gray-950"
         :class="
           poster.tombstone
-            ? 'cursor-not-allowed opacity-70'
+            ? 'cursor-pointer opacity-70 hover:opacity-100'
             : 'cursor-pointer max-md:hover:shadow-md'
         "
-        :aria-disabled="poster.tombstone"
+        :aria-haspopup="poster.tombstone ? 'dialog' : undefined"
+        :tabindex="poster.tombstone ? 0 : undefined"
         @click="openPoster(poster)"
+        @keydown.enter="poster.tombstone && openPoster(poster)"
+        @keydown.space.prevent="poster.tombstone && openPoster(poster)"
       >
         <div
           class="flex h-full gap-8 max-md:h-auto max-md:flex-col max-md:gap-0"
@@ -743,7 +954,7 @@ const getImage = (poster: Poster) => {
                 getImage(poster) ||
                 `https://api.dicebear.com/9.x/shapes/svg?seed=${poster.id}`
               "
-              :alt="poster.title"
+              :alt="getCardTitle(poster)"
               class="max-h-[150px] w-full object-contain p-2 transition-transform duration-300 max-md:h-full max-md:max-h-none max-md:p-3"
               :class="{ 'group-hover:scale-105': !poster.tombstone }"
             />
@@ -753,8 +964,11 @@ const getImage = (poster: Poster) => {
             class="flex h-full w-full min-w-0 flex-col justify-between py-1 max-md:h-auto max-md:gap-3 max-md:p-4 max-md:py-4"
           >
             <div class="flex flex-col gap-2">
-              <h3 class="line-clamp-2 text-lg font-semibold">
-                {{ poster.title || "No title available" }}
+              <h3
+                class="line-clamp-2 max-h-14 overflow-hidden text-lg font-semibold break-words"
+                :title="getCardTitle(poster)"
+              >
+                {{ getCardDisplayTitle(poster) || "No title available" }}
               </h3>
 
               <p v-if="poster.versionCount > 1" class="text-muted text-xs">
@@ -780,8 +994,7 @@ const getImage = (poster: Poster) => {
                   icon="i-lucide-loader-circle"
                   class="w-fit"
                 >
-                  Version {{ poster.activeVersionDraft?.versionSequence }}
-                  extraction in progress
+                  Preparing edits
                 </UBadge>
 
                 <UBadge
@@ -794,8 +1007,7 @@ const getImage = (poster: Poster) => {
                   icon="i-lucide-circle-alert"
                   class="w-fit"
                 >
-                  Version {{ poster.activeVersionDraft?.versionSequence }}
-                  extraction failed
+                  Could not prepare edits
                 </UBadge>
 
                 <UBadge
@@ -806,8 +1018,7 @@ const getImage = (poster: Poster) => {
                   icon="i-lucide-circle-check"
                   class="w-fit"
                 >
-                  Version {{ poster.activeVersionDraft?.versionSequence }} ready
-                  to review
+                  Edits ready to review
                 </UBadge>
               </div>
 
@@ -818,11 +1029,11 @@ const getImage = (poster: Poster) => {
                     expandedDescriptions.has(poster.id) ? '' : 'line-clamp-2',
                   ]"
                 >
-                  {{ poster.description || "No description available" }}
+                  {{ getCardDescription(poster) || "No description available" }}
                 </p>
 
                 <button
-                  v-if="(poster.description?.length ?? 0) > 100"
+                  v-if="getCardDescription(poster).length > 100"
                   class="text-primary w-fit text-left text-xs font-medium md:hidden"
                   @click.stop="toggleDescription(poster.id)"
                 >
@@ -889,6 +1100,25 @@ const getImage = (poster: Poster) => {
                       @click="openVersionWorkflow(poster)"
                     />
                   </span>
+                </UTooltip>
+
+                <UTooltip
+                  v-if="
+                    poster.status === 'published' &&
+                    poster.activeVersionDraft &&
+                    isVersionReviewReady(poster.activeVersionDraft) &&
+                    !poster.tombstone
+                  "
+                  text="Delete unpublished draft version"
+                >
+                  <UButton
+                    color="error"
+                    variant="ghost"
+                    icon="heroicons:trash"
+                    size="xs"
+                    aria-label="Delete unpublished draft version"
+                    @click.stop="openDeleteVersionModal(poster)"
+                  />
                 </UTooltip>
 
                 <UButton
@@ -983,8 +1213,29 @@ const getImage = (poster: Poster) => {
       </UPageCard>
     </UPageList>
 
-    <div v-if="posters.length === 0" class="py-12 text-center">
+    <div v-if="visiblePosters.length === 0" class="py-12 text-center">
+      <div
+        v-if="posters.length > 0"
+        class="mx-auto flex max-w-md flex-col items-center gap-3"
+      >
+        <Icon name="i-lucide-archive-x" class="text-muted h-12 w-12" />
+
+        <h3 class="text-lg font-medium">Tombstoned posters are hidden</h3>
+
+        <p class="text-muted text-sm">
+          Turn on “Show tombstoned posters” to include them in your dashboard.
+        </p>
+
+        <UButton
+          label="Show tombstoned posters"
+          color="neutral"
+          variant="subtle"
+          @click="showTombstonedPosters = true"
+        />
+      </div>
+
       <NuxtLink
+        v-else
         to="/share/new"
         class="group inline-block rounded-2xl px-8 py-6 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800/50"
       >
@@ -1012,15 +1263,11 @@ const getImage = (poster: Poster) => {
     <!-- Delete draft modal -->
     <USlideover
       v-model:open="versionModalOpen"
-      :title="
-        versionPanelState === 'setup'
-          ? 'Publish a New Version'
-          : `Version ${currentVersionDraft?.versionSequence ?? ''}`
-      "
+      title="Edit Published Poster"
       :description="
         versionPanelState === 'setup'
-          ? 'Choose the file and metadata for the next version.'
-          : `New version of ${versionPoster?.title ?? 'your poster'}`
+          ? 'Select what you would like to change.'
+          : `Editing ${versionPoster?.title ?? 'your poster'}`
       "
       side="right"
       class="w-full max-w-2xl"
@@ -1034,17 +1281,11 @@ const getImage = (poster: Poster) => {
         >
           <div class="space-y-5">
             <p class="text-muted text-sm">
-              Create the next version of
+              Select what you would like to change for
               <span class="text-highlighted font-medium">{{
                 versionPoster?.title
               }}</span
-              >. You'll review all metadata before publishing.
-            </p>
-
-            <p class="text-muted text-sm">
-              Choose the option that matches what changed. If neither the poster
-              file nor its metadata needs updating, you do not need to publish a
-              new version.
+              >. You will review your changes before publishing.
             </p>
 
             <UFormField label="Poster file">
@@ -1072,7 +1313,7 @@ const getImage = (poster: Poster) => {
               v-if="versionError"
               color="error"
               variant="soft"
-              title="Could not create version"
+              title="Could not prepare edits"
               :description="versionError"
             />
           </div>
@@ -1081,9 +1322,9 @@ const getImage = (poster: Poster) => {
             <UAlert
               color="primary"
               variant="soft"
-              icon="i-lucide-git-branch"
-              :title="`You’re creating version ${(versionPoster?.versionSequence ?? 0) + 1}`"
-              description="Version numbers are assigned automatically and increase by one with each published version."
+              icon="i-lucide-info"
+              title="How editing a published poster works"
+              description="Published records cannot be modified after publication. Editing a published poster creates a new publication on top of the existing one, which appears as a new version. Only create a new version when the poster file has changed or its metadata needs to be corrected or updated."
             />
           </div>
         </div>
@@ -1121,7 +1362,7 @@ const getImage = (poster: Poster) => {
             color="warning"
             variant="soft"
             title="Status temporarily unavailable"
-            :description="`${versionPollingError} We’ll keep trying automatically.`"
+            :description="`${versionPollingError} We'll keep trying automatically.`"
           />
 
           <p class="text-muted text-sm">
@@ -1136,13 +1377,13 @@ const getImage = (poster: Poster) => {
             color="success"
             variant="soft"
             icon="i-lucide-circle-check"
-            :title="`Version ${currentVersionDraft?.versionSequence} is ready to review`"
-            description="Metadata preparation is complete. Continue to review and edit the extracted metadata before publishing."
+            title="Your edits are ready to review"
+            description="Your metadata is ready. Continue to review and edit it before publishing your changes."
           />
 
           <p class="text-muted text-sm">
             Your published poster remains unchanged until you finish reviewing
-            this draft and publish it to Zenodo.
+            and publish your edits.
           </p>
         </div>
 
@@ -1160,7 +1401,7 @@ const getImage = (poster: Poster) => {
 
           <p class="text-muted text-sm">
             The published poster has not been changed. Retrying uses the same
-            version draft and stored poster file.
+            editable draft and stored poster file.
           </p>
 
           <UAlert
@@ -1191,29 +1432,28 @@ const getImage = (poster: Poster) => {
             :loading="creatingVersion"
             @click="createVersion"
           >
-            Create Version Draft
+            Continue
           </UButton>
         </div>
 
         <div
-          v-else
+          v-else-if="
+            versionPanelState === 'ready' || versionPanelState === 'failed'
+          "
           class="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
         >
           <UButton
+            v-if="versionPanelState === 'ready'"
             color="error"
             variant="soft"
             icon="i-lucide-trash-2"
             :disabled="retryingVersionExtraction"
             @click="deleteVersionModalOpen = true"
           >
-            Delete Version Draft
+            Discard Edits
           </UButton>
 
           <div class="flex flex-wrap justify-end gap-3">
-            <UButton variant="outline" @click="versionModalOpen = false">
-              Close
-            </UButton>
-
             <UButton
               v-if="versionPanelState === 'ready'"
               color="primary"
@@ -1239,15 +1479,33 @@ const getImage = (poster: Poster) => {
     </USlideover>
 
     <UModal
+      v-model:open="tombstoneModalOpen"
+      title="Why this poster was tombstoned"
+      :description="tombstonedPoster?.title || 'Tombstoned poster'"
+    >
+      <template #body>
+        <UAlert
+          color="error"
+          variant="soft"
+          icon="i-lucide-archive-x"
+          title="Reason"
+          :description="
+            tombstonedPoster?.tombedReason?.trim() || 'No reason was provided.'
+          "
+        />
+      </template>
+    </UModal>
+
+    <UModal
       v-model:open="deleteVersionModalOpen"
-      title="Delete Version Draft?"
+      title="Discard Edits?"
       :dismissible="!deletingVersionDraft"
       :close="!deletingVersionDraft"
     >
       <template #body>
         <div class="space-y-3 text-sm">
           <p>
-            Delete version
+            Discard the draft changes for version
             <span class="font-medium">{{
               currentVersionDraft?.versionSequence
             }}</span>
@@ -1259,10 +1517,9 @@ const getImage = (poster: Poster) => {
           </p>
 
           <p class="text-muted">
-            This removes the version draft, its stored poster file, metadata,
-            and extraction progress. Any linked unpublished Zenodo draft will
-            also be discarded. The published poster and its earlier versions
-            will not be changed. This cannot be undone.
+            This removes the editable draft, its stored poster file and
+            metadata. The published poster and its earlier versions will not be
+            changed. This cannot be undone.
           </p>
         </div>
       </template>
@@ -1282,7 +1539,7 @@ const getImage = (poster: Poster) => {
             :loading="deletingVersionDraft"
             @click="deleteVersionDraft"
           >
-            Delete Version Draft
+            Discard Edits
           </UButton>
         </div>
       </template>
