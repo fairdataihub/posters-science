@@ -169,6 +169,8 @@ export type ZenodoUserRecord = {
   title: string;
   isPublished: boolean;
   conceptDoi?: string;
+  version?: string;
+  versionIndex?: number;
 };
 
 // Maps an InvenioRDM /user/records search body to the shape of the publish UI
@@ -182,12 +184,16 @@ function parseUserRecords(body: unknown): ZenodoUserRecord[] {
     if (!Number.isFinite(id)) continue;
 
     const conceptDoi = extractConceptDoi(hit);
+    const version = hit.metadata?.version?.trim();
+    const versionIndex = hit.versions?.index;
 
     records.push({
       id,
       title: hit.metadata?.title ?? "Untitled deposit",
       isPublished: extractIsPublished(hit),
       ...(conceptDoi && { conceptDoi }),
+      ...(version && { version }),
+      ...(Number.isInteger(versionIndex) && { versionIndex }),
     });
   }
 
@@ -461,6 +467,163 @@ async function linkZenodoDeposition(
   }
 }
 
+async function ensurePosterThumbnail(
+  posterId: number,
+  filePath: string | null | undefined,
+  currentImageUrl: string,
+) {
+  if (currentImageUrl) {
+    return { success: true as const, imageUrl: currentImageUrl };
+  }
+
+  if (!filePath) {
+    return {
+      success: false as const,
+      error: "Poster file not found while preparing its thumbnail",
+    };
+  }
+
+  if (!config.posterExtractionApi) {
+    return {
+      success: false as const,
+      error: "Poster thumbnail service is not configured",
+    };
+  }
+
+  console.log(`[Zenodo] Generating missing thumbnail for poster ${posterId}`);
+
+  const response = await fetch(
+    `${config.posterExtractionApi}/thumbnails/generate`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pdf_path: filePath, poster_id: posterId }),
+    },
+  );
+
+  if (!response.ok) {
+    const detail = truncateForLog(await response.text().catch(() => ""));
+
+    console.error(
+      `[Zenodo] Thumbnail generation failed for poster ${posterId}: ${response.status} ${detail}`,
+    );
+
+    return {
+      success: false as const,
+      error: "Could not generate the poster thumbnail. Please try again.",
+    };
+  }
+
+  // The extraction service writes imageUrl back to the poster. It may respond
+  // before that database update is visible, so briefly wait for the callback.
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const refreshed = await prisma.poster.findUnique({
+      where: { id: posterId },
+      select: { imageUrl: true },
+    });
+
+    if (refreshed?.imageUrl) {
+      return { success: true as const, imageUrl: refreshed.imageUrl };
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+
+  return {
+    success: false as const,
+    error:
+      "The poster thumbnail is still being prepared. Please try publishing again shortly.",
+  };
+}
+
+async function promotePosterThumbnail(imageUrl: string) {
+  const {
+    bunnyPrivateStorage,
+    bunnyPrivateStorageKey,
+    bunnyPublicStorage,
+    bunnyPublicStorageKey,
+  } = config;
+
+  if (!imageUrl) {
+    return {
+      success: false as const,
+      error: "Poster thumbnail is missing",
+    };
+  }
+
+  // Reused thumbnails and external poster images may already be public.
+  if (!bunnyPrivateStorage || !imageUrl.startsWith(bunnyPrivateStorage)) {
+    return { success: true as const, imageUrl };
+  }
+
+  if (
+    !bunnyPrivateStorageKey ||
+    !bunnyPublicStorage ||
+    !bunnyPublicStorageKey
+  ) {
+    return {
+      success: false as const,
+      error: "Poster thumbnail storage is not configured",
+    };
+  }
+
+  const thumbnailPath = imageUrl
+    .slice(bunnyPrivateStorage.length)
+    .replace(/^\//, "");
+
+  try {
+    const downloadRes = await fetch(`${bunnyPrivateStorage}/${thumbnailPath}`, {
+      headers: { AccessKey: bunnyPrivateStorageKey },
+    });
+
+    if (!downloadRes.ok) {
+      console.error(
+        `[Zenodo] Failed to download thumbnail from private storage: ${downloadRes.status}`,
+      );
+
+      return {
+        success: false as const,
+        error: "Could not retrieve the poster thumbnail from storage",
+      };
+    }
+
+    const contentType = downloadRes.headers.get("Content-Type") ?? "image/jpeg";
+    const fileBuffer = await downloadRes.arrayBuffer();
+    const uploadRes = await fetch(`${bunnyPublicStorage}/${thumbnailPath}`, {
+      method: "PUT",
+      headers: {
+        AccessKey: bunnyPublicStorageKey,
+        "Content-Type": contentType,
+        "Content-Length": String(fileBuffer.byteLength),
+      },
+      body: fileBuffer,
+    });
+
+    if (!uploadRes.ok) {
+      console.error(
+        `[Zenodo] Failed to upload thumbnail to public storage: ${uploadRes.status}`,
+      );
+
+      return {
+        success: false as const,
+        error: "Could not publish the poster thumbnail",
+      };
+    }
+
+    return {
+      success: true as const,
+      imageUrl: `https://cdn.posters.science/${thumbnailPath}`,
+    };
+  } catch (error) {
+    console.error("[Zenodo] Error publishing thumbnail:", error);
+
+    return {
+      success: false as const,
+      error: "Could not publish the poster thumbnail",
+    };
+  }
+}
+
 export async function beginZenodoPublication(
   posterId: string,
   mode: string,
@@ -468,6 +631,7 @@ export async function beginZenodoPublication(
   userId: string,
   onProgress?: ProgressCallback,
   license?: string,
+  version?: string,
 ) {
   console.log(
     `[Zenodo] Beginning publication for poster: ${posterId}, mode: ${mode}, depositionId: ${existingDepositionId}`,
@@ -497,7 +661,11 @@ export async function beginZenodoPublication(
 
   const poster = await prisma.poster.findUnique({
     where: { id: posterInt, userId },
-    include: { posterMetadata: true, zenodoDepositions: true },
+    include: {
+      posterMetadata: true,
+      zenodoDepositions: true,
+      extractionJob: { select: { filePath: true } },
+    },
   });
 
   if (!poster || !poster.posterMetadata) {
@@ -505,6 +673,18 @@ export async function beginZenodoPublication(
 
     return { success: false, error: "Poster or metadata not found" };
   }
+
+  const thumbnail = await ensurePosterThumbnail(
+    posterInt,
+    poster.extractionJob?.filePath,
+    poster.imageUrl,
+  );
+
+  if (!thumbnail.success) {
+    return { success: false, error: thumbnail.error };
+  }
+
+  poster.imageUrl = thumbnail.imageUrl;
 
   // Zenodo may have accepted the publication even if our final local
   // transaction failed. linkZenodoDeposition is deliberately marked
@@ -536,6 +716,12 @@ export async function beginZenodoPublication(
       `[Zenodo] Reconciling local poster from published record ${poster.zenodoDepositions.depositionId}`,
     );
 
+    const recoveredThumbnail = await promotePosterThumbnail(poster.imageUrl);
+
+    if (!recoveredThumbnail.success) {
+      return { success: false, error: recoveredThumbnail.error };
+    }
+
     await prisma.$transaction([
       prisma.poster.updateMany({
         where: posterFamilyWhere(rootId),
@@ -547,6 +733,7 @@ export async function beginZenodoPublication(
           status: "published",
           publishedAt: new Date(),
           isLatestVersion: true,
+          imageUrl: recoveredThumbnail.imageUrl,
         },
       }),
       prisma.posterMetadata.update({
@@ -690,16 +877,28 @@ export async function beginZenodoPublication(
     message: "Loading poster data...",
   });
 
-  // Persist license to DB if provided so poster.json and the record stay in sync
-  if (license) {
-    console.log(`[Zenodo] Saving license to posterMetadata: ${license}`);
+  // If a user types "v2", remove
+  // the "v" prefix so Zenodo receives "2".
+  const requestedVersion = version?.trim().replace(/^v(?=\d)/i, "");
+  const metadataUpdates = {
+    ...(license && { license }),
+    ...(!poster.automated && requestedVersion && { version: requestedVersion }),
+  };
+
+  // Persist publication choices before creating poster.json so the local
+  // package, Zenodo metadata, and a resumed attempt all use the same values.
+  if (Object.keys(metadataUpdates).length > 0) {
+    console.log("[Zenodo] Saving publication metadata choices");
 
     await prisma.posterMetadata.update({
       where: { posterId: posterInt },
-      data: { license },
+      data: metadataUpdates,
     });
 
-    poster.posterMetadata.license = license;
+    if (license) poster.posterMetadata.license = license;
+    if (!poster.automated && requestedVersion) {
+      poster.posterMetadata.version = requestedVersion;
+    }
   }
 
   await onProgress?.({
@@ -799,11 +998,14 @@ export async function beginZenodoPublication(
     submissionAbstract?: string;
   } | null;
 
-  // Bump the version before the metadata PUT: `meta` is passed by reference
-  // into the payload builder, so bumping afterwards would send Zenodo the old
-  // version while the DB recorded the new one.
+  // Older callers may not send an explicit version. Preserve the existing
+  // sequence-based fallback for those requests, while respecting the value the
+  // user selected in the publish form.
   if (!poster.automated) {
-    meta.version = posterVersionLabel(poster.versionSequence);
+    meta.version =
+      requestedVersion ||
+      meta.version?.trim() ||
+      posterVersionLabel(poster.versionSequence);
   }
 
   console.log(`[Zenodo] Updating metadata via InvenioRDM [record ${recordId}]`);
@@ -1021,72 +1223,12 @@ export async function beginZenodoPublication(
     return { success: false, error: linkedPublished.error };
   }
 
-  // Move the thumbnail from private to public storage now the record is live
-  const posterWithImage = await prisma.poster.findUnique({
-    where: { id: posterInt },
-    select: { imageUrl: true },
-  });
+  // Move a newly generated private thumbnail to public storage. Reused images
+  // are already public and pass through unchanged.
+  const publishedThumbnail = await promotePosterThumbnail(poster.imageUrl);
 
-  let newImageUrl: string | undefined;
-
-  const {
-    bunnyPrivateStorage,
-    bunnyPrivateStorageKey,
-    bunnyPublicStorage,
-    bunnyPublicStorageKey,
-  } = config;
-
-  const imageUrl = posterWithImage?.imageUrl;
-  if (
-    imageUrl &&
-    bunnyPrivateStorage &&
-    imageUrl.startsWith(bunnyPrivateStorage)
-  ) {
-    const thumbnailPath = imageUrl
-      .slice(bunnyPrivateStorage.length)
-      .replace(/^\//, "");
-
-    if (bunnyPrivateStorageKey && bunnyPublicStorage && bunnyPublicStorageKey) {
-      try {
-        const downloadRes = await fetch(
-          `${bunnyPrivateStorage}/${thumbnailPath}`,
-          { headers: { AccessKey: bunnyPrivateStorageKey } },
-        );
-
-        if (downloadRes.ok) {
-          const contentType =
-            downloadRes.headers.get("Content-Type") ?? "image/jpeg";
-          const fileBuffer = await downloadRes.arrayBuffer();
-
-          const uploadRes = await fetch(
-            `${bunnyPublicStorage}/${thumbnailPath}`,
-            {
-              method: "PUT",
-              headers: {
-                AccessKey: bunnyPublicStorageKey,
-                "Content-Type": contentType,
-                "Content-Length": String(fileBuffer.byteLength),
-              },
-              body: fileBuffer,
-            },
-          );
-
-          if (uploadRes.ok) {
-            newImageUrl = `https://cdn.posters.science/${thumbnailPath}`;
-          } else {
-            console.error(
-              `[Zenodo] Failed to upload thumbnail to public storage: ${uploadRes.status}`,
-            );
-          }
-        } else {
-          console.error(
-            `[Zenodo] Failed to download thumbnail from private storage: ${downloadRes.status}`,
-          );
-        }
-      } catch (err) {
-        console.error("[Zenodo] Error moving thumbnail:", err);
-      }
-    }
+  if (!publishedThumbnail.success) {
+    return { success: false, error: publishedThumbnail.error };
   }
 
   const alreadyHasDoi = metaIdentifiers.some(
@@ -1108,7 +1250,7 @@ export async function beginZenodoPublication(
         status: "published",
         publishedAt: new Date(),
         isLatestVersion: true,
-        ...(newImageUrl && { imageUrl: newImageUrl }),
+        imageUrl: publishedThumbnail.imageUrl,
       },
     }),
     prisma.posterMetadata.update({
@@ -1164,7 +1306,7 @@ type RdmRecord = {
   conceptrecid?: string | number;
   submitted?: boolean;
   state?: string;
-  metadata?: { title?: string; doi?: string };
+  metadata?: { title?: string; doi?: string; version?: string };
 };
 
 function extractRecordDoi(record: RdmRecord | null): string | undefined {
