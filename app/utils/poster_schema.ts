@@ -617,6 +617,7 @@ const FormCreatorSchema = z.object({
 export const posterResponseSchema = z.object({
   id: z.number(),
   rootPosterId: z.number().optional(),
+  versionRootId: z.number().nullable().optional(),
   title: z.string().optional(),
   description: z.string().optional(),
   status: z.enum(["draft", "published"]).optional(),
