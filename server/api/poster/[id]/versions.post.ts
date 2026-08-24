@@ -7,13 +7,14 @@ type RelatedIdentifier = {
 };
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
-const ALLOWED_TYPES = new Set([
-  "application/pdf",
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-]);
-const ALLOWED_EXTENSIONS = new Set(["pdf", "jpg", "jpeg", "png", "webp"]);
+const ALLOWED_FILE_TYPES: Record<string, string> = {
+  pdf: "application/pdf",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+};
+const GENERIC_UPLOAD_TYPES = new Set(["", "application/octet-stream"]);
 
 function fieldValue(
   formData: Awaited<ReturnType<typeof readMultipartFormData>>,
@@ -28,8 +29,24 @@ function fieldValue(
 
 function isAllowedPosterFile(name: string, type: string) {
   const extension = name.split(".").pop()?.toLowerCase() ?? "";
+  const expectedType = ALLOWED_FILE_TYPES[extension];
+  const normalizedType = type.split(";", 1)[0]?.trim().toLowerCase() ?? "";
 
-  return ALLOWED_TYPES.has(type) || ALLOWED_EXTENSIONS.has(extension);
+  return Boolean(
+    expectedType &&
+    (normalizedType === expectedType ||
+      GENERIC_UPLOAD_TYPES.has(normalizedType)),
+  );
+}
+
+function isExtractionReady(
+  extractionJob: { status: string; completed: boolean } | null | undefined,
+) {
+  return Boolean(
+    !extractionJob ||
+    extractionJob.completed ||
+    extractionJob.status === "completed",
+  );
 }
 
 export default defineEventHandler(async (event) => {
@@ -43,11 +60,18 @@ export default defineEventHandler(async (event) => {
 
   const requested = await prisma.poster.findFirst({
     where: { id: requestedId, userId: session.user.id },
-    select: { id: true, versionRootId: true },
+    select: { id: true, versionRootId: true, tombstone: true },
   });
 
   if (!requested) {
     throw createError({ statusCode: 404, statusMessage: "Poster not found" });
+  }
+
+  if (requested.tombstone) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: "Tombstoned posters cannot be versioned",
+    });
   }
 
   const rootId = posterFamilyRootId(requested);
@@ -66,6 +90,9 @@ export default defineEventHandler(async (event) => {
     select: {
       id: true,
       versionSequence: true,
+      imageUrl: true,
+      title: true,
+      description: true,
       extractionJob: { select: { id: true, status: true, completed: true } },
     },
   });
@@ -74,9 +101,12 @@ export default defineEventHandler(async (event) => {
     return {
       posterId: activeDraft.id,
       versionSequence: activeDraft.versionSequence,
+      imageUrl: activeDraft.imageUrl,
+      title: activeDraft.title,
+      description: activeDraft.description,
       extractionJobId: activeDraft.extractionJob?.id,
       extractionStatus: activeDraft.extractionJob?.status,
-      reviewReady: activeDraft.extractionJob?.completed ?? true,
+      reviewReady: isExtractionReady(activeDraft.extractionJob),
       resumed: true,
     };
   }
@@ -107,7 +137,21 @@ export default defineEventHandler(async (event) => {
     include: { posterMetadata: true, extractionJob: true },
   });
 
-  if (!source || !source.posterMetadata || !source.extractionJob?.filePath) {
+  if (!source) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: "Only a published poster can be versioned",
+    });
+  }
+
+  if (source.tombstone) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: "Tombstoned posters cannot be versioned",
+    });
+  }
+
+  if (!source.posterMetadata || !source.extractionJob?.filePath) {
     throw createError({
       statusCode: 400,
       statusMessage:
@@ -166,12 +210,22 @@ export default defineEventHandler(async (event) => {
   }
 
   const config = useRuntimeConfig(event);
-  const { bunnyPrivateStorage, bunnyPrivateStorageKey } = config;
+  const { bunnyPrivateStorage, bunnyPrivateStorageKey, posterExtractionApi } =
+    config;
 
   if (!bunnyPrivateStorage || !bunnyPrivateStorageKey) {
     throw createError({
       statusCode: 503,
       statusMessage: "Poster storage is not configured",
+    });
+  }
+
+  const needsPosterService =
+    metadataMode === "extract" || fileMode === "upload" || !source.imageUrl;
+  if (needsPosterService && !posterExtractionApi) {
+    throw createError({
+      statusCode: 503,
+      statusMessage: "Poster extraction service is not configured",
     });
   }
 
@@ -224,15 +278,27 @@ export default defineEventHandler(async (event) => {
 
   const nextSequence = source.versionSequence + 1;
   const originalFolderPath = originalPathParts.slice(0, -1).join("/");
-  const filePath = `${originalFolderPath}/version-${nextSequence}/${fileName}`;
+  const storageId = createId();
+  const filePath = `${originalFolderPath}/version-${nextSequence}-${storageId}/${fileName}`;
   const cleanupStoredVersion = async () => {
     const folderPath = filePath.slice(0, filePath.lastIndexOf("/") + 1);
-    await fetch(`${bunnyPrivateStorage}/${folderPath}`, {
-      method: "DELETE",
-      headers: { AccessKey: bunnyPrivateStorageKey },
-    }).catch((error) =>
-      console.error("[poster/version] Failed to clean up version file", error),
-    );
+    try {
+      const cleanupResponse = await fetch(
+        `${bunnyPrivateStorage}/${folderPath}`,
+        {
+          method: "DELETE",
+          headers: { AccessKey: bunnyPrivateStorageKey },
+        },
+      );
+
+      if (!cleanupResponse.ok) {
+        console.error(
+          `[poster/version] Failed to clean up ${folderPath}: ${cleanupResponse.status}`,
+        );
+      }
+    } catch (error) {
+      console.error("[poster/version] Failed to clean up version file", error);
+    }
   };
   const storageResponse = await fetch(`${bunnyPrivateStorage}/${filePath}`, {
     method: "PUT",
@@ -353,7 +419,11 @@ export default defineEventHandler(async (event) => {
           },
         },
       },
-      include: { extractionJob: { select: { id: true } } },
+      include: {
+        extractionJob: {
+          select: { id: true, status: true, completed: true },
+        },
+      },
     });
   } catch (error) {
     if ((error as { code?: string }).code === "P2002") {
@@ -363,18 +433,26 @@ export default defineEventHandler(async (event) => {
           versionSequence: nextSequence,
           status: { not: "published" },
         },
-        include: { extractionJob: { select: { id: true, completed: true } } },
+        include: {
+          extractionJob: {
+            select: { id: true, status: true, completed: true },
+          },
+        },
       });
       if (concurrent) {
-        // The version path is deterministic. A concurrent request writes to
-        // the same folder, so deleting it here could remove the winning
-        // request's file.
+        // Each request uses a unique storage folder, so the losing request can
+        // safely remove its upload without affecting the winning draft.
+        await cleanupStoredVersion();
 
         return {
           posterId: concurrent.id,
           versionSequence: concurrent.versionSequence,
+          imageUrl: concurrent.imageUrl,
+          title: concurrent.title,
+          description: concurrent.description,
           extractionJobId: concurrent.extractionJob?.id,
-          reviewReady: concurrent.extractionJob?.completed ?? true,
+          extractionStatus: concurrent.extractionJob?.status,
+          reviewReady: isExtractionReady(concurrent.extractionJob),
           resumed: true,
         };
       }
@@ -384,33 +462,80 @@ export default defineEventHandler(async (event) => {
     throw error;
   }
 
-  if (metadataMode === "extract" && config.posterExtractionApi) {
-    setImmediate(() => {
-      fetch(`${config.posterExtractionApi}/jobs/check`, {
-        method: "POST",
-      }).catch((error) =>
-        console.error("[poster/version] Failed to trigger extraction", error),
+  const responseFailure = async (label: string, response: Response) => {
+    const detail = (await response.text().catch(() => "")).slice(0, 500);
+
+    return `${label} failed with status ${response.status}${detail ? `: ${detail}` : ""}`;
+  };
+  const markPendingExtractionFailed = async (message: string) => {
+    try {
+      await prisma.extractionJob.updateMany({
+        where: { posterId: created.id, status: "pending-extraction" },
+        data: { status: "failed", completed: false, error: message },
+      });
+    } catch (error) {
+      console.error(
+        "[poster/version] Could not mark extraction trigger as failed",
+        error,
       );
+    }
+  };
+
+  if (metadataMode === "extract" && posterExtractionApi) {
+    setImmediate(async () => {
+      try {
+        const response = await fetch(`${posterExtractionApi}/jobs/check`, {
+          method: "POST",
+        });
+        if (!response.ok) {
+          throw new Error(
+            await responseFailure("Extraction trigger", response),
+          );
+        }
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Extraction trigger failed";
+        console.error("[poster/version] Failed to trigger extraction", error);
+        await markPendingExtractionFailed(message);
+      }
     });
-  } else if (fileMode === "upload" && config.posterExtractionApi) {
-    setImmediate(() => {
-      fetch(`${config.posterExtractionApi}/thumbnails/generate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pdf_path: filePath, poster_id: created.id }),
-      }).catch((error) =>
-        console.error("[poster/version] Failed to trigger thumbnail", error),
-      );
+  }
+
+  // A missing thumbnail must be generated from this version's stored file.
+  // This covers replacement files and reused files whose source thumbnail was
+  // unavailable without borrowing an image from an older poster version.
+  if (!created.imageUrl && posterExtractionApi) {
+    setImmediate(async () => {
+      try {
+        const response = await fetch(
+          `${posterExtractionApi}/thumbnails/generate`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              pdf_path: filePath,
+              poster_id: created.id,
+            }),
+          },
+        );
+        if (!response.ok) {
+          throw new Error(await responseFailure("Thumbnail trigger", response));
+        }
+      } catch (error) {
+        console.error("[poster/version] Failed to trigger thumbnail", error);
+      }
     });
   }
 
   return {
     posterId: created.id,
     versionSequence: created.versionSequence,
+    imageUrl: created.imageUrl,
+    title: created.title,
+    description: created.description,
     extractionJobId: created.extractionJob?.id,
-    extractionStatus:
-      metadataMode === "copy" ? "completed" : "pending-extraction",
-    reviewReady: metadataMode === "copy",
+    extractionStatus: created.extractionJob?.status,
+    reviewReady: isExtractionReady(created.extractionJob),
     resumed: false,
   };
 });
