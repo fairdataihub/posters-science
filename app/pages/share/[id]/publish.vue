@@ -453,6 +453,7 @@ watch(
     isPosterVersion.value = Boolean(data?.isVersion);
     if (isPosterVersion.value) depositionMode.value = "existing";
     if (linkedDepositionId.value) {
+      depositionMode.value = "existing";
       selectedDeposition.value = linkedDepositionId.value;
     }
     zenodoLoading.value = false;
