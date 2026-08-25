@@ -341,10 +341,132 @@ async function refreshZenodoToken(userId: string, refreshToken: string) {
   }
 }
 
-/**
- * Discards an unpublished InvenioRDM draft that is linked to a local poster.
- * A missing draft is already in the desired state, so retries remain safe.
- */
+type ZenodoRecordState =
+  | { kind: "published"; record: RdmRecord }
+  | { kind: "draft"; record: RdmRecord }
+  | { kind: "missing" }
+  | { kind: "unknown"; error: string };
+
+const NEW_DEPOSITION_DRAFT_STATUS = "draft-new";
+
+function isZenodoDraftStatus(status: string | null | undefined) {
+  return status === "draft" || status === NEW_DEPOSITION_DRAFT_STATUS;
+}
+
+async function resolveZenodoRecordState(
+  zenodoToken: string,
+  recordId: number,
+): Promise<ZenodoRecordState> {
+  try {
+    const published = await rdmGet(`/records/${recordId}`, zenodoToken);
+
+    if (published.ok) {
+      return {
+        kind: "published",
+        record: (await published.json()) as RdmRecord,
+      };
+    }
+
+    if (published.status !== 404) {
+      return {
+        kind: "unknown",
+        error: await getZenodoErrorMessage(
+          `Failed to check Zenodo record ${recordId}`,
+          published,
+        ),
+      };
+    }
+
+    const draft = await rdmGet(`/records/${recordId}/draft`, zenodoToken);
+
+    if (draft.ok) {
+      return { kind: "draft", record: (await draft.json()) as RdmRecord };
+    }
+
+    if (draft.status === 404) return { kind: "missing" };
+
+    return {
+      kind: "unknown",
+      error: await getZenodoErrorMessage(
+        `Failed to check Zenodo draft ${recordId}`,
+        draft,
+      ),
+    };
+  } catch (error) {
+    return {
+      kind: "unknown",
+      error: `Could not reach Zenodo while checking record ${recordId}: ${(error as Error).message}`,
+    };
+  }
+}
+
+async function discardRdmDraft(zenodoToken: string, recordId: number) {
+  const state = await resolveZenodoRecordState(zenodoToken, recordId);
+
+  if (state.kind === "published") {
+    return {
+      success: false as const,
+      published: state.record,
+      error: `Zenodo record ${recordId} has already been published and cannot be deleted as a draft.`,
+    };
+  }
+
+  if (state.kind === "unknown") {
+    return { success: false as const, error: state.error };
+  }
+
+  if (state.kind === "missing") return { success: true as const };
+
+  let response: Response;
+
+  try {
+    response = await fetch(
+      `${config.zenodoApiEndpoint}/records/${recordId}/draft`,
+      {
+        method: "DELETE",
+        headers: rdmHeaders(zenodoToken),
+      },
+    );
+  } catch (error) {
+    return {
+      success: false as const,
+      error: `Could not reach Zenodo while deleting draft ${recordId}: ${(error as Error).message}`,
+    };
+  }
+
+  if (response.ok) return { success: true as const };
+
+  if (response.status === 404) {
+    const afterDelete = await resolveZenodoRecordState(zenodoToken, recordId);
+
+    if (afterDelete.kind === "missing") return { success: true as const };
+    if (afterDelete.kind === "published") {
+      return {
+        success: false as const,
+        published: afterDelete.record,
+        error: `Zenodo record ${recordId} has already been published and cannot be deleted as a draft.`,
+      };
+    }
+    if (afterDelete.kind === "unknown") {
+      return { success: false as const, error: afterDelete.error };
+    }
+
+    return {
+      success: false as const,
+      error: `Zenodo draft ${recordId} still exists after the delete request.`,
+    };
+  }
+
+  return {
+    success: false as const,
+    error: await getZenodoErrorMessage(
+      `Failed to delete Zenodo draft ${recordId}`,
+      response,
+    ),
+  };
+}
+
+/** Discards a record only after confirming that it is still a draft. */
 export async function discardZenodoDraft(userId: string, recordId: number) {
   const tokenRecord = await getZenodoToken(userId);
 
@@ -356,34 +478,42 @@ export async function discardZenodoDraft(userId: string, recordId: number) {
     };
   }
 
-  let response: Response;
+  return discardRdmDraft(tokenRecord.accessToken, recordId);
+}
 
+/** Best-effort fallback for unexpected errors that escape the publication flow. */
+export async function cleanupFailedNewZenodoDeposition(
+  posterId: number,
+  userId: string,
+) {
   try {
-    response = await fetch(
-      `${config.zenodoApiEndpoint}/records/${recordId}/draft`,
-      {
-        method: "DELETE",
-        headers: rdmHeaders(tokenRecord.accessToken),
-      },
+    const [tokenRecord, deposition] = await Promise.all([
+      getZenodoToken(userId),
+      prisma.zenodoDeposition.findUnique({
+        where: { posterId },
+        select: { depositionId: true, status: true },
+      }),
+    ]);
+
+    if (!tokenRecord || deposition?.status !== NEW_DEPOSITION_DRAFT_STATUS)
+      return;
+
+    const cleanup = await cleanupCreatedDraft(
+      posterId,
+      deposition.depositionId,
+      tokenRecord.accessToken,
     );
+
+    if (!cleanup.success) {
+      console.error(
+        `[Zenodo] Emergency cleanup retained record ${deposition.depositionId}: ${cleanup.error}`,
+      );
+    }
   } catch (error) {
-    return {
-      success: false as const,
-      error: `Could not reach Zenodo while deleting draft ${recordId}: ${(error as Error).message}`,
-    };
+    console.error(
+      `[Zenodo] Emergency cleanup failed for poster ${posterId}: ${(error as Error).message}`,
+    );
   }
-
-  if (response.ok || response.status === 404) {
-    return { success: true as const };
-  }
-
-  return {
-    success: false as const,
-    error: await getZenodoErrorMessage(
-      `Failed to delete Zenodo draft ${recordId}`,
-      response,
-    ),
-  };
 }
 
 export type PublicationProgressEvent = {
@@ -397,6 +527,8 @@ type ProgressCallback = (
 ) => void | Promise<void>;
 
 type PosterIdentifier = { identifier: string; identifierType: string };
+type WorkingDraftOrigin = "new_deposition" | "new_version" | "reused_draft";
+type WorkingDraft = { record: RdmRecord; origin: WorkingDraftOrigin };
 
 function extractOrcid(ni: {
   nameIdentifier: string;
@@ -438,11 +570,16 @@ async function linkZenodoDeposition(
   userId: string,
   recordId: number,
   published?: { doi?: string },
+  draftOrigin?: WorkingDraftOrigin,
 ) {
   const state = {
     userId,
     depositionId: recordId,
-    status: published ? "published" : "draft",
+    status: published
+      ? "published"
+      : draftOrigin === "new_deposition"
+        ? NEW_DEPOSITION_DRAFT_STATUS
+        : "draft",
     ...(published?.doi && { lastPublishedZenodoDoi: published.doi }),
   };
 
@@ -465,6 +602,31 @@ async function linkZenodoDeposition(
 
     throw error;
   }
+}
+
+async function unlinkDraftDeposition(posterId: number, recordId: number) {
+  await prisma.zenodoDeposition.deleteMany({
+    where: {
+      posterId,
+      depositionId: recordId,
+      status: { in: ["draft", NEW_DEPOSITION_DRAFT_STATUS] },
+    },
+  });
+}
+
+async function cleanupCreatedDraft(
+  posterId: number,
+  recordId: number,
+  zenodoToken: string,
+) {
+  const discarded = await discardRdmDraft(zenodoToken, recordId);
+
+  if (!discarded.success) return discarded;
+
+  await unlinkDraftDeposition(posterId, recordId);
+  console.log(`[Zenodo] Removed failed working draft ${recordId}`);
+
+  return { success: true as const };
 }
 
 async function ensurePosterThumbnail(
@@ -674,6 +836,15 @@ export async function beginZenodoPublication(
     return { success: false, error: "Poster or metadata not found" };
   }
 
+  // Sequential local versions must extend their existing Zenodo record. Check
+  // this before thumbnail work or any remote draft can be created.
+  if (poster.versionRootId && mode !== "existing") {
+    return {
+      success: false,
+      error: "Poster versions must be published to an existing Zenodo record",
+    };
+  }
+
   const thumbnail = await ensurePosterThumbnail(
     posterInt,
     poster.extractionJob?.filePath,
@@ -686,6 +857,74 @@ export async function beginZenodoPublication(
 
   poster.imageUrl = thumbnail.imageUrl;
 
+  // Resolve the locally linked draft before acquiring anything. If Zenodo did
+  // publish it despite an ambiguous response, turn the link into the published
+  // recovery marker used below. New-deposition retries clean up drafts, while
+  // existing-deposition retries retain them for reuse.
+  if (isZenodoDraftStatus(poster.zenodoDepositions?.status)) {
+    const staleRecordId = poster.zenodoDepositions.depositionId;
+    const remoteState = await resolveZenodoRecordState(
+      tokenRecord.accessToken,
+      staleRecordId,
+    );
+
+    if (remoteState.kind === "published") {
+      const publishedDoi = extractRecordDoi(remoteState.record);
+
+      if (!publishedDoi) {
+        return {
+          success: false,
+          error: `Zenodo record ${staleRecordId} is published but its DOI could not be recovered. No new deposition was created.`,
+        };
+      }
+
+      const markedPublished = await linkZenodoDeposition(
+        posterInt,
+        userId,
+        staleRecordId,
+        { doi: publishedDoi },
+      );
+
+      if (!markedPublished.success) {
+        return { success: false, error: markedPublished.error };
+      }
+
+      poster.zenodoDepositions.status = "published";
+      poster.zenodoDepositions.lastPublishedZenodoDoi = publishedDoi;
+    } else if (remoteState.kind === "unknown") {
+      return {
+        success: false,
+        error: `${remoteState.error} The linked record was retained and no replacement was created.`,
+      };
+    } else if (
+      poster.zenodoDepositions.status === NEW_DEPOSITION_DRAFT_STATUS
+    ) {
+      const discarded = await cleanupCreatedDraft(
+        posterInt,
+        staleRecordId,
+        tokenRecord.accessToken,
+      );
+
+      if (!discarded.success) {
+        return {
+          success: false,
+          error: `${discarded.error} No new Zenodo deposition was created.`,
+        };
+      }
+
+      poster.zenodoDepositions = null;
+    } else if (remoteState.kind === "missing") {
+      await unlinkDraftDeposition(posterInt, staleRecordId);
+      poster.zenodoDepositions = null;
+    } else if (mode === "new") {
+      return {
+        success: false,
+        error:
+          "An existing Zenodo draft is already linked to this poster. Continue with that deposition instead of creating a new one.",
+      };
+    }
+  }
+
   // Zenodo may have accepted the publication even if our final local
   // transaction failed. linkZenodoDeposition is deliberately marked
   // published before that transaction, making this an idempotency marker.
@@ -693,10 +932,43 @@ export async function beginZenodoPublication(
   // unnecessary next-version draft on Zenodo.
   if (
     poster.status !== "published" &&
-    poster.zenodoDepositions?.status === "published" &&
-    poster.zenodoDepositions.lastPublishedZenodoDoi
+    poster.zenodoDepositions?.status === "published"
   ) {
-    const publishedDoi = poster.zenodoDepositions.lastPublishedZenodoDoi;
+    let publishedDoi: string | null | undefined =
+      poster.zenodoDepositions.lastPublishedZenodoDoi;
+
+    if (!publishedDoi) {
+      const remoteState = await resolveZenodoRecordState(
+        tokenRecord.accessToken,
+        poster.zenodoDepositions.depositionId,
+      );
+
+      if (remoteState.kind !== "published") {
+        return {
+          success: false,
+          error:
+            remoteState.kind === "unknown"
+              ? remoteState.error
+              : `Zenodo record ${poster.zenodoDepositions.depositionId} is marked as published locally but could not be found as a published record.`,
+        };
+      }
+
+      publishedDoi = extractRecordDoi(remoteState.record);
+
+      if (!publishedDoi) {
+        return {
+          success: false,
+          error: `Zenodo record ${poster.zenodoDepositions.depositionId} is published but its DOI could not be recovered.`,
+        };
+      }
+
+      await linkZenodoDeposition(
+        posterInt,
+        userId,
+        poster.zenodoDepositions.depositionId,
+        { doi: publishedDoi },
+      );
+    }
     const existingIdentifiers = Array.isArray(poster.posterMetadata.identifiers)
       ? (poster.posterMetadata.identifiers as PosterIdentifier[])
       : [];
@@ -827,7 +1099,8 @@ export async function beginZenodoPublication(
     return { success: false, error: status.error };
   }
 
-  const draft = status.data;
+  const workingDraft = status.data;
+  const draft = workingDraft.record;
   const recordId = Number(draft.id);
 
   if (!Number.isFinite(recordId)) {
@@ -842,26 +1115,117 @@ export async function beginZenodoPublication(
   console.log(`[Zenodo] Working draft ready - record ${recordId}`);
   console.log(`[Zenodo] Draft URL: ${draftUrl}`);
 
+  let linkedDraft = false;
+  let publishAttempted = false;
+  let publicationConfirmed = false;
+
+  const failWorkingDraft = async (error: string) => {
+    // A publish response can be lost after Zenodo commits it. Resolve that
+    // ambiguity before deciding whether a draft may be retained or deleted.
+    if (publishAttempted) {
+      const remoteState = await resolveZenodoRecordState(
+        tokenRecord.accessToken,
+        recordId,
+      );
+
+      if (remoteState.kind === "published") {
+        const publishedDoi = extractRecordDoi(remoteState.record);
+
+        if (publishedDoi) {
+          const markedPublished = await linkZenodoDeposition(
+            posterInt,
+            userId,
+            recordId,
+            { doi: publishedDoi },
+          );
+
+          if (markedPublished.success) {
+            return {
+              success: false,
+              error: `Zenodo published record ${recordId}. Retry once to finish updating the poster locally; no new deposition will be created.`,
+            };
+          }
+
+          return { success: false, error: markedPublished.error };
+        }
+
+        return {
+          success: false,
+          error: `Zenodo published record ${recordId}, but its DOI could not be recovered. No new deposition will be created.`,
+        };
+      }
+
+      if (remoteState.kind === "unknown") {
+        return {
+          success: false,
+          error: `${error} Zenodo could not confirm whether record ${recordId} was published, so the linked record was retained and no replacement should be created. ${remoteState.error}`,
+        };
+      }
+
+      if (remoteState.kind === "missing") {
+        return {
+          success: false,
+          error: `${error} Zenodo could not find record ${recordId} immediately after the publish attempt, so its local checkpoint was retained. Retry to resolve it before creating another deposition.`,
+        };
+      }
+
+      if (publicationConfirmed) {
+        return {
+          success: false,
+          error: `${error} Zenodo accepted the publish request, so record ${recordId} was retained for reconciliation and no replacement should be created.`,
+        };
+      }
+    }
+
+    const shouldCleanup =
+      workingDraft.origin === "new_deposition" ||
+      (!linkedDraft && workingDraft.origin === "new_version");
+
+    if (!shouldCleanup) return { success: false, error };
+
+    const cleanup = await cleanupCreatedDraft(
+      posterInt,
+      recordId,
+      tokenRecord.accessToken,
+    );
+
+    if (cleanup.success) return { success: false, error };
+
+    return {
+      success: false,
+      error: `${error} Zenodo draft ${recordId} could not be removed, so it was retained for a safe retry. ${cleanup.error}`,
+    };
+  };
+
   // Persist the working draft before any subsequent network operation. If a
   // purge, metadata update, or upload fails, the next attempt can resume this
   // exact draft instead of asking Zenodo to create another version.
-  const linked = await linkZenodoDeposition(posterInt, userId, recordId);
+  let linked;
+
+  try {
+    linked = await linkZenodoDeposition(
+      posterInt,
+      userId,
+      recordId,
+      undefined,
+      workingDraft.origin,
+    );
+  } catch (error) {
+    return failWorkingDraft(
+      `Could not save Zenodo draft ${recordId}: ${(error as Error).message}`,
+    );
+  }
 
   if (!linked.success) {
-    return { success: false, error: linked.error };
+    return failWorkingDraft(linked.error);
   }
 
-  if (poster.versionRootId && mode !== "existing") {
-    return {
-      success: false,
-      error: "Poster versions must be published to an existing Zenodo record",
-    };
-  }
+  linkedDraft = true;
 
   const purged = await purgeDraftFiles(recordId, tokenRecord.accessToken);
 
   if (!purged.success) {
-    return { success: false, error: purged.error };
+    return failWorkingDraft(purged.error);
   }
 
   await onProgress?.({
@@ -890,10 +1254,16 @@ export async function beginZenodoPublication(
   if (Object.keys(metadataUpdates).length > 0) {
     console.log("[Zenodo] Saving publication metadata choices");
 
-    await prisma.posterMetadata.update({
-      where: { posterId: posterInt },
-      data: metadataUpdates,
-    });
+    try {
+      await prisma.posterMetadata.update({
+        where: { posterId: posterInt },
+        data: metadataUpdates,
+      });
+    } catch (error) {
+      return failWorkingDraft(
+        `Could not save publication metadata: ${(error as Error).message}`,
+      );
+    }
 
     if (license) poster.posterMetadata.license = license;
     if (!poster.automated && requestedVersion) {
@@ -1043,7 +1413,9 @@ export async function beginZenodoPublication(
       message: `Metadata update failed: ${metadataResult.error}`,
     });
 
-    return { success: false, error: metadataResult.error };
+    return failWorkingDraft(
+      metadataResult.error ?? "Zenodo rejected the poster metadata",
+    );
   }
 
   // Reserved after the metadata PUT because that PUT replaces the whole record.
@@ -1060,7 +1432,7 @@ export async function beginZenodoPublication(
       message: reserved.error,
     });
 
-    return { success: false, error: reserved.error };
+    return failWorkingDraft(reserved.error);
   }
 
   const doi = reserved.doi;
@@ -1081,13 +1453,21 @@ export async function beginZenodoPublication(
   // Build poster.json from DB data and upload it to the draft
   console.log(`[Zenodo] Building poster.json for poster: ${posterId}`);
 
-  const posterJson = buildPosterJson(poster.posterMetadata, {
-    title: poster.title,
-    description: poster.description,
-    zenodoDoi: doi,
-    publishedAt: zenodoSharedAt,
-    includePublisher: true,
-  });
+  let posterJson;
+
+  try {
+    posterJson = buildPosterJson(poster.posterMetadata, {
+      title: poster.title,
+      description: poster.description,
+      zenodoDoi: doi,
+      publishedAt: zenodoSharedAt,
+      includePublisher: true,
+    });
+  } catch (error) {
+    return failWorkingDraft(
+      `Could not build poster metadata package: ${(error as Error).message}`,
+    );
+  }
   const posterJsonEncoded = new TextEncoder().encode(
     JSON.stringify(posterJson, null, 2),
   );
@@ -1108,20 +1488,30 @@ export async function beginZenodoPublication(
   if (!uploadResult.success) {
     console.log(`[Zenodo] Failed to upload poster.json: ${uploadResult.error}`);
 
-    return { success: false, error: uploadResult.error };
+    return failWorkingDraft(
+      uploadResult.error ?? "Failed to upload poster.json",
+    );
   }
 
   // Retrieve and upload poster file
-  const extractionJob = await prisma.extractionJob.findUnique({
-    where: { posterId: posterInt },
-  });
+  let extractionJob;
+
+  try {
+    extractionJob = await prisma.extractionJob.findUnique({
+      where: { posterId: posterInt },
+    });
+  } catch (error) {
+    return failWorkingDraft(
+      `Could not load the poster file: ${(error as Error).message}`,
+    );
+  }
 
   if (!extractionJob?.filePath) {
     console.log(
       `[Zenodo] No extraction job or file path found for poster: ${posterId}`,
     );
 
-    return { success: false, error: "Poster file not found for upload" };
+    return failWorkingDraft("Poster file not found for upload");
   }
 
   const posterFileName = sanitizeZenodoFileKey(
@@ -1164,7 +1554,9 @@ export async function beginZenodoPublication(
       `[Zenodo] Failed to upload poster file "${posterFileName}": ${posterFileUpload.error}`,
     );
 
-    return { success: false, error: posterFileUpload.error };
+    return failWorkingDraft(
+      posterFileUpload.error ?? `Failed to upload ${posterFileName}`,
+    );
   }
 
   console.log(`[Zenodo] Uploaded poster file "${posterFileName}" successfully`);
@@ -1186,6 +1578,7 @@ export async function beginZenodoPublication(
   console.log(`[Zenodo] About to publish record: ${recordId}`);
   console.log(`[Zenodo] Inspect draft before publish: ${draftUrl}`);
 
+  publishAttempted = true;
   const publishResult = await publishRdmDraft(
     tokenRecord.accessToken,
     recordId,
@@ -1194,23 +1587,39 @@ export async function beginZenodoPublication(
   if (!publishResult.success) {
     console.log(`[Zenodo] Publication failed [record ${recordId}]`);
 
-    return { success: false, error: publishResult.error };
+    return failWorkingDraft(publishResult.error);
   }
 
   const published = publishResult.data;
-  const publishedDoi = published.doi;
+  publicationConfirmed = true;
+  let publishedDoi = published.doi;
 
   // A record without a DOI would otherwise leave a publicly published poster with no identifier.
   if (!publishedDoi) {
-    console.error(
-      `[Zenodo] Published record ${published.recordId} is missing a DOI in the response`,
+    const remoteState = await resolveZenodoRecordState(
+      tokenRecord.accessToken,
+      published.recordId,
     );
 
-    return {
-      success: false,
-      error: `Zenodo published record ${published.recordId} but returned no DOI`,
-    };
+    if (remoteState.kind === "published") {
+      publishedDoi = extractRecordDoi(remoteState.record);
+    }
+
+    if (!publishedDoi) {
+      await linkZenodoDeposition(posterInt, userId, published.recordId, {});
+
+      console.error(
+        `[Zenodo] Published record ${published.recordId} is missing a recoverable DOI`,
+      );
+
+      return {
+        success: false,
+        error: `Zenodo published record ${published.recordId} but its DOI could not be recovered. No new deposition will be created.`,
+      };
+    }
   }
+
+  published.doi = publishedDoi;
 
   const linkedPublished = await linkZenodoDeposition(
     posterInt,
@@ -1451,10 +1860,17 @@ async function acquireWorkingDraft(
   zenodoToken: string,
   seed: RdmDraftSeed,
 ): Promise<
-  { success: true; data: RdmRecord } | { success: false; error: string }
+  { success: true; data: WorkingDraft } | { success: false; error: string }
 > {
   if (mode === "new") {
-    return createRdmDraft(zenodoToken, seed);
+    const created = await createRdmDraft(zenodoToken, seed);
+
+    return created.success
+      ? {
+          success: true,
+          data: { record: created.data, origin: "new_deposition" },
+        }
+      : created;
   }
 
   console.log(`[Zenodo] Resolving existing Zenodo record: ${depositionId}`);
@@ -1508,7 +1924,14 @@ async function acquireWorkingDraft(
       `[Zenodo] Record ${depositionId} is published, creating a new version from ${latestId}`,
     );
 
-    return createRdmVersion(zenodoToken, latestId);
+    const created = await createRdmVersion(zenodoToken, latestId);
+
+    return created.success
+      ? {
+          success: true,
+          data: { record: created.data, origin: "new_version" },
+        }
+      : created;
   }
 
   if (published.status === 404) {
@@ -1520,7 +1943,13 @@ async function acquireWorkingDraft(
         `[Zenodo] Record ${depositionId} is an unpublished draft, reusing it`,
       );
 
-      return { success: true, data: (await draft.json()) as RdmRecord };
+      return {
+        success: true,
+        data: {
+          record: (await draft.json()) as RdmRecord,
+          origin: "reused_draft",
+        },
+      };
     }
 
     if (draft.status === 404) {
