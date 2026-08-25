@@ -1,6 +1,7 @@
 // Endpoint to begin the Zenodo archival publication workflow
 // Streams progress events via SSE as each step completes
 import { z } from "zod";
+import { cleanupFailedNewZenodoDeposition } from "../../../utils/zenodo";
 
 const payloadSchema = z.object({
   posterId: z.string(),
@@ -92,6 +93,10 @@ export default defineEventHandler(async (event) => {
     }
   } catch (error) {
     console.error("[Zenodo] Unexpected error during publication:", error);
+
+    if (mode === "new") {
+      await cleanupFailedNewZenodoDeposition(Number(posterId), userId);
+    }
 
     // Keep the real message: a generic string here makes shared screenshots
     // untraceable, and this branch catches network throws and Prisma errors.
