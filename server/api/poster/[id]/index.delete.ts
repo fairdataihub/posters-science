@@ -47,13 +47,14 @@ export default defineEventHandler(async (event) => {
   const versionDraftReady =
     !poster.extractionJob ||
     poster.extractionJob.completed ||
-    poster.extractionJob.status === "completed";
+    poster.extractionJob.status === "completed" ||
+    poster.extractionJob.status === "failed";
 
   if (poster.versionRootId !== null && !versionDraftReady) {
     throw createError({
       statusCode: 409,
       statusMessage:
-        "Version drafts cannot be deleted until metadata extraction is ready for review",
+        "Version drafts cannot be deleted while metadata extraction is still running",
     });
   }
 
@@ -65,7 +66,10 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  if (poster.zenodoDepositions?.status === "draft") {
+  if (
+    poster.zenodoDepositions?.status === "draft" ||
+    poster.zenodoDepositions?.status === "draft-new"
+  ) {
     const discarded = await discardZenodoDraft(
       user.id,
       poster.zenodoDepositions.depositionId,

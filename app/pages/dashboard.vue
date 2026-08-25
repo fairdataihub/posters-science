@@ -1443,7 +1443,9 @@ const getCardDescription = (poster: Poster) =>
           class="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
         >
           <UButton
-            v-if="versionPanelState === 'ready'"
+            v-if="
+              versionPanelState === 'ready' || versionPanelState === 'failed'
+            "
             color="error"
             variant="soft"
             icon="i-lucide-trash-2"
