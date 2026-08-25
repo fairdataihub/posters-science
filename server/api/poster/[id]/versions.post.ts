@@ -1,3 +1,5 @@
+import { createId } from "@paralleldrive/cuid2";
+
 type Identifier = { identifier?: string; identifierType?: string };
 type RelatedIdentifier = {
   relatedIdentifier?: string;
