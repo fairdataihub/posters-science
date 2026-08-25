@@ -4,7 +4,7 @@ export default defineEventHandler(async (event) => {
   const { user } = session;
   const userId = user.id;
 
-  const posters = await prisma.poster.findMany({
+  const posterRows = await prisma.poster.findMany({
     include: {
       posterMetadata: {
         select: {
@@ -12,11 +12,22 @@ export default defineEventHandler(async (event) => {
           publicationYear: true,
           doi: true,
           license: true,
+          version: true,
         },
       },
       extractionJob: {
         select: {
+          id: true,
           status: true,
+          completed: true,
+          error: true,
+        },
+      },
+      zenodoDepositions: {
+        select: {
+          depositionId: true,
+          status: true,
+          lastPublishedZenodoDoi: true,
         },
       },
     },
@@ -28,5 +39,42 @@ export default defineEventHandler(async (event) => {
     },
   });
 
-  return posters || [];
+  const families = new Map<number, typeof posterRows>();
+
+  for (const poster of posterRows) {
+    const rootId = posterFamilyRootId(poster);
+    const family = families.get(rootId) ?? [];
+    family.push(poster);
+    families.set(rootId, family);
+  }
+
+  return [...families.entries()].map(([rootPosterId, family]) => {
+    const ordered = [...family].sort(
+      (a, b) => b.versionSequence - a.versionSequence,
+    );
+    const latestPublished = ordered.find(
+      (poster) => poster.status === "published",
+    );
+    const activeVersionDraft = ordered.find(
+      (poster) => poster.id !== rootPosterId && poster.status !== "published",
+    );
+    const displayed = latestPublished ?? ordered[0]!;
+
+    return {
+      ...displayed,
+      rootPosterId,
+      versionCount: family.filter((poster) => poster.status === "published")
+        .length,
+      activeVersionDraft: activeVersionDraft
+        ? {
+            id: activeVersionDraft.id,
+            versionSequence: activeVersionDraft.versionSequence,
+            imageUrl: activeVersionDraft.imageUrl,
+            title: activeVersionDraft.title,
+            description: activeVersionDraft.description,
+            extractionJob: activeVersionDraft.extractionJob,
+          }
+        : null,
+    };
+  });
 });

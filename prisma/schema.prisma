@@ -1,8 +1,8 @@
 generator client {
-    provider        = "prisma-client"
-    previewFeatures = ["strictUndefinedChecks"]
-    output          = "../shared/generated/"
-    engineType      = "client"
+  provider        = "prisma-client"
+  previewFeatures = ["strictUndefinedChecks"]
+  output          = "../shared/generated/"
+  engineType      = "client"
 }
 
 // generator kysely {
@@ -13,250 +13,265 @@ generator client {
 // }
 
 datasource db {
-    provider = "postgresql"
+  provider = "postgresql"
 }
 
 model User {
-    id String @id @default(cuid(2))
+  id String @id @default(cuid(2))
 
-    givenName  String @default("") // first name
-    familyName String @default("") // last name
+  givenName  String @default("") // first name
+  familyName String @default("") // last name
 
-    emailAddress String @unique
-    password     String
+  emailAddress String @unique
+  password     String
 
-    emailVerified                 Boolean   @default(false)
-    emailVerifiedAt               DateTime?
-    emailVerificationToken        String?   @unique
-    emailVerificationTokenExpires DateTime?
+  emailVerified                 Boolean   @default(false)
+  emailVerifiedAt               DateTime?
+  emailVerificationToken        String?   @unique
+  emailVerificationTokenExpires DateTime?
 
-    role String @default("user") // user | admin
+  role String @default("user") // user | admin
 
-    created DateTime @default(now())
-    updated DateTime @updatedAt
-    Poster  Poster[]
+  created DateTime @default(now())
+  updated DateTime @updatedAt
+  Poster  Poster[]
 
-    ZenodoToken       ZenodoToken?
-    ZenodoDepositions ZenodoDeposition[]
+  ZenodoToken       ZenodoToken?
+  ZenodoDepositions ZenodoDeposition[]
 
-    likes Like[] @relation("UserLikes")
+  likes Like[] @relation("UserLikes")
 
-    userEmailVerifications UserEmailVerification[]
-    userForgotPasswords    UserForgotPassword[]
+  userEmailVerifications UserEmailVerification[]
+  userForgotPasswords    UserForgotPassword[]
 
-    adminAuditLogs AdminAuditLog[] @relation("AdminActions")
+  adminAuditLogs AdminAuditLog[] @relation("AdminActions")
 
-    @@index([emailAddress])
+  @@index([emailAddress])
 }
 
 model UserEmailVerification {
-    id String @id @default(cuid(2))
+  id String @id @default(cuid(2))
 
-    user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-    userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
 
-    verificationToken String   @unique
-    expiresAt         DateTime
+  verificationToken String   @unique
+  expiresAt         DateTime
 
-    created DateTime @default(now())
-    updated DateTime @updatedAt
+  created DateTime @default(now())
+  updated DateTime @updatedAt
 }
 
 model UserForgotPassword {
-    id String @id @default(cuid(2))
+  id String @id @default(cuid(2))
 
-    user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-    userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
 
-    resetToken String   @unique
-    expiresAt  DateTime
+  resetToken String   @unique
+  expiresAt  DateTime
 
-    created DateTime @default(now())
-    updated DateTime @updatedAt
+  created DateTime @default(now())
+  updated DateTime @updatedAt
 }
 
 model UserInterest {
-    id String @id @default(cuid(2))
+  id String @id @default(cuid(2))
 
-    emailAddress String @unique
+  emailAddress String @unique
 
-    created DateTime @default(now())
+  created DateTime @default(now())
 
-    @@index([emailAddress])
+  @@index([emailAddress])
 }
 
 model Poster {
-    id Int @id @default(autoincrement())
+  id Int @id @default(autoincrement())
 
-    title       String
-    description String
+  // Published poster versions are stored as separate rows while sharing the
+  // first poster's stable public identity. Root rows leave versionRootId
+  // null; every later version points directly at that root.
+  versionRoot     Poster?  @relation("PosterVersions", fields: [versionRootId], references: [id], onDelete: Cascade)
+  versionRootId   Int?
+  versions        Poster[] @relation("PosterVersions")
+  // Internal ordering slot reserved when a draft is created. This is not the
+  // user-facing PosterMetadata.version value.
+  versionSequence Int      @default(1)
+  isLatestVersion Boolean  @default(true)
 
-    imageUrl String
+  title       String
+  description String
 
-    status      String    @default("draft") // draft, downloaded, published
-    publishedAt DateTime?
+  imageUrl String
 
-    user   User   @relation(fields: [userId], references: [id])
-    userId String
+  status      String    @default("draft") // draft, downloaded, published
+  publishedAt DateTime?
 
-    randomInt Int @default(0) // a field to touch when data in a related table is updated - For sorting by last updated
+  user   User   @relation(fields: [userId], references: [id])
+  userId String
 
-    created DateTime @default(now())
-    updated DateTime @updatedAt
+  randomInt Int @default(0) // a field to touch when data in a related table is updated - For sorting by last updated
 
-    posterMetadata    PosterMetadata?
-    zenodoDepositions ZenodoDeposition?
+  created DateTime @default(now())
+  updated DateTime @updatedAt
 
-    extractionJob ExtractionJob?
+  posterMetadata    PosterMetadata?
+  zenodoDepositions ZenodoDeposition?
 
-    automated Boolean @default(false) // Whether the poster was created through automated extraction or manual submission
+  extractionJob ExtractionJob?
 
-    tombstone    Boolean @default(false) // true = retired/soft-deleted, hidden from public views
-    tombedReason String  @default("") // Why the poster was retired
+  automated Boolean @default(false) // Whether the poster was created through automated extraction or manual submission
 
-    likes Like[] @relation("PosterLikes")
+  tombstone    Boolean @default(false) // true = retired/soft-deleted, hidden from public views
+  tombedReason String  @default("") // Why the poster was retired
+
+  likes Like[] @relation("PosterLikes")
+
+  @@unique([versionRootId, versionSequence])
+  @@index([versionRootId, status])
+  @@index([status, tombstone, isLatestVersion])
 }
 
 model PosterMetadata {
-    poster   Poster @relation(fields: [posterId], references: [id], onDelete: Cascade)
-    posterId Int    @id
+  poster   Poster @relation(fields: [posterId], references: [id], onDelete: Cascade)
+  posterId Int    @id
 
-    doi String?
+  doi String?
 
-    identifiers Json @default("[]") // [{ identifier: string, identifierType: string }]
+  identifiers Json @default("[]") // [{ identifier: string, identifierType: string }]
 
-    creators Json @default("[]") // [{ name: string, nameType: string, nameIdentifiers: string[], affiliation: string[] }]
+  creators Json @default("[]") // [{ name: string, nameType: string, nameIdentifiers: string[], affiliation: string[] }]
 
-    publisher       String?
-    publicationYear Int?
+  publisher       String?
+  publicationYear Int?
 
-    subjects String[] @default([])
+  subjects String[] @default([])
 
-    domain   String?
-    language String?
-    version  String?
+  domain   String?
+  language String?
+  version  String?
 
-    size   String?
-    format String?
+  size   String?
+  format String?
 
-    license String? // SPDX identifier
+  license String? // SPDX identifier
 
-    fundingReferences Json @default("[]") // [{ funderName: string, funderIdentifier: string, funderIdentifierType: string, schemeUri: string, awardNumber: string, awardUri: string, awardTitle: string }]
+  fundingReferences Json @default("[]") // [{ funderName: string, funderIdentifier: string, funderIdentifierType: string, schemeUri: string, awardNumber: string, awardUri: string, awardTitle: string }]
 
-    conferenceName           String?
-    conferenceLocation       String?
-    conferenceUri            String?
-    conferenceIdentifier     String?
-    conferenceIdentifierType String?
-    conferenceYear           Int?
-    conferenceStartDate      String?
-    conferenceEndDate        String?
-    conferenceAcronym        String?
-    conferenceSeries         String?
+  conferenceName           String?
+  conferenceLocation       String?
+  conferenceUri            String?
+  conferenceIdentifier     String?
+  conferenceIdentifierType String?
+  conferenceYear           Int?
+  conferenceStartDate      String?
+  conferenceEndDate        String?
+  conferenceAcronym        String?
+  conferenceSeries         String?
 
-    dates Json @default("[]") // [{ date: string, dateType: string }] primarily for autoindexed posters
+  dates Json @default("[]") // [{ date: string, dateType: string }] primarily for autoindexed posters
 
-    relatedIdentifiers Json @default("[]") // [{ relatedIdentifier: string, relatedIdentifierType: string, relationType: string }]
+  relatedIdentifiers Json @default("[]") // [{ relatedIdentifier: string, relatedIdentifierType: string, relationType: string }]
 
-    posterContent Json @default("[]") // { sections: [{ sectionTitle: string, sectionContent: string }], unstructuredContent: string }
-    tableCaptions Json @default("[]") // [{ id: string, caption: string }]
-    imageCaptions Json @default("[]") // [{ id: string, caption: string }]
+  posterContent Json @default("[]") // { sections: [{ sectionTitle: string, sectionContent: string }], unstructuredContent: string }
+  tableCaptions Json @default("[]") // [{ id: string, caption: string }]
+  imageCaptions Json @default("[]") // [{ id: string, caption: string }]
 
-    created DateTime @default(now())
-    updated DateTime @updatedAt
+  created DateTime @default(now())
+  updated DateTime @updatedAt
 }
 
 model Like {
-    user   User   @relation("UserLikes", fields: [userId], references: [id], onDelete: Cascade)
-    userId String
+  user   User   @relation("UserLikes", fields: [userId], references: [id], onDelete: Cascade)
+  userId String
 
-    poster   Poster @relation("PosterLikes", fields: [posterId], references: [id], onDelete: Cascade)
-    posterId Int
+  poster   Poster @relation("PosterLikes", fields: [posterId], references: [id], onDelete: Cascade)
+  posterId Int
 
-    created DateTime @default(now())
-    updated DateTime @updatedAt
+  created DateTime @default(now())
+  updated DateTime @updatedAt
 
-    @@id([userId, posterId])
+  @@id([userId, posterId])
 }
 
 model ZenodoToken {
-    id String @id @default(cuid(2))
+  id String @id @default(cuid(2))
 
-    user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-    userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String @unique
 
-    accessToken  String
-    refreshToken String
-    expiresAt    DateTime
+  accessToken  String
+  refreshToken String
+  expiresAt    DateTime
 
-    created DateTime @default(now())
-    updated DateTime @updatedAt
+  created DateTime @default(now())
+  updated DateTime @updatedAt
 
-    @@index([userId])
+  @@index([userId])
 }
 
 model ZenodoDeposition {
-    id String @id @default(cuid(2))
+  id String @id @default(cuid(2))
 
-    depositionId           Int     @unique // Last published Zenodo deposition ID
-    status                 String  @default("unpublished") // draft, published, unpublished
-    lastPublishedZenodoDoi String? // Last published Zenodo DOI
+  depositionId           Int     @unique // Last published Zenodo deposition ID
+  status                 String  @default("unpublished") // draft, published, unpublished
+  lastPublishedZenodoDoi String? // Last published Zenodo DOI
 
-    user   User   @relation(fields: [userId], references: [id])
-    userId String
+  user   User   @relation(fields: [userId], references: [id])
+  userId String
 
-    poster   Poster @relation(fields: [posterId], references: [id], onDelete: Cascade)
-    posterId Int    @unique
+  poster   Poster @relation(fields: [posterId], references: [id], onDelete: Cascade)
+  posterId Int    @unique
 
-    created DateTime @default(now())
-    updated DateTime @updatedAt
+  created DateTime @default(now())
+  updated DateTime @updatedAt
 }
 
 model AdminAuditLog {
-    id String @id @default(cuid(2))
+  id String @id @default(cuid(2))
 
-    adminUser   User   @relation("AdminActions", fields: [adminUserId], references: [id])
-    adminUserId String
+  adminUser   User   @relation("AdminActions", fields: [adminUserId], references: [id])
+  adminUserId String
 
-    action     String // e.g. DELETE_POSTER, UPDATE_USER_ROLE
-    entityType String // user | poster
-    entityId   String
+  action     String // e.g. DELETE_POSTER, UPDATE_USER_ROLE
+  entityType String // user | poster
+  entityId   String
 
-    details Json?
+  details Json?
 
-    created DateTime @default(now())
+  created DateTime @default(now())
 
-    @@index([adminUserId])
-    @@index([entityType])
-    @@index([created])
+  @@index([adminUserId])
+  @@index([entityType])
+  @@index([created])
 }
 
 model MetricsSnapshot {
-    id Int @id @default(autoincrement())
+  id Int @id @default(autoincrement())
 
-    payload Json
+  payload Json
 
-    generatedAt DateTime @default(now())
+  generatedAt DateTime @default(now())
 
-    @@index([generatedAt])
+  @@index([generatedAt])
 }
 
 model ExtractionJob {
-    // This record and the files will only be removed after the poster is published or a doi is submitted
-    id String @id @default(cuid(2))
+  // This record and the files will only be removed after the poster is published or a doi is submitted
+  id String @id @default(cuid(2))
 
-    poster   Poster @relation(fields: [posterId], references: [id], onDelete: Cascade)
-    posterId Int    @unique
+  poster   Poster @relation(fields: [posterId], references: [id], onDelete: Cascade)
+  posterId Int    @unique
 
-    fileName String
-    filePath String
+  fileName String
+  filePath String
 
-    completed Boolean @default(false)
-    status    String  @default("pending-extraction") // pending-extraction, processing, completed, failed
-    error     String? // Filled when job fails
+  completed Boolean @default(false)
+  status    String  @default("pending-extraction") // pending-extraction, processing, completed, failed
+  error     String? // Filled when job fails
 
-    created DateTime @default(now())
-    updated DateTime @updatedAt
+  created DateTime @default(now())
+  updated DateTime @updatedAt
 
-    @@index([status])
+  @@index([status])
 }

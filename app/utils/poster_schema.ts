@@ -616,6 +616,8 @@ const FormCreatorSchema = z.object({
 // Used to type the response from GET /api/poster/:id
 export const posterResponseSchema = z.object({
   id: z.number(),
+  rootPosterId: z.number().optional(),
+  versionRootId: z.number().nullable().optional(),
   title: z.string().optional(),
   description: z.string().optional(),
   status: z.enum(["draft", "published"]).optional(),
@@ -805,6 +807,17 @@ const StrictFundingSchema = z
     {
       message: "Scheme URI is required when the identifier type is Other",
       path: ["schemeUri"],
+    },
+  )
+  .refine(
+    (data) =>
+      !data.awardUri?.trim() ||
+      !!data.awardNumber?.trim() ||
+      !!data.awardTitle?.trim(),
+    {
+      message:
+        "Award title or award number is required when an award URI is provided",
+      path: ["awardUri"],
     },
   );
 
