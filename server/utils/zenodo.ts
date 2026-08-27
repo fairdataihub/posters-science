@@ -654,14 +654,29 @@ async function ensurePosterThumbnail(
 
   console.log(`[Zenodo] Generating missing thumbnail for poster ${posterId}`);
 
-  const response = await fetch(
-    `${config.posterExtractionApi}/thumbnails/generate`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pdf_path: filePath, poster_id: posterId }),
-    },
-  );
+  let response: Response;
+
+  try {
+    response = await fetch(
+      `${config.posterExtractionApi}/thumbnails/generate`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pdf_path: filePath, poster_id: posterId }),
+      },
+    );
+  } catch (error) {
+    console.error(
+      `[Zenodo] Could not reach thumbnail service for poster ${posterId}`,
+      error,
+    );
+
+    return {
+      success: false as const,
+      error:
+        "The replacement poster preview could not be prepared. Return to the dashboard and try again.",
+    };
+  }
 
   if (!response.ok) {
     const detail = truncateForLog(await response.text().catch(() => ""));
