@@ -54,11 +54,24 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  const response = await fetch(`${posterExtractionApi}/thumbnails/generate`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ pdf_path: filePath, poster_id: posterId }),
-  });
+  let response: Response;
+
+  try {
+    response = await fetch(`${posterExtractionApi}/thumbnails/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pdf_path: filePath, poster_id: posterId }),
+    });
+  } catch (error) {
+    console.error(
+      `[thumbnail] Could not reach generation service for poster ${posterId}`,
+      error,
+    );
+    throw createError({
+      statusCode: 502,
+      statusMessage: "Could not reach the thumbnail generation service",
+    });
+  }
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -72,5 +85,19 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  return { success: true };
+  const result = (await response.json()) as { thumbnail_path?: string };
+  const imageUrl = result.thumbnail_path?.trim();
+  if (!imageUrl) {
+    throw createError({
+      statusCode: 502,
+      statusMessage: "Thumbnail service returned no poster preview",
+    });
+  }
+
+  await prisma.poster.update({
+    where: { id: posterId },
+    data: { imageUrl },
+  });
+
+  return { success: true, imageUrl };
 });

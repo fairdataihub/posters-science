@@ -41,13 +41,15 @@ function isAllowedPosterFile(name: string, type: string) {
   );
 }
 
-function isExtractionReady(
+function isVersionReviewReady(
+  imageUrl: string,
   extractionJob: { status: string; completed: boolean } | null | undefined,
 ) {
   return Boolean(
-    !extractionJob ||
-    extractionJob.completed ||
-    extractionJob.status === "completed",
+    imageUrl &&
+    (!extractionJob ||
+      extractionJob.completed ||
+      extractionJob.status === "completed"),
   );
 }
 
@@ -108,7 +110,11 @@ export default defineEventHandler(async (event) => {
       description: activeDraft.description,
       extractionJobId: activeDraft.extractionJob?.id,
       extractionStatus: activeDraft.extractionJob?.status,
-      reviewReady: isExtractionReady(activeDraft.extractionJob),
+      extractionCompleted: activeDraft.extractionJob?.completed ?? true,
+      reviewReady: isVersionReviewReady(
+        activeDraft.imageUrl,
+        activeDraft.extractionJob,
+      ),
       resumed: true,
     };
   }
@@ -454,7 +460,11 @@ export default defineEventHandler(async (event) => {
           description: concurrent.description,
           extractionJobId: concurrent.extractionJob?.id,
           extractionStatus: concurrent.extractionJob?.status,
-          reviewReady: isExtractionReady(concurrent.extractionJob),
+          extractionCompleted: concurrent.extractionJob?.completed ?? true,
+          reviewReady: isVersionReviewReady(
+            concurrent.imageUrl,
+            concurrent.extractionJob,
+          ),
           resumed: true,
         };
       }
@@ -537,7 +547,8 @@ export default defineEventHandler(async (event) => {
     description: created.description,
     extractionJobId: created.extractionJob?.id,
     extractionStatus: created.extractionJob?.status,
-    reviewReady: isExtractionReady(created.extractionJob),
+    extractionCompleted: created.extractionJob?.completed ?? true,
+    reviewReady: isVersionReviewReady(created.imageUrl, created.extractionJob),
     resumed: false,
   };
 });
