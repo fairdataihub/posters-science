@@ -146,16 +146,16 @@ const versionFileOptions = [
 ];
 const versionMetadataOptions = [
   {
-    label: "Keep and edit the current metadata",
-    description:
-      "Best for smaller poster revisions. Copies the published metadata so you can make targeted edits without waiting for another extraction.",
-    value: "copy",
-  },
-  {
     label: "Extract metadata from the replacement file",
     description:
       "Best when the poster content changed enough. Use the new poster to extract new metadata for your review.",
     value: "extract",
+  },
+  {
+    label: "Keep and edit the current metadata",
+    description:
+      "Best for smaller poster revisions. Copies the published metadata so you can make targeted edits without waiting for another extraction.",
+    value: "copy",
   },
 ];
 
@@ -303,6 +303,8 @@ watch(versionFileMode, (mode) => {
   if (mode === "reuse") {
     versionMetadataMode.value = "copy";
     versionFiles.value = [];
+  } else {
+    versionMetadataMode.value = "extract";
   }
 });
 
