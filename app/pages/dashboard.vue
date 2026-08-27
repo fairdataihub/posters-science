@@ -120,6 +120,7 @@ const creatingVersion = ref(false);
 const versionError = ref("");
 const versionPollingError = ref("");
 const retryingVersionExtraction = ref(false);
+const retryingVersionThumbnail = ref(false);
 const deleteVersionModalOpen = ref(false);
 const deletingVersionDraft = ref(false);
 const pollingVersionJobId = ref<string | null>(null);
@@ -171,9 +172,14 @@ function isVersionExtractionFailed(
   return draft?.extractionJob?.status === "failed";
 }
 
+function isVersionPreparing(draft: Poster["activeVersionDraft"]): boolean {
+  return Boolean(draft && (isVersionExtracting(draft) || !draft.imageUrl));
+}
+
 function isVersionReviewReady(draft: Poster["activeVersionDraft"]): boolean {
   return Boolean(
     draft &&
+    draft.imageUrl &&
     (!draft.extractionJob ||
       draft.extractionJob.completed ||
       draft.extractionJob.status === "completed"),
@@ -183,11 +189,23 @@ function isVersionReviewReady(draft: Poster["activeVersionDraft"]): boolean {
 const currentVersionDraft = computed(
   () => versionPoster.value?.activeVersionDraft ?? null,
 );
+const versionMetadataReady = computed(() => {
+  const job = currentVersionDraft.value?.extractionJob;
+
+  return Boolean(!job || job.completed || job.status === "completed");
+});
+const versionThumbnailNeedsAttention = computed(
+  () =>
+    Boolean(currentVersionDraft.value) &&
+    !currentVersionDraft.value?.imageUrl &&
+    versionMetadataReady.value &&
+    Boolean(versionPollingError.value),
+);
 const versionPanelState = computed<"setup" | "extracting" | "ready" | "failed">(
   () => {
     if (!currentVersionDraft.value) return "setup";
     if (isVersionExtractionFailed(currentVersionDraft.value)) return "failed";
-    if (isVersionExtracting(currentVersionDraft.value)) return "extracting";
+    if (isVersionPreparing(currentVersionDraft.value)) return "extracting";
 
     return "ready";
   },
@@ -208,6 +226,13 @@ const versionExtractionStatus = computed(() => {
         "The extraction service is analyzing the poster and saving the fields you'll review and edit next.",
     };
   }
+  if (!currentVersionDraft.value?.imageUrl) {
+    return {
+      title: "Preparing poster preview",
+      description:
+        "A thumbnail is being generated from the replacement poster file. Your edits will be ready after the preview is saved.",
+    };
+  }
 
   return {
     title: "Preparing your edits",
@@ -215,10 +240,8 @@ const versionExtractionStatus = computed(() => {
   };
 });
 
-const extractingVersionPoster = computed(() =>
-  posters.value.find((poster) =>
-    isVersionExtracting(poster.activeVersionDraft),
-  ),
+const preparingVersionPoster = computed(() =>
+  posters.value.find((poster) => isVersionPreparing(poster.activeVersionDraft)),
 );
 const posterAwaitingDraftThumbnail = computed(() =>
   posters.value.find(
@@ -230,15 +253,15 @@ const posterAwaitingDraftThumbnail = computed(() =>
 
 function versionActionDisabled(poster: Poster) {
   return Boolean(
-    extractingVersionPoster.value &&
-    !isVersionExtracting(poster.activeVersionDraft) &&
-    extractingVersionPoster.value.rootPosterId !== poster.rootPosterId,
+    preparingVersionPoster.value &&
+    !isVersionPreparing(poster.activeVersionDraft) &&
+    preparingVersionPoster.value.rootPosterId !== poster.rootPosterId,
   );
 }
 
 function versionActionLabel(poster: Poster) {
-  if (isVersionExtracting(poster.activeVersionDraft)) {
-    return "View extraction progress";
+  if (isVersionPreparing(poster.activeVersionDraft)) {
+    return "View preparation progress";
   }
   if (isVersionExtractionFailed(poster.activeVersionDraft)) {
     return "Resolve extraction issue";
@@ -248,17 +271,17 @@ function versionActionLabel(poster: Poster) {
 }
 
 function versionActionTooltip(poster: Poster) {
-  if (isVersionExtracting(poster.activeVersionDraft)) {
-    return "Open the edit panel to view metadata extraction progress.";
+  if (isVersionPreparing(poster.activeVersionDraft)) {
+    return "Open the edit panel to view preparation progress.";
   }
   if (isVersionExtractionFailed(poster.activeVersionDraft)) {
     return "Open the edit panel to review the extraction issue.";
   }
   if (
-    extractingVersionPoster.value &&
-    extractingVersionPoster.value.rootPosterId !== poster.rootPosterId
+    preparingVersionPoster.value &&
+    preparingVersionPoster.value.rootPosterId !== poster.rootPosterId
   ) {
-    return `Wait for metadata extraction on “${extractingVersionPoster.value.title}” to finish.`;
+    return `Wait for the edits on “${preparingVersionPoster.value.title}” to finish preparing.`;
   }
 
   return poster.activeVersionDraft
@@ -297,6 +320,13 @@ function openVersionModal(poster: Poster) {
   const activeJob = poster.activeVersionDraft?.extractionJob?.id;
   if (activeJob && isVersionExtracting(poster.activeVersionDraft)) {
     startVersionExtractionPolling(activeJob);
+  }
+  if (activeJob && !poster.activeVersionDraft?.imageUrl) {
+    startVersionThumbnailPolling(
+      activeJob,
+      poster.activeVersionDraft?.id,
+      true,
+    );
   }
 }
 
@@ -381,13 +411,36 @@ function stopVersionThumbnailPolling() {
   }
 }
 
-function startVersionThumbnailPolling(jobId: string) {
-  if (pollingVersionThumbnailJobId.value === jobId) return;
+function startVersionThumbnailPolling(
+  jobId: string,
+  posterId?: number,
+  triggerGeneration = false,
+) {
+  const triggerThumbnailGeneration = () => {
+    if (!triggerGeneration || !posterId) return;
+
+    void $fetch(`/api/poster/${posterId}/thumbnail`, { method: "POST" }).catch(
+      (error) => {
+        versionPollingError.value =
+          (error as { data?: { statusMessage?: string } })?.data
+            ?.statusMessage ||
+          "The replacement poster preview could not be started. Try opening this panel again.";
+      },
+    );
+  };
+
+  if (pollingVersionThumbnailJobId.value === jobId) {
+    triggerThumbnailGeneration();
+
+    return;
+  }
 
   stopVersionThumbnailPolling();
   pollingVersionThumbnailJobId.value = jobId;
   const generation = versionThumbnailPollGeneration;
   let attempts = 0;
+
+  triggerThumbnailGeneration();
 
   const checkThumbnail = async () => {
     if (generation !== versionThumbnailPollGeneration) return;
@@ -399,8 +452,32 @@ function startVersionThumbnailPolling(jobId: string) {
 
       if (generation !== versionThumbnailPollGeneration) return;
       if (response.imageUrl) {
+        versionPollingError.value = "";
         updateLocalVersionThumbnail(response.posterId, response.imageUrl);
         pollingVersionThumbnailJobId.value = null;
+        const metadataReady =
+          response.completed && response.status === "completed";
+        const keepPanelOpen =
+          versionModalOpen.value &&
+          currentVersionDraft.value?.extractionJob?.id === jobId;
+
+        if (metadataReady) {
+          await refreshPosterList();
+          if (!keepPanelOpen) {
+            const completedPoster = posters.value.find(
+              (poster) => poster.activeVersionDraft?.id === response.posterId,
+            );
+
+            toast.add({
+              title: "Your edits are ready to review",
+              description: completedPoster
+                ? `The replacement poster preview is ready for ${completedPoster.title}. Select the poster to continue reviewing it.`
+                : "The replacement poster preview is ready. Select the poster to continue reviewing it.",
+              color: "success",
+              icon: "i-lucide-circle-check",
+            });
+          }
+        }
 
         return;
       }
@@ -412,6 +489,10 @@ function startVersionThumbnailPolling(jobId: string) {
     attempts += 1;
     if (attempts >= 40) {
       pollingVersionThumbnailJobId.value = null;
+      if (currentVersionDraft.value?.extractionJob?.id === jobId) {
+        versionPollingError.value =
+          "The replacement poster preview is taking longer than expected.";
+      }
 
       return;
     }
@@ -456,6 +537,13 @@ function startVersionExtractionPolling(jobId: string) {
       );
 
       if (response.completed && response.status === "completed") {
+        if (!response.imageUrl) {
+          pollingVersionJobId.value = null;
+          startVersionThumbnailPolling(jobId, response.posterId, true);
+
+          return;
+        }
+
         const keepPanelOpen =
           versionModalOpen.value &&
           currentVersionDraft.value?.extractionJob?.id === jobId;
@@ -550,6 +638,32 @@ async function retryVersionExtraction() {
   }
 }
 
+async function retryVersionThumbnail() {
+  const draft = currentVersionDraft.value;
+  const jobId = draft?.extractionJob?.id;
+  if (!draft || !jobId) return;
+
+  retryingVersionThumbnail.value = true;
+  versionPollingError.value = "";
+
+  try {
+    const response = await $fetch<{ imageUrl: string }>(
+      `/api/poster/${draft.id}/thumbnail`,
+      { method: "POST" },
+    );
+    updateLocalVersionThumbnail(draft.id, response.imageUrl);
+    stopVersionThumbnailPolling();
+    await refreshPosterList();
+  } catch (error) {
+    versionPollingError.value =
+      (error as { data?: { statusMessage?: string } })?.data?.statusMessage ||
+      (error instanceof Error ? error.message : undefined) ||
+      "Could not prepare the replacement poster preview.";
+  } finally {
+    retryingVersionThumbnail.value = false;
+  }
+}
+
 async function deleteVersionDraft() {
   const draft = currentVersionDraft.value;
   if (!draft) return;
@@ -633,6 +747,7 @@ async function createVersion() {
       description: string;
       extractionJobId?: string;
       extractionStatus?: string;
+      extractionCompleted: boolean;
       reviewReady: boolean;
     }>(`/api/poster/${rootPosterId}/versions`, {
       method: "POST",
@@ -649,7 +764,7 @@ async function createVersion() {
         ? {
             id: response.extractionJobId,
             status: response.extractionStatus ?? "pending-extraction",
-            completed: response.reviewReady,
+            completed: response.extractionCompleted,
           }
         : null,
     };
@@ -664,11 +779,15 @@ async function createVersion() {
       versionPoster.value.activeVersionDraft = activeVersionDraft;
     }
 
-    if (!response.reviewReady && response.extractionJobId) {
+    if (
+      response.extractionJobId &&
+      (response.extractionStatus === "pending-extraction" ||
+        response.extractionStatus === "processing")
+    ) {
       startVersionExtractionPolling(response.extractionJobId);
     }
     if (!response.imageUrl && response.extractionJobId) {
-      startVersionThumbnailPolling(response.extractionJobId);
+      startVersionThumbnailPolling(response.extractionJobId, response.posterId);
     }
   } catch (error) {
     versionError.value =
@@ -679,17 +798,18 @@ async function createVersion() {
 }
 
 onMounted(() => {
-  const activeJob =
-    extractingVersionPoster.value?.activeVersionDraft?.extractionJob?.id;
+  const activeJob = posters.value.find((poster) =>
+    isVersionExtracting(poster.activeVersionDraft),
+  )?.activeVersionDraft?.extractionJob?.id;
 
   if (activeJob) {
     startVersionExtractionPolling(activeJob);
   }
 
-  const thumbnailJob =
-    posterAwaitingDraftThumbnail.value?.activeVersionDraft?.extractionJob?.id;
+  const thumbnailDraft = posterAwaitingDraftThumbnail.value?.activeVersionDraft;
+  const thumbnailJob = thumbnailDraft?.extractionJob?.id;
   if (thumbnailJob) {
-    startVersionThumbnailPolling(thumbnailJob);
+    startVersionThumbnailPolling(thumbnailJob, thumbnailDraft.id, true);
   }
 });
 
@@ -987,7 +1107,7 @@ const getCardDescription = (poster: Poster) =>
                 </UBadge>
 
                 <UBadge
-                  v-if="isVersionExtracting(poster.activeVersionDraft)"
+                  v-if="isVersionPreparing(poster.activeVersionDraft)"
                   color="info"
                   variant="soft"
                   size="sm"
@@ -1087,7 +1207,7 @@ const getCardDescription = (poster: Poster) =>
                       variant="subtle"
                       :label="versionActionLabel(poster)"
                       :icon="
-                        isVersionExtracting(poster.activeVersionDraft)
+                        isVersionPreparing(poster.activeVersionDraft)
                           ? 'i-lucide-activity'
                           : isVersionExtractionFailed(poster.activeVersionDraft)
                             ? 'i-lucide-circle-alert'
@@ -1350,10 +1470,13 @@ const getCardDescription = (poster: Poster) =>
 
           <p class="text-muted text-sm">
             {{
-              currentVersionDraft?.extractionJob?.status ===
-              "pending-extraction"
-                ? "This status will change automatically when the extraction service claims the job."
-                : "This status will change to ready for review after the extracted fields have been saved."
+              !currentVersionDraft?.imageUrl &&
+              currentVersionDraft?.extractionJob?.status === "completed"
+                ? "This status will change automatically after the replacement poster preview has been generated."
+                : currentVersionDraft?.extractionJob?.status ===
+                    "pending-extraction"
+                  ? "This status will change automatically when the extraction service claims the job."
+                  : "This status will change to ready for review after the extracted fields have been saved."
             }}
           </p>
 
@@ -1361,14 +1484,33 @@ const getCardDescription = (poster: Poster) =>
             v-if="versionPollingError"
             color="warning"
             variant="soft"
-            title="Status temporarily unavailable"
-            :description="`${versionPollingError} We'll keep trying automatically.`"
+            :title="
+              versionThumbnailNeedsAttention
+                ? 'Poster preview needs attention'
+                : 'Status temporarily unavailable'
+            "
+            :description="
+              versionThumbnailNeedsAttention
+                ? `${versionPollingError} Retrying uses the poster file already saved with this draft.`
+                : `${versionPollingError} We'll keep trying automatically.`
+            "
           />
+
+          <UButton
+            v-if="versionThumbnailNeedsAttention"
+            color="primary"
+            variant="soft"
+            icon="i-lucide-refresh-cw"
+            :loading="retryingVersionThumbnail"
+            @click="retryVersionThumbnail"
+          >
+            Retry Poster Preview
+          </UButton>
 
           <p class="text-muted text-sm">
             You can close this panel, refresh the dashboard, or leave this page.
-            Extraction will continue, and this panel will show the latest status
-            when you return.
+            Preparation will continue, and this panel will show the latest
+            status when you return.
           </p>
         </div>
 
