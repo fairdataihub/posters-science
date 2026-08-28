@@ -48,7 +48,23 @@ export default defineEventHandler(async (event) => {
     families.set(rootId, family);
   }
 
-  return [...families.entries()].map(([rootPosterId, family]) => {
+  const familyDetails = new Map<
+    number,
+    {
+      latestPublishedId: number | null;
+      publishedCount: number;
+      activeVersionDraft: {
+        id: number;
+        versionSequence: number;
+        imageUrl: string;
+        title: string;
+        description: string;
+        extractionJob: (typeof posterRows)[number]["extractionJob"];
+      } | null;
+    }
+  >();
+
+  for (const [rootPosterId, family] of families.entries()) {
     const ordered = [...family].sort(
       (a, b) => b.versionSequence - a.versionSequence,
     );
@@ -58,12 +74,10 @@ export default defineEventHandler(async (event) => {
     const activeVersionDraft = ordered.find(
       (poster) => poster.id !== rootPosterId && poster.status !== "published",
     );
-    const displayed = latestPublished ?? ordered[0]!;
 
-    return {
-      ...displayed,
-      rootPosterId,
-      versionCount: family.filter((poster) => poster.status === "published")
+    familyDetails.set(rootPosterId, {
+      latestPublishedId: latestPublished?.id ?? null,
+      publishedCount: family.filter((poster) => poster.status === "published")
         .length,
       activeVersionDraft: activeVersionDraft
         ? {
@@ -75,6 +89,22 @@ export default defineEventHandler(async (event) => {
             extractionJob: activeVersionDraft.extractionJob,
           }
         : null,
+    });
+  }
+
+  return posterRows.map((poster) => {
+    const rootPosterId = posterFamilyRootId(poster);
+    const details = familyDetails.get(rootPosterId)!;
+    const isLatestPublished = details.latestPublishedId === poster.id;
+
+    return {
+      ...poster,
+      rootPosterId,
+      versionCount: details.publishedCount,
+      isLatestPublished,
+      // Only the latest published record owns the family-level edit action.
+      // Drafts are returned separately so each dashboard card has one state.
+      activeVersionDraft: isLatestPublished ? details.activeVersionDraft : null,
     };
   });
 });

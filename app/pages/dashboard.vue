@@ -26,7 +26,9 @@ type Poster = {
   status: "draft" | "downloaded" | "published";
   tombstone: boolean;
   tombedReason: string;
+  versionRootId: number | null;
   versionSequence: number;
+  isLatestPublished: boolean;
   publishedAt: Date | null;
   created: Date;
   updated: Date;
@@ -36,7 +38,7 @@ type Poster = {
     doi: string | null;
     license: string | null;
     version: string | null;
-  };
+  } | null;
   extractionJob?: {
     id?: string;
     status: string;
@@ -79,20 +81,93 @@ const showTombstonedPosters = useCookie<boolean>(
     sameSite: "lax",
   },
 );
+const expandedPublishedFamilies = ref(new Set<number>());
 
 const tombstonedPosterCount = computed(
   () => posters.value.filter((poster) => poster.tombstone).length,
 );
-const visiblePosters = computed(() =>
-  showTombstonedPosters.value
-    ? posters.value
-    : posters.value.filter((poster) => !poster.tombstone),
+const tombstoneFilteredPosters = computed(() =>
+  posters.value.filter(
+    (poster) => showTombstonedPosters.value || !poster.tombstone,
+  ),
 );
+const inProgressPosters = computed(() =>
+  tombstoneFilteredPosters.value.filter(
+    (poster) => poster.status !== "published",
+  ),
+);
+const publishedPosters = computed(() =>
+  tombstoneFilteredPosters.value.filter(
+    (poster) => poster.status === "published" && poster.isLatestPublished,
+  ),
+);
+const activeDashboardTab = ref<"in-progress" | "published">("in-progress");
+const dashboardTabs = computed(() => [
+  {
+    label: `In progress (${inProgressPosters.value.length})`,
+    icon: "i-lucide-pencil-line",
+    value: "in-progress",
+  },
+  {
+    label: `Published (${publishedPosters.value.length})`,
+    icon: "i-lucide-circle-check",
+    value: "published",
+  },
+]);
+const activeDashboardPosters = computed(() =>
+  activeDashboardTab.value === "in-progress"
+    ? inProgressPosters.value
+    : publishedPosters.value,
+);
+const activeDashboardDescription = computed(() => {
+  if (activeDashboardTab.value === "in-progress") {
+    return "Posters that still need your attention.";
+  }
+
+  return "The latest published version of each poster.";
+});
+const visiblePosterCount = computed(
+  () => inProgressPosters.value.length + publishedPosters.value.length,
+);
+
+function publishedVersionHistory(poster: Poster) {
+  return tombstoneFilteredPosters.value
+    .filter(
+      (version) =>
+        version.status === "published" &&
+        version.rootPosterId === poster.rootPosterId &&
+        version.id !== poster.id,
+    )
+    .sort((a, b) => b.versionSequence - a.versionSequence);
+}
+
+function publishedFamilyCount(poster: Poster) {
+  return publishedVersionHistory(poster).length + 1;
+}
+
+function publishedHistoryExpanded(poster: Poster) {
+  return expandedPublishedFamilies.value.has(poster.rootPosterId);
+}
+
+function togglePublishedHistory(poster: Poster) {
+  const expanded = new Set(expandedPublishedFamilies.value);
+
+  if (expanded.has(poster.rootPosterId)) {
+    expanded.delete(poster.rootPosterId);
+  } else {
+    expanded.add(poster.rootPosterId);
+  }
+
+  expandedPublishedFamilies.value = expanded;
+}
 
 const { data, error, refresh } = await useFetch("/api/poster");
 
 if (data.value) {
   posters.value = data.value as unknown as Poster[];
+  if (inProgressPosters.value.length === 0 && publishedPosters.value.length) {
+    activeDashboardTab.value = "published";
+  }
 }
 
 if (error.value) {
@@ -259,17 +334,6 @@ function versionActionDisabled(poster: Poster) {
   );
 }
 
-function versionActionLabel(poster: Poster) {
-  if (isVersionPreparing(poster.activeVersionDraft)) {
-    return "View preparation progress";
-  }
-  if (isVersionExtractionFailed(poster.activeVersionDraft)) {
-    return "Resolve extraction issue";
-  }
-
-  return "Edit";
-}
-
 function versionActionTooltip(poster: Poster) {
   if (isVersionPreparing(poster.activeVersionDraft)) {
     return "Open the edit panel to view preparation progress.";
@@ -291,11 +355,48 @@ function versionActionTooltip(poster: Poster) {
 
 function displayedVersion(poster: Poster) {
   if (poster.status !== "published") return null;
-  if (poster.automated) return poster.posterMetadata.version?.trim() || null;
+  if (poster.automated) {
+    return poster.posterMetadata?.version?.trim() || null;
+  }
 
   return (
-    poster.posterMetadata.version?.trim() || String(poster.versionSequence)
+    poster.posterMetadata?.version?.trim() || String(poster.versionSequence)
   );
+}
+
+function draftVersionLabel(poster: Poster) {
+  if (poster.versionRootId === null) return null;
+
+  return (
+    poster.posterMetadata?.version?.trim() || String(poster.versionSequence)
+  );
+}
+
+function latestPublishedPoster(rootPosterId: number) {
+  return posters.value.find(
+    (poster) =>
+      poster.rootPosterId === rootPosterId && poster.isLatestPublished,
+  );
+}
+
+function versionDraftFor(
+  poster: Poster,
+): NonNullable<Poster["activeVersionDraft"]> {
+  return {
+    id: poster.id,
+    versionSequence: poster.versionSequence,
+    imageUrl: poster.imageUrl,
+    title: poster.title,
+    description: poster.description,
+    extractionJob: poster.extractionJob,
+  };
+}
+
+function versionWorkflowPoster(draft: Poster) {
+  const published = latestPublishedPoster(draft.rootPosterId);
+  if (!published) return null;
+
+  return { ...published, activeVersionDraft: versionDraftFor(draft) };
 }
 
 watch(versionFileMode, (mode) => {
@@ -341,6 +442,14 @@ function updateLocalVersionJob(
   if (!posterId) return;
 
   for (const poster of posters.value) {
+    if (poster.id === posterId) {
+      poster.extractionJob = {
+        ...poster.extractionJob,
+        status,
+        completed,
+        error,
+      };
+    }
     if (poster.activeVersionDraft?.id === posterId) {
       poster.activeVersionDraft.extractionJob = {
         ...poster.activeVersionDraft.extractionJob,
@@ -348,8 +457,6 @@ function updateLocalVersionJob(
         completed,
         error,
       };
-
-      return;
     }
   }
 }
@@ -360,11 +467,11 @@ function updateLocalVersionThumbnail(
 ) {
   if (!posterId || !imageUrl) return;
 
-  const poster = posters.value.find(
-    (candidate) => candidate.activeVersionDraft?.id === posterId,
-  );
-  if (poster?.activeVersionDraft) {
-    poster.activeVersionDraft.imageUrl = imageUrl;
+  for (const poster of posters.value) {
+    if (poster.id === posterId) poster.imageUrl = imageUrl;
+    if (poster.activeVersionDraft?.id === posterId) {
+      poster.activeVersionDraft.imageUrl = imageUrl;
+    }
   }
 }
 
@@ -375,13 +482,18 @@ function updateLocalVersionDetails(
 ) {
   if (!posterId) return;
 
-  const draft = posters.value.find(
-    (poster) => poster.activeVersionDraft?.id === posterId,
-  )?.activeVersionDraft;
-  if (!draft) return;
-
-  if (title !== undefined) draft.title = title;
-  if (description !== undefined) draft.description = description;
+  for (const poster of posters.value) {
+    if (poster.id === posterId) {
+      if (title !== undefined) poster.title = title;
+      if (description !== undefined) poster.description = description;
+    }
+    if (poster.activeVersionDraft?.id === posterId) {
+      if (title !== undefined) poster.activeVersionDraft.title = title;
+      if (description !== undefined) {
+        poster.activeVersionDraft.description = description;
+      }
+    }
+  }
 }
 
 async function refreshPosterList() {
@@ -389,9 +501,7 @@ async function refreshPosterList() {
   await refresh();
   posters.value = (data.value ?? []) as unknown as Poster[];
   if (openRootId) {
-    versionPoster.value =
-      posters.value.find((poster) => poster.rootPosterId === openRootId) ??
-      null;
+    versionPoster.value = latestPublishedPoster(openRootId) ?? null;
   }
 }
 
@@ -756,30 +866,7 @@ async function createVersion() {
       body,
     });
 
-    const activeVersionDraft: NonNullable<Poster["activeVersionDraft"]> = {
-      id: response.posterId,
-      versionSequence: response.versionSequence,
-      imageUrl: response.imageUrl,
-      title: response.title,
-      description: response.description,
-      extractionJob: response.extractionJobId
-        ? {
-            id: response.extractionJobId,
-            status: response.extractionStatus ?? "pending-extraction",
-            completed: response.extractionCompleted,
-          }
-        : null,
-    };
-
-    const dashboardPoster = posters.value.find(
-      (poster) => poster.rootPosterId === rootPosterId,
-    );
-    if (dashboardPoster) {
-      dashboardPoster.activeVersionDraft = activeVersionDraft;
-      versionPoster.value = dashboardPoster;
-    } else if (versionPoster.value?.rootPosterId === rootPosterId) {
-      versionPoster.value.activeVersionDraft = activeVersionDraft;
-    }
+    await refreshPosterList();
 
     if (
       response.extractionJobId &&
@@ -828,13 +915,26 @@ function openPoster(poster: Poster) {
     return;
   }
 
-  if (poster.activeVersionDraft) {
-    openVersionWorkflow(poster);
-  } else if (poster.status === "published") {
-    void navigateTo(`/discover/${poster.rootPosterId}`);
-  } else {
-    void navigateTo(`/share/${poster.id}`);
+  if (poster.status === "published") {
+    const version = displayedVersion(poster);
+    const versionQuery = version
+      ? `?version=${encodeURIComponent(version)}`
+      : "";
+    void navigateTo(`/discover/${poster.rootPosterId}${versionQuery}`);
+
+    return;
   }
+
+  if (poster.versionRootId !== null) {
+    const workflowPoster = versionWorkflowPoster(poster);
+    if (workflowPoster) {
+      openVersionWorkflow(workflowPoster);
+
+      return;
+    }
+  }
+
+  void navigateTo(`/share/${poster.id}`);
 }
 
 function openVersionWorkflow(poster: Poster) {
@@ -854,6 +954,11 @@ function openDeleteVersionModal(poster: Poster) {
 
   versionPoster.value = poster;
   deleteVersionModalOpen.value = true;
+}
+
+function openDeleteVersionDraftCard(draft: Poster) {
+  const workflowPoster = versionWorkflowPoster(draft);
+  if (workflowPoster) openDeleteVersionModal(workflowPoster);
 }
 
 const regeneratingThumbnailIds = ref<number[]>([]);
@@ -878,9 +983,15 @@ async function regenerateThumbnail(poster: Poster) {
   ];
 
   try {
-    await $fetch<{ success: boolean }>(`/api/poster/${poster.id}/thumbnail`, {
-      method: "POST",
-    });
+    const response = await $fetch<{ success: boolean; imageUrl: string }>(
+      `/api/poster/${poster.id}/thumbnail`,
+      {
+        method: "POST",
+      },
+    );
+
+    const localPoster = posters.value.find((item) => item.id === poster.id);
+    if (localPoster) localPoster.imageUrl = response.imageUrl;
 
     thumbnailCacheBust[poster.id] = Date.now();
 
@@ -947,9 +1058,9 @@ async function deletePoster() {
 
 function openPublicationModal(poster: Poster) {
   modalPoster.value = poster;
-  modalDoi.value = poster.posterMetadata.doi ?? "";
-  modalLicense.value = poster.posterMetadata.license ?? "";
-  modalPublisher.value = poster.posterMetadata.publisher ?? "";
+  modalDoi.value = poster.posterMetadata?.doi ?? "";
+  modalLicense.value = poster.posterMetadata?.license ?? "";
+  modalPublisher.value = poster.posterMetadata?.publisher ?? "";
   doiError.value = "";
   modalOpen.value = true;
 }
@@ -994,9 +1105,6 @@ async function savePublicationInfo() {
 }
 
 const getImage = (poster: Poster) => {
-  if (poster.activeVersionDraft?.imageUrl) {
-    return `/api/poster/${poster.activeVersionDraft.id}/thumbnail`;
-  }
   if (poster.status === "published") {
     return poster.imageUrl;
   }
@@ -1005,8 +1113,7 @@ const getImage = (poster: Poster) => {
   return `/api/poster/${poster.id}/thumbnail${bust ? `?t=${bust}` : ""}`;
 };
 
-const getCardTitle = (poster: Poster) =>
-  poster.activeVersionDraft?.title || poster.title;
+const getCardTitle = (poster: Poster) => poster.title;
 
 const CARD_TITLE_MAX_LENGTH = 80;
 const getCardDisplayTitle = (poster: Poster) => {
@@ -1017,8 +1124,131 @@ const getCardDisplayTitle = (poster: Poster) => {
     : title;
 };
 
-const getCardDescription = (poster: Poster) =>
-  poster.activeVersionDraft?.description ?? poster.description;
+const getCardDescription = (poster: Poster) => poster.description;
+
+function posterStatusPresentation(poster: Poster) {
+  if (poster.tombstone) {
+    return {
+      label: "Tombstoned",
+      color: "error" as const,
+      icon: "i-lucide-archive-x",
+    };
+  }
+  if (poster.status === "published") {
+    return {
+      label: "Published",
+      color: "success" as const,
+      icon: "i-lucide-circle-check",
+    };
+  }
+  if (poster.extractionJob?.status === "failed") {
+    return {
+      label: "Needs attention",
+      color: "error" as const,
+      icon: "i-lucide-circle-alert",
+    };
+  }
+  if (
+    poster.extractionJob?.status === "pending-extraction" ||
+    poster.extractionJob?.status === "processing" ||
+    !poster.imageUrl
+  ) {
+    return {
+      label: "Preparing poster",
+      color: "info" as const,
+      icon: "i-lucide-loader-circle",
+    };
+  }
+  if (poster.versionRootId !== null) {
+    return {
+      label: "Draft",
+      color: "warning" as const,
+      icon: "i-lucide-file-pen-line",
+    };
+  }
+  if (poster.status === "downloaded") {
+    return {
+      label: "Downloaded",
+      color: "primary" as const,
+      icon: "i-lucide-download",
+    };
+  }
+
+  return {
+    label: "Draft",
+    color: "warning" as const,
+    icon: "i-lucide-file-pen-line",
+  };
+}
+
+function inProgressActionLabel(poster: Poster) {
+  if (poster.versionRootId !== null) {
+    if (isVersionPreparing(poster)) return "View progress";
+    if (isVersionExtractionFailed(poster)) return "Resolve issue";
+
+    return "Continue editing";
+  }
+  if (poster.status === "downloaded") return "Add publication metadata";
+
+  return "Continue editing";
+}
+
+function openInProgressPoster(poster: Poster) {
+  if (poster.status === "downloaded" && poster.versionRootId === null) {
+    openPublicationModal(poster);
+
+    return;
+  }
+
+  openPoster(poster);
+}
+
+function posterMenuItems(poster: Poster) {
+  if (poster.status === "published") return [];
+
+  if (poster.versionRootId !== null) {
+    if (
+      isVersionPreparing(poster) ||
+      (!isVersionReviewReady(poster) && !isVersionExtractionFailed(poster))
+    ) {
+      return [];
+    }
+
+    return [
+      [
+        {
+          label: "Regenerate poster preview",
+          icon: "i-lucide-refresh-cw",
+          disabled: regeneratingThumbnailIds.value.includes(poster.id),
+          onSelect: () => regenerateThumbnail(poster),
+        },
+        {
+          label: "Discard draft",
+          icon: "i-lucide-trash-2",
+          color: "error" as const,
+          onSelect: () => openDeleteVersionDraftCard(poster),
+        },
+      ],
+    ];
+  }
+
+  return [
+    [
+      {
+        label: "Regenerate poster preview",
+        icon: "i-lucide-refresh-cw",
+        disabled: regeneratingThumbnailIds.value.includes(poster.id),
+        onSelect: () => regenerateThumbnail(poster),
+      },
+      {
+        label: "Delete draft",
+        icon: "i-lucide-trash-2",
+        color: "error" as const,
+        onSelect: () => openDeleteModal(poster),
+      },
+    ],
+  ];
+}
 </script>
 
 <template>
@@ -1038,304 +1268,337 @@ const getCardDescription = (poster: Poster) =>
         <div class="flex w-full items-center justify-between gap-4">
           <span>Keep track of all your submitted posters.</span>
 
-          <USwitch
-            v-if="tombstonedPosterCount > 0"
-            v-model="showTombstonedPosters"
-            :label="`Show tombstoned posters (${tombstonedPosterCount})`"
-            size="sm"
-          />
+          <div class="flex flex-wrap items-center justify-end gap-3">
+            <USwitch
+              v-if="
+                activeDashboardTab === 'published' && tombstonedPosterCount > 0
+              "
+              v-model="showTombstonedPosters"
+              :label="`Show tombstoned posters (${tombstonedPosterCount})`"
+              size="sm"
+            />
+          </div>
         </div>
       </template>
     </UPageHeader>
 
-    <UPageList class="max-md:flex max-md:flex-col max-md:gap-4">
-      <UPageCard
-        v-for="(poster, index) in visiblePosters"
-        :key="poster.rootPosterId ?? index + 1"
-        variant="ghost"
-        class="group h-50 overflow-hidden rounded-none border-t border-b border-gray-100 transition-all duration-300 max-md:h-auto max-md:rounded-xl max-md:border max-md:bg-white max-md:shadow-sm dark:max-md:border-gray-800 dark:max-md:bg-gray-950"
-        :class="
-          poster.tombstone
-            ? 'cursor-pointer opacity-70 hover:opacity-100'
-            : 'cursor-pointer max-md:hover:shadow-md'
-        "
-        :aria-haspopup="poster.tombstone ? 'dialog' : undefined"
-        :tabindex="poster.tombstone ? 0 : undefined"
-        @click="openPoster(poster)"
-        @keydown.enter="poster.tombstone && openPoster(poster)"
-        @keydown.space.prevent="poster.tombstone && openPoster(poster)"
-      >
-        <div
-          class="flex h-full gap-8 max-md:h-auto max-md:flex-col max-md:gap-0"
-        >
-          <div
-            class="h-full w-[150px] shrink-0 overflow-hidden max-md:h-44 max-md:w-full max-md:border-b max-md:border-gray-100 dark:max-md:border-gray-800"
+    <UTabs
+      v-model="activeDashboardTab"
+      :items="dashboardTabs"
+      :content="false"
+      class="w-full"
+    />
+
+    <section v-if="activeDashboardPosters.length > 0" class="space-y-3">
+      <p class="text-muted text-sm">{{ activeDashboardDescription }}</p>
+
+      <UPageList class="max-md:flex max-md:flex-col max-md:gap-4">
+        <template v-for="poster in activeDashboardPosters" :key="poster.id">
+          <UPageCard
+            variant="ghost"
+            class="group h-50 overflow-hidden rounded-none border-t border-b border-gray-100 transition-all duration-300 max-md:h-auto max-md:rounded-xl max-md:border max-md:bg-white max-md:shadow-sm dark:max-md:border-gray-800 dark:max-md:bg-gray-950"
+            :class="
+              poster.tombstone
+                ? 'cursor-pointer opacity-70 hover:opacity-100'
+                : 'cursor-pointer max-md:hover:shadow-md'
+            "
+            :aria-haspopup="poster.tombstone ? 'dialog' : undefined"
+            tabindex="0"
+            @click="openPoster(poster)"
+            @keydown.enter="openPoster(poster)"
+            @keydown.space.prevent="openPoster(poster)"
           >
-            <img
-              :src="
-                getImage(poster) ||
-                `https://api.dicebear.com/9.x/shapes/svg?seed=${poster.id}`
-              "
-              :alt="getCardTitle(poster)"
-              class="max-h-[150px] w-full object-contain p-2 transition-transform duration-300 max-md:h-full max-md:max-h-none max-md:p-3"
-              :class="{ 'group-hover:scale-105': !poster.tombstone }"
-            />
-          </div>
-
-          <div
-            class="flex h-full w-full min-w-0 flex-col justify-between py-1 max-md:h-auto max-md:gap-3 max-md:p-4 max-md:py-4"
-          >
-            <div class="flex flex-col gap-2">
-              <h3
-                class="line-clamp-2 max-h-14 overflow-hidden text-lg font-semibold break-words"
-                :title="getCardTitle(poster)"
-              >
-                {{ getCardDisplayTitle(poster) || "No title available" }}
-              </h3>
-
-              <p v-if="poster.versionCount > 1" class="text-muted text-xs">
-                {{ poster.versionCount }} published versions
-              </p>
-
-              <div class="flex flex-wrap items-center gap-2">
-                <UBadge
-                  v-if="displayedVersion(poster)"
-                  color="neutral"
-                  variant="soft"
-                  size="sm"
-                  class="w-fit"
-                >
-                  Version {{ displayedVersion(poster) }}
-                </UBadge>
-
-                <UBadge
-                  v-if="isVersionPreparing(poster.activeVersionDraft)"
-                  color="info"
-                  variant="soft"
-                  size="sm"
-                  icon="i-lucide-loader-circle"
-                  class="w-fit"
-                >
-                  Preparing edits
-                </UBadge>
-
-                <UBadge
-                  v-else-if="
-                    isVersionExtractionFailed(poster.activeVersionDraft)
-                  "
-                  color="error"
-                  variant="soft"
-                  size="sm"
-                  icon="i-lucide-circle-alert"
-                  class="w-fit"
-                >
-                  Could not prepare edits
-                </UBadge>
-
-                <UBadge
-                  v-else-if="isVersionReviewReady(poster.activeVersionDraft)"
-                  color="success"
-                  variant="soft"
-                  size="sm"
-                  icon="i-lucide-circle-check"
-                  class="w-fit"
-                >
-                  Edits ready to review
-                </UBadge>
-              </div>
-
-              <div class="flex flex-col gap-1">
-                <p
-                  :class="[
-                    'text-sm',
-                    expandedDescriptions.has(poster.id) ? '' : 'line-clamp-2',
-                  ]"
-                >
-                  {{ getCardDescription(poster) || "No description available" }}
-                </p>
-
-                <button
-                  v-if="getCardDescription(poster).length > 100"
-                  class="text-primary w-fit text-left text-xs font-medium md:hidden"
-                  @click.stop="toggleDescription(poster.id)"
-                >
-                  {{
-                    expandedDescriptions.has(poster.id)
-                      ? "Show less"
-                      : "Show more"
-                  }}
-                </button>
-              </div>
-            </div>
-
             <div
-              class="flex items-center justify-between border-t border-gray-100 pt-2 text-xs max-md:flex-wrap max-md:gap-y-2 dark:border-gray-800"
+              class="flex h-full gap-8 max-md:h-auto max-md:flex-col max-md:gap-0"
             >
               <div
-                class="flex items-center gap-2 max-md:flex-col max-md:items-start max-md:gap-1"
+                class="h-full w-[150px] shrink-0 overflow-hidden max-md:h-44 max-md:w-full max-md:border-b max-md:border-gray-100 dark:max-md:border-gray-800"
               >
-                <span class="flex items-center gap-1">
-                  <Icon name="heroicons:calendar-days" class="h-3 w-3" />
-
-                  Created
-                  {{ dayjs(poster.created).format("MMMM D, YYYY") }}
-                </span>
-
-                <span
-                  v-if="poster.publishedAt"
-                  class="flex items-center gap-1 border-l border-gray-100 pl-2 max-md:border-l-0 max-md:pl-0 dark:border-gray-800"
-                >
-                  <Icon
-                    name="heroicons:presentation-chart-bar"
-                    class="h-3 w-3"
-                  />
-                  Published at
-                  {{ dayjs(poster.publishedAt).format("MMMM D, YYYY") }}
-                </span>
+                <img
+                  :src="
+                    getImage(poster) ||
+                    `https://api.dicebear.com/9.x/shapes/svg?seed=${poster.id}`
+                  "
+                  :alt="getCardTitle(poster)"
+                  class="max-h-[150px] w-full object-contain p-2 transition-transform duration-300 max-md:h-full max-md:max-h-none max-md:p-3"
+                  :class="{ 'group-hover:scale-105': !poster.tombstone }"
+                />
               </div>
 
-              <div class="flex items-center gap-2 max-md:flex-wrap">
-                <UTooltip
-                  v-if="
-                    poster.status === 'published' &&
-                    !poster.automated &&
-                    !poster.tombstone
-                  "
-                  :text="versionActionTooltip(poster)"
-                >
-                  <span class="inline-flex" @click.stop>
-                    <UButton
-                      color="primary"
-                      variant="subtle"
-                      :label="versionActionLabel(poster)"
-                      :icon="
-                        isVersionPreparing(poster.activeVersionDraft)
-                          ? 'i-lucide-activity'
-                          : isVersionExtractionFailed(poster.activeVersionDraft)
-                            ? 'i-lucide-circle-alert'
-                            : poster.activeVersionDraft
-                              ? 'heroicons:pencil-square'
-                              : 'heroicons:arrow-up-tray'
+              <div
+                class="flex h-full w-full min-w-0 flex-col justify-between py-1 max-md:h-auto max-md:gap-3 max-md:p-4 max-md:py-4"
+              >
+                <div class="flex flex-col gap-2">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <UBadge
+                      :color="posterStatusPresentation(poster).color"
+                      variant="soft"
+                      size="sm"
+                      :icon="posterStatusPresentation(poster).icon"
+                    >
+                      {{ posterStatusPresentation(poster).label }}
+                    </UBadge>
+
+                    <UBadge
+                      v-if="
+                        displayedVersion(poster) || draftVersionLabel(poster)
                       "
-                      size="xs"
-                      :disabled="versionActionDisabled(poster)"
-                      @click="openVersionWorkflow(poster)"
-                    />
-                  </span>
-                </UTooltip>
+                      color="neutral"
+                      variant="soft"
+                      size="sm"
+                    >
+                      Version
+                      {{
+                        displayedVersion(poster) || draftVersionLabel(poster)
+                      }}
+                    </UBadge>
 
-                <UTooltip
-                  v-if="
-                    poster.status === 'published' &&
-                    poster.activeVersionDraft &&
-                    isVersionReviewReady(poster.activeVersionDraft) &&
-                    !poster.tombstone
-                  "
-                  text="Delete unpublished draft version"
-                >
-                  <UButton
-                    color="error"
-                    variant="ghost"
-                    icon="heroicons:trash"
-                    size="xs"
-                    aria-label="Delete unpublished draft version"
-                    @click.stop="openDeleteVersionModal(poster)"
-                  />
-                </UTooltip>
+                    <button
+                      v-if="
+                        poster.status === 'published' &&
+                        poster.isLatestPublished &&
+                        publishedVersionHistory(poster).length > 0
+                      "
+                      class="text-primary inline-flex items-center gap-1 text-xs font-medium hover:underline"
+                      :aria-expanded="publishedHistoryExpanded(poster)"
+                      @click.stop="togglePublishedHistory(poster)"
+                    >
+                      {{ publishedHistoryExpanded(poster) ? "Hide" : "View" }}
+                      {{ publishedFamilyCount(poster) }} published versions
+                      <Icon
+                        name="i-lucide-chevron-down"
+                        class="h-3.5 w-3.5 transition-transform"
+                        :class="{
+                          'rotate-180': publishedHistoryExpanded(poster),
+                        }"
+                      />
+                    </button>
+                  </div>
 
-                <UButton
-                  v-if="poster.status === 'downloaded'"
-                  color="secondary"
-                  variant="subtle"
-                  label="Add publication metadata"
-                  icon="heroicons:plus"
-                  size="xs"
-                  @click.stop="openPublicationModal(poster)"
-                />
-
-                <UTooltip text="Regenerate the thumbnail for this poster">
-                  <UButton
-                    v-if="
-                      poster.status === 'draft' ||
-                      poster.status === 'downloaded'
-                    "
-                    color="neutral"
-                    variant="ghost"
-                    label=""
-                    :disabled="regeneratingThumbnailIds.includes(poster.id)"
-                    icon="heroicons:arrow-path"
-                    size="xs"
-                    :loading="regeneratingThumbnailIds.includes(poster.id)"
-                    @click.stop="regenerateThumbnail(poster)"
-                  />
-                </UTooltip>
-
-                <UButton
-                  v-if="
-                    poster.status === 'draft' || poster.status === 'downloaded'
-                  "
-                  color="error"
-                  variant="ghost"
-                  label=""
-                  icon="heroicons:trash"
-                  size="xs"
-                  @click.stop="openDeleteModal(poster)"
-                />
-
-                <UTooltip
-                  v-if="poster.tombstone"
-                  :text="
-                    poster.tombedReason
-                      ? `Reason: ${poster.tombedReason}`
-                      : 'This poster has been removed from public discovery.'
-                  "
-                >
-                  <UBadge
-                    color="error"
-                    variant="solid"
-                    size="sm"
-                    icon="i-lucide-archive-x"
+                  <h3
+                    class="line-clamp-2 max-h-14 overflow-hidden text-lg font-semibold break-words"
+                    :title="getCardTitle(poster)"
                   >
-                    Tombstoned
-                  </UBadge>
-                </UTooltip>
+                    {{ getCardDisplayTitle(poster) || "No title available" }}
+                  </h3>
 
-                <UBadge
-                  v-else
-                  :color="
-                    poster.status === 'published'
-                      ? 'success'
-                      : poster.status === 'downloaded'
-                        ? 'primary'
-                        : poster.extractionJob?.status ===
-                              'pending-extraction' ||
-                            poster.extractionJob?.status === 'processing'
-                          ? 'secondary'
-                          : 'warning'
-                  "
-                  variant="solid"
-                  size="sm"
+                  <div class="flex flex-col gap-1">
+                    <p
+                      :class="[
+                        'text-sm',
+                        expandedDescriptions.has(poster.id)
+                          ? ''
+                          : 'line-clamp-2',
+                      ]"
+                    >
+                      {{
+                        getCardDescription(poster) || "No description available"
+                      }}
+                    </p>
+
+                    <button
+                      v-if="getCardDescription(poster).length > 100"
+                      class="text-primary w-fit text-left text-xs font-medium md:hidden"
+                      @click.stop="toggleDescription(poster.id)"
+                    >
+                      {{
+                        expandedDescriptions.has(poster.id)
+                          ? "Show less"
+                          : "Show more"
+                      }}
+                    </button>
+                  </div>
+                </div>
+
+                <div
+                  class="flex items-center justify-between border-t border-gray-100 pt-2 text-xs max-md:flex-wrap max-md:gap-y-2 dark:border-gray-800"
                 >
-                  {{
-                    poster.status === "published"
-                      ? "Published"
-                      : poster.status === "downloaded"
-                        ? "Downloaded"
-                        : poster.extractionJob?.status ===
-                              "pending-extraction" ||
-                            poster.extractionJob?.status === "processing"
-                          ? "Pending"
-                          : "Draft"
-                  }}
-                </UBadge>
+                  <div
+                    class="text-muted flex items-center gap-2 max-md:flex-col max-md:items-start max-md:gap-1"
+                  >
+                    <span class="flex items-center gap-1">
+                      <Icon name="heroicons:calendar-days" class="h-3 w-3" />
+                      Created {{ dayjs(poster.created).format("MMMM D, YYYY") }}
+                    </span>
+
+                    <span
+                      v-if="poster.publishedAt"
+                      class="flex items-center gap-1 border-l border-gray-100 pl-2 max-md:border-l-0 max-md:pl-0 dark:border-gray-800"
+                    >
+                      <Icon
+                        name="heroicons:presentation-chart-bar"
+                        class="h-3 w-3"
+                      />
+                      Published
+                      {{ dayjs(poster.publishedAt).format("MMMM D, YYYY") }}
+                    </span>
+                  </div>
+
+                  <div
+                    v-if="!poster.tombstone"
+                    class="flex items-center gap-2 max-md:flex-wrap"
+                    @click.stop
+                  >
+                    <template v-if="poster.status === 'published'">
+                      <UButton
+                        color="neutral"
+                        variant="subtle"
+                        label="View poster"
+                        icon="i-lucide-eye"
+                        size="xs"
+                        @click="openPoster(poster)"
+                      />
+
+                      <UTooltip
+                        v-if="
+                          poster.isLatestPublished &&
+                          !poster.automated &&
+                          !poster.activeVersionDraft
+                        "
+                        :text="versionActionTooltip(poster)"
+                      >
+                        <span class="inline-flex">
+                          <UButton
+                            color="primary"
+                            variant="subtle"
+                            label="Edit"
+                            icon="i-lucide-pencil"
+                            size="xs"
+                            :disabled="versionActionDisabled(poster)"
+                            @click="openVersionWorkflow(poster)"
+                          />
+                        </span>
+                      </UTooltip>
+                    </template>
+
+                    <template v-else>
+                      <UButton
+                        color="primary"
+                        variant="subtle"
+                        :label="inProgressActionLabel(poster)"
+                        :icon="
+                          isVersionPreparing(poster)
+                            ? 'i-lucide-activity'
+                            : 'i-lucide-arrow-right'
+                        "
+                        trailing
+                        size="xs"
+                        @click="openInProgressPoster(poster)"
+                      />
+
+                      <UDropdownMenu
+                        v-if="posterMenuItems(poster).length"
+                        :items="posterMenuItems(poster)"
+                        :content="{ align: 'end' }"
+                      >
+                        <UButton
+                          color="neutral"
+                          variant="ghost"
+                          icon="i-lucide-ellipsis"
+                          size="xs"
+                          aria-label="More poster actions"
+                        />
+                      </UDropdownMenu>
+                    </template>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-        </div>
-      </UPageCard>
-    </UPageList>
+          </UPageCard>
 
-    <div v-if="visiblePosters.length === 0" class="py-12 text-center">
+          <div
+            v-if="
+              poster.status === 'published' && publishedHistoryExpanded(poster)
+            "
+            class="ml-6 space-y-2 border-l-2 border-gray-200 py-2 pl-5 dark:border-gray-800"
+          >
+            <div
+              v-for="version in publishedVersionHistory(poster)"
+              :key="version.id"
+              class="hover:border-primary/40 hover:bg-primary/5 flex w-full items-center gap-2 rounded-lg border border-gray-200 bg-white p-3 transition-colors dark:border-gray-800 dark:bg-gray-950"
+            >
+              <button
+                type="button"
+                class="flex min-w-0 flex-1 items-center gap-4 text-left"
+                @click="openPoster(version)"
+              >
+                <img
+                  :src="
+                    getImage(version) ||
+                    `https://api.dicebear.com/9.x/shapes/svg?seed=${version.id}`
+                  "
+                  :alt="getCardTitle(version)"
+                  class="h-14 w-12 shrink-0 rounded object-contain"
+                />
+
+                <span class="min-w-0 flex-1">
+                  <span class="flex flex-wrap items-center gap-2">
+                    <UBadge color="neutral" variant="soft" size="sm">
+                      Version {{ displayedVersion(version) }}
+                    </UBadge>
+
+                    <UBadge
+                      v-if="version.tombstone"
+                      color="error"
+                      variant="soft"
+                      size="sm"
+                    >
+                      Tombstoned
+                    </UBadge>
+                  </span>
+
+                  <span class="mt-1 block truncate text-sm font-medium">
+                    {{ getCardDisplayTitle(version) || "No title available" }}
+                  </span>
+
+                  <span v-if="version.publishedAt" class="text-muted text-xs">
+                    Published
+                    {{ dayjs(version.publishedAt).format("MMMM D, YYYY") }}
+                  </span>
+                </span>
+
+                <Icon
+                  name="i-lucide-chevron-right"
+                  class="text-muted h-4 w-4 shrink-0"
+                />
+              </button>
+            </div>
+          </div>
+        </template>
+      </UPageList>
+    </section>
+
+    <div
+      v-else-if="visiblePosterCount > 0"
+      class="mx-auto flex max-w-md flex-col items-center gap-3 py-12 text-center"
+    >
+      <Icon
+        :name="
+          activeDashboardTab === 'in-progress'
+            ? 'i-lucide-circle-check'
+            : 'i-lucide-book-open'
+        "
+        class="text-muted h-12 w-12"
+      />
+
+      <h3 class="text-lg font-medium">
+        {{
+          activeDashboardTab === "in-progress"
+            ? "No posters in progress"
+            : "No published posters"
+        }}
+      </h3>
+
+      <p class="text-muted text-sm">
+        {{
+          activeDashboardTab === "in-progress"
+            ? "All of your posters are up to date."
+            : "Your published posters will appear here."
+        }}
+      </p>
+    </div>
+
+    <div v-else class="py-12 text-center">
       <div
         v-if="posters.length > 0"
         class="mx-auto flex max-w-md flex-col items-center gap-3"
