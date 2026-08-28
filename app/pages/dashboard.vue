@@ -1332,11 +1332,25 @@ function posterMenuItems(poster: Poster) {
                   <div class="flex flex-wrap items-center gap-2">
                     <UBadge
                       :color="posterStatusPresentation(poster).color"
-                      variant="soft"
+                      variant="solid"
                       size="sm"
                       :icon="posterStatusPresentation(poster).icon"
                     >
                       {{ posterStatusPresentation(poster).label }}
+                    </UBadge>
+
+                    <UBadge
+                      v-if="
+                        poster.status === 'published' &&
+                        poster.isLatestPublished &&
+                        poster.activeVersionDraft
+                      "
+                      color="warning"
+                      variant="solid"
+                      size="sm"
+                      icon="i-lucide-file-clock"
+                    >
+                      Pending draft
                     </UBadge>
 
                     <UBadge
@@ -1540,7 +1554,7 @@ function posterMenuItems(poster: Poster) {
                     <UBadge
                       v-if="version.tombstone"
                       color="error"
-                      variant="soft"
+                      variant="solid"
                       size="sm"
                     >
                       Tombstoned
