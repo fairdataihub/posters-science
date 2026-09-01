@@ -1,12 +1,7 @@
 import { createId } from "@paralleldrive/cuid2";
+import { normalizeVersionRelatedIdentifiers } from "../../../utils/posterVersions";
 
 type Identifier = { identifier?: string; identifierType?: string };
-type RelatedIdentifier = {
-  relatedIdentifier?: string;
-  relatedIdentifierType?: string;
-  relationType?: string;
-  resourceTypeGeneral?: string;
-};
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 const ALLOWED_FILE_TYPES: Record<string, string> = {
@@ -343,25 +338,10 @@ export default defineEventHandler(async (event) => {
           ),
       )
     : [];
-  const relatedIdentifiers = Array.isArray(meta.relatedIdentifiers)
-    ? ([...meta.relatedIdentifiers] as RelatedIdentifier[])
-    : [];
-
-  if (
-    previousDoi &&
-    !relatedIdentifiers.some(
-      (item) =>
-        item.relatedIdentifier?.toLowerCase() === previousDoi.toLowerCase() &&
-        item.relationType === "IsNewVersionOf",
-    )
-  ) {
-    relatedIdentifiers.push({
-      relatedIdentifier: previousDoi,
-      relatedIdentifierType: "DOI",
-      relationType: "IsNewVersionOf",
-      resourceTypeGeneral: "Text",
-    });
-  }
+  const { relatedIdentifiers } = normalizeVersionRelatedIdentifiers(
+    meta.relatedIdentifiers,
+    previousDoi,
+  );
 
   const dates = Array.isArray(meta.dates)
     ? (meta.dates as Array<{ dateType?: string }>).filter(

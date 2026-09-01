@@ -1,3 +1,5 @@
+import { normalizeVersionRelatedIdentifiers } from "../../../utils/posterVersions";
+
 export default defineEventHandler(async (event) => {
   const session = await requireUserSession(event);
   const { user } = session;
@@ -73,15 +75,8 @@ export default defineEventHandler(async (event) => {
         (r) => r.relatedIdentifier === canonicalUrl,
       );
       const previousDoi = previousVersion?.posterMetadata?.doi;
-      const hasPreviousVersion = previousDoi
-        ? existing.some(
-            (r) =>
-              r.relatedIdentifier?.toLowerCase() ===
-                previousDoi.toLowerCase() &&
-              r.relationType === "IsNewVersionOf",
-          )
-        : true;
-      const relatedIdentifiers = [...existing];
+      const { relatedIdentifiers, changed: versionRelationsChanged } =
+        normalizeVersionRelatedIdentifiers(existing, previousDoi);
       const assignedVersion = versionPoster?.versionRootId
         ? posterVersionLabel(versionPoster.versionSequence)
         : null;
@@ -93,17 +88,9 @@ export default defineEventHandler(async (event) => {
           relationType: "IsDescribedBy",
         });
       }
-      if (previousDoi && !hasPreviousVersion) {
-        relatedIdentifiers.push({
-          relatedIdentifier: previousDoi,
-          relatedIdentifierType: "DOI",
-          relationType: "IsNewVersionOf",
-        });
-      }
-
       if (
         !alreadyPresent ||
-        !hasPreviousVersion ||
+        versionRelationsChanged ||
         (assignedVersion && meta.version !== assignedVersion)
       ) {
         await prisma.posterMetadata.update({
