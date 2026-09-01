@@ -542,3 +542,19 @@ export async function computeMetrics(client: PrismaClient) {
 // Shape returned by computeMetrics; callers cast the stored JSON snapshot back to
 // this so the API response keeps its exact type for the frontend.
 export type MetricsPayload = Awaited<ReturnType<typeof computeMetrics>>;
+
+export async function getLatestMetricsSnapshot(client: PrismaClient) {
+  const snapshot = await client.metricsSnapshot.findFirst({
+    orderBy: { generatedAt: "desc" },
+    select: { payload: true, generatedAt: true },
+  });
+
+  if (!snapshot) return null;
+
+  const payload = snapshot.payload as MetricsPayload;
+
+  // A stored payload predating the current shape is treated as no snapshot.
+  if (!payload?.platform || !payload?.world) return null;
+
+  return { payload, generatedAt: snapshot.generatedAt };
+}
