@@ -949,6 +949,11 @@ function openVersionWorkflow(poster: Poster) {
   openVersionModal(poster);
 }
 
+function reviewPendingDraft(poster: Poster) {
+  const draftId = poster.activeVersionDraft?.id;
+  if (draftId) void navigateTo(`/share/${draftId}`);
+}
+
 function openDeleteVersionModal(poster: Poster) {
   if (!isVersionReviewReady(poster.activeVersionDraft)) return;
 
@@ -1461,6 +1466,18 @@ function posterMenuItems(poster: Poster) {
                         icon="i-lucide-eye"
                         size="xs"
                         @click="openPoster(poster)"
+                      />
+
+                      <UButton
+                        v-if="
+                          poster.isLatestPublished && poster.activeVersionDraft
+                        "
+                        color="primary"
+                        variant="subtle"
+                        label="Review draft"
+                        icon="i-lucide-file-pen-line"
+                        size="xs"
+                        @click="reviewPendingDraft(poster)"
                       />
 
                       <UTooltip
