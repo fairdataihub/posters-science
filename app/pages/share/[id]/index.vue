@@ -571,6 +571,51 @@ const conferenceYearOptions = Array.from(
   (_, i) => currentYear + 1 - i,
 ).map((y) => ({ label: String(y), value: y }));
 
+const conferenceNameOptions = [
+  {
+    label: "Association for Research in Vision and Ophthalmology Conference",
+    value: "Association for Research in Vision and Ophthalmology Conference",
+  },
+  {
+    label: "American Chemical Society Meeting",
+    value: "American Chemical Society Meeting",
+  },
+  {
+    label: "American Society of Clinical Oncology Annual Meeting",
+    value: "American Society of Clinical Oncology Annual Meeting",
+  },
+  {
+    label: "European Society of Medical Oncology Congress",
+    value: "European Society of Medical Oncology Congress",
+  },
+  {
+    label: "American Heart Association Scientific Sessions",
+    value: "American Heart Association Scientific Sessions",
+  },
+  {
+    label: "Society for Neuroscience Annual Meeting",
+    value: "Society for Neuroscience Annual Meeting",
+  },
+  {
+    label: "American College of Radiology Annual Meeting",
+    value: "American College of Radiology Annual Meeting",
+  },
+  {
+    label: "International Conference on Artificial Intelligence",
+    value: "International Conference on Artificial Intelligence",
+  },
+  {
+    label:
+      "ACM SIGPLAN Conference on Programming Language Design and Implementation",
+    value:
+      "ACM SIGPLAN Conference on Programming Language Design and Implementation",
+  },
+  {
+    label: "NeurIPS - Neural Information Processing Systems",
+    value: "NeurIPS - Neural Information Processing Systems",
+  },
+];
+
 /** Extract a year from text (e.g. "ARVO 2025" or "Conference 25") for auto-fill. */
 function yearFromText(text: string): number | undefined {
   if (!text || typeof text !== "string") return undefined;
@@ -1679,9 +1724,12 @@ const moveCreator = (index: number, direction: "up" | "down") => {
                   label="Conference name"
                   required
                 >
-                  <UInput
+                  <USelect
                     v-model="state.conference.conferenceName"
-                    placeholder="e.g., Association for Research in Vision and Ophthalmology Conference"
+                    :items="conferenceNameOptions"
+                    placeholder="Select or search a conference"
+                    searchable
+                    clearable
                   />
                 </UFormField>
 
