@@ -16,13 +16,23 @@
             "type": "string",
             "description": "The identifier value.",
             "minLength": 1,
-            "examples": ["10.5072/posters.2025.001234", "arXiv:2501.12345", "Local-ID-789"]
+            "examples": [
+              "10.5072/posters.2025.001234",
+              "arXiv:2501.12345",
+              "Local-ID-789"
+            ]
           },
           "identifierType": {
             "type": "string",
             "description": "The type of identifier. Use 'DOI' for Digital Object Identifiers, or other standard identifier types.",
             "minLength": 1,
-            "examples": ["DOI", "arXiv", "Local accession number", "Institutional ID", "file"]
+            "examples": [
+              "DOI",
+              "arXiv",
+              "Local accession number",
+              "Institutional ID",
+              "file"
+            ]
           }
         },
         "required": ["identifier", "identifierType"],
@@ -41,7 +51,11 @@
             "type": "string",
             "description": "The full name of the creator (personal name or organization name). Personal name format should be: family, given.",
             "minLength": 1,
-            "examples": ["Garcia, Sofia", "Smith, John", "AI Research Laboratory"]
+            "examples": [
+              "Garcia, Sofia",
+              "Smith, John",
+              "AI Research Laboratory"
+            ]
           },
           "givenName": {
             "type": "string",
@@ -184,7 +198,10 @@
             "type": "string",
             "description": "The title of the poster.",
             "minLength": 1,
-            "examples": ["Machine Learning Approaches to Diabetic Retinopathy Detection", "AI-Ready Clinical Datasets for Type 2 Diabetes Research"]
+            "examples": [
+              "Machine Learning Approaches to Diabetic Retinopathy Detection",
+              "AI-Ready Clinical Datasets for Type 2 Diabetes Research"
+            ]
           },
           "titleType": {
             "type": "string",
@@ -207,7 +224,12 @@
           "type": "string",
           "description": "The name of the publisher.",
           "minLength": 1,
-          "examples": ["Zenodo", "IEEE Conference Publications", "ACM Digital Library", "Institutional Repository"]
+          "examples": [
+            "Zenodo",
+            "IEEE Conference Publications",
+            "ACM Digital Library",
+            "Institutional Repository"
+          ]
         },
         "publisherIdentifier": {
           "type": "string",
@@ -275,19 +297,30 @@
             "type": "string",
             "description": "Subject, keyword, classification code, or key phrase describing the poster content.",
             "minLength": 1,
-            "examples": ["Machine Learning", "Type 2 Diabetes", "Retinal Imaging", "Clinical Data Standards"]
+            "examples": [
+              "Machine Learning",
+              "Type 2 Diabetes",
+              "Retinal Imaging",
+              "Clinical Data Standards"
+            ]
           },
           "schemeUri": {
             "type": "string",
             "description": "The URI of the subject identifier scheme.",
             "minLength": 1,
-            "examples": ["https://www.nlm.nih.gov/mesh/", "https://id.loc.gov/authorities/subjects.html"]
+            "examples": [
+              "https://www.nlm.nih.gov/mesh/",
+              "https://id.loc.gov/authorities/subjects.html"
+            ]
           },
           "valueUri": {
             "type": "string",
             "description": "The URI of the subject identifier.",
             "minLength": 1,
-            "examples": ["https://www.nlm.nih.gov/mesh/D000001", "https://id.loc.gov/authorities/subjects/sh85118622.html"]
+            "examples": [
+              "https://www.nlm.nih.gov/mesh/D000001",
+              "https://id.loc.gov/authorities/subjects/sh85118622.html"
+            ]
           },
           "subjectScheme": {
             "type": "string",
@@ -387,7 +420,11 @@
           "dateInformation": {
             "type": ["string", "null"],
             "description": "Additional information about the date. Can be used to provide context, e.g., 'Presented at US-RSE 2025 Conference' when using dateType 'Issued' for poster presentation dates.",
-            "examples": ["Presented at US-RSE 2025 Conference", "2025-01-01", "55 BCE"]
+            "examples": [
+              "Presented at US-RSE 2025 Conference",
+              "2025-01-01",
+              "55 BCE"
+            ]
           }
         },
         "required": ["date", "dateType"],
@@ -485,7 +522,13 @@
         "type": "string",
         "minLength": 1,
         "description": "A specific dimension or size",
-        "examples": ["36x48 inches portrait", "48x36 inches landscape", "A0 portrait", "90x120 cm", "24 MB PDF"]
+        "examples": [
+          "36x48 inches portrait",
+          "48x36 inches landscape",
+          "A0 portrait",
+          "90x120 cm",
+          "24 MB PDF"
+        ]
       },
       "uniqueItems": true
     },
@@ -524,7 +567,10 @@
             "type": "string",
             "minLength": 1,
             "description": "Use the complete title of a license and include version information if applicable.",
-            "examples": ["Creative Commons Attribution 4.0 International", "CC-BY-4.0"]
+            "examples": [
+              "Creative Commons Attribution 4.0 International",
+              "CC-BY-4.0"
+            ]
           },
           "rightsUri": {
             "type": "string",
@@ -567,7 +613,10 @@
             "type": "string",
             "minLength": 1,
             "description": "A description of the poster content.",
-            "examples": ["This poster presents machine learning methods for automated diabetic retinopathy screening using retinal fundus images from 4,000 participants...", "We describe a novel clinical dataset structure (CDS) for organizing multimodal research data in AI-ready formats..."]
+            "examples": [
+              "This poster presents machine learning methods for automated diabetic retinopathy screening using retinal fundus images from 4,000 participants...",
+              "We describe a novel clinical dataset structure (CDS) for organizing multimodal research data in AI-ready formats..."
+            ]
           },
           "descriptionType": {
             "type": "string",
@@ -616,7 +665,11 @@
             "type": "string",
             "minLength": 1,
             "description": "Name of the funding provider.",
-            "examples": ["National Institutes of Health (NIH)", "National Science Foundation", "European Research Council"]
+            "examples": [
+              "National Institutes of Health (NIH)",
+              "National Science Foundation",
+              "European Research Council"
+            ]
           },
           "funderIdentifier": {
             "type": "string",
@@ -634,7 +687,10 @@
             "type": "string",
             "minLength": 1,
             "description": "The URI of the funder identifier scheme",
-            "examples": ["https://ror.org", "https://www.crossref.org/services/funder-registry/"]
+            "examples": [
+              "https://ror.org",
+              "https://www.crossref.org/services/funder-registry/"
+            ]
           },
           "awardNumber": {
             "type": "string",
@@ -656,7 +712,10 @@
             "type": "string",
             "minLength": 1,
             "description": "The human readable title or name of the award (grant)",
-            "examples": ["The awesome project of XYZ", "Socioenvironmental Monitoring of the Amazon Basin and Xingu"]
+            "examples": [
+              "The awesome project of XYZ",
+              "Socioenvironmental Monitoring of the Amazon Basin and Xingu"
+            ]
           }
         },
         "required": ["funderName"],
@@ -765,13 +824,21 @@
                 "type": "string",
                 "minLength": 1,
                 "description": "The title or heading of this section as it appears on the poster. Examples: 'Introduction', 'Background', 'Methods', 'Approach', 'Results', 'Results & Conclusions', 'Discussion', 'Future Work', 'Acknowledgements', 'References', etc.",
-                "examples": ["Introduction", "Methods", "Results & Discussion", "Conclusions", "References"]
+                "examples": [
+                  "Introduction",
+                  "Methods",
+                  "Results & Discussion",
+                  "Conclusions",
+                  "References"
+                ]
               },
               "sectionContent": {
                 "type": "string",
                 "minLength": 1,
                 "description": "The text content of this section extracted from the poster.",
-                "examples": ["Machine learning algorithms were applied to analyze retinal images from 4,000 participants..."]
+                "examples": [
+                  "Machine learning algorithms were applied to analyze retinal images from 4,000 participants..."
+                ]
               }
             },
             "additionalProperties": false
@@ -802,7 +869,10 @@
             "type": "string",
             "minLength": 1,
             "description": "The full caption text for this table.",
-            "examples": ["Table 1. Summary of Results", "Table 2. Comparison of model performance across datasets"]
+            "examples": [
+              "Table 1. Summary of Results",
+              "Table 2. Comparison of model performance across datasets"
+            ]
           }
         },
         "required": ["caption"],
@@ -826,7 +896,10 @@
             "type": "string",
             "minLength": 1,
             "description": "The full caption text for this image/figure.",
-            "examples": ["Figure 1. Overview of the Task Force", "Figure 2. Distribution of participants by region"]
+            "examples": [
+              "Figure 1. Overview of the Task Force",
+              "Figure 2. Distribution of participants by region"
+            ]
           }
         },
         "required": ["caption"],
@@ -838,7 +911,13 @@
       "type": "string",
       "minLength": 1,
       "description": "Primary research field or discipline area for the research presented. Renamed from 'domain' to avoid confusion with biological taxonomy (where domain is the highest rank above kingdom/species).",
-      "examples": ["Machine Learning", "Clinical Medicine", "Bioinformatics", "Public Health", "Neuroscience"]
+      "examples": [
+        "Machine Learning",
+        "Clinical Medicine",
+        "Bioinformatics",
+        "Public Health",
+        "Neuroscience"
+      ]
     }
   },
   "required": [
