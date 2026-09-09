@@ -620,6 +620,11 @@ function applyConferenceSelection(name: string) {
   state.conference.conferenceEndDate = conferenceData.conferenceEndDate || "";
   state.conference.conferenceUri = conferenceData.conferenceUri || "";
   state.conference.conferenceSeries = conferenceData.conferenceSeries || "";
+  // Clear the search selection so the search bar is empty after choosing.
+  // Run on nextTick so the SelectMenu's internal update finishes first.
+  nextTick(() => {
+    selectedConference.value = undefined;
+  });
 }
 
 // Fetch conference data on scraper data
@@ -1820,11 +1825,11 @@ const moveCreator = (index: number, direction: "up" | "down") => {
             description="The conference or event where the poster was presented"
           >
             <div class="space-y-4">
-              <UFormField label="Search conferences">
+              <UFormField label="Autofill from collected conferences">
                 <USelectMenu
                   v-model="selectedConference"
                   :items="conferenceNameOptions"
-                  placeholder="Search collected conferences to autofill"
+                  placeholder="Search for a conference to automatically fill in the details below"
                   option-attribute="value"
                   value-key="value"
                   class="w-full"

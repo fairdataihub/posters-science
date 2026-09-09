@@ -5,9 +5,9 @@ name: Update Conference List
 on:
   # Run when changes are pushed to conference-dropdown-search-selection,
   # including when a PR is merged into it.
-  push:
-    branches:
-      - conference-dropdown-search-selection
+  # push:
+  # branches:
+  # - conference-dropdown-search-selection
 
   # Run every Monday at 2 AM UTC
   schedule:
