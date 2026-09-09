@@ -1,10 +1,18 @@
-import type { ConferencePosting } from "./schema.js";
+import type { CollectedConference } from "./schema.js";
 
+/**
+ * Introduces a random delay between min and max milliseconds.
+ * Used for rate-limiting requests to external servers.
+ */
 export async function randomDelay(minMs: number, maxMs: number): Promise<void> {
   const delay = Math.random() * (maxMs - minMs) + minMs;
   await new Promise((resolve) => setTimeout(resolve, delay));
 }
 
+/**
+ * Resolves a relative or absolute URL against a base URL.
+ * Returns undefined if URL is invalid or empty.
+ */
 export function resolveUrl(
   url: string | undefined,
   baseUrl: string,
@@ -20,6 +28,10 @@ export function resolveUrl(
   }
 }
 
+/**
+ * Formats a date as ISO 8601 string (YYYY-MM-DD).
+ * Handles month names (e.g., "November", "Nov") and converts to numeric format.
+ */
 export function formatDateISO(
   month: string,
   day: string,
@@ -57,6 +69,10 @@ export function formatDateISO(
   return `${year}-${monthNumber}-${day.padStart(2, "0")}`;
 }
 
+/**
+ * Parses various date string formats (single date, date range, year-only).
+ * Returns startDate, endDate (if available), and year.
+ */
 export function parseDateRange(dateStr: string): {
   startDate?: string;
   endDate?: string;
@@ -104,6 +120,10 @@ export function parseDateRange(dateStr: string): {
   return { year };
 }
 
+/**
+ * Normalizes conference title for comparison:
+ * removes years, converts to lowercase, and strips special characters.
+ */
 export function normalizeConferenceTitle(title: string): string {
   return title
     .toLowerCase()
@@ -113,6 +133,10 @@ export function normalizeConferenceTitle(title: string): string {
     .trim();
 }
 
+/**
+ * Extracts acronym from conference title using pattern matching.
+ * Returns undefined if no valid acronym found.
+ */
 export function extractConferenceAcronym(title: string): string | undefined {
   const cleaned = title.replace(/^\d{4}\s+/, "").trim();
   const match = cleaned.match(/^([A-Z][A-Z0-9]{1,})(?:\b|[-_])/);
@@ -126,6 +150,10 @@ export function extractConferenceAcronym(title: string): string | undefined {
   return acronym.length >= 2 ? acronym : undefined;
 }
 
+/**
+ * Creates a unique deduplication key for a conference.
+ * Prioritizes URI, then acronym+year, then normalized title+year.
+ */
 export function createDeduplicationKey(
   title: string,
   acronym: string | undefined,
@@ -143,8 +171,11 @@ export function createDeduplicationKey(
   return `title:${normalizeConferenceTitle(title)}:${year}`;
 }
 
-export function countPopulatedFields(posting: ConferencePosting): number {
-  const fields: Array<keyof ConferencePosting> = [
+/**
+ * Counts the number of populated (non-empty) fields in a conference posting.
+ */
+export function countPopulatedFields(posting: CollectedConference): number {
+  const fields: Array<keyof CollectedConference> = [
     "conferenceName",
     "conferenceLocation",
     "conferenceUri",
@@ -165,9 +196,13 @@ export function countPopulatedFields(posting: ConferencePosting): number {
   }).length;
 }
 
+/**
+ * Determines if two conferences refer to the same event.
+ * Checks by URI, acronym+year, or normalized title+year.
+ */
 export function areSameConference(
-  a: ConferencePosting,
-  b: ConferencePosting,
+  a: CollectedConference,
+  b: CollectedConference,
 ): boolean {
   if (
     a.conferenceUri &&
@@ -194,16 +229,22 @@ export function areSameConference(
   );
 }
 
+/**
+ * Finds a matching posting in a list using the same criteria as areSameConference.
+ */
 export function findMatchingPosting(
-  postings: ConferencePosting[],
-  incoming: ConferencePosting,
-): ConferencePosting | undefined {
+  postings: CollectedConference[],
+  incoming: CollectedConference,
+): CollectedConference | undefined {
   return postings.find((posting) => areSameConference(posting, incoming));
 }
 
+/**
+ * Returns a human-readable reason why two conferences match.
+ */
 export function getMatchReason(
-  a: ConferencePosting,
-  b: ConferencePosting,
+  a: CollectedConference,
+  b: CollectedConference,
 ): string {
   if (
     a.conferenceUri &&
@@ -234,25 +275,26 @@ export function getMatchReason(
   return "unknown";
 }
 
+/**
+ * Merges two conference postings, preferring the one with more populated fields.
+ * Falls back to existing record if field counts are equal.
+ */
 export function mergeConferencePostings(
-  existing: ConferencePosting,
-  incoming: ConferencePosting,
-): ConferencePosting {
+  existing: CollectedConference,
+  incoming: CollectedConference,
+): CollectedConference {
   const existingFields = countPopulatedFields(existing);
   const incomingFields = countPopulatedFields(incoming);
 
   const preferred = incomingFields > existingFields ? incoming : existing;
-
   const secondary = preferred === existing ? incoming : existing;
 
-  const merged: ConferencePosting = {
-    ...preferred,
-  };
+  const result = { ...preferred };
 
   for (const field of Object.keys(secondary) as Array<
-    keyof ConferencePosting
+    keyof CollectedConference
   >) {
-    const current = merged[field];
+    const current = result[field];
     const incomingValue = secondary[field];
 
     const currentEmpty =
@@ -264,11 +306,12 @@ export function mergeConferencePostings(
       incomingValue !== "";
 
     if (currentEmpty && incomingPopulated) {
-      (merged as Record<string, unknown>)[field] = incomingValue;
+      // @ts-ignore
+      (result as unknown as Record<string, unknown>)[field] = incomingValue;
     }
   }
 
-  merged.id = preferred.id;
+  result.id = preferred.id;
 
-  return merged;
+  return result;
 }

@@ -571,50 +571,101 @@ const conferenceYearOptions = Array.from(
   (_, i) => currentYear + 1 - i,
 ).map((y) => ({ label: String(y), value: y }));
 
-const conferenceNameOptions = [
-  {
-    label: "Association for Research in Vision and Ophthalmology Conference",
-    value: "Association for Research in Vision and Ophthalmology Conference",
-  },
-  {
-    label: "American Chemical Society Meeting",
-    value: "American Chemical Society Meeting",
-  },
-  {
-    label: "American Society of Clinical Oncology Annual Meeting",
-    value: "American Society of Clinical Oncology Annual Meeting",
-  },
-  {
-    label: "European Society of Medical Oncology Congress",
-    value: "European Society of Medical Oncology Congress",
-  },
-  {
-    label: "American Heart Association Scientific Sessions",
-    value: "American Heart Association Scientific Sessions",
-  },
-  {
-    label: "Society for Neuroscience Annual Meeting",
-    value: "Society for Neuroscience Annual Meeting",
-  },
-  {
-    label: "American College of Radiology Annual Meeting",
-    value: "American College of Radiology Annual Meeting",
-  },
-  {
-    label: "International Conference on Artificial Intelligence",
-    value: "International Conference on Artificial Intelligence",
-  },
-  {
-    label:
-      "ACM SIGPLAN Conference on Programming Language Design and Implementation",
-    value:
-      "ACM SIGPLAN Conference on Programming Language Design and Implementation",
-  },
-  {
-    label: "NeurIPS - Neural Information Processing Systems",
-    value: "NeurIPS - Neural Information Processing Systems",
-  },
-];
+// Load conference options from scraper data
+type ConferenceOption = {
+  label: string;
+  value: string;
+};
+
+const conferenceNameOptions = ref<ConferenceOption[]>([]);
+const selectedConference = ref<string | undefined>();
+const conferenceDataMap = ref<
+  Record<
+    string,
+    {
+      conferenceName?: string;
+      conferenceYear?: number;
+      conferenceAcronym?: string;
+      conferenceLocation?: string;
+      conferenceIdentifier?: string;
+      conferenceIdentifierType?: string;
+      conferenceStartDate?: string;
+      conferenceEndDate?: string;
+      conferenceUri?: string;
+      conferenceSeries?: string;
+      source?: string;
+    }
+  >
+>({});
+
+function applyConferenceSelection(name: string) {
+  if (!state.conference) return;
+
+  state.conference.conferenceName = name;
+
+  const conferenceData = conferenceDataMap.value[name];
+  if (!conferenceData) return;
+
+  if (conferenceData.conferenceYear) {
+    state.conference.conferenceYear = conferenceData.conferenceYear;
+  }
+  state.conference.conferenceAcronym = conferenceData.conferenceAcronym || "";
+  state.conference.conferenceLocation = conferenceData.conferenceLocation || "";
+  state.conference.conferenceIdentifier =
+    conferenceData.conferenceIdentifier || "";
+  state.conference.conferenceIdentifierType =
+    conferenceData.conferenceIdentifierType || "";
+  state.conference.conferenceStartDate =
+    conferenceData.conferenceStartDate || "";
+  state.conference.conferenceEndDate = conferenceData.conferenceEndDate || "";
+  state.conference.conferenceUri = conferenceData.conferenceUri || "";
+  state.conference.conferenceSeries = conferenceData.conferenceSeries || "";
+}
+
+// Fetch conference data on scraper data
+const loadConferenceOptions = async () => {
+  try {
+    const response = (await $fetch("/api/conferences")) as any;
+
+    if (response?.options && Array.isArray(response.options)) {
+      // Create simple dropdown options
+      conferenceNameOptions.value = response.options.map((opt: any) => ({
+        label: opt.label,
+        value: opt.value,
+      }));
+
+      // Build lookup map for quick access to full conference data
+      conferenceDataMap.value = {};
+      for (const opt of response.options) {
+        conferenceDataMap.value[opt.value] = {
+          conferenceName: opt.conferenceName,
+          conferenceYear: opt.conferenceYear,
+          conferenceAcronym: opt.conferenceAcronym,
+          conferenceLocation: opt.conferenceLocation,
+          conferenceIdentifier: opt.conferenceIdentifier,
+          conferenceIdentifierType: opt.conferenceIdentifierType,
+          conferenceStartDate: opt.conferenceStartDate,
+          conferenceEndDate: opt.conferenceEndDate,
+          conferenceUri: opt.conferenceUri,
+          conferenceSeries: opt.conferenceSeries,
+          source: opt.source,
+        };
+      }
+
+      if (state.conference?.conferenceName) {
+        applyConferenceSelection(state.conference.conferenceName);
+      }
+    }
+  } catch (error) {
+    console.warn("Failed to load conference options from scraper data:", error);
+    // Fallback to empty array - user can still enter manually
+  }
+};
+
+// Load on mount
+onMounted(() => {
+  loadConferenceOptions();
+});
 
 /** Extract a year from text (e.g. "ARVO 2025" or "Conference 25") for auto-fill. */
 function yearFromText(text: string): number | undefined {
@@ -643,13 +694,64 @@ function yearFromText(text: string): number | undefined {
 watch(
   () => state.conference?.conferenceName,
   (name) => {
-    if (!state.conference || state.conference.conferenceYear != null) return;
+    if (!state.conference || !name) return;
 
-    const year = yearFromText(name ?? "");
+    const conferenceData = conferenceDataMap.value[name];
 
-    if (year != null) state.conference.conferenceYear = year;
+    // Auto-fill conference fields from the loaded data
+    // Only fill fields that don't already have values (don't overwrite user input)
+
+    // Year: only auto-fill if not already set
+    if (!state.conference.conferenceYear && conferenceData?.conferenceYear) {
+      state.conference.conferenceYear = conferenceData.conferenceYear;
+    } else if (!state.conference.conferenceYear && name) {
+      // Fallback: extract year from name if not in lookup data
+      const year = yearFromText(name);
+      if (year != null) state.conference.conferenceYear = year;
+    }
+
+    // Acronym: only auto-fill if not already set
+    if (
+      !state.conference.conferenceAcronym &&
+      conferenceData?.conferenceAcronym
+    ) {
+      state.conference.conferenceAcronym = conferenceData.conferenceAcronym;
+    }
+
+    // Location: only auto-fill if not already set
+    if (
+      !state.conference.conferenceLocation &&
+      conferenceData?.conferenceLocation
+    ) {
+      state.conference.conferenceLocation = conferenceData.conferenceLocation;
+    }
+
+    // Start date: only auto-fill if not already set
+    if (
+      !state.conference.conferenceStartDate &&
+      conferenceData?.conferenceStartDate
+    ) {
+      state.conference.conferenceStartDate = conferenceData.conferenceStartDate;
+    }
+
+    // End date: only auto-fill if not already set
+    if (
+      !state.conference.conferenceEndDate &&
+      conferenceData?.conferenceEndDate
+    ) {
+      state.conference.conferenceEndDate = conferenceData.conferenceEndDate;
+    }
+
+    // URI: only auto-fill if not already set
+    if (!state.conference.conferenceUri && conferenceData?.conferenceUri) {
+      state.conference.conferenceUri = conferenceData.conferenceUri;
+    }
   },
 );
+
+function handleConferenceSelection(name: string) {
+  applyConferenceSelection(name);
+}
 
 const savingDraft = ref(false);
 
@@ -1718,18 +1820,27 @@ const moveCreator = (index: number, direction: "up" | "down") => {
             description="The conference or event where the poster was presented"
           >
             <div class="space-y-4">
+              <UFormField label="Search conferences">
+                <USelectMenu
+                  v-model="selectedConference"
+                  :items="conferenceNameOptions"
+                  placeholder="Search collected conferences to autofill"
+                  option-attribute="value"
+                  value-key="value"
+                  class="w-full"
+                  @update:model-value="handleConferenceSelection"
+                />
+              </UFormField>
+
               <div class="grid gap-3 md:grid-cols-2">
                 <UFormField
                   name="conference.conferenceName"
                   label="Conference name"
                   required
                 >
-                  <USelect
+                  <UInput
                     v-model="state.conference.conferenceName"
-                    :items="conferenceNameOptions"
-                    placeholder="Select or search a conference"
-                    searchable
-                    clearable
+                    placeholder="Enter the conference name"
                   />
                 </UFormField>
 

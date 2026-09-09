@@ -1,64 +1,73 @@
+import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { ConferencePosting } from "./schema.js";
+import type { CollectedConference, ConferenceDatabase } from "./schema.js";
 
 import { collectEasyChair, collectWikiCFP } from "./collectors.js";
 
-import { loadConferenceDatabase, upsertManyPostings } from "./storage.js";
+import { saveConferenceDatabase } from "./storage.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const DATABASE_PATH = path.join(__dirname, "conference-postings.json");
 
-export function convertToDisplayConferences(postings: ConferencePosting[]) {
-  return postings.map((posting) => ({
-    label: posting.conferenceName,
-    value: posting.conferenceName,
-    acronym: posting.conferenceAcronym,
-    url: posting.conferenceUri || "",
-  }));
-}
-
-export { toPostersSchemaConference } from "./schema.js";
-
 async function main(): Promise<void> {
-  console.log("Starting conference collection");
+  const startTime = Date.now();
+  console.log("[Main] Starting conference collection");
 
   const collectors = [
     ["wikicfp", collectWikiCFP],
     ["easychair", collectEasyChair],
   ] as const;
 
-  let totalCollected = 0;
+  const collected: CollectedConference[] = [];
 
   for (const [name, collect] of collectors) {
-    console.log(`Collecting: ${name}`);
-
     try {
       const postings = await collect();
 
-      totalCollected += postings.length;
-
-      await upsertManyPostings(DATABASE_PATH, postings);
-
-      console.log(`Completed: ${name} (${postings.length} postings)`);
+      collected.push(...postings);
     } catch (error) {
-      console.error(`Failed: ${name}`, error);
+      console.error(`[${name}] Collection failed:`, error);
     }
   }
 
-  const db = await loadConferenceDatabase(DATABASE_PATH);
+  // Delete existing database file
+  try {
+    await fs.unlink(DATABASE_PATH);
+  } catch {
+    // File doesn't exist yet, no action needed
+  }
 
-  console.log("");
-  console.log(
-    `Done: ${totalCollected} collected, ` + `${db.postings.length} in database`,
-  );
-  console.log(`Saved: ${DATABASE_PATH}`);
+  // Create fresh database with collected postings
+  const db: ConferenceDatabase = {
+    metadata: {
+      lastUpdated: new Date().toISOString(),
+      totalPostings: collected.length,
+      sources: [
+        ...new Set(
+          collected
+            .map((posting) => posting._source)
+            .filter((source): source is string => Boolean(source)),
+        ),
+      ],
+    },
+    postings: collected,
+  };
+
+  await saveConferenceDatabase(DATABASE_PATH, db);
+
+  const elapsedMs = Date.now() - startTime;
+  const elapsedSec = (elapsedMs / 1000).toFixed(2);
+
+  console.log(`[Main] Complete: ${collected.length} conferences collected`);
+  console.log(`[Main] Duration: ${elapsedSec}s`);
+  console.log(`[Main] Database: ${DATABASE_PATH}`);
 }
 
 main().catch((error) => {
-  console.error("Fatal error:", error);
+  console.error("[Main] Fatal error:", error);
   process.exit(1);
 });

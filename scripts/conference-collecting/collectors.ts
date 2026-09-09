@@ -1,6 +1,6 @@
 import { CheerioCrawler, type CheerioCrawlingContext } from "crawlee";
 
-import type { ConferencePosting } from "./schema.js";
+import type { CollectedConference } from "./schema.js";
 
 import {
   createDeduplicationKey,
@@ -13,8 +13,21 @@ import {
 const WIKICFP_BASE_URL = "http://www.wikicfp.com";
 const EASYCHAIR_BASE_URL = "https://easychair.org";
 
-const WIKICFP_CATEGORY_LIMIT = 1;
+const WIKICFP_CONFIG: {
+  categoryLimit: number | null;
+  categoryPageLimit: number | null;
+} = {
+  categoryLimit: null,
+  categoryPageLimit: null,
+};
 
+const EASYCHAIR_CONFIG: { pageLimit: number | null } = {
+  pageLimit: null,
+};
+
+/**
+ * Extracts category URLs from the WikiCFP "all categories" page.
+ */
 function parseWikiCFPCategories($: CheerioCrawlingContext["$"]): string[] {
   const categories: string[] = [];
 
@@ -30,6 +43,9 @@ function parseWikiCFPCategories($: CheerioCrawlingContext["$"]): string[] {
   return [...new Set(categories)];
 }
 
+/**
+ * Fetches all available WikiCFP categories from the main categories page.
+ */
 async function collectWikiCFPCategories(): Promise<string[]> {
   const categories: string[] = [];
   const allcatUrl = `${WIKICFP_BASE_URL}/cfp/allcat`;
@@ -43,7 +59,9 @@ async function collectWikiCFPCategories(): Promise<string[]> {
 
       categories.push(...found);
 
-      log.info(`WikiCFP: found ${found.length} categories`);
+      if (found.length > 0) {
+        log.info(`Found ${found.length} WikiCFP categories`);
+      }
     },
 
     errorHandler: async ({ request, log }, error) => {
@@ -62,6 +80,9 @@ async function collectWikiCFPCategories(): Promise<string[]> {
   return [...new Set(categories)];
 }
 
+/**
+ * Extracts next page URLs from WikiCFP category listing pages.
+ */
 function extractWikiCFPPaginationUrls(
   $: CheerioCrawlingContext["$"],
   categoryUrl: string,
@@ -106,7 +127,7 @@ function extractWikiCFPPaginationUrls(
           urls.add(url.toString());
         }
       } catch {
-        // Ignore invalid URLs.
+        // Ignore invalid URLs (malformed or different domain)
       }
     });
   }
@@ -114,28 +135,124 @@ function extractWikiCFPPaginationUrls(
   return [...urls];
 }
 
-function extractWikiCFPConferenceUrls(
-  $: CheerioCrawlingContext["$"],
-): string[] {
-  const urls: string[] = [];
-
-  $('a[href*="/cfp/servlet/event.showcfp"]').each((_, element) => {
-    const href = $(element).attr("href");
-    const url = resolveUrl(href, WIKICFP_BASE_URL);
-
-    if (url) {
-      urls.push(url);
-    }
-  });
-
-  return [...new Set(urls)];
+/**
+ * Removes trailing year from conference acronym (e.g., "ATRACC 2026" → "ATRACC").
+ */
+function cleanAcronym(rawAcronym: string): string {
+  return rawAcronym.replace(/\s+\d{4}$/, "").trim();
 }
 
+/**
+ * Extracts conference URLs and metadata from WikiCFP category listing pages.
+ */
+function extractWikiCFPConferenceUrls($: CheerioCrawlingContext["$"]): Array<{
+  url: string;
+  acronym: string;
+  series: string;
+  startDate?: string;
+  endDate?: string;
+  location?: string;
+}> {
+  const results = new Map<
+    string,
+    {
+      url: string;
+      acronym: string;
+      series: string;
+      startDate?: string;
+      endDate?: string;
+      location?: string;
+    }
+  >();
+
+  $("a[href*='/cfp/servlet/event.showcfp']").each((_, element) => {
+    const href = $(element).attr("href");
+    const url = resolveUrl(href, WIKICFP_BASE_URL);
+    const rawAcronym = $(element).text().trim();
+    const acronym = cleanAcronym(rawAcronym);
+
+    if (!url || !acronym || results.has(url)) {
+      return;
+    }
+
+    const data: {
+      url: string;
+      acronym: string;
+      series: string;
+      startDate?: string;
+      endDate?: string;
+      location?: string;
+    } = { url, acronym, series: rawAcronym };
+
+    // Extract dates and location from the next row in the listing
+    const row = $(element).closest("tr");
+    const nextRow = row.next("tr");
+
+    if (nextRow.length) {
+      const cells = nextRow.find("td");
+
+      // First cell contains dates in format "Nov 5, 2026 - Nov 7, 2026"
+      if (cells.length > 0) {
+        const dateStr = $(cells[0]).text().trim();
+        const dateParts = dateStr.split("-").map((d) => d.trim());
+
+        if (dateParts.length === 2) {
+          // Try to parse the dates
+          try {
+            const startDate = new Date(dateParts[0]);
+            const endDate = new Date(dateParts[1]);
+
+            if (!Number.isNaN(startDate.getTime())) {
+              data.startDate = startDate.toISOString().split("T")[0];
+            }
+
+            if (!Number.isNaN(endDate.getTime())) {
+              data.endDate = endDate.toISOString().split("T")[0];
+            }
+          } catch {
+            // Continue without dates if parsing fails
+          }
+        }
+      }
+
+      // Second cell contains location
+      if (cells.length > 1) {
+        const location = $(cells[1]).text().trim();
+        if (location) {
+          data.location = location;
+        }
+      }
+    }
+
+    results.set(url, data);
+  });
+
+  return [...results.values()];
+}
+
+/**
+ * Parses conference details from WikiCFP detail page, with fallback to listing page data.
+ */
 function parseWikiCFPConferenceDetail(
   $: CheerioCrawlingContext["$"],
-  conferenceUri: string,
-): ConferencePosting | null {
-  let conferenceName = $('span[property="v:summary"]').attr("content");
+  conferenceDetailUrl: string,
+  acronymFromListing?: string,
+  seriesFromListing?: string,
+  startDateFromListing?: string,
+  endDateFromListing?: string,
+  locationFromListing?: string,
+): CollectedConference | null {
+  let conferenceName: string | undefined = $("span[property='v:description']")
+    .text()
+    .trim()
+    .split(":")
+    .slice(1)
+    .join(":")
+    .trim();
+
+  if (!conferenceName) {
+    conferenceName = $("span[property='v:summary']").attr("content");
+  }
 
   if (!conferenceName) {
     conferenceName = $("h2 span").first().text().trim();
@@ -147,48 +264,47 @@ function parseWikiCFPConferenceDetail(
 
   conferenceName = conferenceName.trim();
 
-  const startDate = $('span[property="v:startDate"]')
-    .attr("content")
-    ?.split("T")[0];
+  const conferenceStartDate =
+    $("span[property='v:startDate']").attr("content")?.split("T")[0] ||
+    startDateFromListing;
 
-  const endDate = $('span[property="v:endDate"]')
-    .attr("content")
-    ?.split("T")[0];
+  const conferenceEndDate =
+    $("span[property='v:endDate']").attr("content")?.split("T")[0] ||
+    endDateFromListing;
 
-  let location = $('span[property="v:locality"]').attr("content");
+  let conferenceLocation =
+    $("span[property='v:locality']").attr("content") || locationFromListing;
 
-  if (!location) {
+  if (!conferenceLocation) {
     $("th").each((_, th) => {
       if ($(th).text().trim() === "Where") {
-        location =
+        conferenceLocation =
           $(th).closest("tr").find("td").eq(1).text().trim() || undefined;
       }
     });
   }
 
-  if (location) {
-    location = location.replace(/,\s*$/, "").trim();
+  if (conferenceLocation) {
+    conferenceLocation = conferenceLocation.replace(/,\s*$/, "").trim();
   }
 
-  let externalUrl: string | undefined;
+  let conferenceUri = "";
 
-  $("a").each((_, link) => {
-    const href = $(link).attr("href");
+  $("div.contsec td").each((_, cell) => {
+    if (conferenceUri || !$(cell).text().trim().startsWith("Link:")) {
+      return;
+    }
 
-    if (
-      !externalUrl &&
-      href &&
-      !href.startsWith("/cfp") &&
-      !href.startsWith("javascript") &&
-      /^https?:/.test(href)
-    ) {
-      externalUrl = href;
+    const href = $(cell).find("a").first().attr("href");
+
+    if (href) {
+      conferenceUri = resolveUrl(href, WIKICFP_BASE_URL) ?? "";
     }
   });
 
   const year =
-    startDate?.match(/^(\d{4})/)?.[1] ??
-    endDate?.match(/^(\d{4})/)?.[1] ??
+    conferenceStartDate?.match(/^(\d{4})/)?.[1] ??
+    conferenceEndDate?.match(/^(\d{4})/)?.[1] ??
     conferenceName.match(/(\d{4})/)?.[1];
 
   if (!year) {
@@ -196,51 +312,92 @@ function parseWikiCFPConferenceDetail(
   }
 
   const conferenceYear = Number.parseInt(year, 10);
-  const conferenceAcronym = extractConferenceAcronym(conferenceName);
+  const conferenceAcronym =
+    acronymFromListing || extractConferenceAcronym(conferenceName);
 
   return {
     id: createDeduplicationKey(
       conferenceName,
       conferenceAcronym,
       conferenceYear,
-      conferenceUri,
+      conferenceDetailUrl,
     ),
     conferenceName,
     conferenceYear,
     conferenceUri,
-    ...(conferenceAcronym && { conferenceAcronym }),
-    ...(startDate && { conferenceStartDate: startDate }),
-    ...(endDate && { conferenceEndDate: endDate }),
-    ...(location && { conferenceLocation: location }),
-    ...(externalUrl && { conferenceSchemaUri: externalUrl }),
+    ...(seriesFromListing && { conferenceAcronym: seriesFromListing }),
+    ...(conferenceAcronym && { conferenceSeries: conferenceAcronym }),
+    ...(conferenceStartDate && { conferenceStartDate }),
+    ...(conferenceEndDate && { conferenceEndDate }),
+    ...(conferenceLocation && { conferenceLocation }),
     _source: "wikicfp",
   };
 }
 
+/**
+ * Collects all conferences from a WikiCFP category by crawling listing and detail pages.
+ */
 async function collectWikiCFPConferences(
   categoryUrl: string,
-): Promise<ConferencePosting[]> {
-  const conferenceUrls = new Set<string>();
+  categoryNumber: number,
+  categoryTotal: number,
+): Promise<CollectedConference[]> {
+  const conferenceUrls = new Map<
+    string,
+    {
+      acronym: string;
+      series: string;
+      startDate?: string;
+      endDate?: string;
+      location?: string;
+    }
+  >();
+  let categoryPagesScanned = 0;
 
   const categoryCrawler = new CheerioCrawler({
-    maxRequestsPerCrawl: 1000,
-    maxRequestsPerMinute: 5,
+    maxRequestsPerCrawl: WIKICFP_CONFIG.categoryPageLimit ?? 5000,
+    maxRequestsPerMinute: 20,
+    maxConcurrency: 1,
 
     async requestHandler(context) {
-      const { $, log, request } = context;
+      const { $, log } = context;
+      categoryPagesScanned++;
 
-      log.info(`WikiCFP: scanning ${request.url}`);
+      log.debug(
+        `Category ${categoryNumber}/${categoryTotal}, page ${categoryPagesScanned}`,
+      );
 
-      const urls = extractWikiCFPConferenceUrls($);
+      const conferenceData = extractWikiCFPConferenceUrls($);
 
-      urls.forEach((url) => conferenceUrls.add(url));
+      conferenceData.forEach(
+        ({ url, acronym, series, startDate, endDate, location }) => {
+          if (!conferenceUrls.has(url)) {
+            conferenceUrls.set(url, {
+              acronym,
+              series,
+              startDate,
+              endDate,
+              location,
+            });
+          }
+        },
+      );
 
-      log.info(`WikiCFP: found ${urls.length} conference URLs`);
+      log.debug(
+        `Found ${conferenceData.length} conferences (${conferenceUrls.size} unique total)`,
+      );
+
+      if (
+        WIKICFP_CONFIG.categoryPageLimit !== null &&
+        categoryPagesScanned >= WIKICFP_CONFIG.categoryPageLimit
+      ) {
+        return;
+      }
 
       const paginationUrls = extractWikiCFPPaginationUrls($, categoryUrl);
 
       if (paginationUrls.length) {
-        await context.addRequests(paginationUrls.map((url) => ({ url })));
+        await context.addRequests([{ url: paginationUrls[0] }]);
       }
     },
 
@@ -258,28 +415,38 @@ async function collectWikiCFPConferences(
   await categoryCrawler.run([categoryUrl]);
 
   console.log(
-    `WikiCFP: discovered ${conferenceUrls.size} unique conference detail URLs`,
+    `[WikiCFP] Category ${categoryNumber}/${categoryTotal}: ` +
+      `${conferenceUrls.size} conferences across ${categoryPagesScanned} pages`,
   );
 
   if (!conferenceUrls.size) {
     return [];
   }
 
-  const postings: ConferencePosting[] = [];
+  const postings: CollectedConference[] = [];
 
   const detailCrawler = new CheerioCrawler({
     maxRequestsPerCrawl: conferenceUrls.size,
-    maxRequestsPerMinute: 10,
+    maxRequestsPerMinute: 20,
 
     async requestHandler({ $, log, request }) {
-      await randomDelay(100, 6000);
+      await randomDelay(100, 1000);
 
-      const posting = parseWikiCFPConferenceDetail($, request.url);
+      const data = conferenceUrls.get(request.url);
+      const posting = parseWikiCFPConferenceDetail(
+        $,
+        request.url,
+        data?.acronym,
+        data?.series,
+        data?.startDate,
+        data?.endDate,
+        data?.location,
+      );
 
       if (posting) {
         postings.push(posting);
       } else {
-        log.warning(`WikiCFP: could not parse ${request.url}`);
+        log.debug(`Could not parse conference: ${request.url}`);
       }
     },
 
@@ -294,55 +461,62 @@ async function collectWikiCFPConferences(
     },
   });
 
-  const urls = [...conferenceUrls];
-
-  console.log(`WikiCFP: URLs to process: ${urls.length}`);
+  const urls = [...conferenceUrls.keys()];
 
   await detailCrawler.run(urls);
 
   console.log(
-    `WikiCFP: parsed ${postings.length}/${urls.length} conference pages`,
+    `[WikiCFP] Category ${categoryNumber}/${categoryTotal}: ` +
+      `parsed ${postings.length}/${urls.length} conferences`,
   );
 
   return postings;
 }
 
-export async function collectWikiCFP(): Promise<ConferencePosting[]> {
-  console.log("WikiCFP: fetching categories");
-
+export async function collectWikiCFP(): Promise<CollectedConference[]> {
   const categories = await collectWikiCFPCategories();
 
   if (!categories.length) {
-    console.log("WikiCFP: no categories found");
+    console.log("[WikiCFP] No categories found");
 
     return [];
   }
 
-  const categoriesToProcess = categories.slice(0, WIKICFP_CATEGORY_LIMIT);
+  const categoriesToProcess =
+    WIKICFP_CONFIG.categoryLimit === null
+      ? categories
+      : categories.slice(0, WIKICFP_CONFIG.categoryLimit);
 
   console.log(
-    `WikiCFP: processing ${categoriesToProcess.length}/${categories.length} categories`,
+    `[WikiCFP] Processing ${categoriesToProcess.length}/${categories.length} categories`,
   );
 
-  const postings: ConferencePosting[] = [];
+  const postings: CollectedConference[] = [];
 
-  for (const categoryUrl of categoriesToProcess) {
-    console.log(`WikiCFP: processing ${categoryUrl}`);
+  for (const [index, categoryUrl] of categoriesToProcess.entries()) {
+    await randomDelay(200, 1500);
 
-    await randomDelay(500, 6000);
+    const categoryPostings = await collectWikiCFPConferences(
+      categoryUrl,
+      index + 1,
+      categoriesToProcess.length,
+    );
 
-    postings.push(...(await collectWikiCFPConferences(categoryUrl)));
+    postings.push(...categoryPostings);
   }
 
-  console.log(`WikiCFP: collected ${postings.length} postings`);
+  console.log(`[WikiCFP] Collected ${postings.length} conferences`);
 
   return postings;
 }
 
+/**
+ * Parses conference listings from EasyChair search results page.
+ */
 function parseEasyChairConferences(
   $: CheerioCrawlingContext["$"],
-): ConferencePosting[] {
-  const postings: ConferencePosting[] = [];
+): CollectedConference[] {
+  const postings: CollectedConference[] = [];
 
   $("tr.green, tr.white").each((_, row) => {
     const cells = $(row).find("td");
@@ -352,10 +526,11 @@ function parseEasyChairConferences(
     }
 
     const titleLink = $(cells[0]).find("a").first();
-    const title = titleLink.text().trim();
+    const rawAcronym = titleLink.text().trim();
+    const title = $(cells[1]).text().trim();
     const href = titleLink.attr("href");
 
-    if (!title || !href) {
+    if (!title || !href || !rawAcronym) {
       return;
     }
 
@@ -365,24 +540,30 @@ function parseEasyChairConferences(
       return;
     }
 
-    const location = $(cells[2]).text().trim();
+    const acronym = cleanAcronym(rawAcronym);
+    const conferenceSeries = rawAcronym;
+    const conferenceLocation = $(cells[2]).text().trim();
     const rawDate = $(cells[4]).text().trim();
-    const acronym = extractConferenceAcronym(title);
-    const { startDate, endDate, year } = parseDateRange(rawDate);
+    const {
+      startDate: conferenceStartDate,
+      endDate: conferenceEndDate,
+      year: conferenceYear,
+    } = parseDateRange(rawDate);
 
-    if (!year) {
+    if (!conferenceYear) {
       return;
     }
 
     postings.push({
-      id: createDeduplicationKey(title, acronym, year, conferenceUri),
+      id: createDeduplicationKey(title, acronym, conferenceYear, conferenceUri),
       conferenceName: title,
-      conferenceYear: year,
+      conferenceYear,
       conferenceUri,
-      ...(location && { conferenceLocation: location }),
+      ...(conferenceLocation && { conferenceLocation }),
       ...(acronym && { conferenceAcronym: acronym }),
-      ...(startDate && { conferenceStartDate: startDate }),
-      ...(endDate && { conferenceEndDate: endDate }),
+      ...(conferenceSeries && { conferenceSeries }),
+      ...(conferenceStartDate && { conferenceStartDate }),
+      ...(conferenceEndDate && { conferenceEndDate }),
       _source: "easychair",
     });
   });
@@ -390,20 +571,96 @@ function parseEasyChairConferences(
   return postings;
 }
 
-export async function collectEasyChair(): Promise<ConferencePosting[]> {
-  const postings: ConferencePosting[] = [];
+/**
+ * Extracts next page URLs from EasyChair search results.
+ */
+function extractEasyChairPaginationUrls(
+  $: CheerioCrawlingContext["$"],
+  currentUrl: string,
+): string[] {
+  const urls = new Set<string>();
+
+  $(".pagination a, .pager a, a[href*='page=']").each((_, element) => {
+    const url = resolveUrl($(element).attr("href"), currentUrl);
+
+    if (!url) {
+      return;
+    }
+
+    try {
+      const parsedUrl = new URL(url);
+
+      if (
+        parsedUrl.hostname === new URL(EASYCHAIR_BASE_URL).hostname &&
+        parsedUrl.pathname === "/cfp" &&
+        parsedUrl.searchParams.has("page")
+      ) {
+        urls.add(parsedUrl.toString());
+      }
+    } catch {
+      // Ignore URLs that don't match EasyChair CFP search parameters
+    }
+  });
+
+  return [...urls];
+}
+
+/**
+ * Extracts the conference website URL from EasyChair detail page.
+ */
+function extractEasyChairConferenceWebsite(
+  $: CheerioCrawlingContext["$"],
+): string {
+  let conferenceWebsite = "";
+
+  $("table.date_table tr").each((_, row) => {
+    if (conferenceWebsite) {
+      return;
+    }
+
+    const cells = $(row).find("td");
+
+    if ($(cells[0]).text().trim().toLowerCase() !== "conference web page") {
+      return;
+    }
+
+    const href = $(cells[1]).find("a").first().attr("href");
+    conferenceWebsite = resolveUrl(href, EASYCHAIR_BASE_URL) ?? "";
+  });
+
+  return conferenceWebsite;
+}
+
+export async function collectEasyChair(): Promise<CollectedConference[]> {
+  const postings: CollectedConference[] = [];
   const url = `${EASYCHAIR_BASE_URL}/cfp`;
+  let pagesScanned = 0;
 
   const crawler = new CheerioCrawler({
-    maxRequestsPerCrawl: 1,
-    maxRequestsPerMinute: 5,
+    maxRequestsPerCrawl: EASYCHAIR_CONFIG.pageLimit ?? 5000,
+    maxRequestsPerMinute: 20,
+    maxConcurrency: 1,
 
-    async requestHandler({ $, log }) {
+    async requestHandler({ $, log, request, addRequests }) {
+      pagesScanned++;
       const found = parseEasyChairConferences($);
 
       postings.push(...found);
 
-      log.info(`EasyChair: found ${found.length} postings`);
+      log.debug(`Page ${pagesScanned}: found ${found.length} conferences`);
+
+      if (
+        EASYCHAIR_CONFIG.pageLimit !== null &&
+        pagesScanned >= EASYCHAIR_CONFIG.pageLimit
+      ) {
+        return;
+      }
+
+      const paginationUrls = extractEasyChairPaginationUrls($, request.url);
+
+      if (paginationUrls.length) {
+        await addRequests([{ url: paginationUrls[0] }]);
+      }
     },
 
     errorHandler: async ({ request, log }, error) => {
@@ -419,5 +676,53 @@ export async function collectEasyChair(): Promise<ConferencePosting[]> {
 
   await crawler.run([url]);
 
-  return postings;
+  const limitedPostings =
+    EASYCHAIR_CONFIG.pageLimit !== null
+      ? postings.slice(0, EASYCHAIR_CONFIG.pageLimit)
+      : postings;
+
+  const postingsByDetailUrl = new Map(
+    limitedPostings.map((posting) => [posting.conferenceUri, posting]),
+  );
+  const conferenceUrls = [...postingsByDetailUrl.keys()].filter(
+    (conferenceUrl): conferenceUrl is string => Boolean(conferenceUrl),
+  );
+
+  limitedPostings.forEach((posting) => {
+    posting.conferenceUri = "";
+  });
+
+  const detailCrawler = new CheerioCrawler({
+    maxRequestsPerCrawl: conferenceUrls.length,
+    maxRequestsPerMinute: 20,
+
+    async requestHandler({ $, request, log }) {
+      const posting = postingsByDetailUrl.get(request.url);
+
+      if (!posting) {
+        return;
+      }
+
+      const conferenceWebsite = extractEasyChairConferenceWebsite($);
+      posting.conferenceUri = conferenceWebsite;
+
+      log.debug(`${conferenceWebsite ? "Found" : "No"} conference website`);
+    },
+
+    errorHandler: async ({ request, log }, error) => {
+      log.error(`EasyChair detail request failed: ${request.url}`, {
+        error: String(error),
+      });
+    },
+
+    failedRequestHandler: async ({ request, log }) => {
+      log.error(`EasyChair detail request permanently failed: ${request.url}`);
+    },
+  });
+
+  await detailCrawler.run(conferenceUrls);
+
+  console.log(`[EasyChair] Collected ${limitedPostings.length} conferences`);
+
+  return limitedPostings;
 }
