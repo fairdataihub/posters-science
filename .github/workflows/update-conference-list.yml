@@ -1,73 +1,64 @@
 name: Update Conference List
 
 on:
-push:
-branches:
-- conference-dropdown-search-selection
-schedule:
-# Run every Monday at 2 AM UTC
-- cron: "0 2 * * 1"
-workflow_dispatch: # Allow manual trigger
+  push:
+    branches:
+      - conference-dropdown-search-selection
+
+  schedule:
+    - cron: "0 2 * * 1"
+
+  workflow_dispatch:
 
 jobs:
-collect-conferences:
-runs-on: ubuntu-latest
-name: Collect Conferences
-steps:
-- name: Checkout code
-uses: actions/checkout@v4
-with:
-fetch-depth: 0
-  - name: Setup Node.js
-    uses: actions/setup-node@v4
-    with:
-      node-version: 20
-      cache: pnpm
+  collect-conferences:
+    name: Collect Conferences
+    runs-on: ubuntu-latest
 
-  - name: Install pnpm
-    uses: pnpm/action-setup@v2
-    with:
-      version: 9
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-  - name: Install dependencies
-    run: pnpm install --frozen-lockfile
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
 
-  - name: Collect conference data
-    run: pnpm exec tsx scripts/conference-collecting/main.ts
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
 
-  - name: Check for changes
-    id: git-status
-    run: |
-      if git diff --quiet; then
-        echo "changed=false" >> $GITHUB_OUTPUT
-      else
-        echo "changed=true" >> $GITHUB_OUTPUT
-      fi
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
-  - name: Commit changes
-    if: steps.git-status.outputs.changed == 'true'
-    run: |
-      git config --local user.email "action@github.com"
-      git config --local user.name "GitHub Action"
-      git add scripts/conference-collecting/conference-postings.json
-      git commit -m "chore: update conference list [skip ci]"
+      - name: Collect conference data
+        run: pnpm exec tsx scripts/conference-collecting/main.ts
 
-  - name: Push changes
-    if: steps.git-status.outputs.changed == 'true'
-    run: |
-      git push
+      - name: Check for changes
+        id: git-status
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
 
-  - name: Create Pull Request
-    if: steps.git-status.outputs.changed == 'true'
-    uses: peter-evans/create-pull-request@v5
-    with:
-      commit-message: "chore: update conference list"
-      title: "chore: update conference list"
-      body: |
-        Automated conference list update from weekly collection job.
+      - name: Create Pull Request
+        if: steps.git-status.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          commit-message: "chore: update conference list"
+          title: "chore: update conference list"
+          body: |
+            Automated conference list update.
 
-        Generated at: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-      branch: update/conferences-${{ github.run_number }}
-      base: staging
-      delete-branch: true
-
+            Generated at:
+            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          branch: update/conferences-${{ github.run_number }}
+          base: conference-dropdown-search-selection
+          delete-branch: true
