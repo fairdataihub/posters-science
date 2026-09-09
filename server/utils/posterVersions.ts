@@ -44,7 +44,7 @@ export function normalizeVersionRelatedIdentifiers(
 
           changed = true;
 
-          return { ...relation, resourceTypeGeneral: "Text" };
+          return { ...relation, resourceTypeGeneral: "Poster" };
         })
     : [];
   const normalizedPreviousDoi = previousDoi?.trim();
@@ -62,7 +62,7 @@ export function normalizeVersionRelatedIdentifiers(
       relatedIdentifier: normalizedPreviousDoi,
       relatedIdentifierType: "DOI",
       relationType: "IsNewVersionOf",
-      resourceTypeGeneral: "Text",
+      resourceTypeGeneral: "Poster",
     });
     changed = true;
   }
