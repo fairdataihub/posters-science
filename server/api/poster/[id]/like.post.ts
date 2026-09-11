@@ -2,14 +2,23 @@ export default defineEventHandler(async (event) => {
   const session = await requireUserSession(event);
 
   const { id } = event.context.params as { id: string };
-  const posterId = parseInt(id);
+  const requestedPosterId = parseInt(id);
 
-  if (isNaN(posterId)) {
+  if (isNaN(requestedPosterId)) {
     throw createError({
       statusCode: 400,
       statusMessage: "Invalid poster ID",
     });
   }
+
+  const poster = await prisma.poster.findUnique({
+    where: { id: requestedPosterId },
+    select: { id: true, versionRootId: true },
+  });
+  if (!poster) {
+    throw createError({ statusCode: 404, statusMessage: "Poster not found" });
+  }
+  const posterId = posterFamilyRootId(poster);
 
   const { user } = session;
   const userId = user.id as string;
