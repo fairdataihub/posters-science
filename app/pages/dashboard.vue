@@ -1002,8 +1002,7 @@ async function regenerateThumbnail(poster: Poster) {
 
     toast.add({
       title: "Thumbnail regenerated",
-      description:
-        "The poster thumbnail has been updated. It may take a few minutes to reflect the changes.",
+      icon: "i-lucide-circle-check",
       color: "success",
     });
   } catch (err) {
@@ -1110,13 +1109,36 @@ async function savePublicationInfo() {
 }
 
 const getImage = (poster: Poster) => {
-  if (poster.status === "published") {
-    return poster.imageUrl;
-  }
+  // Without this the draft branch below hands <img> a URL that 404s, which
+  // renders as a broken image rather than falling back to the placeholder.
+  if (!poster.imageUrl) return "";
+
   const bust = thumbnailCacheBust[poster.id];
+
+  if (poster.status === "published") {
+    // The CDN keys on the query string, so a rebuilt preview shows up straight
+    // away instead of serving the cached copy at the same path.
+    return bust ? `${poster.imageUrl}?t=${bust}` : poster.imageUrl;
+  }
 
   return `/api/poster/${poster.id}/thumbnail${bust ? `?t=${bust}` : ""}`;
 };
+
+// A preview can go missing when thumbnail generation failed after the job
+// itself succeeded. Surface it once the job is settled so the card is not
+// nagging about a preview that is simply still being made.
+function posterPreviewMissing(poster: Poster) {
+  if (poster.imageUrl || poster.tombstone) return false;
+
+  const job = poster.extractionJob;
+
+  return Boolean(
+    !job ||
+    job.completed ||
+    job.status === "completed" ||
+    job.status === "failed",
+  );
+}
 
 const getCardTitle = (poster: Poster) => poster.title;
 
@@ -1209,7 +1231,19 @@ function openInProgressPoster(poster: Poster) {
 }
 
 function posterMenuItems(poster: Poster) {
-  if (poster.status === "published") return [];
+  if (poster.tombstone) return [];
+
+  const regeneratePreview = {
+    label: "Regenerate poster preview",
+    icon: "i-lucide-refresh-cw",
+    disabled: regeneratingThumbnailIds.value.includes(poster.id),
+    onSelect: () => regenerateThumbnail(poster),
+  };
+
+  // A published poster cannot be deleted, but its preview can still be rebuilt
+  // - that is the only recovery path when thumbnail generation failed before
+  // the poster was published.
+  if (poster.status === "published") return [[regeneratePreview]];
 
   if (poster.versionRootId !== null) {
     if (
@@ -1221,12 +1255,7 @@ function posterMenuItems(poster: Poster) {
 
     return [
       [
-        {
-          label: "Regenerate poster preview",
-          icon: "i-lucide-refresh-cw",
-          disabled: regeneratingThumbnailIds.value.includes(poster.id),
-          onSelect: () => regenerateThumbnail(poster),
-        },
+        regeneratePreview,
         {
           label: "Discard draft",
           icon: "i-lucide-trash-2",
@@ -1239,12 +1268,7 @@ function posterMenuItems(poster: Poster) {
 
   return [
     [
-      {
-        label: "Regenerate poster preview",
-        icon: "i-lucide-refresh-cw",
-        disabled: regeneratingThumbnailIds.value.includes(poster.id),
-        onSelect: () => regenerateThumbnail(poster),
-      },
+      regeneratePreview,
       {
         label: "Delete draft",
         icon: "i-lucide-trash-2",
@@ -1319,7 +1343,33 @@ function posterMenuItems(poster: Poster) {
               <div
                 class="h-full w-[150px] shrink-0 overflow-hidden max-md:h-44 max-md:w-full max-md:border-b max-md:border-gray-100 dark:max-md:border-gray-800"
               >
+                <div
+                  v-if="posterPreviewMissing(poster)"
+                  class="flex h-full flex-col items-center justify-center gap-1.5 p-2 text-center max-md:min-h-44"
+                >
+                  <UIcon
+                    name="i-lucide-image-off"
+                    class="size-5 text-gray-400 dark:text-gray-500"
+                  />
+
+                  <span class="text-xs text-gray-500 dark:text-gray-400">
+                    Preview unavailable
+                  </span>
+
+                  <UButton
+                    size="xs"
+                    color="neutral"
+                    variant="subtle"
+                    icon="i-lucide-refresh-cw"
+                    :loading="regeneratingThumbnailIds.includes(poster.id)"
+                    @click.stop="regenerateThumbnail(poster)"
+                  >
+                    Generate
+                  </UButton>
+                </div>
+
                 <img
+                  v-else
                   :src="
                     getImage(poster) ||
                     `https://api.dicebear.com/9.x/shapes/svg?seed=${poster.id}`

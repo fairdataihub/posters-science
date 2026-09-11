@@ -493,10 +493,20 @@ export default defineEventHandler(async (event) => {
     });
   }
 
+  // The job worker generates a thumbnail as part of processing an extraction
+  // job so only generate the thumbnail directly when no extraction will occur.
+  const workerWillGenerateThumbnail =
+    created.extractionJob?.completed === false &&
+    created.extractionJob?.status === "pending-extraction";
+
   // A missing thumbnail must be generated from this version's stored file.
   // This covers replacement files and reused files whose source thumbnail was
   // unavailable without borrowing an image from an older poster version.
-  if (!created.imageUrl && posterExtractionApi) {
+  if (
+    !created.imageUrl &&
+    !workerWillGenerateThumbnail &&
+    posterExtractionApi
+  ) {
     setImmediate(async () => {
       try {
         const response = await fetch(
@@ -504,15 +514,24 @@ export default defineEventHandler(async (event) => {
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              pdf_path: filePath,
-              poster_id: created.id,
-            }),
+            body: JSON.stringify({ pdf_path: filePath }),
           },
         );
         if (!response.ok) {
           throw new Error(await responseFailure("Thumbnail trigger", response));
         }
+
+        const result = (await response.json()) as { thumbnail_path?: string };
+        const imageUrl = result.thumbnail_path?.trim();
+
+        if (!imageUrl) {
+          throw new Error("Thumbnail service returned no poster preview");
+        }
+
+        await prisma.poster.update({
+          where: { id: created.id },
+          data: { imageUrl },
+        });
       } catch (error) {
         console.error("[poster/version] Failed to trigger thumbnail", error);
       }

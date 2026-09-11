@@ -1,3 +1,5 @@
+import { copyThumbnailToPublicZone } from "../../../utils/zenodo";
+
 export default defineEventHandler(async (event) => {
   const session = await requireUserSession(event);
 
@@ -18,6 +20,7 @@ export default defineEventHandler(async (event) => {
     select: {
       id: true,
       status: true,
+      tombstone: true,
       extractionJob: { select: { filePath: true } },
     },
   });
@@ -29,10 +32,10 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  if (poster.status === "published") {
+  if (poster.tombstone) {
     throw createError({
       statusCode: 400,
-      statusMessage: "Cannot generate thumbnail for a published poster",
+      statusMessage: "Cannot generate thumbnail for a withdrawn poster",
     });
   }
 
@@ -54,13 +57,17 @@ export default defineEventHandler(async (event) => {
     });
   }
 
+  // A published poster is served from the public zone, so its thumbnail needs
+  // promoting before imageUrl is written.
+  const isPublished = poster.status === "published";
+
   let response: Response;
 
   try {
     response = await fetch(`${posterExtractionApi}/thumbnails/generate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pdf_path: filePath, poster_id: posterId }),
+      body: JSON.stringify({ pdf_path: filePath }),
     });
   } catch (error) {
     console.error(
@@ -86,12 +93,30 @@ export default defineEventHandler(async (event) => {
   }
 
   const result = (await response.json()) as { thumbnail_path?: string };
-  const imageUrl = result.thumbnail_path?.trim();
-  if (!imageUrl) {
+  const generatedUrl = result.thumbnail_path?.trim();
+  if (!generatedUrl) {
     throw createError({
       statusCode: 502,
       statusMessage: "Thumbnail service returned no poster preview",
     });
+  }
+
+  let imageUrl = generatedUrl;
+
+  if (isPublished) {
+    const promoted = await copyThumbnailToPublicZone(generatedUrl);
+
+    if (!promoted.success) {
+      console.error(
+        `[thumbnail] Could not copy thumbnail into public zone for published poster ${posterId}: ${promoted.error}`,
+      );
+      throw createError({
+        statusCode: 502,
+        statusMessage: promoted.error,
+      });
+    }
+
+    imageUrl = promoted.imageUrl;
   }
 
   await prisma.poster.update({
