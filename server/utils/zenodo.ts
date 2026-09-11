@@ -629,7 +629,7 @@ async function cleanupCreatedDraft(
   return { success: true as const };
 }
 
-async function ensurePosterThumbnail(
+async function getOrCreateThumbnail(
   posterId: number,
   filePath: string | null | undefined,
   currentImageUrl: string,
@@ -662,7 +662,7 @@ async function ensurePosterThumbnail(
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pdf_path: filePath, poster_id: posterId }),
+        body: JSON.stringify({ pdf_path: filePath }),
       },
     );
   } catch (error) {
@@ -691,29 +691,26 @@ async function ensurePosterThumbnail(
     };
   }
 
-  // The extraction service writes imageUrl back to the poster. It may respond
-  // before that database update is visible, so briefly wait for the callback.
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    const refreshed = await prisma.poster.findUnique({
-      where: { id: posterId },
-      select: { imageUrl: true },
-    });
+  const result = (await response.json()) as { thumbnail_path?: string };
+  const imageUrl = result.thumbnail_path?.trim();
 
-    if (refreshed?.imageUrl) {
-      return { success: true as const, imageUrl: refreshed.imageUrl };
-    }
+  if (!imageUrl) {
+    console.error(
+      `[Zenodo] Thumbnail service returned no preview for poster ${posterId}`,
+    );
 
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    return {
+      success: false as const,
+      error: "Could not generate the poster thumbnail. Please try again.",
+    };
   }
 
-  return {
-    success: false as const,
-    error:
-      "The poster thumbnail is still being prepared. Please try publishing again shortly.",
-  };
+  await prisma.poster.update({ where: { id: posterId }, data: { imageUrl } });
+
+  return { success: true as const, imageUrl };
 }
 
-async function promotePosterThumbnail(imageUrl: string) {
+export async function copyThumbnailToPublicZone(imageUrl: string) {
   const {
     bunnyPrivateStorage,
     bunnyPrivateStorageKey,
@@ -860,7 +857,7 @@ export async function beginZenodoPublication(
     };
   }
 
-  const thumbnail = await ensurePosterThumbnail(
+  const thumbnail = await getOrCreateThumbnail(
     posterInt,
     poster.extractionJob?.filePath,
     poster.imageUrl,
@@ -1003,7 +1000,7 @@ export async function beginZenodoPublication(
       `[Zenodo] Reconciling local poster from published record ${poster.zenodoDepositions.depositionId}`,
     );
 
-    const recoveredThumbnail = await promotePosterThumbnail(poster.imageUrl);
+    const recoveredThumbnail = await copyThumbnailToPublicZone(poster.imageUrl);
 
     if (!recoveredThumbnail.success) {
       return { success: false, error: recoveredThumbnail.error };
@@ -1649,7 +1646,7 @@ export async function beginZenodoPublication(
 
   // Move a newly generated private thumbnail to public storage. Reused images
   // are already public and pass through unchanged.
-  const publishedThumbnail = await promotePosterThumbnail(poster.imageUrl);
+  const publishedThumbnail = await copyThumbnailToPublicZone(poster.imageUrl);
 
   if (!publishedThumbnail.success) {
     return { success: false, error: publishedThumbnail.error };
