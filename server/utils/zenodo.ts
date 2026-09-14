@@ -725,9 +725,30 @@ export async function copyThumbnailToPublicZone(imageUrl: string) {
     };
   }
 
-  // Reused thumbnails and external poster images may already be public.
-  if (!bunnyPrivateStorage || !imageUrl.startsWith(bunnyPrivateStorage)) {
+  // Reused thumbnails and external poster images may already be public. Only a
+  // Bunny storage URL needs promoting - everything else (a cdn.posters.science
+  // url from the bulk import, an external image) is already served publicly.
+  const isBunnyStorageUrl = /^https:\/\/[^/]*storage\.bunnycdn\.com\//i.test(
+    imageUrl,
+  );
+
+  if (!isBunnyStorageUrl) {
     return { success: true as const, imageUrl };
+  }
+
+  // A storage URL that does not match the configured private zone cannot be
+  // mapped to a public path. Passing it through would publish a poster whose
+  // preview no visitor can load, because storage needs an AccessKey the
+  // browser never has - so fail here instead of failing silently.
+  if (!bunnyPrivateStorage || !imageUrl.startsWith(bunnyPrivateStorage)) {
+    console.error(
+      `[Zenodo] Thumbnail sits in unrecognised storage, refusing to publish it: ${imageUrl}`,
+    );
+
+    return {
+      success: false as const,
+      error: "The poster thumbnail is in storage that cannot be published",
+    };
   }
 
   if (
