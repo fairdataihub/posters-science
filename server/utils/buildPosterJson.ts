@@ -1,5 +1,6 @@
 import type { PosterMetadata } from "#shared/generated/client";
 import licenses from "../../app/assets/data/licenses.json";
+import { normalizeVersionRelatedIdentifiers } from "./posterVersions";
 
 /**
  * Transforms PosterMetadata from the database into
@@ -401,7 +402,9 @@ function filterRelatedIdentifiers(raw: unknown): unknown[] | undefined {
     );
   });
 
-  return valid.length > 0 ? valid : undefined;
+  if (valid.length === 0) return undefined;
+
+  return normalizeVersionRelatedIdentifiers(valid).relatedIdentifiers;
 }
 
 /**

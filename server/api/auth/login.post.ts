@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { compare } from "bcrypt";
+import { logwatch } from "../../utils/logwatch";
 
 const loginSchema = z.object({
   emailAddress: z.email(),
@@ -50,21 +51,29 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  // Check if the user has verified their email (skipped in development)
-
-  if (!isDev && !user.emailVerified) {
-    throw createError({
-      statusCode: 403,
-      statusMessage:
-        "Email not verified. Please check your email for the verification link.",
-    });
-  }
-
   // Check if the password matches
   if (!(await compare(body.data.password, user.password))) {
     throw createError({
       statusCode: 401,
       statusMessage: "Invalid email address or password",
+    });
+  }
+
+  // Check if the user has verified their email (skipped in development).
+  // Runs after the password check so only the account holder learns that the
+  // address is registered but unverified, and only they are offered a new link.
+  if (!isDev && !user.emailVerified) {
+    logwatch.info({
+      action: "auth.login",
+      message: "Login refused because the email address is not verified",
+      userId: user.id,
+    });
+
+    throw createError({
+      statusCode: 403,
+      statusMessage:
+        "Your email address has not been verified yet. Check your inbox for the verification link or request a new one.",
+      data: { reason: "unverified" },
     });
   }
 

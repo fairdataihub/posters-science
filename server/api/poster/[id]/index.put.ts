@@ -115,7 +115,11 @@ export default defineEventHandler(async (event) => {
   const relatedIdentifiers = data.relatedIdentifiers ?? [];
   const size = data.size || null;
   const format = data.format || null;
-  const version = data.version || null;
+  // Preserve imported metadata versions only for automated posters, whose prior
+  // version history is not known to us.
+  const version = existingPoster.automated
+    ? data.version || null
+    : posterVersionLabel(existingPoster.versionSequence);
   const license = data.license || null;
   // The review form derives schemeUri from the identifier type and hides the field for
   // every type except "Other", so back-stop it here: a draft save skips validation, and

@@ -12,6 +12,7 @@ export default defineSitemapEventHandler(async () => {
       where: {
         status: "published",
         tombstone: false,
+        isLatestVersion: true,
       },
       select: {
         id: true,

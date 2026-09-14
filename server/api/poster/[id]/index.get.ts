@@ -21,6 +21,7 @@ export default defineEventHandler(async (event) => {
     },
     include: {
       posterMetadata: true,
+      zenodoDepositions: true,
       extractionJob: {
         select: {
           completed: true,
@@ -40,8 +41,24 @@ export default defineEventHandler(async (event) => {
   }
 
   const meta = poster.posterMetadata;
+  const rootPosterId = posterFamilyRootId(poster);
+  const versions = await prisma.poster.findMany({
+    where: {
+      userId,
+      status: "published",
+      ...posterFamilyWhere(rootPosterId),
+    },
+    orderBy: { versionSequence: "desc" },
+    select: {
+      id: true,
+      versionSequence: true,
+      publishedAt: true,
+      posterMetadata: { select: { version: true, doi: true } },
+    },
+  });
+
   if (!meta) {
-    return poster;
+    return { ...poster, rootPosterId, versions };
   }
 
   // Normalize posterContent: DB may store array (sections) or object
@@ -84,6 +101,8 @@ export default defineEventHandler(async (event) => {
 
   return {
     ...poster,
+    rootPosterId,
+    versions,
     posterMetadata: {
       ...meta,
       posterContent,
