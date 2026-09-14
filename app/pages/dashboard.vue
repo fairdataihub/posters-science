@@ -119,10 +119,15 @@ const activeDashboardPosters = computed(() =>
     ? inProgressPosters.value
     : publishedPosters.value,
 );
+// FEATURE FLAG (versioning)
+const versioningEnabled = useVersioningEnabled();
 const activeDashboardDescription = computed(() => {
   if (activeDashboardTab.value === "in-progress") {
     return "Posters that still need your attention.";
   }
+
+  // FEATURE FLAG (versioning)
+  if (!versioningEnabled) return "Posters you have published.";
 
   return "The latest published version of each poster.";
 });
@@ -916,7 +921,8 @@ function openPoster(poster: Poster) {
   }
 
   if (poster.status === "published") {
-    const version = displayedVersion(poster);
+    // FEATURE FLAG (versioning)
+    const version = versioningEnabled ? displayedVersion(poster) : null;
     const versionQuery = version
       ? `?version=${encodeURIComponent(version)}`
       : "";
@@ -1394,8 +1400,10 @@ function posterMenuItems(poster: Poster) {
                       {{ posterStatusPresentation(poster).label }}
                     </UBadge>
 
+                    <!-- FEATURE FLAG (versioning) -->
                     <UBadge
                       v-if="
+                        versioningEnabled &&
                         poster.status === 'published' &&
                         poster.isLatestPublished &&
                         poster.activeVersionDraft
@@ -1408,9 +1416,11 @@ function posterMenuItems(poster: Poster) {
                       Pending draft
                     </UBadge>
 
+                    <!-- FEATURE FLAG (versioning) -->
                     <UBadge
                       v-if="
-                        displayedVersion(poster) || draftVersionLabel(poster)
+                        versioningEnabled &&
+                        (displayedVersion(poster) || draftVersionLabel(poster))
                       "
                       color="neutral"
                       variant="soft"
@@ -1422,8 +1432,10 @@ function posterMenuItems(poster: Poster) {
                       }}
                     </UBadge>
 
+                    <!-- FEATURE FLAG (versioning) -->
                     <button
                       v-if="
+                        versioningEnabled &&
                         poster.status === 'published' &&
                         poster.isLatestPublished &&
                         publishedVersionHistory(poster).length > 0
@@ -1518,9 +1530,12 @@ function posterMenuItems(poster: Poster) {
                         @click="openPoster(poster)"
                       />
 
+                      <!-- FEATURE FLAG (versioning) -->
                       <UButton
                         v-if="
-                          poster.isLatestPublished && poster.activeVersionDraft
+                          versioningEnabled &&
+                          poster.isLatestPublished &&
+                          poster.activeVersionDraft
                         "
                         color="primary"
                         variant="subtle"
@@ -1530,8 +1545,10 @@ function posterMenuItems(poster: Poster) {
                         @click="reviewPendingDraft(poster)"
                       />
 
+                      <!-- FEATURE FLAG (versioning) -->
                       <UTooltip
                         v-if="
+                          versioningEnabled &&
                           poster.isLatestPublished &&
                           !poster.automated &&
                           !poster.activeVersionDraft
@@ -1587,9 +1604,12 @@ function posterMenuItems(poster: Poster) {
             </div>
           </UPageCard>
 
+          <!-- FEATURE FLAG (versioning) -->
           <div
             v-if="
-              poster.status === 'published' && publishedHistoryExpanded(poster)
+              versioningEnabled &&
+              poster.status === 'published' &&
+              publishedHistoryExpanded(poster)
             "
             class="ml-6 space-y-2 border-l-2 border-gray-200 py-2 pl-5 dark:border-gray-800"
           >

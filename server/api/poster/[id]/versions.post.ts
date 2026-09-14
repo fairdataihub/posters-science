@@ -49,6 +49,9 @@ function isVersionReviewReady(
 }
 
 export default defineEventHandler(async (event) => {
+  // FEATURE FLAG (versioning)
+  assertVersioningEnabled();
+
   const session = await requireUserSession(event);
   const { id } = event.context.params as { id: string };
   const requestedId = Number.parseInt(id, 10);

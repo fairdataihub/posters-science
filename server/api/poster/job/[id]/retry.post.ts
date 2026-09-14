@@ -1,4 +1,7 @@
 export default defineEventHandler(async (event) => {
+  // FEATURE FLAG (versioning)
+  assertVersioningEnabled();
+
   const session = await requireUserSession(event);
   const { id: jobId } = event.context.params as { id: string };
 

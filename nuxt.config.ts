@@ -154,6 +154,9 @@ export default defineNuxtConfig({
     public: {
       baseUrl: "",
       siteEnv: "",
+      // FEATURE FLAG (versioning): remove once user versioning is live in production.
+      // Override at container start with NUXT_PUBLIC_VERSIONING_ENABLED=true.
+      versioningEnabled: false,
     },
   },
   vite: {
