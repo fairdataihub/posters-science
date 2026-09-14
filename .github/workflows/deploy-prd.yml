@@ -102,7 +102,7 @@ jobs:
   # Job for running database migrations
   migrate-db:
     runs-on: ubuntu-latest
-    environment: stg
+    environment: prd
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
@@ -122,4 +122,4 @@ jobs:
 
       - run: pnpm prisma:generate
 
-      # - run: pnpm prisma:migrate:deploy
+      - run: pnpm prisma:migrate:deploy
