@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { emailVerificationTtlLabel } from "#shared/utils/emailVerification";
+import { parseApiError } from "~/utils/apiError";
+
 const { loggedIn } = useUserSession();
 
 if (loggedIn.value) {
@@ -24,15 +27,27 @@ useSeoMeta({
 const route = useRoute();
 const toast = useToast();
 const token = route.query.token as string;
-const verifying = ref(true);
-const successMessage = ref("");
-const errorMessage = ref("");
+
+type VerifyState = "verifying" | "success" | "expired" | "invalid";
+
+const state = ref<VerifyState>("verifying");
+const message = ref("");
+const resendEmail = ref("");
+const resending = ref(false);
+const resent = ref(false);
+
+const headings: Record<VerifyState, string> = {
+  verifying: "Verifying your email...",
+  success: "Email verified",
+  expired: "This link has expired",
+  invalid: "We could not verify this link",
+};
 
 // Verify email when the page loads
 onMounted(async () => {
   if (!token) {
-    verifying.value = false;
-    errorMessage.value = "No verification token found.";
+    state.value = "invalid";
+    message.value = "This link is missing its verification token.";
 
     return;
   }
@@ -43,7 +58,9 @@ onMounted(async () => {
       method: "POST",
     });
 
-    successMessage.value = "Email verified successfully! Redirecting...";
+    state.value = "success";
+    message.value = response.message;
+
     toast.add({
       title: "Email Verified",
       color: "success",
@@ -54,31 +71,107 @@ onMounted(async () => {
     setTimeout(() => {
       navigateTo("/login");
     }, 3000);
-  } catch (error) {
+  } catch (error: unknown) {
+    console.error(error);
+
+    const { statusCode, statusMessage } = parseApiError(error);
+
+    state.value = statusCode === 410 ? "expired" : "invalid";
+    message.value =
+      statusMessage ??
+      "We could not verify this link. Request a new one to continue.";
+  }
+});
+
+const requestNewLink = async () => {
+  resending.value = true;
+
+  try {
+    await $fetch("/api/auth/resend-verification", {
+      body:
+        state.value === "expired" ? { token } : { email: resendEmail.value },
+      method: "POST",
+    });
+
+    resent.value = true;
+
+    toast.add({
+      title: "Verification email sent",
+      color: "success",
+      description: "Check your inbox for a new verification link.",
+      icon: "material-symbols:mail-outline",
+    });
+  } catch (error: unknown) {
     console.error(error);
 
     toast.add({
-      title: "Verification Failed",
+      title: "Could not send a new link",
       color: "error",
-      description: "Email verification failed. Please try again",
+      description:
+        parseApiError(error).statusMessage ??
+        "Please try again in a few moments.",
       icon: "material-symbols:error",
     });
   } finally {
-    verifying.value = false;
+    resending.value = false;
   }
-});
+};
 </script>
 
 <template>
-  <div class="flex min-h-screen items-center justify-center">
-    <div class="text-center">
-      <h1 class="text-2xl font-bold">
-        {{ verifying ? "Verifying Email..." : successMessage || errorMessage }}
-      </h1>
+  <div class="flex min-h-screen items-center justify-center px-4">
+    <div class="w-full max-w-md text-center">
+      <h1 class="text-2xl font-bold">{{ headings[state] }}</h1>
 
-      <p v-if="errorMessage" class="text-red-500">{{ errorMessage }}</p>
+      <p
+        v-if="message"
+        class="mt-3"
+        :class="
+          state === 'success'
+            ? 'text-green-600'
+            : 'text-gray-600 dark:text-gray-300'
+        "
+      >
+        {{ message }}
+      </p>
 
-      <p v-if="successMessage" class="text-green-500">{{ successMessage }}</p>
+      <template v-if="state === 'expired' || state === 'invalid'">
+        <div v-if="resent" class="mt-6">
+          <p class="text-green-600">
+            A new verification link is on its way. It is valid for
+            {{ emailVerificationTtlLabel() }}.
+          </p>
+        </div>
+
+        <div v-else class="mt-6 space-y-3">
+          <UInput
+            v-if="state === 'invalid'"
+            v-model="resendEmail"
+            type="email"
+            placeholder="you@university.edu"
+            autocomplete="email"
+            class="w-full"
+          />
+
+          <UButton
+            :loading="resending"
+            :disabled="state === 'invalid' && !resendEmail"
+            block
+            icon="material-symbols:mail-outline"
+            label="Send me a new link"
+            @click="requestNewLink"
+          />
+        </div>
+      </template>
+
+      <UButton
+        v-if="state === 'invalid' || state === 'expired'"
+        to="/login"
+        variant="link"
+        color="neutral"
+        label="Back to login"
+        class="mt-2"
+      />
     </div>
   </div>
 </template>

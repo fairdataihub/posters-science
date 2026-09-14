@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { z } from "zod";
 import type { FormSubmitEvent } from "#ui/types";
+import { parseApiError } from "~/utils/apiError";
 
 definePageMeta({
   middleware: ["auth"],
@@ -78,9 +79,7 @@ async function onChangePassword(event: FormSubmitEvent<PasswordSchema>) {
     await logout();
   } catch (err: unknown) {
     const message =
-      err && typeof err === "object" && "data" in err
-        ? (err as { data?: { statusMessage?: string } }).data?.statusMessage
-        : "Failed to change password";
+      parseApiError(err).statusMessage ?? "Failed to change password";
     toast.add({
       title: "Change password failed",
       description: message,
@@ -101,7 +100,7 @@ async function onDeleteAccount() {
   toast.add({
     title: "Unavailable",
     description:
-      "Account deletion is not available yet. Please contact us at https://tally.so/r/XxEBYP if you wish to delete your account.",
+      "Account deletion is not available yet. Please contact us using the contact form if you wish to delete your account.",
     color: "info",
     icon: "i-heroicons-information-circle",
   });
@@ -180,9 +179,7 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
     });
   } catch (err: unknown) {
     const message =
-      err && typeof err === "object" && "data" in err
-        ? (err as { data?: { statusMessage?: string } }).data?.statusMessage
-        : "Failed to update profile";
+      parseApiError(err).statusMessage ?? "Failed to update profile";
     toast.add({
       title: "Update failed",
       description: message,
@@ -402,7 +399,7 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
                   description="Delete profile and all associated data"
                 >
                   <UTooltip
-                    text="This function is not yet available. Please contact us at https://tally.so/r/XxEBYP if you wish to delete your account."
+                    text="This function is not yet available. Please contact us using the contact form if you wish to delete your account."
                   >
                     <UButton
                       color="error"
