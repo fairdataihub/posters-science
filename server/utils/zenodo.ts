@@ -629,7 +629,7 @@ async function cleanupCreatedDraft(
   return { success: true as const };
 }
 
-async function getOrCreateThumbnail(
+export async function getOrCreateThumbnail(
   posterId: number,
   filePath: string | null | undefined,
   currentImageUrl: string,

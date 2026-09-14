@@ -1,5 +1,10 @@
 import { z } from "zod";
 
+import {
+  copyThumbnailToPublicZone,
+  getOrCreateThumbnail,
+} from "../../../utils/zenodo";
+
 const payloadSchema = z.object({
   doi: z.string().optional(),
   license: z.string().optional(),
@@ -24,7 +29,12 @@ export default defineEventHandler(async (event) => {
 
   const poster = await prisma.poster.findUnique({
     where: { id: posterId, userId: user.id },
-    select: { id: true, status: true },
+    select: {
+      id: true,
+      status: true,
+      imageUrl: true,
+      extractionJob: { select: { filePath: true } },
+    },
   });
 
   if (!poster) {
@@ -49,9 +59,30 @@ export default defineEventHandler(async (event) => {
   });
 
   if (poster.status === "downloaded") {
+    // Transfer the thumbnail to the public zone to ensure it is accessible to all users.
+    const thumbnail = await getOrCreateThumbnail(
+      posterId,
+      poster.extractionJob?.filePath,
+      poster.imageUrl,
+    );
+
+    if (!thumbnail.success) {
+      throw createError({ statusCode: 502, statusMessage: thumbnail.error });
+    }
+
+    const published = await copyThumbnailToPublicZone(thumbnail.imageUrl);
+
+    if (!published.success) {
+      throw createError({ statusCode: 502, statusMessage: published.error });
+    }
+
     await prisma.poster.update({
       where: { id: posterId },
-      data: { status: "published", publishedAt: new Date() },
+      data: {
+        status: "published",
+        publishedAt: new Date(),
+        imageUrl: published.imageUrl,
+      },
     });
   }
 
