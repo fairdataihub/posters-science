@@ -135,6 +135,7 @@ export default defineNuxtConfig({
       maxAge: 60 * 60 * 24 * 7, // 1 week in seconds
     },
     resendApiKey: "",
+    logwatchUrl: "",
     siteUrl: "http://localhost:3000",
     zenodoClientId: "",
     zenodoClientSecret: "",
