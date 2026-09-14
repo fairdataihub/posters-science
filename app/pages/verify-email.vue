@@ -119,7 +119,7 @@ const requestNewLink = async () => {
 </script>
 
 <template>
-  <div class="flex min-h-screen items-center justify-center px-4">
+  <div class="relative z-10 flex min-h-screen items-center justify-center px-4">
     <div class="w-full max-w-md text-center">
       <h1 class="text-2xl font-bold">{{ headings[state] }}</h1>
 
