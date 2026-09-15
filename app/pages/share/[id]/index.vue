@@ -579,20 +579,27 @@ type ConferenceOption = {
 
 const conferenceNameOptions = ref<ConferenceOption[]>([]);
 const selectedConference = ref<string | undefined>();
+const conferenceOptionsError = ref<string | null>(null);
 const conferenceDataMap = ref<
   Record<
     string,
     {
+      id?: string;
       conferenceName?: string;
       conferenceYear?: number;
-      conferenceAcronym?: string;
-      conferenceLocation?: string;
+      conferenceAcronym?: string | null;
+      conferenceLocation?: string | null;
       conferenceIdentifier?: string;
       conferenceIdentifierType?: string;
-      conferenceStartDate?: string;
-      conferenceEndDate?: string;
-      conferenceUri?: string;
-      conferenceSeries?: string;
+      conferenceSchemaUri?: string;
+      conferenceStartDate?: string | null;
+      conferenceEndDate?: string | null;
+      conferenceUri?: string | null;
+      conferenceSeries?: string | null;
+      collectionDate?: string | null;
+      conferenceCategories?: string[] | null;
+      conferenceText?: string | null;
+      submissionDeadline?: string | null;
       source?: string;
     }
   >
@@ -630,7 +637,8 @@ function applyConferenceSelection(name: string) {
 // Fetch conference data on scraper data
 const loadConferenceOptions = async () => {
   try {
-    const response = (await $fetch("/api/conferences")) as any;
+    conferenceOptionsError.value = null;
+    const response = (await $fetch("/api/conferences/conferences")) as any;
 
     if (response?.options && Array.isArray(response.options)) {
       // Create simple dropdown options
@@ -660,10 +668,16 @@ const loadConferenceOptions = async () => {
       if (state.conference?.conferenceName) {
         applyConferenceSelection(state.conference.conferenceName);
       }
+    } else {
+      // No options found: hide the dropdown.
+      conferenceNameOptions.value = [];
     }
   } catch (error) {
     console.warn("Failed to load conference options from scraper data:", error);
-    // Fallback to empty array - user can still enter manually
+    conferenceOptionsError.value =
+      error instanceof Error ? error.message : String(error);
+    // Set the dropdown to empty (user can still enter manually)
+    conferenceNameOptions.value = [];
   }
 };
 
@@ -1825,7 +1839,10 @@ const moveCreator = (index: number, direction: "up" | "down") => {
             description="The conference or event where the poster was presented"
           >
             <div class="space-y-4">
-              <UFormField label="Autofill from collected conferences">
+              <UFormField
+                v-if="!conferenceOptionsError && conferenceNameOptions.length > 0"
+                label="Autofill from collected conferences"
+              >
                 <USelectMenu
                   v-model="selectedConference"
                   :items="conferenceNameOptions"
