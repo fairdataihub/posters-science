@@ -575,6 +575,7 @@ const conferenceYearOptions = Array.from(
 type ConferenceOption = {
   label: string;
   value: string;
+  acronym?: string;
 };
 
 const conferenceNameOptions = ref<ConferenceOption[]>([]);
@@ -645,6 +646,7 @@ const loadConferenceOptions = async () => {
       conferenceNameOptions.value = response.options.map((opt: any) => ({
         label: opt.label,
         value: opt.value,
+        acronym: opt.conferenceAcronym ?? "",
       }));
 
       // Build lookup map for quick access to full conference data
@@ -1839,20 +1841,26 @@ const moveCreator = (index: number, direction: "up" | "down") => {
             description="The conference or event where the poster was presented"
           >
             <div class="space-y-4">
-              <UFormField
+              <div
                 v-if="!conferenceOptionsError && conferenceNameOptions.length > 0"
-                label="Autofill from collected conferences"
+                class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 dark:border-gray-800 dark:bg-gray-900/40"
               >
+                <div
+                  class="mb-1 text-xs font-medium text-gray-500 dark:text-gray-400"
+                >
+                  Find a conference
+                </div>
                 <USelectMenu
                   v-model="selectedConference"
                   :items="conferenceNameOptions"
-                  placeholder="Search for a conference to automatically fill in the details below"
-                  option-attribute="value"
+                  placeholder="Search conferences by name or acronym…"
                   value-key="value"
+                  :filter-fields="['label', 'acronym']"
                   class="w-full"
                   @update:model-value="handleConferenceSelection"
+                  :search-input="{ placeholder: 'Search conferences by name or acronym…', icon: 'i-lucide-search' }"
                 />
-              </UFormField>
+              </div>
 
               <div class="grid gap-3 md:grid-cols-2">
                 <UFormField
