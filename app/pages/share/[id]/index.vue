@@ -347,7 +347,6 @@ if (data.value) {
           }
         });
       });
-      console.log("Transformed creators", state.creators);
     }
 
     // Publisher - convert from possible array/object to single object
@@ -578,7 +577,7 @@ type ConferenceOption = {
   acronym?: string;
 };
 
-const conferenceNameOptions = ref<ConferenceOption[]>([]);
+const conferenceNameOptions = shallowRef<ConferenceOption[]>([]);
 const selectedConference = ref<string | undefined>();
 const conferenceOptionsError = ref<string | null>(null);
 const conferenceDataMap = ref<
@@ -605,6 +604,36 @@ const conferenceDataMap = ref<
     }
   >
 >({});
+
+const conferenceSearchTermRaw = ref("");
+const conferenceSearchTerm = ref("");
+
+let conferenceSearchDebounceTimer: ReturnType<typeof setTimeout> | null =
+  null;
+
+
+watch(conferenceSearchTermRaw, (value) => {
+  if (conferenceSearchDebounceTimer)
+    clearTimeout(conferenceSearchDebounceTimer);
+  conferenceSearchDebounceTimer = setTimeout(() => {
+    conferenceSearchTerm.value = value;
+  }, 500);
+});
+
+const conferenceItemsToShow = computed(() => {
+  const query = conferenceSearchTerm.value.trim().toLowerCase();
+  if (!query) return [];
+
+  // Nuxt UI's SelectMenu ignores built-in filtering for this component setup,
+  // so we filter ourselves to keep the rendered option list small.
+  return conferenceNameOptions.value.filter((opt) => {
+    const label = opt.label.toLowerCase();
+    if (label.includes(query)) return true;
+
+    const acronym = (opt.acronym ?? "").toLowerCase();
+    return acronym.includes(query);
+  });
+});
 
 function applyConferenceSelection(name: string) {
   if (!state.conference) return;
@@ -675,7 +704,6 @@ const loadConferenceOptions = async () => {
       conferenceNameOptions.value = [];
     }
   } catch (error) {
-    console.warn("Failed to load conference options from scraper data:", error);
     conferenceOptionsError.value =
       error instanceof Error ? error.message : String(error);
     // Set the dropdown to empty (user can still enter manually)
@@ -881,19 +909,16 @@ async function onSubmit(event: FormSubmitEvent<StrictFormSchema>) {
     return;
   }
 
-  console.log("Submitting poster metadata");
   loading.value = true;
 
   try {
     const formData = event.data;
-    console.log("Submitting poster metadata (API payload)", formData);
     const response = await $fetch(`/api/poster/${id}`, {
       method: "PUT",
       body: formData,
     });
 
     if (!response || (response as any).error) {
-      console.log("Error response from API:", response);
       throw new Error(
         (response as any)?.message ||
           "Unknown error occurred while saving poster metadata.",
@@ -1852,14 +1877,27 @@ const moveCreator = (index: number, direction: "up" | "down") => {
                 </div>
                 <USelectMenu
                   v-model="selectedConference"
-                  :items="conferenceNameOptions"
+                  v-model:searchTerm="conferenceSearchTermRaw"
+                  :items="conferenceItemsToShow"
                   placeholder="Search conferences by name or acronym…"
                   value-key="value"
-                  :filter-fields="['label', 'acronym']"
+                  :ignore-filter="true"
                   class="w-full"
                   @update:model-value="handleConferenceSelection"
                   :search-input="{ placeholder: 'Search conferences by name or acronym…', icon: 'i-lucide-search' }"
-                />
+                >
+                  <template #empty="{ searchTerm }">
+                    <span
+                      class="text-sm text-gray-500 dark:text-gray-400"
+                    >
+                      {{
+                        searchTerm
+                          ? "No conferences match your search."
+                          : "Start typing to search conferences…"
+                      }}
+                    </span>
+                  </template>
+                </USelectMenu>
               </div>
 
               <div class="grid gap-3 md:grid-cols-2">
