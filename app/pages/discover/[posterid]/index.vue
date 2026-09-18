@@ -9,6 +9,12 @@ import {
 import { resolveDoiUrl } from "@/utils/doi";
 import type { WithContext, ScholarlyArticle } from "schema-dts";
 
+type PosterIdentifier = {
+  identifier?: string;
+  identifierType?: string;
+  url?: string;
+};
+
 const route = useRoute();
 const posterId = route.params.posterid as string;
 
@@ -134,7 +140,7 @@ const poster = ref({
   size: api?.size ?? null,
   domain: api?.domain ?? null,
   keywords: api?.keywords ?? [],
-  identifiers: (api?.identifiers ?? []) as any[],
+  identifiers: (api?.identifiers ?? []) as PosterIdentifier[],
   likes: api?.likes ?? 0,
   views: api?.views ?? 0,
   references: (api?.relatedIdentifiers ?? []).map((ri: any, index: number) => ({
@@ -185,6 +191,67 @@ const posterSource = computed(() => {
 
   return "zenodo";
 });
+
+function identifierLabel(identifier: PosterIdentifier) {
+  const type = identifier.identifierType?.trim() || "Other";
+  const value = identifier.identifier?.trim() || "";
+
+  if (type.toUpperCase() === "OTHER" && /^\d+$/.test(value)) {
+    if (posterSource.value === "figshare") return "Figshare ID";
+    if (posterSource.value === "zenodo") return "Zenodo ID";
+  }
+
+  return type;
+}
+
+function identifierUrl(identifier: PosterIdentifier) {
+  const type = identifier.identifierType?.trim().toUpperCase() || "OTHER";
+  const value = identifier.identifier?.trim() || "";
+  if (!value) return null;
+
+  const suppliedUrl = identifier.url?.trim() || "";
+  if (/^https?:\/\//i.test(suppliedUrl)) return suppliedUrl;
+
+  if (type === "DOI") return resolveDoiUrl(value);
+  if (type === "HANDLE") {
+    const handle = value.replace(
+      /^https?:\/\/(?:hdl\.handle\.net|handle\.net)\//i,
+      "",
+    );
+
+    return `https://hdl.handle.net/${handle}`;
+  }
+  if (["URL", "PURL", "W3ID"].includes(type) && /^https?:\/\//i.test(value)) {
+    return value;
+  }
+  if (type !== "OTHER" || !/^\d+$/.test(value)) return null;
+
+  if (posterSource.value === "zenodo") {
+    return `https://zenodo.org/records/${value}`;
+  }
+  if (posterSource.value === "figshare") {
+    const handle = poster.value.identifiers.find(
+      (candidate) =>
+        candidate.identifierType?.trim().toUpperCase() === "HANDLE" &&
+        candidate.identifier?.trim(),
+    );
+    if (handle) return identifierUrl(handle);
+
+    // Figshare HTML URLs contain an institution domain, item type, and slug.
+    // Resolve those through the official Figshare API on our server.
+    return `/api/repository/figshare/${value}`;
+  }
+
+  return null;
+}
+
+function identifierDisplayValue(identifier: PosterIdentifier) {
+  if (identifier.identifierType?.trim().toUpperCase() === "HANDLE") {
+    return identifierUrl(identifier) ?? identifier.identifier;
+  }
+
+  return identifier.identifier;
+}
 
 const licenseInfo = computed(() => {
   if (!poster.value.license) return null;
@@ -618,7 +685,7 @@ const tabItems = [
               v-if="
                 poster.imageUrl && poster.imageUrl.search('dicebear') === -1
               "
-              class="hidden sm:col-span-3 sm:flex sm:items-start sm:justify-center"
+              class="flex items-start justify-center sm:col-span-3"
             >
               <NuxtLink
                 v-if="resolvedPosterUrl"
@@ -632,6 +699,14 @@ const tabItems = [
                   @error="onImageError($event, poster.id)"
                 />
               </NuxtLink>
+
+              <img
+                v-else
+                :src="poster.imageUrl"
+                alt="Poster thumbnail"
+                class="max-h-64 w-full rounded-lg object-contain shadow-sm"
+                @error="onImageError($event, poster.id)"
+              />
             </div>
           </div>
         </UContainer>
@@ -787,29 +862,29 @@ const tabItems = [
                         class="flex items-center gap-2 text-sm"
                       >
                         <UBadge color="neutral" variant="soft" size="sm">
-                          {{ identifier.identifierType }}
+                          {{ identifierLabel(identifier) }}
                         </UBadge>
 
-                        <span
-                          class="font-mono text-gray-700 dark:text-gray-300"
-                        >
-                          {{ identifier.identifier }}
-                        </span>
-
-                        <NuxtLink
-                          v-if="identifier.identifierType === 'DOI'"
-                          :to="
-                            identifier.identifierType === 'DOI'
-                              ? resolveDoiUrl(identifier.identifier)
-                              : identifier.url
-                          "
+                        <a
+                          v-if="identifierUrl(identifier)"
+                          :href="identifierUrl(identifier)!"
                           target="_blank"
+                          rel="noopener noreferrer"
+                          class="inline-flex items-center gap-1 font-mono text-blue-600 hover:underline dark:text-blue-400"
                         >
+                          {{ identifierDisplayValue(identifier) }}
                           <UIcon
                             name="gridicons:external"
-                            class="flex items-center justify-center"
+                            class="size-4 shrink-0"
                           />
-                        </NuxtLink>
+                        </a>
+
+                        <span
+                          v-else
+                          class="font-mono text-gray-700 dark:text-gray-300"
+                        >
+                          {{ identifierDisplayValue(identifier) }}
+                        </span>
                       </div>
                     </div>
                   </UCard>
