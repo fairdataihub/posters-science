@@ -1,5 +1,11 @@
 <script setup lang="ts">
 import dayjs from "dayjs";
+import {
+  ALLOWED_POSTER_FILE_LABEL,
+  MAX_POSTER_FILE_SIZE_LABEL,
+  POSTER_FILE_ACCEPT,
+  posterFileRejectionReason,
+} from "#shared/utils/posterFile";
 import { LICENSE_OPTIONS } from "~/utils/poster_schema";
 import { normalizeDoi, validateDoi } from "~/utils/doi";
 
@@ -209,6 +215,24 @@ let versionPollGeneration = 0;
 const pollingVersionThumbnailJobId = ref<string | null>(null);
 let versionThumbnailPollTimer: ReturnType<typeof setTimeout> | undefined;
 let versionThumbnailPollGeneration = 0;
+
+const VERSION_FILE_HINT = `${ALLOWED_POSTER_FILE_LABEL} up to ${MAX_POSTER_FILE_SIZE_LABEL}`;
+
+const validateVersionFile = (file: File) =>
+  posterFileRejectionReason({
+    name: file.name,
+    type: file.type,
+    size: file.size,
+  });
+
+const onVersionFileRejected = (
+  rejections: { file: File; reason: string }[],
+) => {
+  const first = rejections[0];
+  if (!first) return;
+
+  versionError.value = `${first.file.name}: ${first.reason}`;
+};
 
 const versionFileOptions = [
   {
@@ -835,14 +859,15 @@ async function deleteVersionDraft() {
 async function createVersion() {
   if (!versionPoster.value) return;
   if (versionFileMode.value === "upload" && !versionFiles.value[0]) {
-    versionError.value = "Choose a replacement PDF or image.";
+    versionError.value = `Choose a replacement ${ALLOWED_POSTER_FILE_LABEL} file.`;
 
     return;
   }
 
   const file = versionFiles.value[0];
-  if (file && file.size > 10 * 1024 * 1024) {
-    versionError.value = "File must be 10MB or smaller.";
+  const rejectionReason = file ? validateVersionFile(file) : null;
+  if (rejectionReason) {
+    versionError.value = rejectionReason;
 
     return;
   }
@@ -1783,7 +1808,11 @@ function posterMenuItems(poster: Poster) {
 
             <UiFileUpload
               v-if="versionFileMode === 'upload'"
+              :accept="POSTER_FILE_ACCEPT"
+              :validate-file="validateVersionFile"
+              :hint="VERSION_FILE_HINT"
               @on-change="versionFiles = $event"
+              @on-reject="onVersionFileRejected"
             >
               <UiFileUploadGrid />
             </UiFileUpload>

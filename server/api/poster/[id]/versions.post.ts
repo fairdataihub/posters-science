@@ -1,17 +1,13 @@
 import { createId } from "@paralleldrive/cuid2";
+import {
+  ALLOWED_POSTER_FILE_LABEL,
+  isAllowedPosterFile,
+  MAX_POSTER_FILE_SIZE_BYTES,
+  MAX_POSTER_FILE_SIZE_LABEL,
+} from "#shared/utils/posterFile";
 import { normalizeVersionRelatedIdentifiers } from "../../../utils/posterVersions";
 
 type Identifier = { identifier?: string; identifierType?: string };
-
-const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
-const ALLOWED_FILE_TYPES: Record<string, string> = {
-  pdf: "application/pdf",
-  jpg: "image/jpeg",
-  jpeg: "image/jpeg",
-  png: "image/png",
-  webp: "image/webp",
-};
-const GENERIC_UPLOAD_TYPES = new Set(["", "application/octet-stream"]);
 
 function fieldValue(
   formData: Awaited<ReturnType<typeof readMultipartFormData>>,
@@ -22,18 +18,6 @@ function fieldValue(
   );
 
   return field?.data.toString("utf8");
-}
-
-function isAllowedPosterFile(name: string, type: string) {
-  const extension = name.split(".").pop()?.toLowerCase() ?? "";
-  const expectedType = ALLOWED_FILE_TYPES[extension];
-  const normalizedType = type.split(";", 1)[0]?.trim().toLowerCase() ?? "";
-
-  return Boolean(
-    expectedType &&
-    (normalizedType === expectedType ||
-      GENERIC_UPLOAD_TYPES.has(normalizedType)),
-  );
 }
 
 function isVersionReviewReady(
@@ -256,7 +240,7 @@ export default defineEventHandler(async (event) => {
     if (!isAllowedPosterFile(fileName, fileType)) {
       throw createError({
         statusCode: 415,
-        statusMessage: "File must be a PDF, JPEG, PNG, or WebP image",
+        statusMessage: `File must be a ${ALLOWED_POSTER_FILE_LABEL}`,
       });
     }
   } else {
@@ -275,10 +259,10 @@ export default defineEventHandler(async (event) => {
     fileBytes = new Uint8Array(await response.arrayBuffer());
   }
 
-  if (fileBytes.byteLength > MAX_FILE_SIZE_BYTES) {
+  if (fileBytes.byteLength > MAX_POSTER_FILE_SIZE_BYTES) {
     throw createError({
       statusCode: 413,
-      statusMessage: "File must be 10MB or smaller",
+      statusMessage: `File must be ${MAX_POSTER_FILE_SIZE_LABEL} or smaller`,
     });
   }
 
