@@ -45,12 +45,7 @@ type Poster = {
     license: string | null;
     version: string | null;
   } | null;
-  extractionJob?: {
-    id?: string;
-    status: string;
-    completed?: boolean;
-    error?: string | null;
-  } | null;
+  extractionJob?: ExtractionJobSummary | null;
   rootPosterId: number;
   versionCount: number;
   activeVersionDraft?: {
@@ -59,13 +54,17 @@ type Poster = {
     imageUrl: string;
     title: string;
     description: string;
-    extractionJob?: {
-      id?: string;
-      status: string;
-      completed?: boolean;
-      error?: string | null;
-    } | null;
+    extractionJob?: ExtractionJobSummary | null;
   } | null;
+};
+
+type ExtractionJobSummary = {
+  id?: string;
+  status: string;
+  completed?: boolean;
+  error?: string | null;
+  created?: string | Date;
+  updated?: string | Date;
 };
 
 type VersionJobStatusResponse = {
@@ -76,6 +75,8 @@ type VersionJobStatusResponse = {
   imageUrl?: string;
   title?: string;
   description?: string;
+  startedAt?: string | Date;
+  updatedAt?: string | Date;
 };
 
 const posters = ref<Poster[]>([]);
@@ -212,9 +213,19 @@ const deletingVersionDraft = ref(false);
 const pollingVersionJobId = ref<string | null>(null);
 let versionPollTimer: ReturnType<typeof setTimeout> | undefined;
 let versionPollGeneration = 0;
-const pollingVersionThumbnailJobId = ref<string | null>(null);
-let versionThumbnailPollTimer: ReturnType<typeof setTimeout> | undefined;
-let versionThumbnailPollGeneration = 0;
+const versionLastCheckedAt = ref<number | null>(null);
+const versionClockNow = ref(Date.now());
+let versionClockTimer: ReturnType<typeof setInterval> | undefined;
+
+// Poll quickly at first, then back off, so a long extraction keeps reporting
+// progress without hammering the API for its whole run.
+const VERSION_POLL_FAST_INTERVAL = 3000;
+const VERSION_POLL_SLOW_INTERVAL = 10000;
+const VERSION_POLL_FAST_ATTEMPTS = 40;
+const VERSION_THUMBNAIL_REPAIR_ATTEMPTS = 5;
+// Preparation normally lands well inside this window, so anything longer gets
+// an explicit "taking longer than usual" note instead of a silent spinner.
+const VERSION_SLOW_AFTER_SECONDS = 330;
 
 const VERSION_FILE_HINT = `${ALLOWED_POSTER_FILE_LABEL} up to ${MAX_POSTER_FILE_SIZE_LABEL}`;
 
@@ -280,6 +291,17 @@ function isVersionPreparing(draft: Poster["activeVersionDraft"]): boolean {
   return Boolean(draft && (isVersionExtracting(draft) || !draft.imageUrl));
 }
 
+// A failed draft is also "preparing" by the rule above, since it has no
+// preview, but there is nothing left to poll for. Polling it would only replay
+// the failure toast every time the panel is opened.
+function shouldPollVersionDraft(draft: Poster["activeVersionDraft"]): boolean {
+  return Boolean(
+    draft?.extractionJob?.id &&
+    !isVersionExtractionFailed(draft) &&
+    isVersionPreparing(draft),
+  );
+}
+
 function isVersionReviewReady(draft: Poster["activeVersionDraft"]): boolean {
   return Boolean(
     draft &&
@@ -314,27 +336,56 @@ const versionPanelState = computed<"setup" | "extracting" | "ready" | "failed">(
     return "ready";
   },
 );
+// Preparation is a fixed pipeline, so the panel reports which stage a draft is
+// in rather than showing one indeterminate bar for the whole wait.
+const VERSION_PROGRESS_STEPS = [
+  "Poster file saved",
+  "Queued for extraction",
+  "Extracting metadata",
+  "Generating preview",
+  "Ready to review",
+];
+
+const versionProgressStep = computed(() => {
+  const draft = currentVersionDraft.value;
+  if (!draft) return 0;
+
+  const status = draft.extractionJob?.status;
+  if (status === "pending-extraction") return 1;
+  if (status === "processing") return 2;
+  if (!versionMetadataReady.value) return 1;
+
+  return draft.imageUrl ? 4 : 3;
+});
+
+const versionProgressSteps = computed(() =>
+  VERSION_PROGRESS_STEPS.map((label, index) => ({
+    label,
+    done: index < versionProgressStep.value,
+    active: index === versionProgressStep.value,
+  })),
+);
+
 const versionExtractionStatus = computed(() => {
-  const status = currentVersionDraft.value?.extractionJob?.status;
-  if (status === "pending-extraction") {
+  if (versionProgressStep.value === 1) {
     return {
       title: "Waiting for extraction to start",
       description:
-        "The job is saved in the queue. The extraction service will claim it automatically.",
+        "Your file is saved and queued. The extraction service will claim it automatically.",
     };
   }
-  if (status === "processing") {
+  if (versionProgressStep.value === 2) {
     return {
       title: "Extracting poster metadata",
       description:
         "The extraction service is analyzing the poster and saving the fields you'll review and edit next.",
     };
   }
-  if (!currentVersionDraft.value?.imageUrl) {
+  if (versionProgressStep.value === 3) {
     return {
-      title: "Preparing poster preview",
+      title: "Generating poster preview",
       description:
-        "A thumbnail is being generated from the replacement poster file. Your edits will be ready after the preview is saved.",
+        "Your metadata is saved. A preview image is being rendered from the poster file.",
     };
   }
 
@@ -344,15 +395,44 @@ const versionExtractionStatus = computed(() => {
   };
 });
 
+const versionElapsedSeconds = computed(() => {
+  const startedAt = currentVersionDraft.value?.extractionJob?.created;
+  if (!startedAt) return null;
+
+  return Math.max(
+    0,
+    dayjs(versionClockNow.value).diff(dayjs(startedAt), "second"),
+  );
+});
+
+const versionElapsedLabel = computed(() => {
+  const seconds = versionElapsedSeconds.value;
+  if (seconds === null) return null;
+  if (seconds < 60) return `${seconds}s`;
+
+  return `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, "0")}s`;
+});
+
+const versionPreparingIsSlow = computed(
+  () => (versionElapsedSeconds.value ?? 0) >= VERSION_SLOW_AFTER_SECONDS,
+);
+
+// Shown next to the progress bar so a quiet stage still looks alive.
+const versionLastCheckedLabel = computed(() => {
+  if (!versionLastCheckedAt.value) return null;
+
+  const seconds = Math.max(
+    0,
+    Math.round((versionClockNow.value - versionLastCheckedAt.value) / 1000),
+  );
+  if (seconds < 5) return "Checked just now";
+  if (seconds < 60) return `Checked ${seconds}s ago`;
+
+  return `Checked ${Math.floor(seconds / 60)}m ago`;
+});
+
 const preparingVersionPoster = computed(() =>
   posters.value.find((poster) => isVersionPreparing(poster.activeVersionDraft)),
-);
-const posterAwaitingDraftThumbnail = computed(() =>
-  posters.value.find(
-    (poster) =>
-      poster.activeVersionDraft?.extractionJob?.id &&
-      !poster.activeVersionDraft.imageUrl,
-  ),
 );
 
 function versionActionDisabled(poster: Poster) {
@@ -428,6 +508,16 @@ function versionWorkflowPoster(draft: Poster) {
   return { ...published, activeVersionDraft: versionDraftFor(draft) };
 }
 
+// Only run the clock while the panel is actually showing preparation progress.
+watch(
+  () => versionModalOpen.value && versionPanelState.value === "extracting",
+  (showingProgress) => {
+    if (showingProgress) startVersionClock();
+    else stopVersionClock();
+  },
+  { immediate: true },
+);
+
 watch(versionFileMode, (mode) => {
   versionError.value = "";
   if (mode === "reuse") {
@@ -450,15 +540,8 @@ function openVersionModal(poster: Poster) {
   versionModalOpen.value = true;
 
   const activeJob = poster.activeVersionDraft?.extractionJob?.id;
-  if (activeJob && isVersionExtracting(poster.activeVersionDraft)) {
-    startVersionExtractionPolling(activeJob);
-  }
-  if (activeJob && !poster.activeVersionDraft?.imageUrl) {
-    startVersionThumbnailPolling(
-      activeJob,
-      poster.activeVersionDraft?.id,
-      true,
-    );
+  if (activeJob && shouldPollVersionDraft(poster.activeVersionDraft)) {
+    startVersionPolling(activeJob, poster.activeVersionDraft?.id);
   }
 }
 
@@ -467,24 +550,27 @@ function updateLocalVersionJob(
   status: string,
   completed: boolean,
   error?: string | null,
+  created?: string | Date,
+  updated?: string | Date,
 ) {
   if (!posterId) return;
 
+  const patch = {
+    status,
+    completed,
+    error,
+    ...(created && { created }),
+    ...(updated && { updated }),
+  };
+
   for (const poster of posters.value) {
     if (poster.id === posterId) {
-      poster.extractionJob = {
-        ...poster.extractionJob,
-        status,
-        completed,
-        error,
-      };
+      poster.extractionJob = { ...poster.extractionJob, ...patch };
     }
     if (poster.activeVersionDraft?.id === posterId) {
       poster.activeVersionDraft.extractionJob = {
         ...poster.activeVersionDraft.extractionJob,
-        status,
-        completed,
-        error,
+        ...patch,
       };
     }
   }
@@ -534,7 +620,7 @@ async function refreshPosterList() {
   }
 }
 
-function stopVersionExtractionPolling() {
+function stopVersionPolling() {
   versionPollGeneration += 1;
   pollingVersionJobId.value = null;
   if (versionPollTimer) {
@@ -543,132 +629,132 @@ function stopVersionExtractionPolling() {
   }
 }
 
-function stopVersionThumbnailPolling() {
-  versionThumbnailPollGeneration += 1;
-  pollingVersionThumbnailJobId.value = null;
-  if (versionThumbnailPollTimer) {
-    clearTimeout(versionThumbnailPollTimer);
-    versionThumbnailPollTimer = undefined;
-  }
+// Elapsed time ticks on its own so the panel keeps moving between polls.
+function startVersionClock() {
+  if (versionClockTimer) return;
+
+  versionClockNow.value = Date.now();
+  versionClockTimer = setInterval(() => {
+    versionClockNow.value = Date.now();
+  }, 1000);
 }
 
-function startVersionThumbnailPolling(
-  jobId: string,
-  posterId?: number,
-  triggerGeneration = false,
-) {
-  const triggerThumbnailGeneration = () => {
-    if (!triggerGeneration || !posterId) return;
+function stopVersionClock() {
+  if (!versionClockTimer) return;
 
-    void $fetch(`/api/poster/${posterId}/thumbnail`, { method: "POST" }).catch(
-      (error) => {
+  clearInterval(versionClockTimer);
+  versionClockTimer = undefined;
+}
+
+// One poller drives the whole preparation pipeline: extraction first, then the
+// preview image. Splitting these across two timers on the same endpoint made it
+// possible for both to stop while the panel was still showing a spinner.
+function startVersionPolling(jobId: string, posterId?: number) {
+  if (pollingVersionJobId.value === jobId) return;
+
+  stopVersionPolling();
+  pollingVersionJobId.value = jobId;
+  const generation = versionPollGeneration;
+  let attempts = 0;
+  let metadataReadyAttempts = 0;
+  let thumbnailRequested = false;
+  let thumbnailRepairFailures = 0;
+
+  const isCurrent = () => generation === versionPollGeneration;
+
+  // The worker writes its own preview while processing an extraction job, so
+  // only ask the extraction service directly once that grace period passes.
+  const repairMissingThumbnail = async (targetPosterId?: number) => {
+    if (thumbnailRequested || !targetPosterId) return;
+
+    thumbnailRequested = true;
+    try {
+      const result = await $fetch<{ imageUrl: string }>(
+        `/api/poster/${targetPosterId}/thumbnail`,
+        { method: "POST" },
+      );
+      console.log("[versionJobPoll] thumbnail repair:", result);
+      thumbnailRepairFailures = 0;
+      updateLocalVersionThumbnail(targetPosterId, result.imageUrl);
+    } catch (error) {
+      console.error("[versionJobPoll] thumbnail repair failed:", error);
+      // Allow another attempt on a later tick; the preview may still be saving.
+      thumbnailRequested = false;
+      thumbnailRepairFailures += 1;
+
+      // Offer the manual retry only once this looks persistent, so a single
+      // blip does not replace live progress with a warning.
+      if (thumbnailRepairFailures >= 2) {
         versionPollingError.value =
           (error as { data?: { statusMessage?: string } })?.data
             ?.statusMessage ||
-          "The replacement poster preview could not be started. Try opening this panel again.";
-      },
-    );
+          "The replacement poster preview could not be generated.";
+      }
+    }
   };
 
-  if (pollingVersionThumbnailJobId.value === jobId) {
-    triggerThumbnailGeneration();
+  // Returns true once the dashboard reflects the finished draft. The poster
+  // list can lag the job row, so polling continues until the panel has actually
+  // left the preparing state rather than stopping on the job status alone.
+  const finish = async (response: VersionJobStatusResponse) => {
+    await refreshPosterList();
 
-    return;
-  }
-
-  stopVersionThumbnailPolling();
-  pollingVersionThumbnailJobId.value = jobId;
-  const generation = versionThumbnailPollGeneration;
-  let attempts = 0;
-
-  triggerThumbnailGeneration();
-
-  const checkThumbnail = async () => {
-    if (generation !== versionThumbnailPollGeneration) return;
-
-    try {
-      const response = await $fetch<VersionJobStatusResponse>(
-        `/api/poster/job/${jobId}`,
+    if (
+      versionModalOpen.value &&
+      currentVersionDraft.value?.extractionJob?.id === jobId &&
+      versionPanelState.value === "extracting"
+    ) {
+      console.log(
+        "[versionJobPoll] job is ready but the panel is not, retrying",
       );
 
-      if (generation !== versionThumbnailPollGeneration) return;
-      if (response.imageUrl) {
-        versionPollingError.value = "";
-        updateLocalVersionThumbnail(response.posterId, response.imageUrl);
-        pollingVersionThumbnailJobId.value = null;
-        const metadataReady =
-          response.completed && response.status === "completed";
-        const keepPanelOpen =
-          versionModalOpen.value &&
-          currentVersionDraft.value?.extractionJob?.id === jobId;
-
-        if (metadataReady) {
-          await refreshPosterList();
-          if (!keepPanelOpen) {
-            const completedPoster = posters.value.find(
-              (poster) => poster.activeVersionDraft?.id === response.posterId,
-            );
-
-            toast.add({
-              title: "Your edits are ready to review",
-              description: completedPoster
-                ? `The replacement poster preview is ready for ${completedPoster.title}. Select the poster to continue reviewing it.`
-                : "The replacement poster preview is ready. Select the poster to continue reviewing it.",
-              color: "success",
-              icon: "i-lucide-circle-check",
-            });
-          }
-        }
-
-        return;
-      }
-    } catch {
-      // Keep the published thumbnail visible and retry while the draft
-      // thumbnail is being generated.
+      return false;
     }
 
-    attempts += 1;
-    if (attempts >= 40) {
-      pollingVersionThumbnailJobId.value = null;
-      if (currentVersionDraft.value?.extractionJob?.id === jobId) {
-        versionPollingError.value =
-          "The replacement poster preview is taking longer than expected.";
-      }
+    stopVersionPolling();
 
-      return;
-    }
+    const completedPoster = posters.value.find(
+      (poster) => poster.activeVersionDraft?.id === response.posterId,
+    );
+    const completedDraft = completedPoster?.activeVersionDraft;
 
-    if (generation === versionThumbnailPollGeneration) {
-      versionThumbnailPollTimer = setTimeout(checkThumbnail, 3000);
-    }
+    toast.add({
+      title: completedDraft
+        ? `Your edits for version ${completedDraft.versionSequence} are ready to review`
+        : "Your edits are ready to review",
+      description: completedPoster
+        ? `${completedPoster.title} finished preparing. Review the extracted metadata to continue.`
+        : "Your draft finished preparing. Review the extracted metadata to continue.",
+      color: "success",
+      icon: "i-lucide-circle-check",
+    });
+
+    return true;
   };
-
-  void checkThumbnail();
-}
-
-function startVersionExtractionPolling(jobId: string) {
-  if (pollingVersionJobId.value === jobId) return;
-
-  stopVersionExtractionPolling();
-  pollingVersionJobId.value = jobId;
-  const generation = versionPollGeneration;
 
   const checkStatus = async () => {
-    if (generation !== versionPollGeneration) return;
+    if (!isCurrent()) return;
+
+    attempts += 1;
 
     try {
       const response = await $fetch<VersionJobStatusResponse>(
         `/api/poster/job/${jobId}`,
       );
 
-      if (generation !== versionPollGeneration) return;
+      if (!isCurrent()) return;
+
+      console.log("[versionJobPoll] response:", response);
 
       versionPollingError.value = "";
+      versionLastCheckedAt.value = Date.now();
       updateLocalVersionJob(
         response.posterId,
         response.status,
         response.completed,
         response.error,
+        response.startedAt,
+        response.updatedAt,
       );
       updateLocalVersionThumbnail(response.posterId, response.imageUrl);
       updateLocalVersionDetails(
@@ -677,42 +763,8 @@ function startVersionExtractionPolling(jobId: string) {
         response.description,
       );
 
-      if (response.completed && response.status === "completed") {
-        if (!response.imageUrl) {
-          pollingVersionJobId.value = null;
-          startVersionThumbnailPolling(jobId, response.posterId, true);
-
-          return;
-        }
-
-        const keepPanelOpen =
-          versionModalOpen.value &&
-          currentVersionDraft.value?.extractionJob?.id === jobId;
-        pollingVersionJobId.value = null;
-        await refreshPosterList();
-        if (!keepPanelOpen && response.posterId) {
-          const completedPoster = posters.value.find(
-            (poster) => poster.activeVersionDraft?.id === response.posterId,
-          );
-          const completedDraft = completedPoster?.activeVersionDraft;
-
-          toast.add({
-            title: completedDraft
-              ? `Your edits for version ${completedDraft.versionSequence} are ready to review`
-              : "Your edits are ready to review",
-            description: completedPoster
-              ? `Metadata extraction finished for ${completedPoster.title}. Select the poster to continue reviewing it.`
-              : "Metadata extraction finished. Select the poster to continue reviewing it.",
-            color: "success",
-            icon: "i-lucide-circle-check",
-          });
-        }
-
-        return;
-      }
-
       if (response.status === "failed") {
-        pollingVersionJobId.value = null;
+        stopVersionPolling();
         await refreshPosterList();
         toast.add({
           title: "Metadata extraction failed",
@@ -722,17 +774,39 @@ function startVersionExtractionPolling(jobId: string) {
 
         return;
       }
-    } catch (error) {
-      if (generation !== versionPollGeneration) return;
 
+      const metadataReady =
+        response.completed && response.status === "completed";
+
+      if (metadataReady && response.imageUrl && (await finish(response))) {
+        return;
+      }
+
+      if (metadataReady) {
+        metadataReadyAttempts += 1;
+        if (metadataReadyAttempts >= VERSION_THUMBNAIL_REPAIR_ATTEMPTS) {
+          await repairMissingThumbnail(response.posterId ?? posterId);
+        }
+      }
+    } catch (error) {
+      if (!isCurrent()) return;
+
+      console.error("[versionJobPoll] status check failed:", error);
       versionPollingError.value =
         error instanceof Error
           ? `Could not refresh the extraction status: ${error.message}`
           : "Could not refresh the extraction status. Retrying…";
     }
 
-    if (generation === versionPollGeneration) {
-      versionPollTimer = setTimeout(checkStatus, 3000);
+    // Preparation keeps running on the server, so the panel keeps polling
+    // instead of giving up and leaving a spinner with no updates behind it.
+    if (isCurrent()) {
+      versionPollTimer = setTimeout(
+        checkStatus,
+        attempts < VERSION_POLL_FAST_ATTEMPTS
+          ? VERSION_POLL_FAST_INTERVAL
+          : VERSION_POLL_SLOW_INTERVAL,
+      );
     }
   };
 
@@ -768,7 +842,7 @@ async function retryVersionExtraction() {
       response.completed,
       response.error,
     );
-    startVersionExtractionPolling(jobId);
+    startVersionPolling(jobId, posterId);
   } catch (error) {
     versionPollingError.value =
       error instanceof Error
@@ -793,7 +867,7 @@ async function retryVersionThumbnail() {
       { method: "POST" },
     );
     updateLocalVersionThumbnail(draft.id, response.imageUrl);
-    stopVersionThumbnailPolling();
+    stopVersionPolling();
     await refreshPosterList();
   } catch (error) {
     versionPollingError.value =
@@ -811,13 +885,10 @@ async function deleteVersionDraft() {
 
   const jobId = draft.extractionJob?.id;
   const rootPosterId = versionPoster.value?.rootPosterId;
-  const wasExtracting = isVersionExtracting(draft);
-  const wasPollingThumbnail =
-    pollingVersionThumbnailJobId.value === draft.extractionJob?.id;
+  const wasPreparing = shouldPollVersionDraft(draft);
   deletingVersionDraft.value = true;
   versionPollingError.value = "";
-  stopVersionExtractionPolling();
-  stopVersionThumbnailPolling();
+  stopVersionPolling();
 
   try {
     await $fetch(`/api/poster/${draft.id}`, { method: "DELETE" });
@@ -849,8 +920,7 @@ async function deleteVersionDraft() {
       color: "error",
     });
 
-    if (wasExtracting && jobId) startVersionExtractionPolling(jobId);
-    if (wasPollingThumbnail && jobId) startVersionThumbnailPolling(jobId);
+    if (wasPreparing && jobId) startVersionPolling(jobId, draft.id);
   } finally {
     deletingVersionDraft.value = false;
   }
@@ -898,15 +968,8 @@ async function createVersion() {
 
     await refreshPosterList();
 
-    if (
-      response.extractionJobId &&
-      (response.extractionStatus === "pending-extraction" ||
-        response.extractionStatus === "processing")
-    ) {
-      startVersionExtractionPolling(response.extractionJobId);
-    }
-    if (!response.imageUrl && response.extractionJobId) {
-      startVersionThumbnailPolling(response.extractionJobId, response.posterId);
+    if (response.extractionJobId && !response.reviewReady) {
+      startVersionPolling(response.extractionJobId, response.posterId);
     }
   } catch (error) {
     versionError.value =
@@ -917,24 +980,21 @@ async function createVersion() {
 }
 
 onMounted(() => {
-  const activeJob = posters.value.find((poster) =>
-    isVersionExtracting(poster.activeVersionDraft),
-  )?.activeVersionDraft?.extractionJob?.id;
+  // Resume reporting on whichever draft is still preparing, whether it is
+  // waiting on extraction or only on its preview image.
+  const preparingDraft = posters.value.find((poster) =>
+    shouldPollVersionDraft(poster.activeVersionDraft),
+  )?.activeVersionDraft;
+  const preparingJob = preparingDraft?.extractionJob?.id;
 
-  if (activeJob) {
-    startVersionExtractionPolling(activeJob);
-  }
-
-  const thumbnailDraft = posterAwaitingDraftThumbnail.value?.activeVersionDraft;
-  const thumbnailJob = thumbnailDraft?.extractionJob?.id;
-  if (thumbnailJob) {
-    startVersionThumbnailPolling(thumbnailJob, thumbnailDraft.id, true);
+  if (preparingJob) {
+    startVersionPolling(preparingJob, preparingDraft.id);
   }
 });
 
 onBeforeUnmount(() => {
-  stopVersionExtractionPolling();
-  stopVersionThumbnailPolling();
+  stopVersionPolling();
+  stopVersionClock();
 });
 
 function openPoster(poster: Poster) {
@@ -1206,13 +1266,25 @@ function posterStatusPresentation(poster: Poster) {
       icon: "i-lucide-circle-alert",
     };
   }
-  if (
-    poster.extractionJob?.status === "pending-extraction" ||
-    poster.extractionJob?.status === "processing" ||
-    !poster.imageUrl
-  ) {
+  // Name the stage rather than a generic "preparing", so a card that sits here
+  // for a while still tells the user what is actually happening.
+  if (poster.extractionJob?.status === "pending-extraction") {
     return {
-      label: "Preparing poster",
+      label: "Queued for extraction",
+      color: "info" as const,
+      icon: "i-lucide-loader-circle",
+    };
+  }
+  if (poster.extractionJob?.status === "processing") {
+    return {
+      label: "Extracting metadata",
+      color: "info" as const,
+      icon: "i-lucide-loader-circle",
+    };
+  }
+  if (!poster.imageUrl) {
+    return {
+      label: "Generating preview",
       color: "info" as const,
       icon: "i-lucide-loader-circle",
     };
@@ -1334,7 +1406,7 @@ function posterMenuItems(poster: Poster) {
                 activeDashboardTab === 'published' && tombstonedPosterCount > 0
               "
               v-model="showTombstonedPosters"
-              :label="`Show tombstoned posters (${tombstonedPosterCount})`"
+              :label="`Show deleted posters (${tombstonedPosterCount})`"
               size="sm"
             />
           </div>
@@ -1861,15 +1933,76 @@ function posterMenuItems(poster: Poster) {
             </p>
           </div>
 
-          <UProgress color="primary" size="md" animation="carousel" />
+          <div class="space-y-3">
+            <UProgress
+              color="primary"
+              size="md"
+              :model-value="versionProgressStep"
+              :max="VERSION_PROGRESS_STEPS"
+            />
+
+            <ol class="space-y-2">
+              <li
+                v-for="step in versionProgressSteps"
+                :key="step.label"
+                class="flex items-center gap-2 text-sm"
+                :class="
+                  step.active
+                    ? 'text-highlighted font-medium'
+                    : step.done
+                      ? 'text-muted'
+                      : 'text-dimmed'
+                "
+              >
+                <UIcon
+                  v-if="step.done"
+                  name="i-lucide-circle-check"
+                  class="size-4 shrink-0 text-(--ui-success)"
+                />
+
+                <UIcon
+                  v-else-if="step.active"
+                  name="i-lucide-loader-circle"
+                  class="size-4 shrink-0 animate-spin"
+                />
+
+                <UIcon
+                  v-else
+                  name="i-lucide-circle-dashed"
+                  class="size-4 shrink-0"
+                />
+
+                <span>{{ step.label }}</span>
+              </li>
+            </ol>
+
+            <div
+              class="text-dimmed flex flex-wrap items-center gap-x-3 gap-y-1 text-xs"
+            >
+              <span v-if="versionElapsedLabel">
+                Preparing for {{ versionElapsedLabel }}
+              </span>
+
+              <span v-if="versionLastCheckedLabel">
+                {{ versionLastCheckedLabel }}
+              </span>
+            </div>
+          </div>
+
+          <UAlert
+            v-if="versionPreparingIsSlow"
+            color="warning"
+            variant="soft"
+            icon="i-lucide-clock"
+            title="This is taking longer than usual"
+            description="Extraction normally finishes within a few minutes. This panel keeps checking and your published poster is unchanged, so you can close it and come back later."
+          />
 
           <p class="text-muted text-sm">
             {{
-              !currentVersionDraft?.imageUrl &&
-              currentVersionDraft?.extractionJob?.status === "completed"
-                ? "This status will change automatically after the replacement poster preview has been generated."
-                : currentVersionDraft?.extractionJob?.status ===
-                    "pending-extraction"
+              versionProgressStep === 3
+                ? "This status will change to ready for review once the preview image is saved."
+                : versionProgressStep === 1
                   ? "This status will change automatically when the extraction service claims the job."
                   : "This status will change to ready for review after the extracted fields have been saved."
             }}
