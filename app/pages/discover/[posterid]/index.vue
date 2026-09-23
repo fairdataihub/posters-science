@@ -184,12 +184,19 @@ const resolvedPosterUrl = computed(() => {
 
 const posterSource = computed(() => {
   if (!poster.value.automated) return null;
-  const doi = poster.value.doi ?? "";
-  const imageUrl = api?.imageUrl ?? "";
-  if (doi.startsWith("10.6084/") || imageUrl.includes("/figshare_"))
-    return "figshare";
+  const publisher = poster.value.publisher?.trim().toLowerCase() ?? "";
+  if (publisher.includes("figshare")) return "figshare";
+  if (publisher.includes("zenodo")) return "zenodo";
 
-  return "zenodo";
+  const imageUrl = poster.value.imageUrl.toLowerCase();
+  if (imageUrl.includes("/figshare_")) return "figshare";
+  if (imageUrl.includes("/zenodo_")) return "zenodo";
+
+  const doi = poster.value.doi?.trim().toLowerCase() ?? "";
+  if (doi.includes("zenodo")) return "zenodo";
+  if (doi.startsWith("10.6084/")) return "figshare";
+
+  return null;
 });
 
 function identifierLabel(identifier: PosterIdentifier) {
