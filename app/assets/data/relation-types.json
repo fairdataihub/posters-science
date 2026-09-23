@@ -188,5 +188,10 @@
     "const": "HasTranslation",
     "label": "Has Translation",
     "description": "Indicates A has a translation B"
+  },
+  {
+    "const": "Other",
+    "label": "Other",
+    "description": "Relationship type not defined elsewhere. Use relationTypeInformation to provide additional context."
   }
 ]

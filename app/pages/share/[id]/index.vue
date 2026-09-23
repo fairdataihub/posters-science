@@ -2057,6 +2057,22 @@ const moveCreator = (index: number, direction: "up" | "down") => {
                   </UFormField>
 
                   <UFormField
+                    v-if="
+                      relatedIdentifier.relationType === 'Other' ||
+                      relatedIdentifier.relationTypeInformation
+                    "
+                    :name="`relatedIdentifiers.${iIndex}.relationTypeInformation`"
+                    label="Relation Description"
+                    description="Explain the relationship. Recommended when the relation type is Other, which says nothing on its own."
+                  >
+                    <UInput
+                      v-model="relatedIdentifier.relationTypeInformation"
+                      class="w-full"
+                      placeholder="e.g., Is poster version of"
+                    />
+                  </UFormField>
+
+                  <UFormField
                     :name="`relatedIdentifiers.${iIndex}.resourceTypeGeneral`"
                     label="Resource Type"
                     description="The general type of the related resource"
@@ -2081,6 +2097,7 @@ const moveCreator = (index: number, direction: "up" | "down") => {
                       relatedIdentifier: '',
                       relatedIdentifierType: '',
                       relationType: '',
+                      relationTypeInformation: undefined,
                       resourceTypeGeneral: undefined,
                     })
                   "

@@ -80,8 +80,16 @@
     "value": "PhysicalObject"
   },
   {
+    "label": "Poster",
+    "value": "Poster"
+  },
+  {
     "label": "Preprint",
     "value": "Preprint"
+  },
+  {
+    "label": "Presentation",
+    "value": "Presentation"
   },
   {
     "label": "Project",
