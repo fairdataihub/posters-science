@@ -11,7 +11,7 @@ type ConferencePosting = {
   conferenceEndDate?: string | null;
   conferenceAcronym?: string | null;
   conferenceSeries?: string | null;
-  _source?: string;
+  _sources?: string[];
   collectionDate?: string | null;
   conferenceCategories?: string[] | null;
   conferenceText?: string | null;
@@ -73,7 +73,7 @@ export default defineEventHandler(async () => {
       conferenceEndDate: conference.conferenceEndDate,
       conferenceUri: conference.conferenceUri,
       conferenceSeries: conference.conferenceSeries,
-      source: conference._source,
+      source: (conference._sources ?? []).join(", "),
     }));
 
   return { options };

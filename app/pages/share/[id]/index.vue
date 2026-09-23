@@ -635,6 +635,33 @@ const conferenceItemsToShow = computed(() => {
   });
 });
 
+type ConferenceDataEntry = (typeof conferenceDataMap.value)[string];
+
+function missingConferenceFieldLabels(data: ConferenceDataEntry): string[] {
+  const missing: string[] = [];
+
+  if (data.conferenceYear == null || Number.isNaN(data.conferenceYear)) {
+    missing.push("Conference year");
+  }
+  if (!data.conferenceLocation?.trim()) {
+    missing.push("Location");
+  }
+  if (!data.conferenceAcronym?.trim()) {
+    missing.push("Acronym");
+  }
+  if (!data.conferenceUri?.trim()) {
+    missing.push("Conference Website");
+  }
+  if (!data.conferenceStartDate?.trim()) {
+    missing.push("Conference start date");
+  }
+  if (!data.conferenceEndDate?.trim()) {
+    missing.push("Conference end date");
+  }
+
+  return missing;
+}
+
 function applyConferenceSelection(name: string) {
   if (!state.conference) return;
 
@@ -799,7 +826,26 @@ watch(
 );
 
 function handleConferenceSelection(name: string) {
+  const conferenceData = conferenceDataMap.value[name];
   applyConferenceSelection(name);
+
+  if (!conferenceData) return;
+
+  const missing = missingConferenceFieldLabels(conferenceData);
+  if (missing.length === 0) return;
+
+  const list =
+    missing.length === 1
+      ? missing[0]
+      : `${missing.slice(0, -1).join(", ")} and ${missing.at(-1)}`;
+
+  toast.add({
+    title: "Some conference details were not found",
+    description: `Please fill in manually: ${list}.`,
+    color: "warning",
+    icon: "i-lucide-info",
+    duration: 8000,
+  });
 }
 
 const savingDraft = ref(false);
