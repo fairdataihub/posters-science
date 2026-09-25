@@ -1,3 +1,5 @@
+import { normalizeVersionRelatedIdentifiers } from "../../../utils/posterVersions";
+
 export default defineEventHandler(async (event) => {
   const session = await requireUserSession(event);
   const { user } = session;
@@ -13,6 +15,9 @@ export default defineEventHandler(async (event) => {
 
   const job = await prisma.extractionJob.findFirst({
     where: { id: jobId, poster: { userId: user.id } },
+    include: {
+      poster: { select: { imageUrl: true, title: true, description: true } },
+    },
   });
 
   if (!job) {
@@ -33,32 +38,66 @@ export default defineEventHandler(async (event) => {
         ? "https://sandbox.posters.science"
         : "https://posters.science";
 
+    const versionPoster = await prisma.poster.findUnique({
+      where: { id: job.posterId },
+      select: { id: true, versionRootId: true, versionSequence: true },
+    });
+    const rootPosterId = versionPoster
+      ? posterFamilyRootId(versionPoster)
+      : job.posterId;
+    const previousVersion = versionPoster?.versionRootId
+      ? await prisma.poster.findFirst({
+          where: {
+            status: "published",
+            versionSequence: { lt: versionPoster.versionSequence },
+            ...posterFamilyWhere(rootPosterId),
+          },
+          orderBy: { versionSequence: "desc" },
+          select: { posterMetadata: { select: { doi: true } } },
+        })
+      : null;
     const meta = await prisma.posterMetadata.findUnique({
       where: { posterId: job.posterId },
-      select: { relatedIdentifiers: true },
+      select: { relatedIdentifiers: true, version: true },
     });
 
     if (meta) {
       const existing = Array.isArray(meta.relatedIdentifiers)
-        ? (meta.relatedIdentifiers as Array<{ relatedIdentifier?: string }>)
+        ? (meta.relatedIdentifiers as Array<{
+            relatedIdentifier?: string;
+            relatedIdentifierType?: string;
+            relationType?: string;
+            resourceTypeGeneral?: string;
+          }>)
         : [];
+      const canonicalUrl = `${baseUrl}/discover/${rootPosterId}`;
       const alreadyPresent = existing.some(
-        (r) => r.relatedIdentifier === `${baseUrl}/discover/${job.posterId}`,
+        (r) => r.relatedIdentifier === canonicalUrl,
       );
+      const previousDoi = previousVersion?.posterMetadata?.doi;
+      const { relatedIdentifiers, changed: versionRelationsChanged } =
+        normalizeVersionRelatedIdentifiers(existing, previousDoi);
+      const assignedVersion = versionPoster?.versionRootId
+        ? posterVersionLabel(versionPoster.versionSequence)
+        : null;
 
       if (!alreadyPresent) {
+        relatedIdentifiers.push({
+          relatedIdentifier: canonicalUrl,
+          relatedIdentifierType: "URL",
+          relationType: "IsDescribedBy",
+        });
+      }
+      if (
+        !alreadyPresent ||
+        versionRelationsChanged ||
+        (assignedVersion && meta.version !== assignedVersion)
+      ) {
         await prisma.posterMetadata.update({
           where: { posterId: job.posterId },
           data: {
-            relatedIdentifiers: [
-              ...existing,
-              {
-                relatedIdentifier: `${baseUrl}/discover/${job.posterId}`,
-                relatedIdentifierType: "URL",
-                relationType: "IsDescribedBy",
-                resourceTypeGeneral: "Other",
-              },
-            ] as never,
+            relatedIdentifiers: relatedIdentifiers as never,
+            ...(assignedVersion && { version: assignedVersion }),
           },
         });
       }
@@ -71,5 +110,8 @@ export default defineEventHandler(async (event) => {
     completed: job.completed,
     posterId: job.posterId,
     error: job.error,
+    imageUrl: job.poster.imageUrl,
+    title: job.poster.title,
+    description: job.poster.description,
   };
 });

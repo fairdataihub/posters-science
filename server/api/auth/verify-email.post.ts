@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { createHash } from "node:crypto";
+import { logwatch } from "../../utils/logwatch";
 
 const verifySchema = z.object({
   token: z.string(),
@@ -25,10 +26,38 @@ export default defineEventHandler(async (event) => {
   });
 
   if (!user) {
+    logwatch.warn({
+      action: "auth.verify-email",
+      message: "Verification link did not match any account",
+      reason: "invalid",
+    });
+
     throw createError({
       statusCode: 404,
-      statusMessage: "Invalid or expired verification token",
+      statusMessage:
+        "This verification link is not valid. Request a new one to continue.",
     });
+  }
+
+  // Verifying twice is not a failure. The token stays on the row after a
+  // successful verification precisely so that a second click, whether a reload
+  // or the link opened again from the inbox, is still recognized and reported
+  // as success instead of as a broken link. Replaying a spent token does
+  // nothing, since the only thing it can do is set a flag that is already set.
+  // Checked ahead of the expiry test so a late second click reads as success
+  // too.
+  if (user.emailVerified) {
+    logwatch.info({
+      action: "auth.verify-email",
+      message:
+        "Verification link opened again for an account that is already verified",
+      reason: "already-verified",
+      userId: user.id,
+    });
+
+    return {
+      message: "Your email address is already verified. You can log in.",
+    };
   }
 
   // Check if the token has expired
@@ -36,22 +65,35 @@ export default defineEventHandler(async (event) => {
     user.emailVerificationTokenExpires &&
     user.emailVerificationTokenExpires < new Date()
   ) {
+    logwatch.warn({
+      action: "auth.verify-email",
+      message: "Verification link has expired",
+      reason: "expired",
+      userId: user.id,
+      expiredAt: user.emailVerificationTokenExpires,
+    });
+
     throw createError({
       statusCode: 410,
       statusMessage:
-        "Verification token has expired. Please request a new one.",
+        "This verification link has expired. Request a new one to continue.",
     });
   }
 
-  // Mark email as verified and clear the token
+  // Mark email as verified. The token is deliberately left in place, see above.
   await prisma.user.update({
     data: {
-      emailVerificationToken: null,
-      emailVerificationTokenExpires: null,
       emailVerified: true,
       emailVerifiedAt: new Date(),
     },
     where: { id: user.id },
+  });
+
+  logwatch.info({
+    action: "auth.verify-email",
+    message: "Email verified",
+    reason: "verified",
+    userId: user.id,
   });
 
   return { message: "Email successfully verified! You can now log in." };

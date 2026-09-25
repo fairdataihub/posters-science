@@ -14,6 +14,109 @@ export default defineEventHandler(async (event) => {
 
   const { user } = session;
   const userId = user.id;
+  const posterIdInt = Number.parseInt(posterId, 10);
+  const poster = Number.isFinite(posterIdInt)
+    ? await prisma.poster.findFirst({
+        where: { id: posterIdInt, userId },
+        select: {
+          id: true,
+          versionRootId: true,
+          versionSequence: true,
+          zenodoDepositions: { select: { depositionId: true, status: true } },
+        },
+      })
+    : null;
+  const previousVersion = poster?.versionRootId
+    ? await prisma.poster.findFirst({
+        where: {
+          userId,
+          status: "published",
+          versionSequence: { lt: poster.versionSequence },
+          ...posterFamilyWhere(poster.versionRootId),
+        },
+        orderBy: { versionSequence: "desc" },
+        select: { posterMetadata: { select: { license: true } } },
+      })
+    : null;
+  const suggestedLicense =
+    previousVersion?.posterMetadata?.license ?? undefined;
+  let linkedDepositionId =
+    poster?.zenodoDepositions?.status === "draft"
+      ? poster.zenodoDepositions.depositionId
+      : undefined;
+  let linkedDeposition:
+    | {
+        id: number;
+        title: string;
+        version?: string;
+        doi?: string;
+        url: string;
+        isDraft: boolean;
+      }
+    | undefined;
+
+  if (linkedDepositionId && poster) {
+    const posterDetails = await prisma.poster.findUnique({
+      where: { id: poster.id },
+      select: {
+        title: true,
+        posterMetadata: { select: { version: true, doi: true } },
+      },
+    });
+    linkedDeposition = {
+      id: linkedDepositionId,
+      title: posterDetails?.title ?? "Poster version draft",
+      ...(posterDetails?.posterMetadata?.version && {
+        version: posterDetails.posterMetadata.version,
+      }),
+      ...(posterDetails?.posterMetadata?.doi && {
+        doi: posterDetails.posterMetadata.doi,
+      }),
+      url: `${config.zenodoEndpoint}/uploads/${linkedDepositionId}`,
+      isDraft: true,
+    };
+  }
+
+  if (!linkedDepositionId && poster?.versionRootId) {
+    const predecessor = await prisma.poster.findFirst({
+      where: {
+        userId,
+        status: "published",
+        versionSequence: { lt: poster.versionSequence },
+        ...posterFamilyWhere(poster.versionRootId),
+      },
+      orderBy: { versionSequence: "desc" },
+      select: {
+        title: true,
+        posterMetadata: { select: { version: true, doi: true } },
+        zenodoDepositions: {
+          select: {
+            depositionId: true,
+            lastPublishedZenodoDoi: true,
+          },
+        },
+      },
+    });
+    linkedDepositionId = predecessor?.zenodoDepositions?.depositionId;
+    if (linkedDepositionId && predecessor) {
+      linkedDeposition = {
+        id: linkedDepositionId,
+        title: predecessor.title,
+        ...(predecessor.posterMetadata?.version && {
+          version: predecessor.posterMetadata.version,
+        }),
+        ...((predecessor.zenodoDepositions?.lastPublishedZenodoDoi ??
+          predecessor.posterMetadata?.doi) && {
+          doi:
+            predecessor.zenodoDepositions?.lastPublishedZenodoDoi ??
+            predecessor.posterMetadata?.doi ??
+            undefined,
+        }),
+        url: `${config.zenodoEndpoint}/records/${linkedDepositionId}`,
+        isDraft: false,
+      };
+    }
+  }
 
   // Check if Zenodo is configured
   // redirectUri is checked too: without it Zenodo rejects the authorize request
@@ -61,6 +164,10 @@ export default defineEventHandler(async (event) => {
       zenodoToken,
       message,
       existingDepositions,
+      linkedDepositionId,
+      linkedDeposition,
+      suggestedLicense,
+      isVersion: Boolean(poster?.versionRootId),
     };
   } catch (error: unknown) {
     const errorMessage =

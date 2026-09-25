@@ -6,23 +6,27 @@ import {
   RESOURCE_TYPE_OPTIONS,
   RELATION_TYPE_OPTIONS,
 } from "@/utils/poster_schema";
+import { resolveDoiUrl } from "@/utils/doi";
 import type { WithContext, ScholarlyArticle } from "schema-dts";
+
+type PosterIdentifier = {
+  identifier?: string;
+  identifierType?: string;
+  url?: string;
+};
 
 const route = useRoute();
 const posterId = route.params.posterid as string;
 
 const { loggedIn } = useUserSession();
 const toast = useToast();
-const { siteEnv } = useRuntimeConfig().public;
 
-// Shares the global feedback modal state owned by the default layout, so we can
-// open the same "Share Your Feedback" dialog from this page.
-const feedbackOpen = useState("feedbackOpen", () => false);
-function openFeedback() {
-  feedbackOpen.value = true;
-}
-
-const { data: apiData, error } = await useFetch(`/api/discover/${posterId}`);
+const versionQuery = Array.isArray(route.query.version)
+  ? route.query.version[0]
+  : route.query.version;
+const { data: apiData, error } = await useFetch(
+  `/api/discover/${posterId}${versionQuery ? `?version=${encodeURIComponent(versionQuery)}` : ""}`,
+);
 
 if (error.value) {
   console.error(error.value);
@@ -38,6 +42,27 @@ if (error.value) {
 
 const api = apiData.value as any;
 const conf = api?.conference;
+const versionHistory = (api?.versions ?? []) as Array<{
+  versionSequence: number;
+  publishedAt?: string | null;
+  posterMetadata?: { version?: string | null; doi?: string | null } | null;
+}>;
+
+function historyVersionLabel(entry: (typeof versionHistory)[number]) {
+  return (
+    entry.posterMetadata?.version?.trim() ||
+    (api?.automated ? "Unspecified" : String(entry.versionSequence))
+  );
+}
+
+function historyVersionUrl(entry: (typeof versionHistory)[number]) {
+  // The API resolves this as public metadata first, then as the internal
+  // sequence for older entries that do not have a public version label.
+  const version =
+    entry.posterMetadata?.version?.trim() || String(entry.versionSequence);
+
+  return `/discover/${posterId}?version=${encodeURIComponent(version)}`;
+}
 
 const liked = ref(api?.liked ?? false);
 
@@ -45,6 +70,20 @@ const liking = ref(false);
 
 const getDicebearUrl = (seed: string) =>
   `https://api.dicebear.com/9.x/shapes/svg?seed=${seed}`;
+
+const relatedIdentifierUrl = (relatedIdentifier: {
+  relatedIdentifier?: string;
+  relatedIdentifierType?: string;
+}) => {
+  const identifier = relatedIdentifier.relatedIdentifier?.trim();
+  if (!identifier) return "";
+  if (/^https?:\/\//i.test(identifier)) return identifier;
+  if (relatedIdentifier.relatedIdentifierType === "DOI") {
+    return resolveDoiUrl(identifier);
+  }
+
+  return "";
+};
 
 const onImageError = (event: Event, seed: string) => {
   const img = event.target as HTMLImageElement;
@@ -101,7 +140,7 @@ const poster = ref({
   size: api?.size ?? null,
   domain: api?.domain ?? null,
   keywords: api?.keywords ?? [],
-  identifiers: (api?.identifiers ?? []) as any[],
+  identifiers: (api?.identifiers ?? []) as PosterIdentifier[],
   likes: api?.likes ?? 0,
   views: api?.views ?? 0,
   references: (api?.relatedIdentifiers ?? []).map((ri: any, index: number) => ({
@@ -115,11 +154,7 @@ const poster = ref({
       ri.relationType ??
       "References",
     doi: ri.relatedIdentifier ?? "",
-    url: ri.relatedIdentifier?.startsWith("http")
-      ? ri.relatedIdentifier
-      : ri.relatedIdentifier
-        ? `https://doi.org/${ri.relatedIdentifier}`
-        : "",
+    url: relatedIdentifierUrl(ri),
   })),
   funding: (api?.fundingReferences ?? []).map((f: any) => ({
     agency: f.funderName ?? "Unknown Funder",
@@ -143,31 +178,87 @@ const poster = ref({
 
 const resolvedPosterUrl = computed(() => {
   if (!poster.value.doi) return null;
-  const isZenodoDoi = poster.value.doi.includes("/zenodo.");
-  if (!isZenodoDoi) return `https://doi.org/${poster.value.doi}`;
 
-  const isSandboxDoi = poster.value.doi.startsWith("10.5072/");
-  const isSandboxEnv =
-    siteEnv === "staging" || siteEnv === "development" || siteEnv === "dev";
-
-  if (isSandboxDoi || isSandboxEnv) {
-    const recordId = poster.value.doi.split("/zenodo.")[1];
-
-    return `https://sandbox.zenodo.org/records/${recordId}`;
-  }
-
-  return `https://doi.org/${poster.value.doi}`;
+  return resolveDoiUrl(poster.value.doi);
 });
 
 const posterSource = computed(() => {
   if (!poster.value.automated) return null;
-  const doi = poster.value.doi ?? "";
-  const imageUrl = api?.imageUrl ?? "";
-  if (doi.startsWith("10.6084/") || imageUrl.includes("/figshare_"))
-    return "figshare";
+  const publisher = poster.value.publisher?.trim().toLowerCase() ?? "";
+  if (publisher.includes("figshare")) return "figshare";
+  if (publisher.includes("zenodo")) return "zenodo";
 
-  return "zenodo";
+  const imageUrl = poster.value.imageUrl.toLowerCase();
+  if (imageUrl.includes("/figshare_")) return "figshare";
+  if (imageUrl.includes("/zenodo_")) return "zenodo";
+
+  const doi = poster.value.doi?.trim().toLowerCase() ?? "";
+  if (doi.includes("zenodo")) return "zenodo";
+  if (doi.startsWith("10.6084/")) return "figshare";
+
+  return null;
 });
+
+function identifierLabel(identifier: PosterIdentifier) {
+  const type = identifier.identifierType?.trim() || "Other";
+  const value = identifier.identifier?.trim() || "";
+
+  if (type.toUpperCase() === "OTHER" && /^\d+$/.test(value)) {
+    if (posterSource.value === "figshare") return "Figshare ID";
+    if (posterSource.value === "zenodo") return "Zenodo ID";
+  }
+
+  return type;
+}
+
+function identifierUrl(identifier: PosterIdentifier) {
+  const type = identifier.identifierType?.trim().toUpperCase() || "OTHER";
+  const value = identifier.identifier?.trim() || "";
+  if (!value) return null;
+
+  const suppliedUrl = identifier.url?.trim() || "";
+  if (/^https?:\/\//i.test(suppliedUrl)) return suppliedUrl;
+
+  if (type === "DOI") return resolveDoiUrl(value);
+  if (type === "HANDLE") {
+    const handle = value.replace(
+      /^https?:\/\/(?:hdl\.handle\.net|handle\.net)\//i,
+      "",
+    );
+
+    return `https://hdl.handle.net/${handle}`;
+  }
+  if (["URL", "PURL", "W3ID"].includes(type) && /^https?:\/\//i.test(value)) {
+    return value;
+  }
+  if (type !== "OTHER" || !/^\d+$/.test(value)) return null;
+
+  if (posterSource.value === "zenodo") {
+    return `https://zenodo.org/records/${value}`;
+  }
+  if (posterSource.value === "figshare") {
+    const handle = poster.value.identifiers.find(
+      (candidate) =>
+        candidate.identifierType?.trim().toUpperCase() === "HANDLE" &&
+        candidate.identifier?.trim(),
+    );
+    if (handle) return identifierUrl(handle);
+
+    // Figshare HTML URLs contain an institution domain, item type, and slug.
+    // Resolve those through the official Figshare API on our server.
+    return `/api/repository/figshare/${value}`;
+  }
+
+  return null;
+}
+
+function identifierDisplayValue(identifier: PosterIdentifier) {
+  if (identifier.identifierType?.trim().toUpperCase() === "HANDLE") {
+    return identifierUrl(identifier) ?? identifier.identifier;
+  }
+
+  return identifier.identifier;
+}
 
 const licenseInfo = computed(() => {
   if (!poster.value.license) return null;
@@ -371,6 +462,15 @@ const tabItems = [
     icon: "fluent:clover-48-filled",
     slot: "overview",
   },
+  ...(versionHistory.length > 1
+    ? [
+        {
+          label: "Versions",
+          icon: "i-lucide-history",
+          slot: "versions",
+        },
+      ]
+    : []),
   {
     label: "Related resources",
     icon: "ooui:reference",
@@ -592,7 +692,7 @@ const tabItems = [
               v-if="
                 poster.imageUrl && poster.imageUrl.search('dicebear') === -1
               "
-              class="hidden sm:col-span-3 sm:flex sm:items-start sm:justify-center"
+              class="flex items-start justify-center sm:col-span-3"
             >
               <NuxtLink
                 v-if="resolvedPosterUrl"
@@ -606,6 +706,14 @@ const tabItems = [
                   @error="onImageError($event, poster.id)"
                 />
               </NuxtLink>
+
+              <img
+                v-else
+                :src="poster.imageUrl"
+                alt="Poster thumbnail"
+                class="max-h-64 w-full rounded-lg object-contain shadow-sm"
+                @error="onImageError($event, poster.id)"
+              />
             </div>
           </div>
         </UContainer>
@@ -761,29 +869,29 @@ const tabItems = [
                         class="flex items-center gap-2 text-sm"
                       >
                         <UBadge color="neutral" variant="soft" size="sm">
-                          {{ identifier.identifierType }}
+                          {{ identifierLabel(identifier) }}
                         </UBadge>
 
-                        <span
-                          class="font-mono text-gray-700 dark:text-gray-300"
-                        >
-                          {{ identifier.identifier }}
-                        </span>
-
-                        <NuxtLink
-                          v-if="identifier.identifierType === 'DOI'"
-                          :to="
-                            identifier.identifierType === 'DOI'
-                              ? `https://doi.org/${identifier.identifier}`
-                              : identifier.url
-                          "
+                        <a
+                          v-if="identifierUrl(identifier)"
+                          :href="identifierUrl(identifier)!"
                           target="_blank"
+                          rel="noopener noreferrer"
+                          class="inline-flex items-center gap-1 font-mono text-blue-600 hover:underline dark:text-blue-400"
                         >
+                          {{ identifierDisplayValue(identifier) }}
                           <UIcon
                             name="gridicons:external"
-                            class="flex items-center justify-center"
+                            class="size-4 shrink-0"
                           />
-                        </NuxtLink>
+                        </a>
+
+                        <span
+                          v-else
+                          class="font-mono text-gray-700 dark:text-gray-300"
+                        >
+                          {{ identifierDisplayValue(identifier) }}
+                        </span>
                       </div>
                     </div>
                   </UCard>
@@ -827,6 +935,47 @@ const tabItems = [
                     </div>
                   </UCard>
                 </div>
+              </template>
+
+              <template #versions>
+                <UCard class="mt-4">
+                  <template #header>
+                    <h2 class="text-xl font-semibold">Version History</h2>
+                  </template>
+
+                  <div class="space-y-2">
+                    <a
+                      v-for="entry in versionHistory"
+                      :key="entry.versionSequence"
+                      :href="historyVersionUrl(entry)"
+                      class="border-default hover:bg-elevated flex items-center justify-between rounded-lg border px-3 py-3 text-sm"
+                    >
+                      <span class="font-medium">
+                        Version
+                        {{ historyVersionLabel(entry) }}
+                      </span>
+
+                      <UBadge
+                        :color="
+                          entry.versionSequence === api?.versionSequence
+                            ? 'primary'
+                            : 'neutral'
+                        "
+                        variant="soft"
+                      >
+                        {{
+                          entry.versionSequence === api?.versionSequence
+                            ? "Viewing"
+                            : entry.publishedAt
+                              ? new Intl.DateTimeFormat("en-US", {
+                                  dateStyle: "medium",
+                                }).format(new Date(entry.publishedAt))
+                              : "Published"
+                        }}
+                      </UBadge>
+                    </a>
+                  </div>
+                </UCard>
               </template>
 
               <template #references>

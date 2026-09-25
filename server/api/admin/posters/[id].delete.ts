@@ -14,7 +14,13 @@ export default defineEventHandler(async (event) => {
 
   const existing = await prisma.poster.findUnique({
     where: { id: posterId },
-    select: { id: true, title: true, userId: true, status: true },
+    select: {
+      id: true,
+      title: true,
+      userId: true,
+      status: true,
+      versionRootId: true,
+    },
   });
   if (!existing) {
     throw createError({ statusCode: 404, statusMessage: "Poster not found" });
@@ -31,8 +37,9 @@ export default defineEventHandler(async (event) => {
       });
     }
 
-    await prisma.poster.update({
-      where: { id: posterId },
+    const rootId = posterFamilyRootId(existing);
+    await prisma.poster.updateMany({
+      where: posterFamilyWhere(rootId),
       data: { tombstone: true, tombedReason: body.data.reason },
     });
 

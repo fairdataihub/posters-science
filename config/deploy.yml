@@ -83,9 +83,12 @@ env:
     - NUXT_SITE_URL
     - NUXT_SITE_ENV
     - NUXT_RESEND_API_KEY
+    - NUXT_LOGWATCH_URL
     - NUXT_UMAMI_USERNAME
     - NUXT_UMAMI_PASSWORD
     - NUXT_UMAMI_WEBSITE_ID
+    # FEATURE FLAG (versioning): value is set per environment in the deploy workflows
+    - NUXT_PUBLIC_VERSIONING_ENABLED
 # Aliases are triggered with "bin/kamal <alias>". You can overwrite arguments on invocation:
 # "bin/kamal app logs -r job" will tail logs from the first server in the job section.
 # These are convenient shortcuts for common operations
