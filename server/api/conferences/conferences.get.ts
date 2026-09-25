@@ -1,7 +1,13 @@
+import {
+  formatConferenceDate,
+  getConferenceAggregatorPool,
+  type ConferenceAggregatorRow,
+} from "../../utils/conferenceAggregatorPg";
+
 type ConferencePosting = {
   id: string;
   conferenceName: string;
-  conferenceYear: number;
+  conferenceYear?: number;
   conferenceLocation?: string | null;
   conferenceUri?: string | null;
   conferenceIdentifier?: string;
@@ -18,47 +24,38 @@ type ConferencePosting = {
   submissionDeadline?: string | null;
 };
 
-type ConferenceAggregatorJson =
-  | { metadata?: unknown; postings?: ConferencePosting[] }
-  | ConferencePosting[];
+function rowToPosting(row: ConferenceAggregatorRow): ConferencePosting {
+  return {
+    id: row.id,
+    conferenceName: row.conferenceName,
+    conferenceYear: row.conferenceYear ?? undefined,
+    conferenceLocation: row.conferenceLocation,
+    conferenceUri: row.conferenceUri,
+    conferenceStartDate: formatConferenceDate(row.conferenceStartDate),
+    conferenceEndDate: formatConferenceDate(row.conferenceEndDate),
+    conferenceAcronym: row.conferenceAcronym,
+    conferenceSeries: row.conferenceSeries,
+    _sources: row.sources,
+    collectionDate: formatConferenceDate(row.collectionDate),
+    conferenceCategories: row.conferenceCategories,
+    conferenceText: row.conferenceText,
+    submissionDeadline: formatConferenceDate(row.submissionDeadline),
+  };
+}
 
-export default defineEventHandler(async () => {
-  // Get the conference postings from the main branch of the conference-aggregator repository.
-  const postingsUrl =
-    "https://raw.githubusercontent.com/fairdataihub/conference-aggregator/main/conference-postings.json";
-
-  const res = await fetch(postingsUrl, {
-    headers: {
-      "User-Agent": "posters-science/conferences.get",
-    },
-  });
-
-  if (!res.ok) {
-    throw new Error(
-      `Failed to fetch conference postings from ${postingsUrl}: ${res.status} ${res.statusText}`,
-    );
-  }
-
-  // Parse the conference postings from the JSON response.
-  const json = (await res.json()) as ConferenceAggregatorJson;
-  const postings: ConferencePosting[] = Array.isArray(json) ? json : (json.postings ?? []);
-
-  // Create a map to store the conference data by conference name.
+function postingsToOptions(postings: ConferencePosting[]) {
   const conferences = new Map<string, ConferencePosting>();
 
-  // Store the conference data in a map by conference name.
   for (const posting of postings) {
     const key = posting.conferenceName;
     if (!key) continue;
 
-    const existing = conferences.get(key);
-    if (!existing) {
+    if (!conferences.has(key)) {
       conferences.set(key, posting);
     }
   }
 
-  // Sort the conferences by name and return the options.
-  const options = [...conferences.values()]
+  return [...conferences.values()]
     .sort((a, b) => a.conferenceName.localeCompare(b.conferenceName))
     .map((conference) => ({
       label: conference.conferenceName,
@@ -75,6 +72,67 @@ export default defineEventHandler(async () => {
       conferenceSeries: conference.conferenceSeries,
       source: (conference._sources ?? []).join(", "),
     }));
+}
+
+export default defineEventHandler(async (event) => {
+  if (!process.env.CONFERENCE_AGGREGATOR_DATABASE_URL) {
+    throw createError({
+      statusCode: 500,
+      statusMessage: "CONFERENCE_AGGREGATOR_DATABASE_URL is not configured",
+    });
+  }
+
+  const query = getQuery(event);
+  const searchRaw = query.search ?? query.q;
+  const search =
+    typeof searchRaw === "string"
+      ? searchRaw.trim()
+      : Array.isArray(searchRaw)
+        ? String(searchRaw[0] ?? "").trim()
+        : "";
+
+  if (!search) {
+    return { options: [] };
+  }
+
+  const pattern = `%${search}%`;
+
+  let result;
+  try {
+    result = await getConferenceAggregatorPool().query<ConferenceAggregatorRow>(
+      `
+        SELECT
+          id,
+          "collectionDate",
+          sources,
+          "conferenceName",
+          "conferenceYear",
+          "conferenceUri",
+          "conferenceLocation",
+          "conferenceStartDate",
+          "conferenceEndDate",
+          "conferenceAcronym",
+          "conferenceSeries",
+          "conferenceCategories",
+          "conferenceText",
+          "submissionDeadline"
+        FROM "Conference"
+        WHERE
+          "conferenceName" ILIKE $1
+          OR COALESCE("conferenceAcronym", '') ILIKE $1
+        ORDER BY "conferenceName" ASC
+      `,
+      [pattern],
+    );
+  } catch (error) {
+    throw createError({
+      statusCode: 502,
+      statusMessage: "Failed to load conferences from aggregator database",
+      cause: error,
+    });
+  }
+
+  const options = postingsToOptions(result.rows.map(rowToPosting));
 
   return { options };
 });

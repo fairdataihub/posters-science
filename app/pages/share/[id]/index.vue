@@ -605,34 +605,45 @@ const conferenceDataMap = ref<
   >
 >({});
 
+// Set the minimum search length for the conference search to reduce API calls and load times
+const CONFERENCE_MIN_SEARCH_LENGTH = 2;
+
 const conferenceSearchTermRaw = ref("");
 const conferenceSearchTerm = ref("");
 
 let conferenceSearchDebounceTimer: ReturnType<typeof setTimeout> | null =
   null;
-
+let conferenceSearchAbort: AbortController | null = null;
+let conferenceSearchRequestId = 0;
+const conferenceSearchLoading = ref(false);
 
 watch(conferenceSearchTermRaw, (value) => {
   if (conferenceSearchDebounceTimer)
     clearTimeout(conferenceSearchDebounceTimer);
+
+  const trimmed = value.trim();
+  if (trimmed.length < CONFERENCE_MIN_SEARCH_LENGTH) {
+    conferenceSearchTerm.value = "";
+    conferenceNameOptions.value = [];
+    conferenceSearchAbort?.abort();
+    conferenceSearchAbort = null;
+    conferenceSearchLoading.value = false;
+    return;
+  }
+
+  conferenceSearchLoading.value = true;
   conferenceSearchDebounceTimer = setTimeout(() => {
     conferenceSearchTerm.value = value;
   }, 500);
 });
 
 const conferenceItemsToShow = computed(() => {
-  const query = conferenceSearchTerm.value.trim().toLowerCase();
-  if (!query) return [];
-
-  // Nuxt UI's SelectMenu ignores built-in filtering for this component setup,
-  // so we filter ourselves to keep the rendered option list small.
-  return conferenceNameOptions.value.filter((opt) => {
-    const label = opt.label.toLowerCase();
-    if (label.includes(query)) return true;
-
-    const acronym = (opt.acronym ?? "").toLowerCase();
-    return acronym.includes(query);
-  });
+  if (
+    conferenceSearchTerm.value.trim().length < CONFERENCE_MIN_SEARCH_LENGTH
+  ) {
+    return [];
+  }
+  return conferenceNameOptions.value;
 });
 
 type ConferenceDataEntry = (typeof conferenceDataMap.value)[string];
@@ -691,56 +702,73 @@ function applyConferenceSelection(name: string) {
   });
 }
 
-// Fetch conference data on scraper data
-const loadConferenceOptions = async () => {
+function mergeConferenceOptionsFromApi(options: any[]) {
+  conferenceNameOptions.value = options.map((opt: any) => ({
+    label: opt.label,
+    value: opt.value,
+    acronym: opt.conferenceAcronym ?? "",
+  }));
+
+  for (const opt of options) {
+    conferenceDataMap.value[opt.value] = {
+      conferenceName: opt.conferenceName,
+      conferenceYear: opt.conferenceYear,
+      conferenceAcronym: opt.conferenceAcronym,
+      conferenceLocation: opt.conferenceLocation,
+      conferenceIdentifier: opt.conferenceIdentifier,
+      conferenceIdentifierType: opt.conferenceIdentifierType,
+      conferenceStartDate: opt.conferenceStartDate,
+      conferenceEndDate: opt.conferenceEndDate,
+      conferenceUri: opt.conferenceUri,
+      conferenceSeries: opt.conferenceSeries,
+      source: opt.source,
+    };
+  }
+}
+
+const loadConferenceOptions = async (search: string) => {
+  const q = search.trim();
+  if (!q || q.length < CONFERENCE_MIN_SEARCH_LENGTH) {
+    conferenceNameOptions.value = [];
+    conferenceSearchLoading.value = false;
+    return;
+  }
+
+  conferenceSearchAbort?.abort();
+  const controller = new AbortController();
+  conferenceSearchAbort = controller;
+  const requestId = ++conferenceSearchRequestId;
+  conferenceSearchLoading.value = true;
+
   try {
     conferenceOptionsError.value = null;
-    const response = (await $fetch("/api/conferences/conferences")) as any;
+    const response = (await $fetch("/api/conferences/conferences", {
+      query: { search: q },
+      signal: controller.signal,
+    })) as any;
+
+    if (requestId !== conferenceSearchRequestId) return;
 
     if (response?.options && Array.isArray(response.options)) {
-      // Create simple dropdown options
-      conferenceNameOptions.value = response.options.map((opt: any) => ({
-        label: opt.label,
-        value: opt.value,
-        acronym: opt.conferenceAcronym ?? "",
-      }));
-
-      // Build lookup map for quick access to full conference data
-      conferenceDataMap.value = {};
-      for (const opt of response.options) {
-        conferenceDataMap.value[opt.value] = {
-          conferenceName: opt.conferenceName,
-          conferenceYear: opt.conferenceYear,
-          conferenceAcronym: opt.conferenceAcronym,
-          conferenceLocation: opt.conferenceLocation,
-          conferenceIdentifier: opt.conferenceIdentifier,
-          conferenceIdentifierType: opt.conferenceIdentifierType,
-          conferenceStartDate: opt.conferenceStartDate,
-          conferenceEndDate: opt.conferenceEndDate,
-          conferenceUri: opt.conferenceUri,
-          conferenceSeries: opt.conferenceSeries,
-          source: opt.source,
-        };
-      }
-
-      if (state.conference?.conferenceName) {
-        applyConferenceSelection(state.conference.conferenceName);
-      }
+      mergeConferenceOptionsFromApi(response.options);
     } else {
-      // No options found: hide the dropdown.
       conferenceNameOptions.value = [];
     }
   } catch (error) {
+    if (controller.signal.aborted) return;
+    if (requestId !== conferenceSearchRequestId) return;
     conferenceOptionsError.value =
       error instanceof Error ? error.message : String(error);
-    // Set the dropdown to empty (user can still enter manually)
     conferenceNameOptions.value = [];
+  } finally {
+    if (requestId === conferenceSearchRequestId) {
+      conferenceSearchLoading.value = false;
+    }
   }
 };
 
-// Load on mount
-onMounted(() => {
-  loadConferenceOptions();
+watch(conferenceSearchTerm, (value) => {
+  loadConferenceOptions(value);
 });
 
 /** Extract a year from text (e.g. "ARVO 2025" or "Conference 25") for auto-fill. */
@@ -1913,7 +1941,7 @@ const moveCreator = (index: number, direction: "up" | "down") => {
           >
             <div class="space-y-4">
               <div
-                v-if="!conferenceOptionsError && conferenceNameOptions.length > 0"
+                v-if="!conferenceOptionsError"
                 class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 dark:border-gray-800 dark:bg-gray-900/40"
               >
                 <div
@@ -1925,6 +1953,7 @@ const moveCreator = (index: number, direction: "up" | "down") => {
                   v-model="selectedConference"
                   v-model:searchTerm="conferenceSearchTermRaw"
                   :items="conferenceItemsToShow"
+                  :loading="conferenceSearchLoading"
                   placeholder="Search conferences by name or acronym…"
                   value-key="value"
                   :ignore-filter="true"
@@ -1937,9 +1966,14 @@ const moveCreator = (index: number, direction: "up" | "down") => {
                       class="text-sm text-gray-500 dark:text-gray-400"
                     >
                       {{
-                        searchTerm
-                          ? "No conferences match your search."
-                          : "Start typing to search conferences…"
+                        conferenceSearchLoading
+                          ? "Searching conferences…"
+                          : !searchTerm?.trim()
+                            ? "Start typing to search conferences…"
+                            : searchTerm.trim().length <
+                                CONFERENCE_MIN_SEARCH_LENGTH
+                              ? `Type at least ${CONFERENCE_MIN_SEARCH_LENGTH} characters to search…`
+                              : "No conferences match your search."
                       }}
                     </span>
                   </template>
