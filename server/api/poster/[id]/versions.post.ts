@@ -369,8 +369,7 @@ export default defineEventHandler(async (event) => {
   };
 
   // A version only inherits a preview when it reuses the published poster file.
-  // Anything else needs its own, and the extraction worker renders a preview for
-  // every job it claims. Queueing that as a job status rather than asking the
+  // Anything else needs its own. Queueing that as a job status rather than asking the
   // extraction service over HTTP keeps this working from hosts that cannot reach
   // the service: the worker polls the database, so the request always arrives.
   const versionImageUrl = fileMode === "reuse" ? source.imageUrl : "";
