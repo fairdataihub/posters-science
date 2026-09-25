@@ -267,7 +267,8 @@ model ExtractionJob {
   filePath String
 
   completed Boolean @default(false)
-  status    String  @default("pending-extraction") // pending-extraction, processing, completed, failed
+  // pending-extraction, pending-thumbnail, processing, completed, failed
+  status    String  @default("pending-extraction")
   error     String? // Filled when job fails
 
   created DateTime @default(now())
