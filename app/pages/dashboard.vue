@@ -79,6 +79,14 @@ type VersionJobStatusResponse = {
   updatedAt?: string | Date;
 };
 
+// A draft's preview is queued for the extraction worker and arrives through
+// polling, so only a published poster gets an imageUrl back on the spot.
+type VersionThumbnailResponse = {
+  success: boolean;
+  queued: boolean;
+  imageUrl: string | null;
+};
+
 const posters = ref<Poster[]>([]);
 const showTombstonedPosters = useCookie<boolean>(
   "dashboard-show-tombstoned-posters",
@@ -223,6 +231,13 @@ const VERSION_POLL_FAST_INTERVAL = 3000;
 const VERSION_POLL_SLOW_INTERVAL = 10000;
 const VERSION_POLL_FAST_ATTEMPTS = 40;
 const VERSION_THUMBNAIL_REPAIR_ATTEMPTS = 5;
+// The worker's queue poll is the floor on how long a queued preview can take, so
+// keep watching well past one cycle before handing the card back to the user.
+const QUEUED_THUMBNAIL_POLL_INTERVAL = 3000;
+const QUEUED_THUMBNAIL_POLL_ATTEMPTS = 20;
+// Cleared on unmount so a queued preview watcher stops instead of writing into a
+// page the user has already left.
+let dashboardActive = true;
 // Preparation normally lands well inside this window, so anything longer gets
 // an explicit "taking longer than usual" note instead of a silent spinner.
 const VERSION_SLOW_AFTER_SECONDS = 330;
@@ -318,7 +333,14 @@ const currentVersionDraft = computed(
 const versionMetadataReady = computed(() => {
   const job = currentVersionDraft.value?.extractionJob;
 
-  return Boolean(!job || job.completed || job.status === "completed");
+  // A queued preview means the metadata is already saved and only the image is
+  // outstanding, so the panel should not send the user back to the first step.
+  return Boolean(
+    !job ||
+    job.completed ||
+    job.status === "completed" ||
+    job.status === "pending-thumbnail",
+  );
 });
 const versionThumbnailNeedsAttention = computed(
   () =>
@@ -353,6 +375,7 @@ const versionProgressStep = computed(() => {
   const status = draft.extractionJob?.status;
   if (status === "pending-extraction") return 1;
   if (status === "processing") return 2;
+  if (status === "pending-thumbnail") return 3;
   if (!versionMetadataReady.value) return 1;
 
   return draft.imageUrl ? 4 : 3;
@@ -669,13 +692,15 @@ function startVersionPolling(jobId: string, posterId?: number) {
 
     thumbnailRequested = true;
     try {
-      const result = await $fetch<{ imageUrl: string }>(
+      const result = await $fetch<VersionThumbnailResponse>(
         `/api/poster/${targetPosterId}/thumbnail`,
         { method: "POST" },
       );
       console.log("[versionJobPoll] thumbnail repair:", result);
       thumbnailRepairFailures = 0;
-      updateLocalVersionThumbnail(targetPosterId, result.imageUrl);
+      // A queued render returns no image. Polling continues either way and
+      // picks the preview up once the worker has written it.
+      updateLocalVersionThumbnail(targetPosterId, result.imageUrl ?? undefined);
     } catch (error) {
       console.error("[versionJobPoll] thumbnail repair failed:", error);
       // Allow another attempt on a later tick; the preview may still be saving.
@@ -862,11 +887,21 @@ async function retryVersionThumbnail() {
   versionPollingError.value = "";
 
   try {
-    const response = await $fetch<{ imageUrl: string }>(
+    const response = await $fetch<VersionThumbnailResponse>(
       `/api/poster/${draft.id}/thumbnail`,
       { method: "POST" },
     );
-    updateLocalVersionThumbnail(draft.id, response.imageUrl);
+
+    if (response.queued) {
+      // The worker has the request now, so hand the panel back to the poller
+      // rather than leaving it on a warning with nothing watching.
+      await refreshPosterList();
+      startVersionPolling(jobId, draft.id);
+
+      return;
+    }
+
+    updateLocalVersionThumbnail(draft.id, response.imageUrl ?? undefined);
     stopVersionPolling();
     await refreshPosterList();
   } catch (error) {
@@ -993,6 +1028,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  dashboardActive = false;
   stopVersionPolling();
   stopVersionClock();
 });
@@ -1072,6 +1108,45 @@ function toggleDescription(posterId: number) {
   expandedDescriptions.value = updated;
 }
 
+// A queued preview is rendered by the extraction worker rather than returned by
+// the request, so the card waits on the job instead of asking the user to
+// refresh. The worker claims from its queue on a poll interval, so this has to
+// outlast one of those cycles. Resolves true once the image lands.
+async function awaitQueuedThumbnail(posterId: number, jobId: string) {
+  for (
+    let attempt = 0;
+    attempt < QUEUED_THUMBNAIL_POLL_ATTEMPTS && dashboardActive;
+    attempt += 1
+  ) {
+    await new Promise((resolve) =>
+      setTimeout(resolve, QUEUED_THUMBNAIL_POLL_INTERVAL),
+    );
+
+    if (!dashboardActive) return false;
+
+    const status = await $fetch<VersionJobStatusResponse>(
+      `/api/poster/job/${jobId}`,
+    );
+
+    if (status.imageUrl) {
+      const localPoster = posters.value.find((item) => item.id === posterId);
+      if (localPoster) localPoster.imageUrl = status.imageUrl;
+
+      thumbnailCacheBust[posterId] = Date.now();
+
+      return true;
+    }
+
+    if (status.status === "failed") {
+      throw new Error(
+        status.error || "The poster preview could not be generated.",
+      );
+    }
+  }
+
+  return false;
+}
+
 async function regenerateThumbnail(poster: Poster) {
   regeneratingThumbnailIds.value = [
     ...regeneratingThumbnailIds.value,
@@ -1079,15 +1154,42 @@ async function regenerateThumbnail(poster: Poster) {
   ];
 
   try {
-    const response = await $fetch<{ success: boolean; imageUrl: string }>(
+    const response = await $fetch<VersionThumbnailResponse>(
       `/api/poster/${poster.id}/thumbnail`,
       {
         method: "POST",
       },
     );
 
+    if (response.queued) {
+      const jobId = poster.extractionJob?.id;
+      await refreshPosterList();
+
+      if (jobId && (await awaitQueuedThumbnail(poster.id, jobId))) {
+        toast.add({
+          title: "Thumbnail regenerated",
+          icon: "i-lucide-circle-check",
+          color: "success",
+        });
+
+        return;
+      }
+
+      toast.add({
+        title: "Poster preview still rendering",
+        description:
+          "The extraction service has the request. It will appear on this card once it lands.",
+        icon: "i-lucide-clock",
+        color: "info",
+      });
+
+      return;
+    }
+
     const localPoster = posters.value.find((item) => item.id === poster.id);
-    if (localPoster) localPoster.imageUrl = response.imageUrl;
+    if (localPoster && response.imageUrl) {
+      localPoster.imageUrl = response.imageUrl;
+    }
 
     thumbnailCacheBust[poster.id] = Date.now();
 

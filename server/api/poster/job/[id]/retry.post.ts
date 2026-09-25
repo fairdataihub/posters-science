@@ -17,7 +17,13 @@ export default defineEventHandler(async (event) => {
     select: {
       id: true,
       status: true,
-      poster: { select: { status: true, versionRootId: true } },
+      poster: {
+        select: {
+          status: true,
+          versionRootId: true,
+          posterMetadata: { select: { posterId: true } },
+        },
+      },
     },
   });
 
@@ -38,39 +44,36 @@ export default defineEventHandler(async (event) => {
   }
 
   const config = useRuntimeConfig(event);
-  if (!config.posterExtractionApi) {
-    throw createError({
-      statusCode: 503,
-      statusMessage: "Poster extraction is not configured",
-    });
-  }
+
+  // Re-queue only the work that is actually missing. A draft that copied its
+  // metadata has nothing to extract, and re-running extraction would overwrite
+  // the fields the user is about to edit.
+  const nextStatus = job.poster.posterMetadata
+    ? "pending-thumbnail"
+    : "pending-extraction";
 
   const pending = await prisma.extractionJob.update({
     where: { id: job.id },
-    data: { status: "pending-extraction", completed: false, error: null },
+    data: { status: nextStatus, completed: false, error: null },
     select: { status: true, completed: true, error: true },
   });
 
-  try {
-    const response = await fetch(`${config.posterExtractionApi}/jobs/check`, {
-      method: "POST",
+  // The worker polls this database, so the job is already on its way. Waking it
+  // only skips the wait until the next poll, and a failed wake is not a failed
+  // retry.
+  if (config.posterExtractionApi) {
+    setImmediate(async () => {
+      try {
+        await fetch(`${config.posterExtractionApi}/jobs/check`, {
+          method: "POST",
+        });
+      } catch (error) {
+        console.error(
+          `[poster/job/retry] Could not wake the worker for job ${job.id}; it will be picked up on the next poll`,
+          error,
+        );
+      }
     });
-
-    if (!response.ok) {
-      throw new Error(`Extraction service returned ${response.status}`);
-    }
-  } catch (error) {
-    const message =
-      error instanceof Error
-        ? `Could not restart extraction: ${error.message}`
-        : "Could not restart extraction";
-
-    await prisma.extractionJob.update({
-      where: { id: job.id },
-      data: { status: "failed", completed: false, error: message },
-    });
-
-    throw createError({ statusCode: 502, statusMessage: message });
   }
 
   return pending;
