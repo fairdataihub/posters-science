@@ -21,7 +21,7 @@ export default defineEventHandler(async (event) => {
       id: true,
       status: true,
       tombstone: true,
-      extractionJob: { select: { filePath: true } },
+      extractionJob: { select: { id: true, filePath: true } },
     },
   });
 
@@ -39,16 +39,49 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  const filePath = poster.extractionJob?.filePath;
-  if (!filePath) {
+  if (!poster.extractionJob?.filePath) {
     throw createError({
       statusCode: 400,
       statusMessage: "No file path available for this poster",
     });
   }
 
+  const { id: extractionJobId, filePath } = poster.extractionJob;
+
   const config = useRuntimeConfig();
   const { posterExtractionApi } = config;
+
+  // A published poster is served from the public zone, so its thumbnail needs
+  // promoting before imageUrl is written. That copy is this app's job, so a
+  // published poster still waits on the extraction service directly.
+  const isPublished = poster.status === "published";
+
+  // An unpublished poster keeps its preview in the private zone.
+  if (!isPublished) {
+    await prisma.extractionJob.update({
+      where: { id: extractionJobId },
+      data: {
+        status: "pending-thumbnail",
+        completed: false,
+        error: null,
+      },
+    });
+
+    if (posterExtractionApi) {
+      setImmediate(async () => {
+        try {
+          await fetch(`${posterExtractionApi}/jobs/check`, { method: "POST" });
+        } catch (error) {
+          console.error(
+            `[thumbnail] Could not wake the worker for poster ${posterId}; it will be picked up on the next poll`,
+            error,
+          );
+        }
+      });
+    }
+
+    return { success: true, queued: true, imageUrl: null };
+  }
 
   if (!posterExtractionApi) {
     throw createError({
@@ -56,10 +89,6 @@ export default defineEventHandler(async (event) => {
       statusMessage: "Extraction API not configured",
     });
   }
-
-  // A published poster is served from the public zone, so its thumbnail needs
-  // promoting before imageUrl is written.
-  const isPublished = poster.status === "published";
 
   let response: Response;
 
@@ -101,28 +130,22 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  let imageUrl = generatedUrl;
+  const promoted = await copyThumbnailToPublicZone(generatedUrl);
 
-  if (isPublished) {
-    const promoted = await copyThumbnailToPublicZone(generatedUrl);
-
-    if (!promoted.success) {
-      console.error(
-        `[thumbnail] Could not copy thumbnail into public zone for published poster ${posterId}: ${promoted.error}`,
-      );
-      throw createError({
-        statusCode: 502,
-        statusMessage: promoted.error,
-      });
-    }
-
-    imageUrl = promoted.imageUrl;
+  if (!promoted.success) {
+    console.error(
+      `[thumbnail] Could not copy thumbnail into public zone for published poster ${posterId}: ${promoted.error}`,
+    );
+    throw createError({
+      statusCode: 502,
+      statusMessage: promoted.error,
+    });
   }
 
   await prisma.poster.update({
     where: { id: posterId },
-    data: { imageUrl },
+    data: { imageUrl: promoted.imageUrl },
   });
 
-  return { success: true, imageUrl };
+  return { success: true, queued: false, imageUrl: promoted.imageUrl };
 });
