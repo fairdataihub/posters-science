@@ -1,77 +1,41 @@
 import {
   formatConferenceDate,
   getConferenceAggregatorPool,
-  type ConferenceAggregatorRow,
 } from "../../utils/conferenceAggregatorPg";
 
-type ConferencePosting = {
-  id: string;
+type ConferenceSearchRow = {
   conferenceName: string;
-  conferenceYear?: number;
-  conferenceLocation?: string | null;
-  conferenceUri?: string | null;
-  conferenceIdentifier?: string;
-  conferenceIdentifierType?: string;
-  conferenceSchemaUri?: string;
-  conferenceStartDate?: string | null;
-  conferenceEndDate?: string | null;
-  conferenceAcronym?: string | null;
-  conferenceSeries?: string | null;
-  _sources?: string[];
-  collectionDate?: string | null;
-  conferenceCategories?: string[] | null;
-  conferenceText?: string | null;
-  submissionDeadline?: string | null;
+  conferenceYear: number | null;
+  conferenceUri: string | null;
+  conferenceLocation: string | null;
+  conferenceStartDate: Date | null;
+  conferenceEndDate: Date | null;
+  conferenceAcronym: string | null;
+  conferenceSeries: string | null;
 };
 
-function rowToPosting(row: ConferenceAggregatorRow): ConferencePosting {
+export type ConferenceSearchResult = {
+  conferenceName: string;
+  conferenceYear?: number;
+  conferenceAcronym?: string | null;
+  conferenceLocation?: string | null;
+  conferenceStartDate?: string | null;
+  conferenceEndDate?: string | null;
+  conferenceUri?: string | null;
+  conferenceSeries?: string | null;
+};
+
+function rowToResult(row: ConferenceSearchRow): ConferenceSearchResult {
   return {
-    id: row.id,
     conferenceName: row.conferenceName,
     conferenceYear: row.conferenceYear ?? undefined,
+    conferenceAcronym: row.conferenceAcronym,
     conferenceLocation: row.conferenceLocation,
-    conferenceUri: row.conferenceUri,
     conferenceStartDate: formatConferenceDate(row.conferenceStartDate),
     conferenceEndDate: formatConferenceDate(row.conferenceEndDate),
-    conferenceAcronym: row.conferenceAcronym,
+    conferenceUri: row.conferenceUri,
     conferenceSeries: row.conferenceSeries,
-    _sources: row.sources,
-    collectionDate: formatConferenceDate(row.collectionDate),
-    conferenceCategories: row.conferenceCategories,
-    conferenceText: row.conferenceText,
-    submissionDeadline: formatConferenceDate(row.submissionDeadline),
   };
-}
-
-function postingsToOptions(postings: ConferencePosting[]) {
-  const conferences = new Map<string, ConferencePosting>();
-
-  for (const posting of postings) {
-    const key = posting.conferenceName;
-    if (!key) continue;
-
-    if (!conferences.has(key)) {
-      conferences.set(key, posting);
-    }
-  }
-
-  return [...conferences.values()]
-    .sort((a, b) => a.conferenceName.localeCompare(b.conferenceName))
-    .map((conference) => ({
-      label: conference.conferenceName,
-      value: conference.conferenceName,
-      conferenceName: conference.conferenceName,
-      conferenceYear: conference.conferenceYear,
-      conferenceAcronym: conference.conferenceAcronym,
-      conferenceLocation: conference.conferenceLocation,
-      conferenceIdentifier: conference.conferenceIdentifier,
-      conferenceIdentifierType: conference.conferenceIdentifierType,
-      conferenceStartDate: conference.conferenceStartDate,
-      conferenceEndDate: conference.conferenceEndDate,
-      conferenceUri: conference.conferenceUri,
-      conferenceSeries: conference.conferenceSeries,
-      source: (conference._sources ?? []).join(", "),
-    }));
 }
 
 export default defineEventHandler(async (event) => {
@@ -92,19 +56,16 @@ export default defineEventHandler(async (event) => {
         : "";
 
   if (!search) {
-    return { options: [] };
+    return { options: [] as ConferenceSearchResult[] };
   }
 
   const pattern = `%${search}%`;
 
   let result;
   try {
-    result = await getConferenceAggregatorPool().query<ConferenceAggregatorRow>(
+    result = await getConferenceAggregatorPool().query<ConferenceSearchRow>(
       `
         SELECT
-          id,
-          "collectionDate",
-          sources,
           "conferenceName",
           "conferenceYear",
           "conferenceUri",
@@ -112,10 +73,7 @@ export default defineEventHandler(async (event) => {
           "conferenceStartDate",
           "conferenceEndDate",
           "conferenceAcronym",
-          "conferenceSeries",
-          "conferenceCategories",
-          "conferenceText",
-          "submissionDeadline"
+          "conferenceSeries"
         FROM "Conference"
         WHERE
           "conferenceName" ILIKE $1
@@ -132,7 +90,7 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  const options = postingsToOptions(result.rows.map(rowToPosting));
-
-  return { options };
+  return {
+    options: result.rows.filter((row) => row.conferenceName).map(rowToResult),
+  };
 });

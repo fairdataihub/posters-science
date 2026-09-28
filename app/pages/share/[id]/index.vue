@@ -589,7 +589,7 @@ const conferenceDataMap = ref<
       conferenceCategories?: string[] | null;
       conferenceText?: string | null;
       submissionDeadline?: string | null;
-      source?: string;
+      sources?: string[] | null;
     }
   >
 >({});
@@ -692,25 +692,27 @@ function applyConferenceSelection(name: string) {
 }
 
 function mergeConferenceOptionsFromApi(options: any[]) {
-  conferenceNameOptions.value = options.map((opt: any) => ({
-    label: opt.label,
-    value: opt.value,
-    acronym: opt.conferenceAcronym ?? "",
-  }));
+  conferenceNameOptions.value = options.map((opt: any) => {
+    const name = opt.conferenceName ?? "";
+    return {
+      label: name,
+      value: name,
+      acronym: opt.conferenceAcronym ?? "",
+    };
+  });
 
   for (const opt of options) {
-    conferenceDataMap.value[opt.value] = {
-      conferenceName: opt.conferenceName,
+    const name = opt.conferenceName;
+    if (!name) continue;
+    conferenceDataMap.value[name] = {
+      conferenceName: name,
       conferenceYear: opt.conferenceYear,
       conferenceAcronym: opt.conferenceAcronym,
       conferenceLocation: opt.conferenceLocation,
-      conferenceIdentifier: opt.conferenceIdentifier,
-      conferenceIdentifierType: opt.conferenceIdentifierType,
       conferenceStartDate: opt.conferenceStartDate,
       conferenceEndDate: opt.conferenceEndDate,
       conferenceUri: opt.conferenceUri,
       conferenceSeries: opt.conferenceSeries,
-      source: opt.source,
     };
   }
 }
@@ -1969,6 +1971,7 @@ const moveCreator = (index: number, direction: "up" | "down") => {
                   v-model:searchTerm="conferenceSearchTermRaw"
                   :items="conferenceItemsToShow"
                   :loading="conferenceSearchLoading"
+                  :virtualize="{ estimateSize: 36, overscan: 16 }"
                   placeholder="Search conferences by name or acronym…"
                   value-key="value"
                   :ignore-filter="true"
