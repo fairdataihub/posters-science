@@ -75,10 +75,10 @@ function postingsToOptions(postings: ConferencePosting[]) {
 }
 
 export default defineEventHandler(async (event) => {
-  if (!process.env.CONFERENCE_AGGREGATOR_DATABASE_URL) {
+  if (!process.env.CONFERENCE_DATABASE_URL) {
     throw createError({
       statusCode: 500,
-      statusMessage: "CONFERENCE_AGGREGATOR_DATABASE_URL is not configured",
+      statusMessage: "CONFERENCE_DATABASE_URL is not configured",
     });
   }
 

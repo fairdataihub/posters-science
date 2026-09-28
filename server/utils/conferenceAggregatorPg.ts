@@ -11,9 +11,9 @@ export function getConferenceAggregatorPool(): pg.Pool {
     return globalThis.conferenceAggregatorPool;
   }
 
-  const connectionString = process.env.CONFERENCE_AGGREGATOR_DATABASE_URL;
+  const connectionString = process.env.CONFERENCE_DATABASE_URL;
   if (!connectionString) {
-    throw new Error("CONFERENCE_AGGREGATOR_DATABASE_URL is not configured");
+    throw new Error("CONFERENCE_DATABASE_URL is not configured");
   }
 
   globalThis.conferenceAggregatorPool = new Pool({ connectionString });
