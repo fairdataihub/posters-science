@@ -1,17 +1,13 @@
 import { createId } from "@paralleldrive/cuid2";
+import {
+  ALLOWED_POSTER_FILE_LABEL,
+  isAllowedPosterFile,
+  MAX_POSTER_FILE_SIZE_BYTES,
+  MAX_POSTER_FILE_SIZE_LABEL,
+} from "#shared/utils/posterFile";
 import { normalizeVersionRelatedIdentifiers } from "../../../utils/posterVersions";
 
 type Identifier = { identifier?: string; identifierType?: string };
-
-const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
-const ALLOWED_FILE_TYPES: Record<string, string> = {
-  pdf: "application/pdf",
-  jpg: "image/jpeg",
-  jpeg: "image/jpeg",
-  png: "image/png",
-  webp: "image/webp",
-};
-const GENERIC_UPLOAD_TYPES = new Set(["", "application/octet-stream"]);
 
 function fieldValue(
   formData: Awaited<ReturnType<typeof readMultipartFormData>>,
@@ -22,18 +18,6 @@ function fieldValue(
   );
 
   return field?.data.toString("utf8");
-}
-
-function isAllowedPosterFile(name: string, type: string) {
-  const extension = name.split(".").pop()?.toLowerCase() ?? "";
-  const expectedType = ALLOWED_FILE_TYPES[extension];
-  const normalizedType = type.split(";", 1)[0]?.trim().toLowerCase() ?? "";
-
-  return Boolean(
-    expectedType &&
-    (normalizedType === expectedType ||
-      GENERIC_UPLOAD_TYPES.has(normalizedType)),
-  );
 }
 
 function isVersionReviewReady(
@@ -256,7 +240,7 @@ export default defineEventHandler(async (event) => {
     if (!isAllowedPosterFile(fileName, fileType)) {
       throw createError({
         statusCode: 415,
-        statusMessage: "File must be a PDF, JPEG, PNG, or WebP image",
+        statusMessage: `File must be a ${ALLOWED_POSTER_FILE_LABEL}`,
       });
     }
   } else {
@@ -275,10 +259,10 @@ export default defineEventHandler(async (event) => {
     fileBytes = new Uint8Array(await response.arrayBuffer());
   }
 
-  if (fileBytes.byteLength > MAX_FILE_SIZE_BYTES) {
+  if (fileBytes.byteLength > MAX_POSTER_FILE_SIZE_BYTES) {
     throw createError({
       statusCode: 413,
-      statusMessage: "File must be 10MB or smaller",
+      statusMessage: `File must be ${MAX_POSTER_FILE_SIZE_LABEL} or smaller`,
     });
   }
 
@@ -384,6 +368,18 @@ export default defineEventHandler(async (event) => {
     imageCaptions: meta.imageCaptions,
   };
 
+  // A version only inherits a preview when it reuses the published poster file.
+  // Anything else needs its own. Queueing that as a job status rather than asking the
+  // extraction service over HTTP keeps this working from hosts that cannot reach
+  // the service: the worker polls the database, so the request always arrives.
+  const versionImageUrl = fileMode === "reuse" ? source.imageUrl : "";
+  const jobStatus =
+    metadataMode === "extract"
+      ? "pending-extraction"
+      : versionImageUrl
+        ? "completed"
+        : "pending-thumbnail";
+
   let created;
   try {
     created = await prisma.poster.create({
@@ -394,7 +390,7 @@ export default defineEventHandler(async (event) => {
         isLatestVersion: false,
         title: source.title,
         description: source.description,
-        imageUrl: fileMode === "reuse" ? source.imageUrl : "",
+        imageUrl: versionImageUrl,
         status: "draft",
         automated: source.automated,
         ...(metadataMode === "copy" && {
@@ -404,9 +400,8 @@ export default defineEventHandler(async (event) => {
           create: {
             fileName,
             filePath,
-            completed: metadataMode === "copy",
-            status:
-              metadataMode === "copy" ? "completed" : "pending-extraction",
+            completed: jobStatus === "completed",
+            status: jobStatus,
           },
         },
       },
@@ -457,86 +452,27 @@ export default defineEventHandler(async (event) => {
     throw error;
   }
 
-  const responseFailure = async (label: string, response: Response) => {
-    const detail = (await response.text().catch(() => "")).slice(0, 500);
-
-    return `${label} failed with status ${response.status}${detail ? `: ${detail}` : ""}`;
-  };
-  const markPendingExtractionFailed = async (message: string) => {
-    try {
-      await prisma.extractionJob.updateMany({
-        where: { posterId: created.id, status: "pending-extraction" },
-        data: { status: "failed", completed: false, error: message },
-      });
-    } catch (error) {
-      console.error(
-        "[poster/version] Could not mark extraction trigger as failed",
-        error,
-      );
-    }
-  };
-
-  if (metadataMode === "extract" && posterExtractionApi) {
+  // Waking the worker only saves it the wait until its next poll, so a failure
+  // here is logged and nothing more. The job is already queued in the database,
+  // which is the channel the worker actually reads.
+  if (jobStatus !== "completed" && posterExtractionApi) {
     setImmediate(async () => {
       try {
         const response = await fetch(`${posterExtractionApi}/jobs/check`, {
           method: "POST",
         });
         if (!response.ok) {
+          const detail = (await response.text().catch(() => "")).slice(0, 500);
+
           throw new Error(
-            await responseFailure("Extraction trigger", response),
+            `Worker wake failed with status ${response.status}${detail ? `: ${detail}` : ""}`,
           );
         }
       } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Extraction trigger failed";
-        console.error("[poster/version] Failed to trigger extraction", error);
-        await markPendingExtractionFailed(message);
-      }
-    });
-  }
-
-  // The job worker generates a thumbnail as part of processing an extraction
-  // job so only generate the thumbnail directly when no extraction will occur.
-  const workerWillGenerateThumbnail =
-    created.extractionJob?.completed === false &&
-    created.extractionJob?.status === "pending-extraction";
-
-  // A missing thumbnail must be generated from this version's stored file.
-  // This covers replacement files and reused files whose source thumbnail was
-  // unavailable without borrowing an image from an older poster version.
-  if (
-    !created.imageUrl &&
-    !workerWillGenerateThumbnail &&
-    posterExtractionApi
-  ) {
-    setImmediate(async () => {
-      try {
-        const response = await fetch(
-          `${posterExtractionApi}/thumbnails/generate`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ pdf_path: filePath }),
-          },
+        console.error(
+          `[poster/version] Could not wake the worker for job ${created.extractionJob?.id}; it will be picked up on the next poll`,
+          error,
         );
-        if (!response.ok) {
-          throw new Error(await responseFailure("Thumbnail trigger", response));
-        }
-
-        const result = (await response.json()) as { thumbnail_path?: string };
-        const imageUrl = result.thumbnail_path?.trim();
-
-        if (!imageUrl) {
-          throw new Error("Thumbnail service returned no poster preview");
-        }
-
-        await prisma.poster.update({
-          where: { id: created.id },
-          data: { imageUrl },
-        });
-      } catch (error) {
-        console.error("[poster/version] Failed to trigger thumbnail", error);
       }
     });
   }

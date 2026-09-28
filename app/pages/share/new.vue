@@ -1,4 +1,11 @@
 <script setup lang="ts">
+import {
+  ALLOWED_POSTER_FILE_LABEL,
+  MAX_POSTER_FILE_SIZE_LABEL,
+  POSTER_FILE_ACCEPT,
+  posterFileRejectionReason,
+} from "#shared/utils/posterFile";
+
 definePageMeta({
   middleware: ["auth"],
 });
@@ -26,8 +33,35 @@ const currentJobId = ref<string | null>(null);
 // Poll interval in milliseconds
 const POLL_INTERVAL = 3000;
 
-const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
-const MAX_FILE_SIZE_LABEL = "10MB";
+const FILE_HINT = `${ALLOWED_POSTER_FILE_LABEL} up to ${MAX_POSTER_FILE_SIZE_LABEL}`;
+
+// The picker's `accept` filter and drag and drop are both routed through this so
+// an unsupported file can never reach the upload request.
+const validatePosterFile = (file: File) =>
+  posterFileRejectionReason({
+    name: file.name,
+    type: file.type,
+    size: file.size,
+  });
+
+const onFilesRejected = (rejections: { file: File; reason: string }[]) => {
+  const first = rejections[0];
+  if (!first) return;
+
+  error.value = null;
+  window.umami?.track("upload_rejected", { reason: first.reason });
+  toast.add({
+    title: "File not accepted",
+    description: `${first.file.name}: ${first.reason}`,
+    color: "error",
+  });
+};
+
+const hasValidFile = computed(
+  () =>
+    selectedFiles.value.length > 0 &&
+    !validatePosterFile(selectedFiles.value[0]!),
+);
 
 interface JobStatusResponse {
   jobId: string;
@@ -140,8 +174,12 @@ const uploadFile = async () => {
 
   const file = selectedFiles.value[0]!;
 
-  if (file.size > MAX_FILE_SIZE_BYTES) {
-    error.value = `File is too large. Maximum size is ${MAX_FILE_SIZE_LABEL}.`;
+  // Last line of defense before the request. The picker and drop handler already
+  // reject unsupported files, so reaching this means something bypassed them.
+  const rejectionReason = validatePosterFile(file);
+
+  if (rejectionReason) {
+    error.value = rejectionReason;
 
     return;
   }
@@ -240,7 +278,13 @@ onUnmounted(() => {
       <UiSpinner :loading="status === 2 || isUploading" overlay subtle>
         <UCard>
           <div class="space-y-6">
-            <UiFileUpload @on-change="selectedFiles = $event">
+            <UiFileUpload
+              :accept="POSTER_FILE_ACCEPT"
+              :validate-file="validatePosterFile"
+              :hint="FILE_HINT"
+              @on-change="selectedFiles = $event"
+              @on-reject="onFilesRejected"
+            >
               <UiFileUploadGrid />
             </UiFileUpload>
 
@@ -299,7 +343,7 @@ onUnmounted(() => {
 
           <template #footer>
             <UButton
-              :disabled="isUploading"
+              :disabled="isUploading || !hasValidFile"
               class="flex w-full justify-center"
               variant="outline"
               icon="i-heroicons-cloud-arrow-up-solid"

@@ -153,6 +153,7 @@ const poster = ref({
       RELATION_TYPE_OPTIONS.find((rt) => rt.value === ri.relationType)?.label ??
       ri.relationType ??
       "References",
+    relationInformation: ri.relationTypeInformation?.trim() || null,
     doi: ri.relatedIdentifier ?? "",
     url: relatedIdentifierUrl(ri),
   })),
@@ -993,6 +994,13 @@ const tabItems = [
                       <UBadge color="secondary" variant="soft" class="ml-3">
                         {{ ref.resourceType }}
                       </UBadge>
+
+                      <p
+                        v-if="ref.relationInformation"
+                        class="mt-2 text-sm text-gray-500 dark:text-gray-400"
+                      >
+                        {{ ref.relationInformation }}
+                      </p>
 
                       <p class="mt-1 text-sm">
                         <a

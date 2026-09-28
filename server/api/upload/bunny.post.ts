@@ -1,4 +1,10 @@
 import { createId } from "@paralleldrive/cuid2";
+import {
+  ALLOWED_POSTER_FILE_LABEL,
+  isAllowedPosterFile,
+  MAX_POSTER_FILE_SIZE_BYTES,
+  MAX_POSTER_FILE_SIZE_LABEL,
+} from "#shared/utils/posterFile";
 
 export default defineEventHandler(async (event) => {
   await requireUserSession(event);
@@ -48,12 +54,11 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
-  if (fileEntry.data.length > MAX_FILE_SIZE_BYTES) {
+  if (fileEntry.data.length > MAX_POSTER_FILE_SIZE_BYTES) {
     throw createError({
       statusCode: 413,
       statusMessage: "File too large",
-      message: "File must be 10MB or smaller",
+      message: `File must be ${MAX_POSTER_FILE_SIZE_LABEL} or smaller`,
     });
   }
 
@@ -62,6 +67,17 @@ export default defineEventHandler(async (event) => {
 
   const fileName = fileEntry.filename || "poster.pdf";
   const fileType = fileEntry.type || "application/pdf";
+
+  // The extraction pipeline only renders PDF, JPEG, and PNG (see poster2json
+  // `is_supported_format`), so anything else fails downstream after the upload.
+  if (!isAllowedPosterFile(fileName, fileType)) {
+    throw createError({
+      statusCode: 415,
+      statusMessage: "Unsupported file type",
+      message: `File must be a ${ALLOWED_POSTER_FILE_LABEL}`,
+    });
+  }
+
   const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
   const fileId = createId();
   const filePath = `posters/${folderExtension}/${fileId}/${safeName}`;

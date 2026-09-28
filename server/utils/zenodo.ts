@@ -1,4 +1,5 @@
 import { buildPosterJson } from "./buildPosterJson";
+import { toZenodoRelatedIdentifiers } from "./zenodoVocabulary";
 import { isValidOrcidChecksum, validateOrcidExists } from "#shared/utils/orcid";
 import isoLanguages from "#shared/data/iso-639-1.json";
 
@@ -222,6 +223,20 @@ export async function validateZenodoToken(
       zenodoToken,
       message: "No Zenodo token found",
       existingDepositions,
+      refreshRejected: false,
+      expiresAt: null,
+    };
+  }
+
+  if (tokenRecord.expiresAt && tokenRecord.expiresAt <= new Date()) {
+    console.log("[Zenodo] Stored token has expired, reconnect needed");
+
+    return {
+      zenodoToken,
+      message: "Your Zenodo connection has expired. Sign in again to continue.",
+      existingDepositions,
+      refreshRejected: false,
+      expiresAt: tokenRecord.expiresAt,
     };
   }
 
@@ -247,7 +262,7 @@ export async function validateZenodoToken(
     // Drop it so the UI offers a reconnect.
     const message =
       probe.status === 403
-        ? "Zenodo rejected this token (403). Your Zenodo connection may need re-authorizing - disconnect and sign in again."
+        ? "Zenodo rejected this connection (403). Sign in to Zenodo again to continue."
         : "Zenodo token is invalid or expired";
 
     console.log(
@@ -256,7 +271,13 @@ export async function validateZenodoToken(
 
     await prisma.zenodoToken.delete({ where: { userId } });
 
-    return { zenodoToken, message, existingDepositions };
+    return {
+      zenodoToken,
+      message,
+      existingDepositions,
+      refreshRejected: false,
+      expiresAt: tokenRecord.expiresAt,
+    };
   }
 
   if (!probe.ok) {
@@ -269,6 +290,8 @@ export async function validateZenodoToken(
       zenodoToken,
       message: "Could not reach Zenodo, please try again shortly",
       existingDepositions,
+      refreshRejected: false,
+      expiresAt: tokenRecord.expiresAt,
     };
   }
 
@@ -285,20 +308,33 @@ export async function validateZenodoToken(
   // Token valid so refresh it to extend the session.
   console.log("[Zenodo] Token valid, refreshing to extend session");
 
-  await refreshZenodoToken(userId, tokenRecord.refreshToken);
+  const refresh = await refreshZenodoToken(
+    userId,
+    tokenRecord.refreshToken,
+    tokenRecord.expiresAt,
+  );
 
   zenodoToken = true;
 
   console.log("[Zenodo] Validation result: Zenodo token is valid");
 
+  // The token is genuinely valid and stays that way until expiresAt, so it is
+  // reported valid either way. refreshRejected only says it can no longer be
+  // extended, which is a warning about that date, not about right now.
   return {
     zenodoToken,
     message: "Zenodo token is valid",
     existingDepositions,
+    refreshRejected: refresh.refreshRejected,
+    expiresAt: tokenRecord.expiresAt,
   };
 }
 
-async function refreshZenodoToken(userId: string, refreshToken: string) {
+async function refreshZenodoToken(
+  userId: string,
+  refreshToken: string,
+  expiresAt?: Date | null,
+) {
   console.log("[Zenodo] Refreshing token");
 
   const refreshBody = new URLSearchParams({
@@ -335,10 +371,30 @@ async function refreshZenodoToken(userId: string, refreshToken: string) {
     // problem and a persistent failure ends in a forced reconnect.
     const body = await refresh.text().catch(() => "");
 
+    // invalid_grant means the grant is revoked or spent, so no retry will ever
+    // work. Nothing breaks today - the access token keeps working normally -
+    // but it can no longer be extended, so it now has a hard deadline.
+    if (/invalid_grant/i.test(body)) {
+      const deadline = expiresAt
+        ? `stops working ${expiresAt.toISOString().slice(0, 10)}`
+        : "has an unknown expiry";
+
+      console.error(
+        `[Zenodo] Token refresh rejected (invalid_grant): this connection can no longer renew itself and ${deadline}. ` +
+          "It works normally until then. Ask the user to reconnect Zenodo before that date.",
+      );
+
+      return { refreshed: false as const, refreshRejected: true as const };
+    }
+
     console.warn(
       `[Zenodo] Token refresh failed (status: ${refresh.status})${body ? ` - ${truncateForLog(body)}` : ""}`,
     );
+
+    return { refreshed: false as const, refreshRejected: false as const };
   }
+
+  return { refreshed: true as const, refreshRejected: false as const };
 }
 
 type ZenodoRecordState =
@@ -1922,7 +1978,9 @@ async function acquireWorkingDraft(
   if (published.status === 401 || published.status === 403) {
     return {
       success: false,
-      error: `Zenodo rejected your credentials while looking up record ${depositionId} (status: ${published.status}). Your Zenodo connection may need re-authorizing. Disconnect and sign in again.`,
+      // Mid-publish, so the connection still reads as active and the UI keeps
+      // showing its Sign out button. Name that button rather than "disconnect".
+      error: `Zenodo rejected your credentials while looking up record ${depositionId} (status: ${published.status}). Use Sign out above, then sign in to Zenodo again.`,
     };
   }
 
@@ -2237,22 +2295,12 @@ function buildRdmCreators(
   });
 }
 
-// DataCite resourceTypeGeneral → InvenioRDM resource_type.id (conservative mapping)
-const DATACITE_TO_INVENIORDM_TYPE: Record<string, string> = {
-  Audiovisual: "video",
-  Book: "publication-book",
-  BookChapter: "publication-section",
-  ComputationalNotebook: "software-computationalnotebook",
-  ConferencePaper: "publication-conferencepaper",
-  Dataset: "dataset",
-  Dissertation: "publication-thesis",
-  Image: "image",
-  JournalArticle: "publication-article",
-  Preprint: "publication-preprint",
-  Report: "publication-report",
-  Software: "software",
-  Other: "other",
-};
+// Sandbox 500s on publish when metadata.dates is present; production is fine,
+// so withhold dates on sandbox only. Details in buildFullRdmPayload.
+const ZENODO_SANDBOX_DROPS_DATES = /sandbox/i.test(
+  config.zenodoApiEndpoint ?? "",
+);
+const SEND_DATES_TO_ZENODO = !ZENODO_SANDBOX_DROPS_DATES;
 
 type RdmExtras = {
   skipRorIds?: boolean;
@@ -2300,30 +2348,10 @@ function buildFullRdmPayload(
     ? (meta.license as string).toLowerCase()
     : undefined;
 
-  const rawRelated = (options?.dbRelated ?? []).filter(
-    (r) => r.relatedIdentifier && r.relatedIdentifierType && r.relationType,
-  );
-  const rdmRelated = rawRelated
-    .filter((r) => {
-      const scheme = r.relatedIdentifierType!.toLowerCase();
-      const id = r.relatedIdentifier!;
-      if (scheme === "url") return /^https?:\/\//.test(id);
-      if (scheme === "doi") return /^10\.\d{4,}\//.test(id);
-
-      return true;
-    })
-    .map((r) => {
-      const rdmType = r.resourceTypeGeneral
-        ? DATACITE_TO_INVENIORDM_TYPE[r.resourceTypeGeneral]
-        : undefined;
-
-      return {
-        identifier: r.relatedIdentifier!,
-        scheme: r.relatedIdentifierType!.toLowerCase(),
-        relation_type: { id: r.relationType!.toLowerCase() },
-        ...(rdmType && { resource_type: { id: rdmType } }),
-      };
-    });
+  // The stored record is DataCite 4.7; Zenodo needs its own vocabulary. That
+  // translation lives in the adapter so poster.json and any future archival
+  // target keep the canonical DataCite terms.
+  const rdmRelated = toZenodoRelatedIdentifiers(options?.dbRelated ?? []);
 
   const funding = (options?.rawFunding ?? [])
     .filter((f) => f.funderName?.trim())
@@ -2390,9 +2418,14 @@ function buildFullRdmPayload(
       ...(additionalDescriptions.length > 0 && {
         additional_descriptions: additionalDescriptions,
       }),
-      ...(options?.presentedDates?.length && {
-        dates: options.presentedDates,
-      }),
+      // SANDBOX WORKAROUND (2026-09-24): sandbox accepts dates on the draft but
+      // 500s on publish. Our payload is spec-correct and production is fine, so
+      // this is their regression: records published with
+      // dates on 09-21 and replaying those same payloads on 09-24 failed.
+      ...(SEND_DATES_TO_ZENODO &&
+        options?.presentedDates?.length && {
+          dates: options.presentedDates,
+        }),
       ...((meta.version as string | null | undefined) && {
         version: meta.version as string,
       }),

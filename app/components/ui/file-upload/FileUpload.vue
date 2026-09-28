@@ -7,31 +7,69 @@ import { ref } from "vue";
 interface FileUploadProps {
   class?: HTMLAttributes["class"];
   multiple?: boolean;
+  /**
+   * Native file picker filter. Drag and drop ignores `accept`, so always pair it
+   * with `validateFile` to actually keep unsupported files out.
+   */
+  accept?: string;
+  /** Returns a reason the file is rejected, or null when it is allowed. */
+  validateFile?: (file: File) => string | null;
+  /** Helper text under the drop zone, such as accepted types and size limit. */
+  hint?: string;
 }
 
 const props = withDefaults(defineProps<FileUploadProps>(), {
   multiple: false,
+  accept: undefined,
+  validateFile: undefined,
+  hint: undefined,
 });
 
 const emit = defineEmits<{
   (e: "onChange", files: File[]): void;
+  (e: "onReject", rejections: { file: File; reason: string }[]): void;
 }>();
 
 const fileInputRef = ref<HTMLInputElement | null>(null);
 const files = ref<File[]>([]);
 const isActive = ref<boolean>(false);
+const rejections = ref<{ name: string; reason: string }[]>([]);
 
 function handleFileChange(newFiles: File[]) {
+  const accepted: File[] = [];
+  const rejected: { file: File; reason: string }[] = [];
+
+  for (const file of newFiles) {
+    const reason = props.validateFile?.(file) ?? null;
+    if (reason) {
+      rejected.push({ file, reason });
+    } else {
+      accepted.push(file);
+    }
+  }
+
+  rejections.value = rejected.map(({ file, reason }) => ({
+    name: file.name,
+    reason,
+  }));
+
+  if (rejected.length) emit("onReject", rejected);
+
+  // Keep a previously accepted selection when every new file was rejected so a
+  // mistaken drop does not silently clear a valid file.
+  if (!accepted.length) return;
+
   if (props.multiple) {
-    files.value = [...files.value, ...newFiles];
+    files.value = [...files.value, ...accepted];
   } else {
-    files.value = [newFiles[0]!];
+    files.value = [accepted[0]!];
   }
   emit("onChange", files.value);
 }
 
 function removeFile(index: number) {
   files.value = files.value.filter((_, i) => i !== index);
+  rejections.value = [];
   emit("onChange", files.value);
   if (fileInputRef.value) fileInputRef.value.value = "";
 }
@@ -40,6 +78,8 @@ function onFileChange(e: Event) {
   const input = e.target as HTMLInputElement;
   if (!input.files) return;
   handleFileChange(Array.from(input.files));
+  // Clear the input so the same file can be picked again after a rejection.
+  input.value = "";
 }
 
 function handleClick() {
@@ -80,6 +120,7 @@ function handleDrop(e: DragEvent) {
           type="file"
           class="hidden"
           :multiple="multiple"
+          :accept="accept"
           @change="onFileChange"
         />
 
@@ -102,6 +143,13 @@ function handleDrop(e: DragEvent) {
             class="relative z-20 mt-2 font-sans text-base font-normal text-neutral-400 dark:text-neutral-400"
           >
             Drag or drop your files here or click to upload
+          </p>
+
+          <p
+            v-if="hint"
+            class="relative z-20 mt-1 font-sans text-sm font-normal text-neutral-400 dark:text-neutral-500"
+          >
+            {{ hint }}
           </p>
 
           <div class="relative mx-auto mt-10 w-full max-w-xl space-y-4">
@@ -164,6 +212,31 @@ function handleDrop(e: DragEvent) {
                 </Motion>
               </div>
             </Motion>
+
+            <!-- Files the caller refused, e.g. wrong type or too large -->
+            <div
+              v-for="rejected in rejections"
+              :key="`rejected-${rejected.name}`"
+              class="relative z-40 mx-auto flex w-full items-start gap-2 rounded-md border border-red-300 bg-red-50 p-3 text-left dark:border-red-900 dark:bg-red-950/50"
+            >
+              <Icon
+                name="heroicons:exclamation-triangle-20-solid"
+                class="mt-0.5 shrink-0 text-red-600 dark:text-red-400"
+                size="16"
+              />
+
+              <div class="min-w-0">
+                <p
+                  class="truncate text-sm font-medium text-red-800 dark:text-red-200"
+                >
+                  {{ rejected.name }}
+                </p>
+
+                <p class="text-sm text-red-700 dark:text-red-300">
+                  {{ rejected.reason }}
+                </p>
+              </div>
+            </div>
 
             <template v-if="!files.length">
               <Motion
