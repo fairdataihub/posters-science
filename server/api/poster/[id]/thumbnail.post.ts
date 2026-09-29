@@ -3,6 +3,8 @@ import { copyThumbnailToPublicZone } from "../../../utils/zenodo";
 export default defineEventHandler(async (event) => {
   const session = await requireUserSession(event);
 
+  await assertNotInMaintenance("extraction");
+
   const { id } = event.context.params as { id: string };
 
   const posterId = parseInt(id);
