@@ -7,7 +7,8 @@ import {
   posterFileRejectionReason,
 } from "#shared/utils/posterFile";
 import { LICENSE_OPTIONS } from "~/utils/poster_schema";
-import { normalizeDoi, validateDoi } from "~/utils/doi";
+import { normalizeDoi } from "#shared/utils/doi";
+import { validateDoi } from "~/utils/doi";
 
 definePageMeta({
   middleware: ["auth"],

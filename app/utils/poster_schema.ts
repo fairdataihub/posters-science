@@ -5,7 +5,8 @@ import identifierTypes from "@/assets/data/identifier-types.json";
 import relationTypes from "@/assets/data/relation-types.json";
 import resourceTypes from "@/assets/data/resource-types.json";
 import { isValidOrcidChecksum, validateOrcidExists } from "#shared/utils/orcid";
-import { normalizeDoi, validateDoi } from "./doi";
+import { normalizeDoi } from "#shared/utils/doi";
+import { validateDoi } from "./doi";
 
 export { validateOrcidExists };
 
