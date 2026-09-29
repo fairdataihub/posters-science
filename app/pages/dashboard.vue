@@ -7,7 +7,7 @@ import {
   posterFileRejectionReason,
 } from "#shared/utils/posterFile";
 import { LICENSE_OPTIONS } from "~/utils/poster_schema";
-import { normalizeDoi, validateDoi } from "~/utils/doi";
+import { normalizeDoi, validateDoi } from "#shared/utils/doi";
 
 definePageMeta({
   middleware: ["auth"],
@@ -216,6 +216,10 @@ const versionError = ref("");
 const versionPollingError = ref("");
 const retryingVersionExtraction = ref(false);
 const retryingVersionThumbnail = ref(false);
+
+const { isActive: isMaintenanceActive } = useMaintenance();
+const extractionPaused = computed(() => isMaintenanceActive("extraction"));
+const versioningPaused = computed(() => isMaintenanceActive("versioning"));
 const deleteVersionModalOpen = ref(false);
 const deletingVersionDraft = ref(false);
 const pollingVersionJobId = ref<string | null>(null);
@@ -467,6 +471,10 @@ function versionActionDisabled(poster: Poster) {
 }
 
 function versionActionTooltip(poster: Poster) {
+  // The button stays enabled so the panel can explain the pause in full.
+  if (versioningPaused.value) {
+    return "Editing published posters is paused. Open the panel for details.";
+  }
   if (isVersionPreparing(poster.activeVersionDraft)) {
     return "Open the edit panel to view preparation progress.";
   }
@@ -1516,6 +1524,10 @@ function posterMenuItems(poster: Poster) {
       </template>
     </UPageHeader>
 
+    <MaintenanceNotice maintenance-key="extraction" />
+
+    <MaintenanceNotice maintenance-key="zenodo" />
+
     <UTabs
       v-model="activeDashboardTab"
       :items="dashboardTabs"
@@ -1965,6 +1977,13 @@ function posterMenuItems(poster: Poster) {
           class="flex min-h-full flex-col"
         >
           <div class="space-y-5">
+            <MaintenanceNotice maintenance-key="versioning" />
+
+            <MaintenanceNotice
+              v-if="versionMetadataMode === 'extract'"
+              maintenance-key="extraction"
+            />
+
             <p class="text-muted text-sm">
               Select what you would like to change for
               <span class="text-highlighted font-medium">{{
@@ -2132,6 +2151,7 @@ function posterMenuItems(poster: Poster) {
             variant="soft"
             icon="i-lucide-refresh-cw"
             :loading="retryingVersionThumbnail"
+            :disabled="extractionPaused"
             @click="retryVersionThumbnail"
           >
             Retry Poster Preview
@@ -2202,6 +2222,10 @@ function posterMenuItems(poster: Poster) {
           <UButton
             color="primary"
             :loading="creatingVersion"
+            :disabled="
+              versioningPaused ||
+              (extractionPaused && versionMetadataMode === 'extract')
+            "
             @click="createVersion"
           >
             Continue
@@ -2243,6 +2267,7 @@ function posterMenuItems(poster: Poster) {
               color="primary"
               icon="i-lucide-refresh-cw"
               :loading="retryingVersionExtraction"
+              :disabled="extractionPaused"
               @click="retryVersionExtraction"
             >
               Retry Extraction

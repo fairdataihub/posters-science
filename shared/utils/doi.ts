@@ -1,5 +1,7 @@
-const DOI_REGEX = /^10\.\d{4,9}\/.+$/i;
-
+/**
+ * Strips a doi.org URL down to the bare DOI. Anything that is not a doi.org URL
+ * is returned trimmed but otherwise untouched.
+ */
 export function normalizeDoi(input: string): string {
   const trimmed = input.trim();
   try {
@@ -13,6 +15,8 @@ export function normalizeDoi(input: string): string {
 
   return trimmed;
 }
+
+const DOI_REGEX = /^10\.\d{4,9}\/.+$/i;
 
 export function validateDoi(input: string): string {
   if (!input) return "";
@@ -36,4 +40,26 @@ export function resolveDoiUrl(input: string): string {
   }
 
   return `https://doi.org/${doi}`;
+}
+
+export type DoiSource = "zenodo" | "zenodo-sandbox" | "external";
+
+/**
+ * Tells a Zenodo minted DOI apart from one the user obtained elsewhere.
+ * PosterMetadata.doi is overloaded across both flows, so the prefix is the
+ * only signal we have.
+ */
+export function classifyDoiSource(input?: string | null): DoiSource | null {
+  if (!input) return null;
+
+  const doi = normalizeDoi(input);
+  if (!doi) return null;
+
+  const zenodoMatch = doi.match(/^10\.(5072|5281)\/zenodo\.\d+$/i);
+
+  if (zenodoMatch) {
+    return zenodoMatch[1] === "5072" ? "zenodo-sandbox" : "zenodo";
+  }
+
+  return "external";
 }

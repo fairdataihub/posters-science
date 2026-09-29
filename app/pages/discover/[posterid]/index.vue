@@ -1,12 +1,12 @@
 <!-- eslint-disable @typescript-eslint/no-explicit-any -->
 <script setup lang="ts">
-import licenses from "@/assets/data/licenses.json";
-import notFoundAnimation from "@/assets/animations/404-not-found.json";
+import licenses from "~/assets/data/licenses.json";
+import notFoundAnimation from "~/assets/animations/404-not-found.json";
 import {
   RESOURCE_TYPE_OPTIONS,
   RELATION_TYPE_OPTIONS,
-} from "@/utils/poster_schema";
-import { resolveDoiUrl } from "@/utils/doi";
+} from "~/utils/poster_schema";
+import { resolveDoiUrl } from "#shared/utils/doi";
 import type { WithContext, ScholarlyArticle } from "schema-dts";
 
 type PosterIdentifier = {

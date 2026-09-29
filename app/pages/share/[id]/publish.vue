@@ -12,7 +12,7 @@ const { siteEnv } = useRuntimeConfig().public;
 
 const isProductionEnv = siteEnv === "production";
 
-// Shared license selection (used by Zenodo and simulated flows)
+// Shared license selection
 const selectedLicense = ref("");
 const publicationVersion = ref("");
 
@@ -62,47 +62,34 @@ const zenodoLoading = ref(true);
 const zenodoConfigError = ref(false);
 
 // Repository selection state
-type Repository =
-  | "zenodo"
-  | "zenodo-simulated"
-  | "figshare"
-  | "download"
-  | null;
+type Repository = "zenodo" | "figshare" | "download" | null;
+
+const { isActive: isMaintenanceActive } = useMaintenance();
+const zenodoPaused = computed(() => isMaintenanceActive("zenodo"));
 
 // Check for repository query param (e.g., after Zenodo OAuth redirect).
-// "zenodo" is intentionally excluded while the Zenodo flow is disabled below -
-// add `queryRepo === "zenodo" ||` back when re-enabling it.
-const ZENODO_DISABLED = false;
+// "zenodo" is accepted here but dropped below while Zenodo is paused, so a user
+// returning from OAuth mid pause lands back on the picker.
 const queryRepo = useRoute().query.repository;
 const requestedRepository: Repository =
-  queryRepo === "zenodo" ||
-  queryRepo === "zenodo-simulated" ||
-  queryRepo === "figshare" ||
-  queryRepo === "download"
+  queryRepo === "zenodo" || queryRepo === "figshare" || queryRepo === "download"
     ? queryRepo
     : null;
 const selectedRepository = ref<Repository>(
-  requestedRepository === "zenodo" && ZENODO_DISABLED
+  requestedRepository === "zenodo" && zenodoPaused.value
     ? null
     : requestedRepository,
 );
 
-const repositories = [
+const repositories = computed(() => [
   {
     id: "zenodo" as const,
     name: "Zenodo",
     icon: "i-simple-icons-zenodo",
     description: "General-purpose open repository",
-    enabled: !ZENODO_DISABLED,
-    unavailable: ZENODO_DISABLED,
-  },
-  {
-    id: "zenodo-simulated" as const,
-    name: "Zenodo (Simulated)",
-    icon: "i-simple-icons-zenodo",
-    description: "Preview-only flow for beta testing",
-    enabled: true,
-    hidden: true,
+    enabled: !zenodoPaused.value,
+    // Paused by an admin
+    unavailable: zenodoPaused.value,
   },
   {
     id: "figshare" as const,
@@ -110,6 +97,7 @@ const repositories = [
     icon: "i-simple-icons-figshare",
     description: "Research data repository",
     enabled: false,
+    unavailable: false,
   },
   {
     id: "download" as const,
@@ -117,18 +105,13 @@ const repositories = [
     icon: "i-lucide-download",
     description: "Download files to your computer to share on another platform",
     enabled: true,
+    unavailable: false,
   },
-];
-
-const visibleRepositories = computed(() =>
-  repositories.filter((repo) => !repo.hidden),
-);
+]);
 
 // Download state
 const isDownloading = ref(false);
 const downloadAcknowledged = ref(false);
-const isSimulatedPublishing = ref(false);
-const simulatedPublished = ref(false);
 
 async function downloadMetadata() {
   isDownloading.value = true;
@@ -188,40 +171,6 @@ async function downloadMetadata() {
     });
   } finally {
     isDownloading.value = false;
-  }
-}
-
-async function handleSimulatedArchive() {
-  isSimulatedPublishing.value = true;
-
-  try {
-    const response = await $fetch("/api/release/zenodo/simulated", {
-      method: "POST",
-      body: {
-        posterId: id,
-        license: selectedLicense.value || undefined,
-      },
-    });
-
-    if (!response?.success) {
-      throw new Error("Failed to simulate publication");
-    }
-
-    simulatedPublished.value = true;
-    setTimeout(() => {
-      feedbackOpen.value = true;
-    }, 2000);
-  } catch (error) {
-    toast.add({
-      title: "Simulation Failed",
-      description:
-        error instanceof Error
-          ? error.message
-          : "Could not complete simulated publication.",
-      color: "error",
-    });
-  } finally {
-    isSimulatedPublishing.value = false;
   }
 }
 
@@ -286,6 +235,7 @@ const effectiveDepositionId = computed(() => {
 
 const readyToArchive = computed(
   () =>
+    !zenodoPaused.value &&
     !!selectedLicense.value &&
     (posterData.value?.automated || !!publicationVersion.value.trim()) &&
     (depositionMode.value === "new" ||
@@ -477,7 +427,15 @@ async function handleZenodoDisconnect() {
   }
 }
 
-function selectRepository(repo: (typeof repositories)[number]) {
+// If an admin pauses Zenodo while this page is open, drop the user back to the
+// picker rather than leaving them in a flow that can no longer complete.
+watch(zenodoPaused, (paused) => {
+  if (paused && selectedRepository.value === "zenodo") {
+    selectedRepository.value = null;
+  }
+});
+
+function selectRepository(repo: (typeof repositories.value)[number]) {
   if (!repo.enabled) return;
   selectedRepository.value = repo.id;
   window.umami?.track("zenodo_repository_selected", { repository: repo.id });
@@ -643,6 +601,8 @@ async function handleArchive() {
       </template>
     </UPageHeader>
 
+    <MaintenanceNotice maintenance-key="zenodo" />
+
     <!-- File tree -->
     <div class="border-default mb-6 rounded-xl border p-6">
       <h3 class="mb-3 text-lg font-semibold">Submission Files</h3>
@@ -689,19 +649,9 @@ async function handleArchive() {
         following options:
       </p>
 
-      <UAlert
-        v-if="ZENODO_DISABLED"
-        color="warning"
-        variant="subtle"
-        icon="i-lucide-triangle-alert"
-        class="mb-6"
-        title="Zenodo submissions are temporarily unavailable"
-        description="We are currently experiencing issues with the Zenodo publishing workflow and are actively working on a fix. Submitting to Zenodo is paused for now, so please check back later. In the meantime, you can download your poster files and metadata to archive them elsewhere."
-      />
-
       <div class="grid grid-cols-3 gap-4 md:grid-cols-3">
         <UButton
-          v-for="repo in visibleRepositories"
+          v-for="repo in repositories"
           :key="repo.id"
           :disabled="!repo.enabled"
           class="border-default hover:border-primary flex flex-col items-center gap-3 rounded-xl border-2 p-6 transition-all"
@@ -718,14 +668,6 @@ async function handleArchive() {
           <span class="font-medium">{{ repo.name }}</span>
 
           <span class="text-muted text-xs">{{ repo.description }}</span>
-
-          <UBadge
-            v-if="repo.id === 'zenodo-simulated'"
-            color="warning"
-            variant="solid"
-          >
-            Beta
-          </UBadge>
 
           <UBadge v-if="repo.unavailable" color="warning" variant="subtle">
             Temporarily Unavailable
@@ -1068,72 +1010,6 @@ async function handleArchive() {
             </div>
           </div>
         </template>
-      </template>
-    </div>
-
-    <!-- Simulated Zenodo section -->
-    <div
-      v-if="selectedRepository === 'zenodo-simulated'"
-      class="border-default rounded-xl border p-6"
-    >
-      <div class="mb-4 flex items-center gap-2">
-        <UIcon name="i-simple-icons-zenodo" class="size-6" />
-
-        <h3 class="text-lg font-semibold">Zenodo (Simulated)</h3>
-      </div>
-
-      <p class="text-muted text-sm">
-        This is a temporary beta placeholder. The live Zenodo workflow remains
-        implemented but hidden from the repository card list.
-      </p>
-
-      <!-- Success state -->
-      <template v-if="simulatedPublished">
-        <div class="mt-5 flex flex-col gap-4">
-          <UAlert
-            color="success"
-            variant="subtle"
-            icon="i-lucide-circle-check"
-            title="Your poster has been registered in Posters.science!"
-            description="Other users can now search and find your poster via our discovery portal."
-          />
-
-          <div class="flex gap-3">
-            <UButton color="primary" to="/dashboard"> Go to Dashboard </UButton>
-          </div>
-        </div>
-      </template>
-
-      <!-- Publish controls -->
-      <template v-else>
-        <div class="mt-5 flex flex-col gap-4">
-          <div>
-            <p class="text-muted mb-2 text-sm">
-              License <span class="text-error">*</span>
-            </p>
-
-            <USelectMenu
-              v-model="selectedLicense"
-              :items="LICENSE_OPTIONS_WITH_SUGGESTED"
-              value-key="value"
-              placeholder="Select a license"
-              class="w-full max-w-md"
-              :virtualize="true"
-            />
-          </div>
-
-          <div>
-            <UButton
-              color="primary"
-              size="lg"
-              :disabled="!selectedLicense"
-              :loading="isSimulatedPublishing"
-              @click="handleSimulatedArchive"
-            >
-              Mark as Published (Simulated)
-            </UButton>
-          </div>
-        </div>
       </template>
     </div>
 
