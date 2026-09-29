@@ -6,6 +6,7 @@ export default defineEventHandler(async (event) => {
   const limit = Math.min(100, Math.max(1, Number(query.limit) || 25));
   const search = (query.search as string | undefined)?.trim() || "";
   const role = (query.role as string | undefined) || "";
+  const verified = (query.verified as string | undefined) || "";
 
   const where = {
     ...(search
@@ -20,6 +21,11 @@ export default defineEventHandler(async (event) => {
         }
       : {}),
     ...(role ? { role } : {}),
+    ...(verified === "true"
+      ? { emailVerified: true }
+      : verified === "false"
+        ? { emailVerified: false }
+        : {}),
   };
 
   const [users, total] = await Promise.all([
