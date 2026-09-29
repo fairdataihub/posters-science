@@ -4,6 +4,9 @@ import {
   searchTermAsPosterId,
   type PosterSearchField,
 } from "#shared/utils/adminSearch";
+import { escapeLike } from "#shared/utils/searchQuery";
+
+import { userSearchWhere } from "./adminUserSearch";
 
 export const SORT_FIELDS = [
   "created",
@@ -35,6 +38,10 @@ export function buildPosterAdminWhere(query: {
   if (parsed.term) {
     const { term, field } = parsed;
     const posterId = searchTermAsPosterId(term);
+    const contains = {
+      contains: escapeLike(term),
+      mode: "insensitive" as const,
+    };
     const wants = (candidate: PosterSearchField) =>
       !field || field === candidate;
 
@@ -46,24 +53,16 @@ export function buildPosterAdminWhere(query: {
     }
 
     if (wants("title")) {
-      clauses.push({ title: { contains: term, mode: "insensitive" } });
+      clauses.push({ title: contains });
     }
 
     if (wants("owner")) {
-      clauses.push({
-        user: {
-          OR: [
-            { emailAddress: { contains: term, mode: "insensitive" } },
-            { givenName: { contains: term, mode: "insensitive" } },
-            { familyName: { contains: term, mode: "insensitive" } },
-          ],
-        },
-      });
+      clauses.push({ user: userSearchWhere(term) });
     }
 
     if (wants("doi")) {
       clauses.push({
-        posterMetadata: { doi: { contains: term, mode: "insensitive" } },
+        posterMetadata: { doi: contains },
       });
     }
 

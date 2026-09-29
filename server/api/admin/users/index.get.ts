@@ -1,3 +1,5 @@
+import { userSearchWhere } from "../../../utils/adminUserSearch";
+
 export default defineEventHandler(async (event) => {
   await requireAdminSession(event);
 
@@ -9,17 +11,7 @@ export default defineEventHandler(async (event) => {
   const verified = (query.verified as string | undefined) || "";
 
   const where = {
-    ...(search
-      ? {
-          OR: [
-            {
-              emailAddress: { contains: search, mode: "insensitive" as const },
-            },
-            { givenName: { contains: search, mode: "insensitive" as const } },
-            { familyName: { contains: search, mode: "insensitive" as const } },
-          ],
-        }
-      : {}),
+    ...(search ? userSearchWhere(search) : {}),
     ...(role ? { role } : {}),
     ...(verified === "true"
       ? { emailVerified: true }

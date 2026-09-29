@@ -172,7 +172,7 @@ async function retryJob(job: AdminExtractionJobRow) {
                 target="_blank"
                 class="text-primary font-mono text-sm hover:underline"
               >
-                <AdminHighlight
+                <SearchHighlight
                   :text="row.original.poster.id"
                   :term="highlightTerm"
                 />
@@ -180,7 +180,7 @@ async function retryJob(job: AdminExtractionJobRow) {
 
               <AdminTextTooltip :text="row.original.poster.title">
                 <span class="line-clamp-1 max-w-xs cursor-help text-xs">
-                  <AdminHighlight
+                  <SearchHighlight
                     :text="row.original.poster.title"
                     :term="highlightTerm"
                   />
@@ -196,7 +196,7 @@ async function retryJob(job: AdminExtractionJobRow) {
           <template #fileName-cell="{ row }">
             <AdminTextTooltip :text="row.original.fileName">
               <span class="line-clamp-1 max-w-48 cursor-help font-mono text-xs">
-                <AdminHighlight
+                <SearchHighlight
                   :text="row.original.fileName"
                   :term="highlightTerm"
                 />

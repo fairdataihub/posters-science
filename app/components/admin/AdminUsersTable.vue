@@ -2,6 +2,8 @@
 import { h, resolveComponent } from "vue";
 import type { ColumnDef, SortingState } from "@tanstack/vue-table";
 
+import { personNameWords } from "#shared/utils/adminSearch";
+
 import type {
   AdminUserRow,
   FilterPreset,
@@ -84,6 +86,12 @@ const {
 const users = computed(() => usersData.value?.data ?? []);
 
 const highlightTerm = computed(() => searchCommitted.value.trim());
+
+// A name matches word by word ("Doe Jane" finds Jane Doe), so mark each word.
+const nameHighlightTerms = computed(() => [
+  highlightTerm.value,
+  ...personNameWords(highlightTerm.value),
+]);
 const total = computed(() => usersData.value?.total ?? 0);
 
 function sortableHeader(label: string) {
@@ -246,16 +254,16 @@ async function deleteUser() {
               />
 
               <span>
-                <AdminHighlight
+                <SearchHighlight
                   :text="`${row.original.givenName} ${row.original.familyName}`"
-                  :term="highlightTerm"
+                  :term="nameHighlightTerms"
                 />
               </span>
             </div>
           </template>
 
           <template #emailAddress-cell="{ row }">
-            <AdminHighlight
+            <SearchHighlight
               :text="row.original.emailAddress"
               :term="highlightTerm"
             />

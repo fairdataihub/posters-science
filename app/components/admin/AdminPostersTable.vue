@@ -4,6 +4,7 @@ import type { ColumnDef } from "@tanstack/vue-table";
 
 import {
   parsePosterSearch,
+  personNameWords,
   posterSearchMatches,
   POSTER_SEARCH_FIELD_LABELS,
 } from "#shared/utils/adminSearch";
@@ -111,6 +112,12 @@ const total = computed(() => postersData.value?.total ?? 0);
 const activeSearch = computed(() => parsePosterSearch(searchCommitted.value));
 
 const highlightTerm = computed(() => activeSearch.value.term);
+
+// A name matches word by word ("Doe Jane" finds Jane Doe), so mark each word.
+const nameHighlightTerms = computed(() => [
+  highlightTerm.value,
+  ...personNameWords(highlightTerm.value),
+]);
 
 function matchedFields(poster: AdminPosterRow) {
   return posterSearchMatches(
@@ -455,7 +462,10 @@ async function restorePoster(poster: AdminPosterRow) {
                 target="_blank"
                 class="text-primary font-mono text-sm hover:underline"
               >
-                <AdminHighlight :text="row.original.id" :term="highlightTerm" />
+                <SearchHighlight
+                  :text="row.original.id"
+                  :term="highlightTerm"
+                />
               </NuxtLink>
 
               <UButton
@@ -486,7 +496,7 @@ async function restorePoster(poster: AdminPosterRow) {
           <template #title-cell="{ row }">
             <AdminTextTooltip :text="row.original.title">
               <span class="line-clamp-2 max-w-sm cursor-help font-medium">
-                <AdminHighlight
+                <SearchHighlight
                   :text="row.original.title"
                   :term="highlightTerm"
                 />
@@ -496,13 +506,13 @@ async function restorePoster(poster: AdminPosterRow) {
 
           <template #owner-cell="{ row }">
             <span class="text-sm">
-              <AdminHighlight
+              <SearchHighlight
                 :text="`${row.original.user.givenName} ${row.original.user.familyName}`"
-                :term="highlightTerm"
+                :term="nameHighlightTerms"
               />
 
               <span class="text-muted block text-xs">
-                <AdminHighlight
+                <SearchHighlight
                   :text="row.original.user.emailAddress"
                   :term="highlightTerm"
                 />
@@ -572,7 +582,7 @@ async function restorePoster(poster: AdminPosterRow) {
                   rel="noopener noreferrer"
                   class="text-primary font-mono text-xs hover:underline"
                 >
-                  <AdminHighlight
+                  <SearchHighlight
                     :text="effectiveDoi(row.original)"
                     :term="highlightTerm"
                   />

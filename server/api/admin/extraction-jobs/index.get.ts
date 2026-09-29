@@ -1,3 +1,5 @@
+import { escapeLike } from "#shared/utils/searchQuery";
+
 export default defineEventHandler(async (event) => {
   await requireAdminSession(event);
 
@@ -7,6 +9,10 @@ export default defineEventHandler(async (event) => {
   const status = (query.status as string | undefined)?.trim() || "";
   const search = (query.search as string | undefined)?.trim() || "";
   const searchAsId = Number.parseInt(search, 10);
+  const contains = {
+    contains: escapeLike(search),
+    mode: "insensitive" as const,
+  };
 
   const where = {
     ...(status === "in-flight"
@@ -17,12 +23,8 @@ export default defineEventHandler(async (event) => {
     ...(search
       ? {
           OR: [
-            { fileName: { contains: search, mode: "insensitive" as const } },
-            {
-              poster: {
-                title: { contains: search, mode: "insensitive" as const },
-              },
-            },
+            { fileName: contains },
+            { poster: { title: contains } },
             ...(String(searchAsId) === search
               ? [{ poster: { id: searchAsId } }]
               : []),

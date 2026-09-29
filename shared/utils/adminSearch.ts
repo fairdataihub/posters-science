@@ -1,3 +1,5 @@
+import { normalizeDoi } from "./doi.ts";
+
 // Admin search is deliberately "all in one": a bare term looks at the poster id,
 // title, owner and DOI at once.
 export const POSTER_SEARCH_FIELDS = ["id", "title", "owner", "doi"] as const;
@@ -48,13 +50,18 @@ export function parsePosterSearch(
   const trimmed = (raw ?? "").trim();
   if (!trimmed) return EMPTY_SEARCH;
 
+  // DOIs are stored bare, so a pasted doi.org link is searched as its DOI.
   const match = trimmed.match(/^([a-zA-Z]+)\s*:\s*(.*)$/);
-  if (!match) return { field: null, term: trimmed, scoped: false };
+  if (!match) {
+    return { field: null, term: normalizeDoi(trimmed), scoped: false };
+  }
 
   const field = FIELD_ALIASES[match[1]!.toLowerCase()];
-  if (!field) return { field: null, term: trimmed, scoped: false };
+  if (!field) {
+    return { field: null, term: normalizeDoi(trimmed), scoped: false };
+  }
 
-  const term = match[2]!.trim();
+  const term = normalizeDoi(match[2]!);
   if (!term) return EMPTY_SEARCH;
 
   return { field, term, scoped: true };
@@ -83,6 +90,42 @@ function includesInsensitive(
   return (haystack ?? "").toLowerCase().includes(term.toLowerCase());
 }
 
+/** Words of a person's name as typed, e.g. "Doe, Jane" gives Doe and Jane. */
+export function personNameWords(term: string): string[] {
+  return term.split(/[\s,]+/).filter(Boolean);
+}
+
+type SearchableUser = {
+  givenName: string;
+  familyName: string;
+  emailAddress: string;
+};
+
+/**
+ * Mirrors the server's user search: the whole term in the email, first or last
+ * name, or every word of a multi-word term in the first or last name.
+ */
+export function userMatchesSearch(user: SearchableUser, term: string): boolean {
+  if (
+    includesInsensitive(user.emailAddress, term) ||
+    includesInsensitive(user.givenName, term) ||
+    includesInsensitive(user.familyName, term)
+  ) {
+    return true;
+  }
+
+  const words = personNameWords(term);
+
+  return (
+    words.length > 1 &&
+    words.every(
+      (word) =>
+        includesInsensitive(user.givenName, word) ||
+        includesInsensitive(user.familyName, word),
+    )
+  );
+}
+
 /**
  * Which fields a row actually matched on, so the table can say why the row is
  * there.
@@ -105,12 +148,7 @@ export function posterSearchMatches(
     matches.push("title");
   }
 
-  if (
-    check("owner") &&
-    (includesInsensitive(poster.user.emailAddress, parsed.term) ||
-      includesInsensitive(poster.user.givenName, parsed.term) ||
-      includesInsensitive(poster.user.familyName, parsed.term))
-  ) {
+  if (check("owner") && userMatchesSearch(poster.user, parsed.term)) {
     matches.push("owner");
   }
 
@@ -119,47 +157,4 @@ export function posterSearchMatches(
   }
 
   return matches;
-}
-
-export type HighlightSegment = { text: string; match: boolean };
-
-/**
- * Splits text into alternating plain and matching segments for rendering. Falls
- * back to a single plain segment when there is nothing to highlight.
- */
-export function splitHighlight(
-  text: string | null | undefined,
-  term: string | null | undefined,
-): HighlightSegment[] {
-  const value = text ?? "";
-  const needle = (term ?? "").trim();
-
-  if (!value || !needle) return [{ text: value, match: false }];
-
-  const haystack = value.toLowerCase();
-  const lowerNeedle = needle.toLowerCase();
-  const segments: HighlightSegment[] = [];
-
-  let cursor = 0;
-
-  while (cursor < value.length) {
-    const found = haystack.indexOf(lowerNeedle, cursor);
-
-    if (found === -1) {
-      segments.push({ text: value.slice(cursor), match: false });
-      break;
-    }
-
-    if (found > cursor) {
-      segments.push({ text: value.slice(cursor, found), match: false });
-    }
-
-    segments.push({
-      text: value.slice(found, found + needle.length),
-      match: true,
-    });
-    cursor = found + needle.length;
-  }
-
-  return segments.length > 0 ? segments : [{ text: value, match: false }];
 }
