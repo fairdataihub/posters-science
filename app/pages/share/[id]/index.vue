@@ -596,12 +596,13 @@ const conferenceDataMap = ref<
 
 // Set the minimum search length for the conference search to reduce API calls and load times
 const CONFERENCE_MIN_SEARCH_LENGTH = 2;
+const CONFERENCE_SEARCH_ERROR_MESSAGE =
+  "Conference suggestions are temporarily unavailable. Try again or enter the conference details manually.";
 
 const conferenceSearchTermRaw = ref("");
 const conferenceSearchTerm = ref("");
 
-let conferenceSearchDebounceTimer: ReturnType<typeof setTimeout> | null =
-  null;
+let conferenceSearchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let conferenceSearchAbort: AbortController | null = null;
 let conferenceSearchRequestId = 0;
 const conferenceSearchLoading = ref(false);
@@ -610,6 +611,8 @@ watch(conferenceSearchTermRaw, (value) => {
   if (conferenceSearchDebounceTimer)
     clearTimeout(conferenceSearchDebounceTimer);
 
+  conferenceOptionsError.value = null;
+
   const trimmed = value.trim();
   if (trimmed.length < CONFERENCE_MIN_SEARCH_LENGTH) {
     conferenceSearchTerm.value = "";
@@ -617,6 +620,7 @@ watch(conferenceSearchTermRaw, (value) => {
     conferenceSearchAbort?.abort();
     conferenceSearchAbort = null;
     conferenceSearchLoading.value = false;
+
     return;
   }
 
@@ -627,11 +631,10 @@ watch(conferenceSearchTermRaw, (value) => {
 });
 
 const conferenceItemsToShow = computed(() => {
-  if (
-    conferenceSearchTerm.value.trim().length < CONFERENCE_MIN_SEARCH_LENGTH
-  ) {
+  if (conferenceSearchTerm.value.trim().length < CONFERENCE_MIN_SEARCH_LENGTH) {
     return [];
   }
+
   return conferenceNameOptions.value;
 });
 
@@ -694,6 +697,7 @@ function applyConferenceSelection(name: string) {
 function mergeConferenceOptionsFromApi(options: any[]) {
   conferenceNameOptions.value = options.map((opt: any) => {
     const name = opt.conferenceName ?? "";
+
     return {
       label: name,
       value: name,
@@ -722,6 +726,7 @@ const loadConferenceOptions = async (search: string) => {
   if (!q || q.length < CONFERENCE_MIN_SEARCH_LENGTH) {
     conferenceNameOptions.value = [];
     conferenceSearchLoading.value = false;
+
     return;
   }
 
@@ -748,8 +753,9 @@ const loadConferenceOptions = async (search: string) => {
   } catch (error) {
     if (controller.signal.aborted) return;
     if (requestId !== conferenceSearchRequestId) return;
-    conferenceOptionsError.value =
-      error instanceof Error ? error.message : String(error);
+
+    console.error("[conference search] Failed to load options", error);
+    conferenceOptionsError.value = CONFERENCE_SEARCH_ERROR_MESSAGE;
     conferenceNameOptions.value = [];
   } finally {
     if (requestId === conferenceSearchRequestId) {
@@ -761,6 +767,10 @@ const loadConferenceOptions = async (search: string) => {
 watch(conferenceSearchTerm, (value) => {
   loadConferenceOptions(value);
 });
+
+function retryConferenceSearch() {
+  loadConferenceOptions(conferenceSearchTermRaw.value);
+}
 
 /** Extract a year from text (e.g. "ARVO 2025" or "Conference 25") for auto-fill. */
 function yearFromText(text: string): number | undefined {
@@ -1958,7 +1968,6 @@ const moveCreator = (index: number, direction: "up" | "down") => {
           >
             <div class="space-y-4">
               <div
-                v-if="!conferenceOptionsError"
                 class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 dark:border-gray-800 dark:bg-gray-900/40"
               >
                 <div
@@ -1966,9 +1975,10 @@ const moveCreator = (index: number, direction: "up" | "down") => {
                 >
                   Find a conference
                 </div>
+
                 <USelectMenu
                   v-model="selectedConference"
-                  v-model:searchTerm="conferenceSearchTermRaw"
+                  v-model:search-term="conferenceSearchTermRaw"
                   :items="conferenceItemsToShow"
                   :loading="conferenceSearchLoading"
                   :virtualize="{ estimateSize: 36, overscan: 16 }"
@@ -1976,13 +1986,14 @@ const moveCreator = (index: number, direction: "up" | "down") => {
                   value-key="value"
                   :ignore-filter="true"
                   class="w-full"
+                  :search-input="{
+                    placeholder: 'Search conferences by name or acronym…',
+                    icon: 'i-lucide-search',
+                  }"
                   @update:model-value="handleConferenceSelection"
-                  :search-input="{ placeholder: 'Search conferences by name or acronym…', icon: 'i-lucide-search' }"
                 >
                   <template #empty="{ searchTerm }">
-                    <span
-                      class="text-sm text-gray-500 dark:text-gray-400"
-                    >
+                    <span class="text-sm text-gray-500 dark:text-gray-400">
                       {{
                         conferenceSearchLoading
                           ? "Searching conferences…"
@@ -1996,6 +2007,24 @@ const moveCreator = (index: number, direction: "up" | "down") => {
                     </span>
                   </template>
                 </USelectMenu>
+
+                <div
+                  v-if="conferenceOptionsError"
+                  class="mt-2 flex flex-wrap items-center justify-between gap-2 text-sm text-red-600 dark:text-red-400"
+                  role="alert"
+                >
+                  <span>{{ conferenceOptionsError }}</span>
+
+                  <UButton
+                    label="Try again"
+                    color="error"
+                    variant="soft"
+                    size="xs"
+                    icon="i-lucide-refresh-cw"
+                    :loading="conferenceSearchLoading"
+                    @click="retryConferenceSearch"
+                  />
+                </div>
               </div>
 
               <div class="grid gap-3 md:grid-cols-2">

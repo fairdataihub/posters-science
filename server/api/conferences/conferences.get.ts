@@ -2,6 +2,7 @@ import {
   formatConferenceDate,
   getConferenceAggregatorPool,
 } from "../../utils/conferenceAggregatorPg";
+import { logwatch } from "../../utils/logwatch";
 
 type ConferenceSearchRow = {
   conferenceName: string;
@@ -40,6 +41,12 @@ function rowToResult(row: ConferenceSearchRow): ConferenceSearchResult {
 
 export default defineEventHandler(async (event) => {
   if (!process.env.CONFERENCE_DATABASE_URL) {
+    logwatch.error({
+      action: "conference.search",
+      message:
+        "Conference search is unavailable because CONFERENCE_DATABASE_URL is not configured",
+    });
+
     throw createError({
       statusCode: 500,
       statusMessage: "CONFERENCE_DATABASE_URL is not configured",
@@ -83,6 +90,14 @@ export default defineEventHandler(async (event) => {
       [pattern],
     );
   } catch (error) {
+    logwatch.error({
+      action: "conference.search",
+      message: "Conference aggregator query failed",
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      searchLength: search.length,
+    });
+
     throw createError({
       statusCode: 502,
       statusMessage: "Failed to load conferences from aggregator database",
