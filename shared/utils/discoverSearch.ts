@@ -84,7 +84,8 @@ export const DISCOVER_SEARCH_EXAMPLES: Record<DiscoverSearchField, string> = {
   title: "title:microbiome",
   description: "description:survey",
   keyword: "keyword:genomics",
-  author: "author:smith",
+  // eslint-disable-next-line @stylistic/quotes
+  author: 'author:"Jane Doe"',
   affiliation: "affiliation:stanford",
   doi: "doi:10.5281/zenodo.1234567",
   conference: "conference:ISMB",
@@ -92,7 +93,8 @@ export const DISCOVER_SEARCH_EXAMPLES: Record<DiscoverSearchField, string> = {
   ror: "ror:0168r3w48",
   funder: "funder:NIH",
   award: "award:R01",
-  content: "content:random forest",
+  // eslint-disable-next-line @stylistic/quotes
+  content: 'content:"random forest"',
 };
 
 export type DiscoverSearchClause = {
