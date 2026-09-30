@@ -16,6 +16,7 @@ export function getConferenceAggregatorPool(): pg.Pool {
   }
 
   globalThis.conferenceAggregatorPool = new Pool({ connectionString });
+
   return globalThis.conferenceAggregatorPool;
 }
 
@@ -23,5 +24,6 @@ export function formatConferenceDate(
   value: Date | null | undefined,
 ): string | null {
   if (!value) return null;
+
   return value.toISOString().slice(0, 10);
 }

@@ -766,20 +766,6 @@ const StrictCreatorSchema = z
     { message: "Family name is required", path: ["familyName"] },
   );
 
-const StrictPublisherSchema = z.object({
-  name: z.string().min(1, { message: "Publisher name is required" }),
-  publisherIdentifier: z.string().optional(),
-  publisherIdentifierScheme: z.string().optional(),
-  schemeURI: z.string().optional(),
-});
-// .refine(
-//   (data) => !data.publisherIdentifier || data.publisherIdentifierScheme,
-//   {
-//     message: "Scheme is required when identifier is provided",
-//     path: ["publisherIdentifierScheme"],
-//   },
-// );
-
 const StrictFundingSchema = z
   .object({
     funderName: z.string().min(1, { message: "Funder name is required" }),
