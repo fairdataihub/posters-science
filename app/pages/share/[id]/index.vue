@@ -626,9 +626,21 @@ watch(conferenceSearchTermRaw, (value) => {
 
   conferenceSearchLoading.value = true;
   conferenceSearchDebounceTimer = setTimeout(() => {
+    conferenceSearchDebounceTimer = null;
     conferenceSearchTerm.value = value;
     loadConferenceOptions(value);
   }, 500);
+});
+
+onBeforeUnmount(() => {
+  if (conferenceSearchDebounceTimer) {
+    clearTimeout(conferenceSearchDebounceTimer);
+    conferenceSearchDebounceTimer = null;
+  }
+
+  conferenceSearchAbort?.abort();
+  conferenceSearchAbort = null;
+  conferenceSearchRequestId += 1;
 });
 
 const conferenceItemsToShow = computed(() => {
