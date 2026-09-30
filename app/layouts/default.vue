@@ -17,6 +17,71 @@ const logout = async () => {
   await navigateTo("/");
 };
 
+const postersNavChildren = [
+  {
+    label: "Share a Poster",
+    description: "Upload and publish your research poster.",
+    icon: "line-md:file-upload",
+    to: "/share/new",
+  },
+  {
+    label: "Browse Posters",
+    description: "Browse and discover scientific posters.",
+    icon: "material-symbols:saved-search",
+    to: "/discover",
+  },
+] as const;
+
+const conferencesNavChildren = [
+  {
+    label: "Register a Conference",
+    description:
+      "Register your conference with Posters.Science and optionally import posters in bulk if you have an existing collection.",
+    icon: "material-symbols:groups",
+    to: "/conferences/register",
+  },
+  {
+    label: "Browse Conferences",
+    description:
+      "Browse supported conferences and submit a poster to a conference.",
+    icon: "material-symbols:saved-search",
+    to: "/conferences",
+  },
+] as const;
+
+type NavDropdownMenu = {
+  label: string;
+  contentWidth: string;
+  children: readonly {
+    label: string;
+    description: string;
+    icon: string;
+    to: string;
+  }[];
+};
+
+const desktopNavDropdowns: NavDropdownMenu[] = [
+  {
+    label: "Posters",
+    contentWidth: "w-60",
+    children: postersNavChildren,
+  },
+  {
+    label: "Conferences",
+    contentWidth: "w-80",
+    children: conferencesNavChildren,
+  },
+];
+
+function desktopNavLinkClass(active: boolean) {
+  return [
+    "group relative inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors before:absolute before:inset-x-px before:inset-y-0 before:-z-10 before:rounded-md",
+    active
+      ? "text-primary before:bg-elevated"
+      : "text-muted hover:text-highlighted hover:before:bg-elevated/50",
+  ];
+}
+
 const headerItems = computed<NavigationMenuItem[]>(() => [
   {
     label: "Dashboard",
@@ -24,14 +89,16 @@ const headerItems = computed<NavigationMenuItem[]>(() => [
     active: route.path.startsWith("/dashboard"),
   },
   {
-    label: "Find Posters",
-    to: "/discover",
-    active: route.path.startsWith("/discover"),
+    label: "Posters",
+    value: "posters",
+    type: "trigger",
+    children: [...postersNavChildren],
   },
   {
-    label: "Share a Poster",
-    to: "/share/new",
-    active: route.path.startsWith("/share"),
+    label: "Conferences",
+    value: "conferences",
+    type: "trigger",
+    children: [...conferencesNavChildren],
   },
   {
     label: "Documentation",
@@ -137,7 +204,8 @@ const footerItems: NavigationMenuItem[] = [
       v-model:open="mobileMenuOpen"
       :ui="{
         left: 'lg:flex-none',
-        center: 'flex-1 justify-center',
+        center: 'flex-1 justify-center overflow-visible',
+        container: 'overflow-visible',
         right: 'lg:flex-none',
       }"
     >
@@ -147,7 +215,70 @@ const footerItems: NavigationMenuItem[] = [
         </NuxtLink>
       </template>
 
-      <UNavigationMenu :items="headerItems" />
+      <nav class="hidden items-center gap-1.5 lg:flex">
+        <ULink
+          to="/dashboard"
+          :class="desktopNavLinkClass(route.path.startsWith('/dashboard'))"
+        >
+          Dashboard
+        </ULink>
+
+        <UPopover
+          v-for="dropdown in desktopNavDropdowns"
+          :key="dropdown.label"
+          arrow
+          mode="hover"
+          :content="{ side: 'bottom', align: 'start', sideOffset: 6 }"
+          :ui="{ content: `${dropdown.contentWidth} p-0 z-50` }"
+        >
+          <button type="button" :class="desktopNavLinkClass(false)">
+            {{ dropdown.label }}
+            <UIcon
+              name="i-lucide-chevron-down"
+              class="size-5 shrink-0 opacity-70"
+            />
+          </button>
+
+          <template #content>
+            <ul class="flex flex-col gap-1 p-2">
+              <li v-for="child in dropdown.children" :key="child.to">
+                <ULink
+                  :to="child.to"
+                  class="group hover:bg-elevated/50 flex items-start gap-2 rounded-md px-3 py-2 text-sm transition-colors"
+                >
+                  <UIcon
+                    :name="child.icon"
+                    class="text-dimmed group-hover:text-default size-5 shrink-0"
+                  />
+                  <span class="min-w-0">
+                    <span class="text-highlighted block font-medium">
+                      {{ child.label }}
+                    </span>
+                    <span class="text-muted line-clamp-2 text-balance">
+                      {{ child.description }}
+                    </span>
+                  </span>
+                </ULink>
+              </li>
+            </ul>
+          </template>
+        </UPopover>
+
+        <ULink
+          to="https://docs.posters.science"
+          target="_blank"
+          :class="desktopNavLinkClass(false)"
+        >
+          Documentation
+        </ULink>
+
+        <ULink
+          to="/metrics"
+          :class="desktopNavLinkClass(route.path.startsWith('/metrics'))"
+        >
+          Metrics
+        </ULink>
+      </nav>
 
       <template #right>
         <UButton
@@ -220,6 +351,7 @@ const footerItems: NavigationMenuItem[] = [
           :items="headerItems"
           orientation="vertical"
           class="w-full"
+          :ui="{ childLinkDescription: 'text-balance line-clamp-2' }"
         />
 
         <USeparator />
