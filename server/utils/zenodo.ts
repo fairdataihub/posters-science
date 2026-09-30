@@ -2295,13 +2295,6 @@ function buildRdmCreators(
   });
 }
 
-// Sandbox 500s on publish when metadata.dates is present; production is fine,
-// so withhold dates on sandbox only. Details in buildFullRdmPayload.
-const ZENODO_SANDBOX_DROPS_DATES = /sandbox/i.test(
-  config.zenodoApiEndpoint ?? "",
-);
-const SEND_DATES_TO_ZENODO = !ZENODO_SANDBOX_DROPS_DATES;
-
 type RdmExtras = {
   skipRorIds?: boolean;
   skipFunderIds?: boolean;
@@ -2418,14 +2411,9 @@ function buildFullRdmPayload(
       ...(additionalDescriptions.length > 0 && {
         additional_descriptions: additionalDescriptions,
       }),
-      // SANDBOX WORKAROUND (2026-09-24): sandbox accepts dates on the draft but
-      // 500s on publish. Our payload is spec-correct and production is fine, so
-      // this is their regression: records published with
-      // dates on 09-21 and replaying those same payloads on 09-24 failed.
-      ...(SEND_DATES_TO_ZENODO &&
-        options?.presentedDates?.length && {
-          dates: options.presentedDates,
-        }),
+      ...(options?.presentedDates?.length && {
+        dates: options.presentedDates,
+      }),
       ...((meta.version as string | null | undefined) && {
         version: meta.version as string,
       }),
