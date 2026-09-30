@@ -563,7 +563,6 @@ const conferenceYearOptions = Array.from(
 type ConferenceOption = {
   label: string;
   value: string;
-  acronym?: string;
 };
 
 const conferenceNameOptions = shallowRef<ConferenceOption[]>([]);
@@ -573,7 +572,7 @@ const conferenceDataMap = ref<
   Record<
     string,
     {
-      id?: string;
+      id: string;
       conferenceName?: string;
       conferenceYear?: number;
       conferenceAcronym?: string | null;
@@ -667,13 +666,15 @@ function missingConferenceFieldLabels(data: ConferenceDataEntry): string[] {
   return missing;
 }
 
-function applyConferenceSelection(name: string) {
+function applyConferenceSelection(conferenceId: string) {
   if (!state.conference) return;
 
-  state.conference.conferenceName = name;
+  const conferenceData = conferenceDataMap.value[conferenceId];
+  const name = conferenceData?.conferenceName?.trim();
 
-  const conferenceData = conferenceDataMap.value[name];
-  if (!conferenceData) return;
+  if (!conferenceData || !name) return;
+
+  state.conference.conferenceName = name;
 
   if (conferenceData.conferenceYear) {
     state.conference.conferenceYear = conferenceData.conferenceYear;
@@ -710,21 +711,29 @@ function applyConferenceSelection(name: string) {
   });
 }
 
-function mergeConferenceOptionsFromApi(options: any[]) {
-  conferenceNameOptions.value = options.map((opt: any) => {
-    const name = opt.conferenceName ?? "";
+function conferenceOptionLabel(data: ConferenceDataEntry): string {
+  const name = data.conferenceName?.trim() ?? "";
+  const details = [
+    data.conferenceAcronym?.trim(),
+    data.conferenceYear ? String(data.conferenceYear) : undefined,
+  ].filter((detail): detail is string => Boolean(detail));
 
-    return {
-      label: name,
-      value: name,
-      acronym: opt.conferenceAcronym ?? "",
-    };
-  });
+  return details.length > 0 ? `${name} (${details.join(", ")})` : name;
+}
+
+function mergeConferenceOptionsFromApi(options: any[]) {
+  const nextOptions: ConferenceOption[] = [];
+  const nextDataMap: Record<string, ConferenceDataEntry> = {};
 
   for (const opt of options) {
-    const name = opt.conferenceName;
-    if (!name) continue;
-    conferenceDataMap.value[name] = {
+    const id = typeof opt.id === "string" ? opt.id : "";
+    const name =
+      typeof opt.conferenceName === "string" ? opt.conferenceName.trim() : "";
+
+    if (!id || !name) continue;
+
+    const data: ConferenceDataEntry = {
+      id,
       conferenceName: name,
       conferenceYear: opt.conferenceYear,
       conferenceAcronym: opt.conferenceAcronym,
@@ -734,7 +743,13 @@ function mergeConferenceOptionsFromApi(options: any[]) {
       conferenceUri: opt.conferenceUri,
       conferenceSeries: opt.conferenceSeries,
     };
+
+    nextDataMap[id] = data;
+    nextOptions.push({ label: conferenceOptionLabel(data), value: id });
   }
+
+  conferenceDataMap.value = nextDataMap;
+  conferenceNameOptions.value = nextOptions;
 }
 
 async function loadConferenceOptions(search: string) {
@@ -813,62 +828,17 @@ watch(
   (name) => {
     if (!state.conference || !name) return;
 
-    const conferenceData = conferenceDataMap.value[name];
-
-    // Auto-fill conference fields from the loaded data
-    // Only fill fields that don't already have values (don't overwrite user input)
-
-    // Year: only auto-fill if not already set
-    if (!state.conference.conferenceYear && conferenceData?.conferenceYear) {
-      state.conference.conferenceYear = conferenceData.conferenceYear;
-    } else if (!state.conference.conferenceYear && name) {
-      // Fallback: extract year from name if not in lookup data
+    if (!state.conference.conferenceYear) {
+      // Extract the year when users enter a conference name manually.
       const year = yearFromText(name);
       if (year != null) state.conference.conferenceYear = year;
-    }
-
-    // Acronym: only auto-fill if not already set
-    if (
-      !state.conference.conferenceAcronym &&
-      conferenceData?.conferenceAcronym
-    ) {
-      state.conference.conferenceAcronym = conferenceData.conferenceAcronym;
-    }
-
-    // Location: only auto-fill if not already set
-    if (
-      !state.conference.conferenceLocation &&
-      conferenceData?.conferenceLocation
-    ) {
-      state.conference.conferenceLocation = conferenceData.conferenceLocation;
-    }
-
-    // Start date: only auto-fill if not already set
-    if (
-      !state.conference.conferenceStartDate &&
-      conferenceData?.conferenceStartDate
-    ) {
-      state.conference.conferenceStartDate = conferenceData.conferenceStartDate;
-    }
-
-    // End date: only auto-fill if not already set
-    if (
-      !state.conference.conferenceEndDate &&
-      conferenceData?.conferenceEndDate
-    ) {
-      state.conference.conferenceEndDate = conferenceData.conferenceEndDate;
-    }
-
-    // URI: only auto-fill if not already set
-    if (!state.conference.conferenceUri && conferenceData?.conferenceUri) {
-      state.conference.conferenceUri = conferenceData.conferenceUri;
     }
   },
 );
 
-function handleConferenceSelection(name: string) {
-  const conferenceData = conferenceDataMap.value[name];
-  applyConferenceSelection(name);
+function handleConferenceSelection(conferenceId: string) {
+  const conferenceData = conferenceDataMap.value[conferenceId];
+  applyConferenceSelection(conferenceId);
 
   if (!conferenceData) return;
 

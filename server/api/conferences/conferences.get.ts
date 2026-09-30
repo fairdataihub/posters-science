@@ -10,6 +10,7 @@ import {
 import { logwatch } from "../../utils/logwatch";
 
 type ConferenceSearchRow = {
+  id: string;
   conferenceName: string;
   conferenceYear: number | null;
   conferenceUri: string | null;
@@ -21,6 +22,7 @@ type ConferenceSearchRow = {
 };
 
 export type ConferenceSearchResult = {
+  id: string;
   conferenceName: string;
   conferenceYear?: number;
   conferenceAcronym?: string | null;
@@ -33,6 +35,7 @@ export type ConferenceSearchResult = {
 
 function rowToResult(row: ConferenceSearchRow): ConferenceSearchResult {
   return {
+    id: row.id,
     conferenceName: row.conferenceName,
     conferenceYear: row.conferenceYear ?? undefined,
     conferenceAcronym: row.conferenceAcronym,
@@ -85,6 +88,7 @@ export default defineEventHandler(async (event) => {
     result = await getConferenceAggregatorPool().query<ConferenceSearchRow>(
       `
         SELECT
+          "id",
           "conferenceName",
           "conferenceYear",
           "conferenceUri",
