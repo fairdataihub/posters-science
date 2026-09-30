@@ -612,13 +612,14 @@ watch(conferenceSearchTermRaw, (value) => {
     clearTimeout(conferenceSearchDebounceTimer);
 
   conferenceOptionsError.value = null;
+  conferenceSearchAbort?.abort();
+  conferenceSearchAbort = null;
+  conferenceSearchRequestId += 1;
+  conferenceNameOptions.value = [];
 
   const trimmed = value.trim();
   if (trimmed.length < CONFERENCE_MIN_SEARCH_LENGTH) {
     conferenceSearchTerm.value = "";
-    conferenceNameOptions.value = [];
-    conferenceSearchAbort?.abort();
-    conferenceSearchAbort = null;
     conferenceSearchLoading.value = false;
 
     return;
@@ -627,6 +628,7 @@ watch(conferenceSearchTermRaw, (value) => {
   conferenceSearchLoading.value = true;
   conferenceSearchDebounceTimer = setTimeout(() => {
     conferenceSearchTerm.value = value;
+    loadConferenceOptions(value);
   }, 500);
 });
 
@@ -721,7 +723,7 @@ function mergeConferenceOptionsFromApi(options: any[]) {
   }
 }
 
-const loadConferenceOptions = async (search: string) => {
+async function loadConferenceOptions(search: string) {
   const q = search.trim();
   if (!q || q.length < CONFERENCE_MIN_SEARCH_LENGTH) {
     conferenceNameOptions.value = [];
@@ -762,11 +764,7 @@ const loadConferenceOptions = async (search: string) => {
       conferenceSearchLoading.value = false;
     }
   }
-};
-
-watch(conferenceSearchTerm, (value) => {
-  loadConferenceOptions(value);
-});
+}
 
 function retryConferenceSearch() {
   loadConferenceOptions(conferenceSearchTermRaw.value);
