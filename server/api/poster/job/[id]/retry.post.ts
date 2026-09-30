@@ -3,6 +3,12 @@ export default defineEventHandler(async (event) => {
   assertVersioningEnabled();
 
   const session = await requireUserSession(event);
+
+  // Only the extraction switch applies here. The versioning switch pauses
+  // starting a new version; this draft already exists, so letting the user
+  // finish it is the point of "drafts in progress stay editable".
+  await assertNotInMaintenance("extraction");
+
   const { id: jobId } = event.context.params as { id: string };
 
   if (!jobId) {
@@ -17,7 +23,13 @@ export default defineEventHandler(async (event) => {
     select: {
       id: true,
       status: true,
-      poster: { select: { status: true, versionRootId: true } },
+      poster: {
+        select: {
+          status: true,
+          versionRootId: true,
+          posterMetadata: { select: { posterId: true } },
+        },
+      },
     },
   });
 
@@ -37,41 +49,15 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  const config = useRuntimeConfig(event);
-  if (!config.posterExtractionApi) {
-    throw createError({
-      statusCode: 503,
-      statusMessage: "Poster extraction is not configured",
-    });
-  }
+  const pending = await requeueExtractionJob(
+    job.id,
+    Boolean(job.poster.posterMetadata),
+    "poster/job/retry",
+  );
 
-  const pending = await prisma.extractionJob.update({
-    where: { id: job.id },
-    data: { status: "pending-extraction", completed: false, error: null },
-    select: { status: true, completed: true, error: true },
-  });
-
-  try {
-    const response = await fetch(`${config.posterExtractionApi}/jobs/check`, {
-      method: "POST",
-    });
-
-    if (!response.ok) {
-      throw new Error(`Extraction service returned ${response.status}`);
-    }
-  } catch (error) {
-    const message =
-      error instanceof Error
-        ? `Could not restart extraction: ${error.message}`
-        : "Could not restart extraction";
-
-    await prisma.extractionJob.update({
-      where: { id: job.id },
-      data: { status: "failed", completed: false, error: message },
-    });
-
-    throw createError({ statusCode: 502, statusMessage: message });
-  }
-
-  return pending;
+  return {
+    status: pending.status,
+    completed: pending.completed,
+    error: pending.error,
+  };
 });

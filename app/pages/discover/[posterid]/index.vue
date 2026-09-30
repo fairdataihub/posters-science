@@ -1,12 +1,12 @@
 <!-- eslint-disable @typescript-eslint/no-explicit-any -->
 <script setup lang="ts">
-import licenses from "@/assets/data/licenses.json";
-import notFoundAnimation from "@/assets/animations/404-not-found.json";
+import licenses from "~/assets/data/licenses.json";
+import notFoundAnimation from "~/assets/animations/404-not-found.json";
 import {
   RESOURCE_TYPE_OPTIONS,
   RELATION_TYPE_OPTIONS,
-} from "@/utils/poster_schema";
-import { resolveDoiUrl } from "@/utils/doi";
+} from "~/utils/poster_schema";
+import { resolveDoiUrl } from "#shared/utils/doi";
 import type { WithContext, ScholarlyArticle } from "schema-dts";
 
 type PosterIdentifier = {
@@ -153,6 +153,7 @@ const poster = ref({
       RELATION_TYPE_OPTIONS.find((rt) => rt.value === ri.relationType)?.label ??
       ri.relationType ??
       "References",
+    relationInformation: ri.relationTypeInformation?.trim() || null,
     doi: ri.relatedIdentifier ?? "",
     url: relatedIdentifierUrl(ri),
   })),
@@ -993,6 +994,13 @@ const tabItems = [
                       <UBadge color="secondary" variant="soft" class="ml-3">
                         {{ ref.resourceType }}
                       </UBadge>
+
+                      <p
+                        v-if="ref.relationInformation"
+                        class="mt-2 text-sm text-gray-500 dark:text-gray-400"
+                      >
+                        {{ ref.relationInformation }}
+                      </p>
 
                       <p class="mt-1 text-sm">
                         <a

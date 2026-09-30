@@ -28,26 +28,42 @@ export function normalizeVersionRelatedIdentifiers(
   previousDoi?: string | null,
 ) {
   let changed = false;
-  const relatedIdentifiers = Array.isArray(raw)
-    ? raw
-        .filter(
-          (relation): relation is VersionRelatedIdentifier =>
-            typeof relation === "object" && relation !== null,
-        )
-        .map((relation) => {
-          if (
-            relation.relationType !== "IsNewVersionOf" ||
-            relation.resourceTypeGeneral
-          ) {
-            return relation;
-          }
-
-          changed = true;
-
-          return { ...relation, resourceTypeGeneral: "Poster" };
-        })
+  const existing = Array.isArray(raw)
+    ? raw.filter(
+        (relation): relation is VersionRelatedIdentifier =>
+          typeof relation === "object" && relation !== null,
+      )
     : [];
   const normalizedPreviousDoi = previousDoi?.trim();
+
+  const relatedIdentifiers = existing
+    .filter((relation) => {
+      // A version is a new edition of the one before it, nothing earlier.
+      // Versions inherit their predecessor's metadata, so without this the
+      // chain grows by one IsNewVersionOf per version.
+      if (!normalizedPreviousDoi) return true;
+      if (relation.relationType !== "IsNewVersionOf") return true;
+
+      const isImmediatePredecessor =
+        relation.relatedIdentifier?.trim().toLowerCase() ===
+        normalizedPreviousDoi.toLowerCase();
+
+      if (!isImmediatePredecessor) changed = true;
+
+      return isImmediatePredecessor;
+    })
+    .map((relation) => {
+      if (
+        relation.relationType !== "IsNewVersionOf" ||
+        relation.resourceTypeGeneral
+      ) {
+        return relation;
+      }
+
+      changed = true;
+
+      return { ...relation, resourceTypeGeneral: "Poster" };
+    });
 
   if (
     normalizedPreviousDoi &&

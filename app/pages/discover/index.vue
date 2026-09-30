@@ -1,6 +1,16 @@
 <script setup lang="ts">
 import dayjs from "dayjs";
 
+import {
+  DISCOVER_FREE_TEXT_FIELDS,
+  DISCOVER_SEARCH_EXAMPLES,
+  DISCOVER_SEARCH_FIELD_LABELS,
+  discoverHighlightTerms,
+  parseDiscoverSearch,
+  withoutDiscoverClause,
+  withoutDiscoverFreeText,
+} from "#shared/utils/discoverSearch";
+
 const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Discover Posters - Posters.science")}&description=${encodeURIComponent("Find and explore scientific posters on a variety of topics.")}&app=posters-science&org=fairdataihub`;
 
 useSeoMeta({
@@ -172,6 +182,47 @@ function triggerSearch() {
   committedSearch.value = searchQuery.value.trim();
   page.value = 1;
 }
+
+function applySearch(value: string) {
+  searchQuery.value = value;
+  triggerSearch();
+}
+
+const parsedSearch = computed(() => parseDiscoverSearch(committedSearch.value));
+
+const highlightTerms = computed(() =>
+  discoverHighlightTerms(parsedSearch.value),
+);
+
+const FREE_TEXT_SCOPE =
+  "title, description, keywords, authors, affiliations, conference and DOI";
+
+const searchScopeLabel = computed(() => {
+  const { clauses, freeText } = parsedSearch.value;
+
+  if (clauses.length === 0) {
+    return freeText ? `Searching ${FREE_TEXT_SCOPE} for "${freeText}".` : "";
+  }
+
+  const parts = clauses.map(
+    ({ field, term }) => `${DISCOVER_SEARCH_FIELD_LABELS[field]} "${term}"`,
+  );
+
+  if (freeText) parts.push(`"${freeText}" in any of the default fields`);
+
+  return `Matching ${parts.join(" and ")}.`;
+});
+
+const searchHelp = (
+  Object.keys(DISCOVER_SEARCH_EXAMPLES) as Array<
+    keyof typeof DISCOVER_SEARCH_EXAMPLES
+  >
+).map((field) => ({
+  field,
+  label: DISCOVER_SEARCH_FIELD_LABELS[field],
+  example: DISCOVER_SEARCH_EXAMPLES[field],
+  inFreeText: (DISCOVER_FREE_TEXT_FIELDS as readonly string[]).includes(field),
+}));
 
 watch(sortBy, () => {
   page.value = 1;
@@ -345,10 +396,33 @@ const activeFilters = computed<ActiveFilter[]>(() => {
   return out;
 });
 
+const searchBadges = computed<ActiveFilter[]>(() => {
+  const parsed = parsedSearch.value;
+  const out: ActiveFilter[] = parsed.clauses.map(({ field, term }, index) => ({
+    key: `search:${index}`,
+    label: `${DISCOVER_SEARCH_FIELD_LABELS[field]}: ${term}`,
+    onRemove: () => applySearch(withoutDiscoverClause(parsed, index)),
+  }));
+
+  if (parsed.freeText) {
+    out.push({
+      key: "search:text",
+      label: `Search: ${parsed.freeText}`,
+      onRemove: () => applySearch(withoutDiscoverFreeText(parsed)),
+    });
+  }
+
+  return out;
+});
+
 const activeFilterCount = computed(() => activeFilters.value.length);
 const hasActiveFilters = computed(() => activeFilterCount.value > 0);
+const hasActiveBadges = computed(
+  () => hasActiveFilters.value || searchBadges.value.length > 0,
+);
 
 function clearAllFilters() {
+  if (committedSearch.value) applySearch("");
   sourceFilterValue.value = [];
   languageFilterValue.value = [];
   licenseFilterValue.value = [];
@@ -487,12 +561,42 @@ function clearAllFilters() {
         </div>
 
         <div class="flex items-center gap-2 pb-4">
-          <UInput
-            v-model="searchQuery"
-            placeholder="Search posters by title, description, or keywords..."
-            icon="i-lucide-search"
-            @keydown.enter="triggerSearch"
-          />
+          <UTooltip
+            :ui="{ content: 'h-auto max-w-md items-start p-3' }"
+            :delay-duration="300"
+          >
+            <UInput
+              v-model="searchQuery"
+              placeholder="Search title, author, affiliation, DOI, ORCID..."
+              icon="i-lucide-search"
+              class="w-full sm:w-96"
+              @keydown.enter="triggerSearch"
+            />
+
+            <template #content>
+              <div class="space-y-2 text-xs">
+                <p>
+                  A plain search looks at the {{ FREE_TEXT_SCOPE }}. Pasting an
+                  ORCID, ROR or DOI searches for that identifier.
+                </p>
+
+                <p>
+                  Narrow it with one or more prefixes. Put values with spaces in
+                  quotes.
+                </p>
+
+                <ul class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
+                  <template v-for="item in searchHelp" :key="item.field">
+                    <li class="contents">
+                      <span class="text-muted">{{ item.label }}</span>
+
+                      <code>{{ item.example }}</code>
+                    </li>
+                  </template>
+                </ul>
+              </div>
+            </template>
+          </UTooltip>
 
           <UButton
             color="primary"
@@ -502,6 +606,15 @@ function clearAllFilters() {
             @click="triggerSearch"
           />
         </div>
+
+        <p
+          v-if="searchScopeLabel"
+          class="text-muted -mt-2 flex items-center gap-1.5 pb-4 text-xs"
+        >
+          <UIcon name="i-lucide-search" class="size-3.5 shrink-0" />
+
+          {{ searchScopeLabel }}
+        </p>
 
         <div class="flex items-center justify-between pb-4">
           <div>
@@ -523,13 +636,13 @@ function clearAllFilters() {
         </div>
 
         <div
-          v-if="hasActiveFilters"
+          v-if="hasActiveBadges"
           class="flex flex-wrap items-center gap-2 pb-4"
         >
           <span class="text-sm text-gray-500">Active filters:</span>
 
           <UBadge
-            v-for="filter in activeFilters"
+            v-for="filter in [...searchBadges, ...activeFilters]"
             :key="filter.key"
             color="primary"
             variant="subtle"
@@ -591,11 +704,17 @@ function clearAllFilters() {
                   <div class="relative flex flex-col justify-between gap-2 p-2">
                     <div class="flex flex-col gap-3">
                       <h3 class="line-clamp-2 text-lg font-semibold">
-                        {{ poster.title }}
+                        <SearchHighlight
+                          :text="poster.title"
+                          :term="highlightTerms.title"
+                        />
                       </h3>
 
                       <p class="line-clamp-3 text-sm leading-relaxed">
-                        {{ poster.description }}
+                        <SearchHighlight
+                          :text="poster.description"
+                          :term="highlightTerms.description"
+                        />
                       </p>
 
                       <div class="flex flex-wrap gap-1">
@@ -606,7 +725,10 @@ function clearAllFilters() {
                           variant="soft"
                           class="capitalize"
                         >
-                          {{ tag }}
+                          <SearchHighlight
+                            :text="tag"
+                            :term="highlightTerms.keyword"
+                          />
                         </UBadge>
 
                         <UBadge

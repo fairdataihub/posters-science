@@ -113,5 +113,9 @@ export default defineEventHandler(async (event) => {
     imageUrl: job.poster.imageUrl,
     title: job.poster.title,
     description: job.poster.description,
+    // Timestamps let a polling client report elapsed time and flag a job that
+    // has stalled rather than only showing an indeterminate spinner.
+    startedAt: job.created,
+    updatedAt: job.updated,
   };
 });

@@ -84,6 +84,12 @@
     "description": "PubMed Identifier: a unique identifier assigned to each PubMed record."
   },
   {
+    "value": "RAiD",
+    "label": "RAiD (Research Activity Identifier)",
+    "placeholder": "e.g., https://raid.org/10.12345/abcdef",
+    "description": "Research Activity Identifier: a persistent identifier for research activities (projects, programs, etc.)."
+  },
+  {
     "value": "PURL",
     "label": "PURL (Persistent Uniform Resource Locator)",
     "placeholder": "e.g., https://example.com/1234567890",
@@ -100,6 +106,12 @@
     "label": "Website URL",
     "placeholder": "e.g., https://example.com/1234567890",
     "description": "Uniform Resource Locator, also known as web address, is a specific character string that constitutes a reference to a resource. The syntax is: scheme://domain:port/path?qu ery_string#fragment_id"
+  },
+  {
+    "value": "SWHID",
+    "label": "SWHID (Software Heritage Identifier)",
+    "placeholder": "e.g., swh:1:cnt:94a9ed024d3859793618152ea559a168bbcbb5e2",
+    "description": "Software Heritage Identifier: an intrinsic identifier for digital objects in the Software Heritage archive. Format: swh:1:cnt:<hash>."
   },
   {
     "value": "URN",

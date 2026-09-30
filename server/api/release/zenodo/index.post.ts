@@ -14,6 +14,8 @@ const payloadSchema = z.object({
 export default defineEventHandler(async (event) => {
   const session = await requireUserSession(event);
 
+  await assertNotInMaintenance("zenodo");
+
   const { user } = session;
   const userId = user.id;
 

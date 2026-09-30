@@ -46,6 +46,8 @@ model User {
 
   adminAuditLogs AdminAuditLog[] @relation("AdminActions")
 
+  maintenanceFlagUpdates MaintenanceFlag[] @relation("MaintenanceFlagUpdates")
+
   @@index([emailAddress])
 }
 
@@ -267,11 +269,30 @@ model ExtractionJob {
   filePath String
 
   completed Boolean @default(false)
-  status    String  @default("pending-extraction") // pending-extraction, processing, completed, failed
+  // pending-extraction, pending-thumbnail, processing, completed, failed
+  status    String  @default("pending-extraction")
   error     String? // Filled when job fails
 
   created DateTime @default(now())
   updated DateTime @updatedAt
 
   @@index([status])
+}
+
+model MaintenanceFlag {
+  // One row per pausable workflow. A missing row means the workflow is live.
+  // Keys are defined in shared/utils/maintenance.ts.
+  key     String  @id
+  enabled Boolean @default(false)
+  message String  @default("") // Admin authored copy shown to users while paused
+
+  enabledAt DateTime? // When the flag was most recently switched on
+
+  updatedBy   User?   @relation("MaintenanceFlagUpdates", fields: [updatedById], references: [id])
+  updatedById String?
+
+  created DateTime @default(now())
+  updated DateTime @updatedAt
+
+  @@index([enabled])
 }

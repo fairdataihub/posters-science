@@ -1,11 +1,11 @@
 import * as z from "zod";
 import isoLanguages from "#shared/data/iso-639-1.json";
-import licenses from "@/assets/data/licenses.json";
-import identifierTypes from "@/assets/data/identifier-types.json";
-import relationTypes from "@/assets/data/relation-types.json";
-import resourceTypes from "@/assets/data/resource-types.json";
+import licenses from "~/assets/data/licenses.json";
+import identifierTypes from "~/assets/data/identifier-types.json";
+import relationTypes from "~/assets/data/relation-types.json";
+import resourceTypes from "~/assets/data/resource-types.json";
 import { isValidOrcidChecksum, validateOrcidExists } from "#shared/utils/orcid";
-import { normalizeDoi, validateDoi } from "./doi";
+import { normalizeDoi, validateDoi } from "#shared/utils/doi";
 
 export { validateOrcidExists };
 
@@ -419,6 +419,9 @@ const RelatedIdentifierSchema = z.object({
     .string()
     .min(1, { message: "Related identifier type is required" }),
   relationType: z.string().min(1, { message: "Relation type is required" }),
+  // Free text explaining the relationship. Recommended when relationType is
+  // "Other", which carries no meaning on its own, but valid for any type.
+  relationTypeInformation: z.string().optional(),
   relatedMetadataScheme: z.string().optional(),
   schemeURI: z.string().optional().refine(isValidUrl, {
     message: "Must be a valid URL (e.g. https://example.com)",
