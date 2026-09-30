@@ -678,17 +678,31 @@ function applyConferenceSelection(name: string) {
   if (conferenceData.conferenceYear) {
     state.conference.conferenceYear = conferenceData.conferenceYear;
   }
-  state.conference.conferenceAcronym = conferenceData.conferenceAcronym || "";
-  state.conference.conferenceLocation = conferenceData.conferenceLocation || "";
-  state.conference.conferenceIdentifier =
-    conferenceData.conferenceIdentifier || "";
-  state.conference.conferenceIdentifierType =
-    conferenceData.conferenceIdentifierType || "";
-  state.conference.conferenceStartDate =
-    conferenceData.conferenceStartDate || "";
-  state.conference.conferenceEndDate = conferenceData.conferenceEndDate || "";
-  state.conference.conferenceUri = conferenceData.conferenceUri || "";
-  state.conference.conferenceSeries = conferenceData.conferenceSeries || "";
+  if (conferenceData.conferenceAcronym?.trim()) {
+    state.conference.conferenceAcronym = conferenceData.conferenceAcronym;
+  }
+  if (conferenceData.conferenceLocation?.trim()) {
+    state.conference.conferenceLocation = conferenceData.conferenceLocation;
+  }
+  if (conferenceData.conferenceIdentifier?.trim()) {
+    state.conference.conferenceIdentifier = conferenceData.conferenceIdentifier;
+  }
+  if (conferenceData.conferenceIdentifierType?.trim()) {
+    state.conference.conferenceIdentifierType =
+      conferenceData.conferenceIdentifierType;
+  }
+  if (conferenceData.conferenceStartDate?.trim()) {
+    state.conference.conferenceStartDate = conferenceData.conferenceStartDate;
+  }
+  if (conferenceData.conferenceEndDate?.trim()) {
+    state.conference.conferenceEndDate = conferenceData.conferenceEndDate;
+  }
+  if (conferenceData.conferenceUri?.trim()) {
+    state.conference.conferenceUri = conferenceData.conferenceUri;
+  }
+  if (conferenceData.conferenceSeries?.trim()) {
+    state.conference.conferenceSeries = conferenceData.conferenceSeries;
+  }
   // Clear the search selection so the search bar is empty after choosing.
   // Run on nextTick so the SelectMenu's internal update finishes first.
   nextTick(() => {
