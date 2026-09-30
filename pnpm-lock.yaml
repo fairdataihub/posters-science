@@ -138,6 +138,9 @@ importers:
       '@types/nodemailer':
         specifier: 8.0.0
         version: 8.0.0
+      '@types/pg':
+        specifier: 8.23.1
+        version: 8.23.1
       '@types/sanitize-html':
         specifier: 2.16.1
         version: 2.16.1
@@ -3121,6 +3124,9 @@ packages:
 
   '@types/pg@8.20.0':
     resolution: {integrity: sha512-bEPFOaMAHTEP1EzpvHTbmwR8UsFyHSKsRisLIHVMXnpNefSbGA1bD6CVy+qKjGSqmZqNqBDV2azOBo8TgkcVow==}
+
+  '@types/pg@8.23.1':
+    resolution: {integrity: sha512-fKVHpikPdg4GKks3JuLEhvwSyvwzF23hnabPy6DD8ljVbC7+6J5dQzdv4arV6jqq57djnMgs1HKBxX4P8aBI3A==}
 
   '@types/pluralize@0.0.33':
     resolution: {integrity: sha512-JOqsl+ZoCpP4e8TDke9W79FDcSgPAR0l6pixx2JHkhnRjvShyYiAYw2LVsnA7K08Y6DeOnaU6ujmENO4os/cYg==}
@@ -11488,6 +11494,12 @@ snapshots:
       parse-path: 7.1.0
 
   '@types/pg@8.20.0':
+    dependencies:
+      '@types/node': 25.9.1
+      pg-protocol: 1.14.0
+      pg-types: 2.2.0
+
+  '@types/pg@8.23.1':
     dependencies:
       '@types/node': 25.9.1
       pg-protocol: 1.14.0

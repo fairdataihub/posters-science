@@ -835,7 +835,11 @@ const StrictConferenceSchema = z.object({
   conferenceYear: z
     .number()
     .min(1000)
-    .max(9999, { message: "Conference year is required" }),
+    .max(9999)
+    .optional()
+    .refine((year) => year !== undefined, {
+      message: "Conference year is required",
+    }),
   conferenceStartDate: z.string(),
   conferenceEndDate: z.string(),
   conferenceAcronym: z.string().optional(),
