@@ -67,6 +67,7 @@ env:
     NODE_ENV: production # Set to 'production' for production deployments
   secret:
     - DATABASE_URL # Database connection string
+    - CONFERENCE_DATABASE_URL
     - NUXT_SESSION_PASSWORD
     # Nuxt runtime config overrides (NUXT_ prefix)
     - NUXT_PUBLIC_SITE_ENV

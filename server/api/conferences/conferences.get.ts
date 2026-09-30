@@ -2,6 +2,11 @@ import {
   formatConferenceDate,
   getConferenceAggregatorPool,
 } from "../../utils/conferenceAggregatorPg";
+import {
+  conferenceSearchTermSchema,
+  CONFERENCE_SEARCH_RESULT_LIMIT,
+  toConferenceLikePattern,
+} from "../../utils/conferenceSearch";
 import { logwatch } from "../../utils/logwatch";
 
 type ConferenceSearchRow = {
@@ -40,6 +45,8 @@ function rowToResult(row: ConferenceSearchRow): ConferenceSearchResult {
 }
 
 export default defineEventHandler(async (event) => {
+  await requireUserSession(event);
+
   if (!process.env.CONFERENCE_DATABASE_URL) {
     logwatch.error({
       action: "conference.search",
@@ -55,18 +62,23 @@ export default defineEventHandler(async (event) => {
 
   const query = getQuery(event);
   const searchRaw = query.search ?? query.q;
-  const search =
+  const searchCandidate =
     typeof searchRaw === "string"
       ? searchRaw.trim()
       : Array.isArray(searchRaw)
         ? String(searchRaw[0] ?? "").trim()
         : "";
+  const parsedSearch = conferenceSearchTermSchema.safeParse(searchCandidate);
 
-  if (!search) {
-    return { options: [] as ConferenceSearchResult[] };
+  if (!parsedSearch.success) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: "Search term must be between 2 and 100 characters",
+    });
   }
 
-  const pattern = `%${search}%`;
+  const search = parsedSearch.data;
+  const pattern = toConferenceLikePattern(search);
 
   let result;
   try {
@@ -83,11 +95,20 @@ export default defineEventHandler(async (event) => {
           "conferenceSeries"
         FROM "Conference"
         WHERE
-          "conferenceName" ILIKE $1
-          OR COALESCE("conferenceAcronym", '') ILIKE $1
-        ORDER BY "conferenceName" ASC
+          "conferenceName" ILIKE $1 ESCAPE '\\'
+          OR COALESCE("conferenceAcronym", '') ILIKE $1 ESCAPE '\\'
+        ORDER BY
+          CASE
+            WHEN LOWER("conferenceName") = LOWER($3)
+              OR LOWER(COALESCE("conferenceAcronym", '')) = LOWER($3)
+            THEN 0
+            ELSE 1
+          END,
+          "conferenceStartDate" DESC NULLS LAST,
+          "conferenceName" ASC
+        LIMIT $2
       `,
-      [pattern],
+      [pattern, CONFERENCE_SEARCH_RESULT_LIMIT, search],
     );
   } catch (error) {
     logwatch.error({
