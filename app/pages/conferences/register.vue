@@ -1,24 +1,17 @@
 <script setup lang="ts">
-import {
-  ALLOWED_POSTER_FILE_LABEL,
-  MAX_POSTER_FILE_SIZE_LABEL,
-  POSTER_FILE_ACCEPT,
-  posterFileRejectionReason,
-} from "#shared/utils/posterFile";
-
 definePageMeta({
   middleware: ["auth"],
 });
 
-const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Register a conference - Posters.science")}&description=${encodeURIComponent("Register your conference on Posters.science")}&app=posters-science&org=fairdataihub`;
+const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Conference registration - Posters.science")}&description=${encodeURIComponent("Submit a conference registration on Posters.science")}&app=posters-science&org=fairdataihub`;
 
 useSeoMeta({
-  title: "Register a conference",
+  title: "Conference registration",
   description:
-    "Register your conference on Posters.science and optionally import posters for conference participants.",
-  ogTitle: "Register a conference - Posters.science",
+    "Submit a conference registration on Posters.science. We review each request before the conference is listed.",
+  ogTitle: "Conference registration - Posters.science",
   ogDescription:
-    "Register your conference on Posters.science and optionally import posters for conference participants.",
+    "Submit a conference registration on Posters.science. We review each request before the conference is listed.",
   ogImage,
 });
 
@@ -37,10 +30,7 @@ const conference = reactive({
   description: "",
 });
 
-type ParticipantPosterChoice =
-  | "participants-submit"
-  | "upload-now"
-  | "upload-later";
+type ParticipantPosterChoice = "participants-submit" | "organizer-import";
 
 const participantPosterItems: {
   label: string;
@@ -48,21 +38,16 @@ const participantPosterItems: {
   description: string;
 }[] = [
   {
-    label: "Participants will submit their own posters",
+    label: "Participants submit their own posters",
     value: "participants-submit",
     description:
-      "Register the conference on Posters.science and let attendees upload their work.",
+      "After your registration is approved, attendees can submit posters linked to this conference.",
   },
   {
-    label: "I have poster files to upload now",
-    value: "upload-now",
-    description: "Import posters on behalf of conference participants in bulk.",
-  },
-  {
-    label: "I will upload participant posters later",
-    value: "upload-later",
+    label: "I will upload posters for participants",
+    value: "organizer-import",
     description:
-      "Register the conference first and add participant posters after review.",
+      "After your registration is approved, you can import posters on behalf of attendees.",
   },
 ];
 
@@ -70,52 +55,106 @@ const participantPosterChoice = ref<ParticipantPosterChoice>(
   "participants-submit",
 );
 
-const selectedFiles = ref<File[]>([]);
 const participantPosterNotes = ref("");
 
-const FILE_HINT = `${ALLOWED_POSTER_FILE_LABEL} up to ${MAX_POSTER_FILE_SIZE_LABEL} per file`;
+const organizerLicensingAcknowledged = ref(false);
 
-const validatePosterFile = (file: File) =>
-  posterFileRejectionReason({
-    name: file.name,
-    type: file.type,
-    size: file.size,
-  });
+const CONFERENCE_IMAGE_ACCEPT = "image/jpeg,image/png,image/webp";
+const MAX_CONFERENCE_IMAGE_BYTES = 5 * 1024 * 1024;
+const CONFERENCE_IMAGE_HINT = "JPEG, PNG, or WebP up to 5 MB";
 
-const onFilesRejected = (rejections: { file: File; reason: string }[]) => {
+const conferenceImageFiles = ref<File[]>([]);
+const conferenceImagePreviewUrl = ref<string | null>(null);
+
+function validateConferenceImage(file: File): string | null {
+  const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
+  if (!allowedTypes.includes(file.type)) {
+    return "Use a JPEG, PNG, or WebP image.";
+  }
+  if (file.size > MAX_CONFERENCE_IMAGE_BYTES) {
+    return "Image must be 5 MB or smaller.";
+  }
+  return null;
+}
+
+function onConferenceImageRejected(
+  rejections: { file: File; reason: string }[],
+) {
   const first = rejections[0];
   if (!first) return;
 
   toast.add({
-    title: "File not accepted",
+    title: "Image not accepted",
     description: `${first.file.name}: ${first.reason}`,
     color: "error",
   });
-};
+}
 
-const showPosterUpload = computed(
-  () => participantPosterChoice.value === "upload-now",
-);
+watch(participantPosterChoice, (choice) => {
+  if (choice !== "organizer-import") {
+    organizerLicensingAcknowledged.value = false;
+  }
+});
+
+watch(conferenceImageFiles, (files) => {
+  if (conferenceImagePreviewUrl.value) {
+    URL.revokeObjectURL(conferenceImagePreviewUrl.value);
+    conferenceImagePreviewUrl.value = null;
+  }
+
+  const file = files[0];
+  if (file) {
+    conferenceImagePreviewUrl.value = URL.createObjectURL(file);
+  }
+});
+
+onUnmounted(() => {
+  if (conferenceImagePreviewUrl.value) {
+    URL.revokeObjectURL(conferenceImagePreviewUrl.value);
+  }
+});
 
 const canSubmit = computed(() => {
-  const conferenceValid =
+  const base =
     conference.name.trim().length > 0 &&
     conference.acronym.trim().length > 0 &&
     conference.contactEmail.trim().length > 0;
 
-  if (!conferenceValid) return false;
+  if (!base) return false;
 
-  if (participantPosterChoice.value === "upload-now") {
-    return (
-      selectedFiles.value.length > 0 &&
-      selectedFiles.value.every((file) => !validatePosterFile(file))
-    );
+  if (participantPosterChoice.value === "organizer-import") {
+    return organizerLicensingAcknowledged.value;
   }
 
   return true;
 });
 
+const submitAttempted = ref(false);
+
+const acronymFieldError = computed(() =>
+  submitAttempted.value && !conference.acronym.trim()
+    ? "Acronym is required"
+    : undefined,
+);
+
 function submitRegistration() {
+  submitAttempted.value = true;
+
+  if (
+    !conference.name.trim() ||
+    !conference.acronym.trim() ||
+    !conference.contactEmail.trim()
+  ) {
+    return;
+  }
+
+  if (
+    participantPosterChoice.value === "organizer-import" &&
+    !organizerLicensingAcknowledged.value
+  ) {
+    return;
+  }
+
   toast.add({
     title: "Coming soon",
     description:
@@ -128,175 +167,234 @@ function submitRegistration() {
 <template>
   <div class="mx-auto flex w-full max-w-screen-xl flex-col gap-8 px-6 pb-12">
     <UPageHeader
-      title="Register a conference"
-      description="Tell us about your conference and whether you need to import posters for participants. We will review your request and follow up by email."
-    >
-    </UPageHeader>
+      title="Conference registration"
+      description="Tell us about your conference and how you expect posters to be submitted. We review each registration before listing the conference and enabling poster submission."
+      :links="[
+        {
+          label: 'Back to conference management',
+          to: '/conferences/registration',
+          icon: 'i-lucide-arrow-left',
+          color: 'neutral' as const,
+          variant: 'ghost' as const,
+        },
+      ]"
+    />
 
     <form class="flex flex-col gap-8" @submit.prevent="submitRegistration">
       <UCard>
         <template #header>
-          <h2 class="text-lg font-semibold">Conference information</h2>
+          <h2 class="text-lg font-semibold">Conference registration</h2>
         </template>
 
-        <div class="grid gap-4 sm:grid-cols-2">
-          <UFormField label="Conference name" required class="sm:col-span-2">
-            <UInput
-              v-model="conference.name"
-              placeholder="e.g. Annual Research Conference"
-              class="w-full"
-            />
-          </UFormField>
-
-          <UFormField label="Acronym" required>
-            <UInput
-              v-model="conference.acronym"
-              placeholder="e.g. EARC"
-              class="w-full"
-            />
-          </UFormField>
-
-          <UFormField label="Location">
-            <UInput
-              v-model="conference.location"
-              placeholder="City, country, or Virtual"
-              class="w-full"
-            />
-          </UFormField>
-
-          <div class="grid gap-4 sm:col-span-2 sm:grid-cols-2">
-            <UFormField label="Start date">
+        <div class="flex flex-col gap-8">
+          <div class="grid gap-4 sm:grid-cols-2">
+            <UFormField label="Conference name" required class="sm:col-span-2">
               <UInput
-                v-model="conference.startDate"
-                type="date"
+                v-model="conference.name"
+                placeholder="e.g. Annual Research Conference"
                 class="w-full"
               />
             </UFormField>
 
-            <UFormField label="End date">
-              <UInput v-model="conference.endDate" type="date" class="w-full" />
-            </UFormField>
-
             <UFormField
-              label="Participant submission deadline"
-              description="A target date you share with attendees for when you would like posters submitted."
+              label="Acronym"
+              name="acronym"
+              required
+              :error="acronymFieldError"
             >
               <UInput
-                v-model="conference.submissionDeadline"
-                type="date"
+                v-model="conference.acronym"
+                name="acronym"
+                required
+                placeholder="e.g. EARC"
                 class="w-full"
               />
             </UFormField>
-          </div>
 
-          <UFormField label="Conference website" class="sm:col-span-2">
-            <UInput
-              v-model="conference.website"
-              type="url"
-              placeholder="https://"
-              class="w-full"
-            />
-          </UFormField>
+            <UFormField label="Location">
+              <UInput
+                v-model="conference.location"
+                placeholder="City, country, or Virtual"
+                class="w-full"
+              />
+            </UFormField>
 
-          <UFormField label="Organizer name">
-            <UInput
-              v-model="conference.organizerName"
-              placeholder="Primary contact name"
-              class="w-full"
-            />
-          </UFormField>
+            <div class="grid gap-4 sm:col-span-2 sm:grid-cols-2">
+              <UFormField label="Start date">
+                <UInput
+                  v-model="conference.startDate"
+                  type="date"
+                  class="w-full"
+                />
+              </UFormField>
 
-          <UFormField label="Organizer email" required>
-            <UInput
-              v-model="conference.contactEmail"
-              type="email"
-              placeholder="you@institution.edu"
-              class="w-full"
-            />
-          </UFormField>
+              <UFormField label="End date">
+                <UInput
+                  v-model="conference.endDate"
+                  type="date"
+                  class="w-full"
+                />
+              </UFormField>
 
-          <UFormField
-            label="About the conference"
-            description="Optional. Help us understand the scope and audience."
-            class="sm:col-span-2"
-          >
-            <UTextarea
-              v-model="conference.description"
-              :rows="4"
-              placeholder="Brief description of the conference (optional)"
-              class="w-full"
-            />
-          </UFormField>
-        </div>
-      </UCard>
+              <UFormField
+                label="Participant submission deadline"
+                description="A target date you share with attendees for when you would like posters submitted."
+              >
+                <UInput
+                  v-model="conference.submissionDeadline"
+                  type="date"
+                  class="w-full"
+                />
+              </UFormField>
+            </div>
 
-      <UCard>
-        <template #header>
-          <div>
-            <h2 class="text-lg font-semibold">Posters for participants</h2>
-            <p class="text-muted mt-1 text-sm">
-              Do you have poster files to submit on behalf of conference
-              participants, or will attendees submit their own?
-            </p>
-          </div>
-        </template>
+            <UFormField label="Conference website" class="sm:col-span-2">
+              <UInput
+                v-model="conference.website"
+                type="url"
+                placeholder="https://"
+                class="w-full"
+              />
+            </UFormField>
 
-        <div class="space-y-6">
-          <UFormField label="Poster submission plan" required>
-            <URadioGroup
-              v-model="participantPosterChoice"
-              :items="participantPosterItems"
-              value-key="value"
-              label-key="label"
-              description-key="description"
-              :ui="{ fieldset: 'gap-3', item: 'items-start' }"
-            />
-          </UFormField>
+            <UFormField label="Organizer name">
+              <UInput
+                v-model="conference.organizerName"
+                placeholder="Primary contact name"
+                class="w-full"
+              />
+            </UFormField>
 
-          <template v-if="showPosterUpload">
+            <UFormField label="Organizer email" required>
+              <UInput
+                v-model="conference.contactEmail"
+                type="email"
+                placeholder="you@institution.edu"
+                class="w-full"
+              />
+            </UFormField>
+
             <UFormField
-              label="Participant poster files"
-              description="Upload poster PDFs or images for conference participants. You can add metadata for each poster after import."
-              required
+              label="About the conference"
+              description="Optional. Help us understand the scope and audience."
+              class="sm:col-span-2"
+            >
+              <UTextarea
+                v-model="conference.description"
+                :rows="4"
+                placeholder="Brief description of the conference (optional)"
+                class="w-full"
+              />
+            </UFormField>
+
+            <UFormField
+              label="Conference image"
+              description="Optional. Logo, banner, or photo for the conference listing after approval."
+              class="sm:col-span-2"
             >
               <UiFileUpload
-                multiple
-                :accept="POSTER_FILE_ACCEPT"
-                :validate-file="validatePosterFile"
-                :hint="FILE_HINT"
-                @on-change="selectedFiles = $event"
-                @on-reject="onFilesRejected"
+                :accept="CONFERENCE_IMAGE_ACCEPT"
+                :validate-file="validateConferenceImage"
+                :hint="CONFERENCE_IMAGE_HINT"
+                @on-change="conferenceImageFiles = $event"
+                @on-reject="onConferenceImageRejected"
               >
                 <UiFileUploadGrid />
               </UiFileUpload>
+
+              <img
+                v-if="conferenceImagePreviewUrl"
+                :src="conferenceImagePreviewUrl"
+                alt="Conference image preview"
+                class="border-default mt-4 max-h-48 w-full max-w-md rounded-lg border object-contain"
+              />
+            </UFormField>
+          </div>
+
+          <USeparator />
+
+          <div class="space-y-4">
+            <div>
+              <h3 class="text-base font-semibold">Posters for participants</h3>
+              <p class="text-muted mt-1 text-sm">
+                Choose how posters will be added after we approve this
+                registration. You cannot upload participant posters until the
+                conference is approved.
+              </p>
+            </div>
+
+            <UFormField label="Poster submission plan" required>
+              <URadioGroup
+                v-model="participantPosterChoice"
+                :items="participantPosterItems"
+                value-key="value"
+                label-key="label"
+                description-key="description"
+                :ui="{ fieldset: 'gap-3', item: 'items-start' }"
+              />
             </UFormField>
 
-            <p v-if="selectedFiles.length" class="text-muted text-sm">
-              {{ selectedFiles.length }} file{{
-                selectedFiles.length === 1 ? "" : "s"
-              }}
-              selected.
-            </p>
-          </template>
+            <template v-if="participantPosterChoice === 'organizer-import'">
+              <div
+                class="space-y-4 rounded-lg border border-gray-200 p-4 dark:border-gray-800"
+              >
+                <div>
+                  <h4 class="text-sm font-semibold">
+                    Licensing and permission
+                  </h4>
 
-          <UFormField
-            v-if="participantPosterChoice !== 'participants-submit'"
-            label="Notes"
-            description="Optional. Share anything we should know about participant posters or timing."
-          >
-            <UTextarea
-              v-model="participantPosterNotes"
-              :rows="3"
-              placeholder="Optional notes about participant posters or timing"
-              class="w-full"
-            />
-          </UFormField>
+                  <p class="text-muted mt-1 text-sm">
+                    Uploading posters for others is only allowed when you can
+                    share them publicly under the correct license.
+                  </p>
+                </div>
+
+                <UAlert
+                  color="warning"
+                  variant="soft"
+                  icon="i-lucide-scale"
+                  title="You need proper rights to each poster"
+                  description="When you upload on behalf of presenters, you must have their permission. You will assign licenses per poster later in the upload process."
+                />
+
+                <ul class="text-muted list-disc space-y-2 pl-5 text-sm">
+                  <li>
+                    You will provide accurate licenses for each poster when you
+                    upload them.
+                  </li>
+                  <li>
+                    Authors can request removal at any time, and Posters.science
+                    will honor those requests.
+                  </li>
+                </ul>
+
+                <UFormField required>
+                  <UCheckbox
+                    v-model="organizerLicensingAcknowledged"
+                    label="I confirm the statements above and understand that I am responsible for having the rights to share any participant posters I upload."
+                  />
+                </UFormField>
+              </div>
+
+              <UFormField
+                label="Notes"
+                description="Optional. Expected number of posters, timeline, or other details."
+              >
+                <UTextarea
+                  v-model="participantPosterNotes"
+                  :rows="3"
+                  placeholder="Optional notes about participant posters"
+                  class="w-full"
+                />
+              </UFormField>
+            </template>
+          </div>
         </div>
       </UCard>
 
       <div class="flex flex-col gap-3 sm:flex-row sm:justify-end">
         <UButton
-          to="/conferences"
+          to="/conferences/registration"
           color="neutral"
           variant="outline"
           label="Cancel"

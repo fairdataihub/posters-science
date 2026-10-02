@@ -15,10 +15,10 @@ const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURICo
 useSeoMeta({
   title: "Conferences - Posters.science",
   description:
-    "Browse conferences supported on Posters.science, submit a poster, or register a new conference.",
+    "Browse conferences supported on Posters.science and submit your poster.",
   ogTitle: "Conferences - Posters.science",
   ogDescription:
-    "Browse conferences supported on Posters.science, submit a poster, or register a new conference.",
+    "Browse conferences supported on Posters.science and submit your poster.",
   ogImage,
 });
 
@@ -27,7 +27,7 @@ const supportedConferences: SupportedConference[] = [
     id: "annual-research-conference-2026",
     name: "Annual Research Conference",
     acronym: "EARC",
-    location: "Lisbon, Portugal",
+    location: "San Diego, California, USA",
     year: 2026,
     dateRange: "June 12–14, 2026",
     posterCount: 128,
@@ -90,16 +90,7 @@ function browsePostersFor(conferenceId: string) {
   <div class="mx-auto flex w-full max-w-screen-xl flex-col gap-8 px-6 pb-12">
     <UPageHeader
       title="Conferences"
-      description="Browse conferences on Posters.science, submit a poster to a conference you’re attending or have attended, or register a new conference."
-      :links="[
-        {
-          label: 'Register a conference',
-          to: '/conferences/register',
-          icon: 'material-symbols:event-available',
-          color: 'neutral' as const,
-          variant: 'outline' as const,
-        },
-      ]"
+      description="Browse conferences on Posters.science and submit a poster to a conference you’re attending or have attended."
     />
 
     <section class="flex flex-col gap-4">

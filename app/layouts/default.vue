@@ -34,11 +34,11 @@ const postersNavChildren = [
 
 const conferencesNavChildren = [
   {
-    label: "Register a Conference",
+    label: "Conference management",
     description:
-      "Register your conference with Posters.Science and optionally import posters in bulk if you have an existing collection.",
-    icon: "material-symbols:groups",
-    to: "/conferences/register",
+      "Register a conference on Posters.Science. View pending registrations, manage conferences you organize, and import participant posters after acceptance.",
+    icon: "material-symbols:event-available",
+    to: "/conferences/registration",
   },
   {
     label: "Browse Conferences",
@@ -68,7 +68,7 @@ const desktopNavDropdowns: NavDropdownMenu[] = [
   },
   {
     label: "Conferences",
-    contentWidth: "w-80",
+    contentWidth: "w-96",
     children: conferencesNavChildren,
   },
 ];
@@ -254,7 +254,7 @@ const footerItems: NavigationMenuItem[] = [
                     <span class="text-highlighted block font-medium">
                       {{ child.label }}
                     </span>
-                    <span class="text-muted line-clamp-2 text-balance">
+                    <span class="text-muted text-balance whitespace-normal">
                       {{ child.description }}
                     </span>
                   </span>
@@ -351,7 +351,7 @@ const footerItems: NavigationMenuItem[] = [
           :items="headerItems"
           orientation="vertical"
           class="w-full"
-          :ui="{ childLinkDescription: 'text-balance line-clamp-2' }"
+          :ui="{ childLinkDescription: 'text-balance whitespace-normal' }"
         />
 
         <USeparator />
