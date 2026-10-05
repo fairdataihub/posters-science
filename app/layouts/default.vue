@@ -38,7 +38,7 @@ const conferencesNavChildren = [
     description:
       "Register a conference on Posters.Science. View pending registrations, manage conferences you organize, and import participant posters after acceptance.",
     icon: "material-symbols:event-available",
-    to: "/conferences/registration",
+    to: "/conferences/management",
   },
   {
     label: "Browse Conferences",

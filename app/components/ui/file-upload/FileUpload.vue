@@ -16,6 +16,10 @@ interface FileUploadProps {
   validateFile?: (file: File) => string | null;
   /** Helper text under the drop zone, such as accepted types and size limit. */
   hint?: string;
+  /** When true, selected files are not listed inside the drop zone (show them elsewhere). */
+  hideFileList?: boolean;
+  /** When true, rejected files are not shown inside the drop zone. */
+  hideRejections?: boolean;
 }
 
 const props = withDefaults(defineProps<FileUploadProps>(), {
@@ -23,6 +27,8 @@ const props = withDefaults(defineProps<FileUploadProps>(), {
   accept: undefined,
   validateFile: undefined,
   hint: undefined,
+  hideFileList: false,
+  hideRejections: false,
 });
 
 const emit = defineEmits<{
@@ -152,9 +158,13 @@ function handleDrop(e: DragEvent) {
             {{ hint }}
           </p>
 
-          <div class="relative mx-auto mt-10 w-full max-w-xl space-y-4">
+          <div
+            class="relative mx-auto w-full max-w-xl space-y-4"
+            :class="hideFileList ? 'mt-4' : 'mt-10'"
+          >
             <Motion
               v-for="(file, idx) in files"
+              v-show="!hideFileList"
               :key="`file-${idx}`"
               :initial="{ opacity: 0, scaleX: 0 }"
               :animate="{ opacity: 1, scaleX: 1 }"
@@ -216,6 +226,7 @@ function handleDrop(e: DragEvent) {
             <!-- Files the caller refused, e.g. wrong type or too large -->
             <div
               v-for="rejected in rejections"
+              v-show="!hideRejections"
               :key="`rejected-${rejected.name}`"
               class="relative z-40 mx-auto flex w-full items-start gap-2 rounded-md border border-red-300 bg-red-50 p-3 text-left dark:border-red-900 dark:bg-red-950/50"
             >

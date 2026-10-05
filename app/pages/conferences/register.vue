@@ -41,13 +41,13 @@ const participantPosterItems: {
     label: "Participants submit their own posters",
     value: "participants-submit",
     description:
-      "After your registration is approved, attendees can submit posters linked to this conference.",
+      "Attendees will typically submit their own posters on Posters.science.",
   },
   {
     label: "I will upload posters for participants",
     value: "organizer-import",
     description:
-      "After your registration is approved, you can import posters on behalf of attendees.",
+      "You plan to upload or import posters on behalf of presenters.",
   },
 ];
 
@@ -168,11 +168,11 @@ function submitRegistration() {
   <div class="mx-auto flex w-full max-w-screen-xl flex-col gap-8 px-6 pb-12">
     <UPageHeader
       title="Conference registration"
-      description="Tell us about your conference and how you expect posters to be submitted. We review each registration before listing the conference and enabling poster submission."
+      description="Tell us about your conference. We review each registration before listing it on Posters.science."
       :links="[
         {
           label: 'Back to conference management',
-          to: '/conferences/registration',
+          to: '/conferences/management',
           icon: 'i-lucide-arrow-left',
           color: 'neutral' as const,
           variant: 'ghost' as const,
@@ -317,9 +317,8 @@ function submitRegistration() {
             <div>
               <h3 class="text-base font-semibold">Posters for participants</h3>
               <p class="text-muted mt-1 text-sm">
-                Choose how posters will be added after we approve this
-                registration. You cannot upload participant posters until the
-                conference is approved.
+                This helps us review your registration. It does not limit what
+                you can do in conference management after approval.
               </p>
             </div>
 
@@ -394,7 +393,7 @@ function submitRegistration() {
 
       <div class="flex flex-col gap-3 sm:flex-row sm:justify-end">
         <UButton
-          to="/conferences/registration"
+          to="/conferences/management"
           color="neutral"
           variant="outline"
           label="Cancel"
