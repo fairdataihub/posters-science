@@ -73,6 +73,9 @@ useSeoMeta({
       ]"
     />
 
-    <ConferenceBulkImport :conference-acronym="reg.acronym" />
+    <ConferenceBulkImport
+      :conference-acronym="reg.acronym"
+      :conference-id="reg.id"
+    />
   </div>
 </template>
