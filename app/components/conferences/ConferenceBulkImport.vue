@@ -6,33 +6,82 @@ import {
   POSTER_FILE_ACCEPT,
   posterFileRejectionReason,
 } from "#shared/utils/posterFile";
+import type { BulkImportWizardStep } from "#shared/types/bulkImportWizard";
+import { normalizeBulkImportWizardStep } from "#shared/types/bulkImportWizard";
+import type { BulkImportStagedPoster } from "#shared/types/bulkPosterSubmissionJob";
 import {
   CONFERENCE_BULK_IMPORT_LICENSE_METADATA_BASENAME,
-  CONFERENCE_BULK_IMPORT_WIZARD_STEPS,
   type BulkImportBatchItem,
   type BulkImportBatchItemStatus,
   type BulkImportSubmissionRow,
-  type ConferenceBulkImportWizardStep,
 } from "#shared/types/conferenceBulkImport";
 import {
-  buildSubmissionRowsForZipBundle,
+  buildSubmissionRowsFromSeparateUpload,
   countSubmissionRowsByStatus,
   submissionRowStatusColor,
   submissionRowStatusLabel,
 } from "~/utils/conferenceBulkImportSubmissions";
-import { conferenceImportSpreadsheetCsvFromFileNames } from "~/utils/conferenceImportSpreadsheet";
-import { conferenceManagementDetailPath } from "~/utils/conferenceManagementPaths";
+import {
+  conferenceImportSpreadsheetCsvFromFileNames,
+  readConferenceImportSpreadsheetFile,
+  type ConferenceImportSpreadsheetRow,
+} from "~/utils/conferenceImportSpreadsheet";
+import {
+  createBulkPosterSubmissionJob,
+  getBulkPosterSubmissionJob,
+  updateBulkPosterSubmissionJob,
+  uploadBulkPosterSubmissionFile,
+} from "~/utils/bulkPosterSubmissionJobClient";
+import { shareNewBulkPath } from "~/utils/sharePaths";
+
+const router = useRouter();
+const route = useRoute();
+
+function fetchErrorStatusCode(error: unknown): number | undefined {
+  if (!error || typeof error !== "object") return undefined;
+  if ("statusCode" in error && typeof error.statusCode === "number") {
+    return error.statusCode;
+  }
+  if (
+    "data" in error &&
+    error.data &&
+    typeof error.data === "object" &&
+    "statusCode" in error.data &&
+    typeof (error.data as { statusCode: unknown }).statusCode === "number"
+  ) {
+    return (error.data as { statusCode: number }).statusCode;
+  }
+  return undefined;
+}
+
+function fetchErrorDescription(error: unknown): string | undefined {
+  if (!error || typeof error !== "object") return undefined;
+  if ("data" in error && error.data && typeof error.data === "object") {
+    const data = error.data as { message?: string; statusMessage?: string };
+    return data.message ?? data.statusMessage;
+  }
+  if ("statusMessage" in error && typeof error.statusMessage === "string") {
+    return error.statusMessage;
+  }
+  return undefined;
+}
 
 const props = defineProps<{
-  conferenceAcronym: string;
-  conferenceId: string;
+  initialJobId?: string;
+  initialImportName?: string;
+  initialStep?: BulkImportWizardStep | "assets";
+  initialStagedPosters?: BulkImportStagedPoster[];
+  initialLicenseMetadataUploaded?: boolean;
 }>();
 
 const toast = useToast();
 
-const preparedImportZip = ref<File[]>([]);
-const posterFiles = ref<File[]>([]);
-const licenseMetadataGenerated = ref(false);
+const stagedPosters = ref<BulkImportStagedPoster[]>(
+  props.initialStagedPosters ?? [],
+);
+const licenseMetadataUploaded = ref(
+  props.initialLicenseMetadataUploaded ?? false,
+);
 
 const POSTER_ONLY_HINT = `${ALLOWED_POSTER_FILE_LABEL}, up to ${MAX_POSTER_FILE_SIZE_LABEL} per file`;
 
@@ -43,61 +92,43 @@ const validatePosterFile = (file: File) =>
     size: file.size,
   });
 
-const wizardSteps = CONFERENCE_BULK_IMPORT_WIZARD_STEPS;
-
-function stepIndex(step: ConferenceBulkImportWizardStep) {
-  return wizardSteps.findIndex((item) => item.id === step);
-}
-
-const currentStep = ref<ConferenceBulkImportWizardStep>("assets");
-
-function goToStep(step: ConferenceBulkImportWizardStep) {
-  if (step === "review") {
-    void refreshSubmissionRows();
-  }
-  currentStep.value = step;
-}
-
-const currentStepNumber = computed(() => stepIndex(currentStep.value) + 1);
-
-function validateZipFile(file: File): string | null {
-  const lower = file.name.toLowerCase();
-  if (!lower.endsWith(".zip")) {
-    return "Upload a ZIP file (.zip).";
-  }
-  if (file.size > 500 * 1024 * 1024) {
-    return "ZIP files must be 500 MB or smaller.";
-  }
-  return null;
-}
-
-function validatePosterOnlyFile(file: File): string | null {
+function validatePosterUploadFile(file: File): string | null {
   const lower = file.name.toLowerCase();
   if (lower.endsWith(".zip")) {
-    return `Use poster PDFs or images here to generate ${CONFERENCE_BULK_IMPORT_LICENSE_METADATA_BASENAME}.csv.`;
+    return "Upload poster PDFs or images individually — ZIP bundles are not used in this step.";
   }
   return validatePosterFile(file);
 }
 
-function onPreparedImportZipChange(files: File[]) {
-  preparedImportZip.value = files;
-}
+type PosterUploadQueueItem = {
+  id: string;
+  fileName: string;
+  status: "pending" | "uploading" | "done" | "error";
+  error?: string;
+};
 
-function onPosterFilesChange(files: File[]) {
-  posterFiles.value = files;
-  licenseMetadataGenerated.value = false;
-  preparedImportZip.value = [];
-}
+const posterUploadQueue = ref<PosterUploadQueueItem[]>([]);
+const posterUploadRunning = ref(false);
+const pendingPosterFiles = ref<File[]>([]);
 
-const posterFileNames = computed(() =>
-  posterFiles.value.map((file) => file.name),
+const stagedPosterFileNames = computed(() =>
+  stagedPosters.value.map((poster) => poster.fileName),
 );
 
-const preparedZipNames = computed(() =>
-  preparedImportZip.value.map((file) => file.name),
-);
+function onPendingPosterFilesChange(files: File[]) {
+  pendingPosterFiles.value = files;
+}
 
-const step1Complete = computed(() => preparedImportZip.value.length > 0);
+function validateLicenseMetadataFile(file: File): string | null {
+  const lower = file.name.toLowerCase();
+  if (!lower.endsWith(".csv")) {
+    return `Upload ${CONFERENCE_BULK_IMPORT_LICENSE_METADATA_BASENAME}.csv (CSV format).`;
+  }
+  return null;
+}
+
+const licenseMetadataLocalFile = ref<File[]>([]);
+const licenseMetadataParseError = ref<string | null>(null);
 
 const submissionRows = ref<BulkImportSubmissionRow[]>([]);
 const submissionLoading = ref(false);
@@ -116,19 +147,370 @@ const readySubmissionCount = computed(
   () => submissionStatusCounts.value.ready ?? 0,
 );
 
-const canProceedFromReview = computed(
-  () => step1Complete.value && submissionRows.value.length > 0,
+const uploadStepComplete = computed(() => stagedPosters.value.length > 0);
+
+const metadataStepComplete = computed(() => licenseMetadataUploaded.value);
+
+const canProceedFromReview = computed(() => {
+  if (submissionRows.value.length === 0) return false;
+  return submissionRows.value.every((row) => row.status === "ready");
+});
+
+const {
+  wizardSteps,
+  currentStep,
+  currentStepNumber,
+  importName,
+  importNameTrimmed,
+  importNameValid,
+  jobId,
+  headerTitle,
+  canGoToStep,
+  stepIsDone,
+  stepIsActive,
+  goToStep: goToWizardStep,
+  continueAfterSetupPersisted,
+  BULK_IMPORT_NAME_MAX_LENGTH,
+  BULK_IMPORT_NAME_MIN_LENGTH,
+} = useBulkImportWizard(
+  {
+    upload: uploadStepComplete,
+    metadata: metadataStepComplete,
+    review: canProceedFromReview,
+  },
+  {
+    initialJobId: props.initialJobId,
+    initialImportName: props.initialImportName,
+    initialStep: normalizeBulkImportWizardStep(props.initialStep),
+  },
 );
+
+watch(
+  () => props.initialJobId,
+  (id) => {
+    if (id) jobId.value = id;
+  },
+);
+
+watch(
+  () => props.initialImportName,
+  (name) => {
+    if (name) importName.value = name;
+  },
+);
+
+watch(
+  () => props.initialStagedPosters,
+  (posters) => {
+    if (posters && posters.length > 0) {
+      stagedPosters.value = posters;
+    }
+  },
+  { deep: true },
+);
+
+watch(
+  () => props.initialLicenseMetadataUploaded,
+  (uploaded) => {
+    if (uploaded) licenseMetadataUploaded.value = true;
+  },
+);
+
+const setupSaving = ref(false);
+
+const stepperScrollRef = ref<HTMLElement | null>(null);
+const stepItemEls = ref<(HTMLElement | null)[]>([]);
+
+function setStepItemEl(el: unknown, index: number) {
+  stepItemEls.value[index] = el instanceof HTMLElement ? el : null;
+}
+
+/** Keep the active step in the second slot: one prior step visible, rest ahead. */
+function scrollActiveStepToSecondSlot(behavior: ScrollBehavior = "smooth") {
+  const container = stepperScrollRef.value;
+  if (!container) return;
+
+  const activeIndex = wizardSteps.findIndex(
+    (step) => step.id === currentStep.value,
+  );
+  if (activeIndex < 0) return;
+
+  const previousEl =
+    activeIndex > 0 ? stepItemEls.value[activeIndex - 1] : null;
+
+  let targetLeft = 0;
+
+  if (previousEl) {
+    const containerRect = container.getBoundingClientRect();
+    const previousRect = previousEl.getBoundingClientRect();
+    targetLeft = container.scrollLeft + (previousRect.left - containerRect.left);
+  }
+
+  const maxScroll = Math.max(0, container.scrollWidth - container.clientWidth);
+  container.scrollTo({
+    left: Math.min(Math.max(0, targetLeft), maxScroll),
+    behavior,
+  });
+}
+
+watch(currentStep, () => {
+  nextTick(() => scrollActiveStepToSecondSlot());
+});
+
+onMounted(() => {
+  nextTick(() => scrollActiveStepToSecondSlot("instant"));
+});
+
+async function persistWizardStep(step: BulkImportWizardStep) {
+  if (!jobId.value) return;
+
+  try {
+    await updateBulkPosterSubmissionJob(jobId.value, { wizardStep: step });
+  } catch {
+    toast.add({
+      title: "Could not save progress",
+      description: "Your step change was not saved. Try again in a moment.",
+      color: "warning",
+    });
+  }
+}
+
+function goToStep(step: BulkImportWizardStep) {
+  const moved = goToWizardStep(step, {
+    beforeEnter: (target) => {
+      if (target === "review") {
+        void refreshSubmissionRows();
+      }
+    },
+  });
+
+  if (moved) {
+    void persistWizardStep(step);
+  }
+}
+
+async function persistSetupJob(): Promise<string> {
+  const name = importNameTrimmed.value;
+
+  if (jobId.value) {
+    try {
+      const job = await updateBulkPosterSubmissionJob(jobId.value, {
+        name,
+        wizardStep: "upload",
+      });
+      return job.id;
+    } catch (error) {
+      if (fetchErrorStatusCode(error) !== 404) {
+        throw error;
+      }
+      jobId.value = null;
+    }
+  }
+
+  const job = await createBulkPosterSubmissionJob({ name });
+  jobId.value = job.id;
+  return job.id;
+}
+
+async function commitSetupAndContinue() {
+  if (!importNameValid.value || setupSaving.value) return;
+
+  setupSaving.value = true;
+
+  let savedJobId: string | undefined;
+
+  try {
+    savedJobId = await persistSetupJob();
+  } catch (error) {
+    toast.add({
+      title: "Could not start import",
+      description:
+        fetchErrorDescription(error) ??
+        "We could not save this bulk import. Please try again.",
+      color: "error",
+    });
+    return;
+  } finally {
+    setupSaving.value = false;
+  }
+
+  continueAfterSetupPersisted();
+
+  const path = shareNewBulkPath({ jobId: savedJobId });
+  if (typeof path === "string") {
+    if (route.fullPath !== path) {
+      await router.replace(path);
+    }
+  } else if (route.query.jobId !== savedJobId) {
+    await router.replace(path);
+  }
+}
 
 async function refreshSubmissionRows() {
   submissionLoading.value = true;
 
   try {
-    const zip = preparedImportZip.value[0];
-    submissionRows.value = zip ? buildSubmissionRowsForZipBundle(zip.name) : [];
+    const metadataFile = licenseMetadataLocalFile.value[0];
+    if (metadataFile) {
+      const parsed = await readConferenceImportSpreadsheetFile(metadataFile);
+      if (parsed.error) {
+        licenseMetadataParseError.value = parsed.error;
+        submissionRows.value = [];
+        return;
+      }
+
+      licenseMetadataParseError.value = null;
+      submissionRows.value = buildSubmissionRowsFromSeparateUpload({
+        spreadsheetRows: parsed.rows,
+        posterFileNames: stagedPosterFileNames.value,
+      });
+      return;
+    }
+
+    if (!jobId.value) {
+      submissionRows.value = [];
+      return;
+    }
+
+    const job = await getBulkPosterSubmissionJob(jobId.value);
+    const summary = job.submissionSummary as
+      | { licenseSpreadsheetRows?: ConferenceImportSpreadsheetRow[] }
+      | null
+      | undefined;
+
+    if (summary?.licenseSpreadsheetRows?.length) {
+      submissionRows.value = buildSubmissionRowsFromSeparateUpload({
+        spreadsheetRows: summary.licenseSpreadsheetRows,
+        posterFileNames: stagedPosterFileNames.value,
+      });
+      return;
+    }
+
+    submissionRows.value = [];
   } finally {
     submissionLoading.value = false;
   }
+}
+
+async function uploadPendingPosters() {
+  if (!jobId.value || posterUploadRunning.value) return;
+
+  const files = pendingPosterFiles.value;
+  if (files.length === 0) return;
+
+  posterUploadRunning.value = true;
+  posterUploadQueue.value = files.map((file, index) => ({
+    id: `${file.name}-${index}`,
+    fileName: file.name,
+    status: "pending" as const,
+  }));
+
+  let successCount = 0;
+
+  for (const item of posterUploadQueue.value) {
+    const file = files.find((entry) => entry.name === item.fileName);
+    if (!file) continue;
+
+    item.status = "uploading";
+
+    try {
+      const response = await uploadBulkPosterSubmissionFile(
+        jobId.value,
+        file,
+        "poster",
+      );
+      stagedPosters.value = response.job.stagedPosters ?? [];
+      item.status = "done";
+      successCount += 1;
+    } catch {
+      item.status = "error";
+      item.error = "Upload failed";
+    }
+  }
+
+  posterUploadRunning.value = false;
+  pendingPosterFiles.value = [];
+
+  if (successCount > 0) {
+    toast.add({
+      title: "Posters stored",
+      description: `${successCount} file(s) uploaded to secure storage for this import.`,
+      color: "success",
+    });
+    void persistWizardStep("upload");
+  } else {
+    toast.add({
+      title: "Upload failed",
+      description: "None of the selected posters could be uploaded. Try again.",
+      color: "error",
+    });
+  }
+}
+
+async function uploadLicenseMetadata() {
+  if (!jobId.value) return;
+
+  const file = licenseMetadataLocalFile.value[0];
+  if (!file) return;
+
+  const parsed = await readConferenceImportSpreadsheetFile(file);
+  if (parsed.error) {
+    licenseMetadataParseError.value = parsed.error;
+    toast.add({
+      title: "Invalid metadata file",
+      description: parsed.error,
+      color: "warning",
+    });
+    return;
+  }
+
+  try {
+    const response = await uploadBulkPosterSubmissionFile(
+      jobId.value,
+      file,
+      "license_metadata",
+    );
+    licenseMetadataUploaded.value = Boolean(
+      response.job.licenseMetadataFilePath,
+    );
+    await updateBulkPosterSubmissionJob(jobId.value, {
+      submissionSummary: { licenseSpreadsheetRows: parsed.rows },
+    });
+    toast.add({
+      title: "License metadata saved",
+      description: `${CONFERENCE_BULK_IMPORT_LICENSE_METADATA_BASENAME}.csv is stored with this import.`,
+      color: "success",
+    });
+    void persistWizardStep("metadata");
+    await refreshSubmissionRows();
+  } catch {
+    toast.add({
+      title: "Could not upload metadata",
+      description: "Check the file format and try again.",
+      color: "error",
+    });
+  }
+}
+
+function downloadLicenseMetadataTemplate() {
+  const csv = conferenceImportSpreadsheetCsvFromFileNames(
+    stagedPosterFileNames.value,
+  );
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `${CONFERENCE_BULK_IMPORT_LICENSE_METADATA_BASENAME}.csv`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  URL.revokeObjectURL(url);
+}
+
+function onLicenseMetadataLocalChange(files: File[]) {
+  licenseMetadataLocalFile.value = files;
+  licenseMetadataUploaded.value = false;
+  licenseMetadataParseError.value = null;
 }
 
 const batchItems = ref<BulkImportBatchItem[]>([]);
@@ -157,7 +539,9 @@ const batchColumns: ColumnDef<BulkImportBatchItem>[] = [
   { id: "batchStatus", header: "Progress", enableSorting: false },
 ];
 
-const expectedBatchCount = computed(() => 8);
+const expectedBatchCount = computed(
+  () => submissionRows.value.filter((row) => row.status === "ready").length,
+);
 
 function batchStatusLabel(status: BulkImportBatchItemStatus) {
   switch (status) {
@@ -193,26 +577,12 @@ function batchStatusColor(
 }
 
 function buildSimulatedBatchItems(): BulkImportBatchItem[] {
-  return Array.from({ length: 8 }, (_, index) => ({
-    id: `zip-sim-${index + 1}`,
-    fileName: `poster-${String(index + 1).padStart(2, "0")}.pdf`,
+  const readyRows = submissionRows.value.filter((row) => row.status === "ready");
+  return readyRows.map((row, index) => ({
+    id: `bulk-sim-${index + 1}`,
+    fileName: row.fileName,
     status: "queued" as const,
   }));
-}
-
-function downloadGeneratedLicensesCsv() {
-  const fileNames = posterFiles.value.map((file) => file.name);
-  const csv = conferenceImportSpreadsheetCsvFromFileNames(fileNames);
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = `${CONFERENCE_BULK_IMPORT_LICENSE_METADATA_BASENAME}.csv`;
-  document.body.appendChild(anchor);
-  anchor.click();
-  document.body.removeChild(anchor);
-  URL.revokeObjectURL(url);
-  licenseMetadataGenerated.value = true;
 }
 
 function stopBatchSimulation() {
@@ -259,8 +629,13 @@ onBeforeUnmount(() => {
   stopBatchSimulation();
 });
 
+function continueToMetadata() {
+  if (!uploadStepComplete.value) return;
+  goToStep("metadata");
+}
+
 function continueToReview() {
-  if (!step1Complete.value) return;
+  if (!metadataStepComplete.value) return;
   goToStep("review");
 }
 
@@ -295,41 +670,41 @@ function startImport() {
   advanceBatchSimulation();
 }
 
-function stepIsDone(step: ConferenceBulkImportWizardStep) {
-  const idx = stepIndex(step);
-  const currentIdx = stepIndex(currentStep.value);
-  if (idx < currentIdx) return true;
-  if (step === "assets") return step1Complete.value && currentIdx > idx;
-  return false;
-}
-
-function stepIsActive(step: ConferenceBulkImportWizardStep) {
-  return step === currentStep.value;
-}
 </script>
 
 <template>
-  <UCard class="flex flex-col">
+  <UCard
+    class="flex flex-col"
+    :ui="{ header: 'overflow-visible' }"
+  >
     <template #header>
-      <div class="flex flex-col gap-4">
-        <h2 class="text-lg font-semibold">Bulk import</h2>
+      <div class="flex flex-col gap-4 overflow-visible">
+        <h2 class="text-lg font-semibold">{{ headerTitle }}</h2>
 
-        <nav aria-label="Bulk import progress">
-          <ol class="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-6">
+        <nav
+          aria-label="Bulk import progress"
+          class="relative min-w-0 overflow-visible"
+        >
+          <ol
+            ref="stepperScrollRef"
+            class="flex flex-row items-start gap-3 overflow-x-auto overflow-y-visible overscroll-x-contain scroll-smooth px-0.5 py-1.5 pb-2 [scrollbar-width:thin]"
+          >
             <li
               v-for="(step, index) in wizardSteps"
               :key="step.id"
-              class="min-w-0 flex-1"
+              :ref="(el) => setStepItemEl(el, index)"
+              class="w-[12.5rem] shrink-0 sm:w-[14rem]"
             >
               <button
                 type="button"
-                class="hover:bg-muted/40 flex w-full items-start gap-3 rounded-lg p-2 text-left transition-colors"
+                class="hover:bg-muted/40 flex w-full items-start gap-3 rounded-lg p-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                 :class="
                   stepIsActive(step.id)
-                    ? 'bg-muted/30 ring-primary/30 ring-1'
+                    ? 'bg-muted/30 ring-primary/30 ring-1 ring-inset'
                     : ''
                 "
                 :aria-current="stepIsActive(step.id) ? 'step' : undefined"
+                :disabled="!canGoToStep(step.id)"
                 @click="goToStep(step.id)"
               >
                 <span
@@ -369,115 +744,30 @@ function stepIsActive(step: ConferenceBulkImportWizardStep) {
     </template>
 
     <div class="flex flex-col gap-8">
-      <template v-if="currentStep === 'assets'">
+      <template v-if="currentStep === 'setup'">
         <div class="space-y-4">
           <div>
             <h3 class="text-base font-semibold">
-              Step {{ currentStepNumber }}: Posters &amp; license metadata
+              Step {{ currentStepNumber }}: Name this bulk import
             </h3>
             <p class="text-muted mt-1 text-sm">
-              In order to bulk submit posters, you will need to attribute a
-              license to each poster. Follow the steps below to attribute
-              licenses to each poster and begin the submission process.
-            </p>
-          </div>
-        </div>
-
-        <div
-          class="space-y-4 rounded-lg border border-gray-200 p-4 dark:border-gray-800"
-        >
-          <div>
-            <h4 class="text-sm font-semibold">
-              1. Generate license metadata file.
-            </h4>
-            <p class="text-muted mt-1 text-sm">
-              Import all of your poster PDFs or images here to generate an excel
-              file which will help you attribute licenses to posters in bulk.
+              Choose a label you will recognize on your dashboard. You can pause
+              and return to this import later once progress saving is enabled.
             </p>
           </div>
 
-          <UiFileUpload
-            hide-file-list
-            hide-rejections
-            multiple
-            :accept="POSTER_FILE_ACCEPT"
-            :validate-file="validatePosterOnlyFile"
-            :hint="`${POSTER_ONLY_HINT} — for generating ${CONFERENCE_BULK_IMPORT_LICENSE_METADATA_BASENAME}.csv only`"
-            @on-change="onPosterFilesChange"
+          <UFormField
+            label="Import name"
+            required
+            :hint="`${BULK_IMPORT_NAME_MIN_LENGTH}–${BULK_IMPORT_NAME_MAX_LENGTH} characters`"
           >
-            <UiFileUploadGrid />
-          </UiFileUpload>
-
-          <ul
-            v-if="posterFileNames.length > 0"
-            class="border-default divide-default max-h-[500px] divide-y overflow-y-auto rounded-md border"
-          >
-            <li
-              v-for="name in posterFileNames"
-              :key="name"
-              class="truncate px-3 py-1.5 text-sm"
-              :title="name"
-            >
-              {{ name }}
-            </li>
-          </ul>
-
-          <UButton
-            v-if="posterFiles.length > 0"
-            color="neutral"
-            variant="outline"
-            size="sm"
-            icon="i-lucide-file-spreadsheet"
-            :label="`Generate ${CONFERENCE_BULK_IMPORT_LICENSE_METADATA_BASENAME}.csv`"
-            @click="downloadGeneratedLicensesCsv"
-          />
-        </div>
-
-        <div
-          v-if="licenseMetadataGenerated"
-          class="border-primary/30 space-y-4 rounded-lg border-2 border-dashed p-4"
-        >
-          <div>
-            <h4 class="text-sm font-semibold">2. Upload posters for import</h4>
-            <p class="text-muted mt-1 text-sm">
-              Required. Upload one ZIP containing your poster PDFs or images and
-              your completed
-              <span class="font-medium">{{
-                CONFERENCE_BULK_IMPORT_LICENSE_METADATA_BASENAME
-              }}</span>
-              at the top level (for example
-              <span class="font-medium"
-                >{{
-                  CONFERENCE_BULK_IMPORT_LICENSE_METADATA_BASENAME
-                }}.xlsx</span
-              >).
-            </p>
-          </div>
-
-          <UiFileUpload
-            hide-file-list
-            hide-rejections
-            :accept="'.zip,application/zip'"
-            :validate-file="validateZipFile"
-            hint="One ZIP file, up to 500 MB"
-            @on-change="onPreparedImportZipChange"
-          >
-            <UiFileUploadGrid />
-          </UiFileUpload>
-
-          <ul
-            v-if="preparedZipNames.length > 0"
-            class="border-default divide-default max-h-[500px] divide-y overflow-y-auto rounded-md border"
-          >
-            <li
-              v-for="name in preparedZipNames"
-              :key="name"
-              class="truncate px-3 py-1.5 text-sm"
-              :title="name"
-            >
-              {{ name }}
-            </li>
-          </ul>
+            <UInput
+              v-model="importName"
+              placeholder="e.g. Spring 2026 poster batch"
+              :maxlength="BULK_IMPORT_NAME_MAX_LENGTH"
+              autocomplete="off"
+            />
+          </UFormField>
         </div>
 
         <div
@@ -487,8 +777,229 @@ function stepIsActive(step: ConferenceBulkImportWizardStep) {
             color="primary"
             icon="i-lucide-arrow-right"
             trailing
+            label="Continue to upload posters"
+            :disabled="!importNameValid"
+            :loading="setupSaving"
+            @click="commitSetupAndContinue"
+          />
+        </div>
+      </template>
+
+      <template v-else-if="currentStep === 'upload'">
+        <div class="space-y-4">
+          <div>
+            <h3 class="text-base font-semibold">
+              Step {{ currentStepNumber }}: Upload poster files
+            </h3>
+            <p class="text-muted mt-1 text-sm">
+              Upload each poster PDF or image to secure storage first. You will
+              add license and extraction metadata in the next step, then send
+              everything to the extraction pipeline.
+            </p>
+          </div>
+
+          <UAlert
+            v-if="!jobId"
+            color="warning"
+            variant="soft"
+            icon="i-lucide-alert-triangle"
+            title="Name this import first"
+            description="Go back to step 1 and continue so we can attach uploads to your bulk import job."
+          />
+
+          <div
+            class="space-y-4 rounded-lg border border-gray-200 p-4 dark:border-gray-800"
+          >
+            <UiFileUpload
+              hide-file-list
+              hide-rejections
+              multiple
+              :accept="POSTER_FILE_ACCEPT"
+              :validate-file="validatePosterUploadFile"
+              :hint="POSTER_ONLY_HINT"
+              @on-change="onPendingPosterFilesChange"
+            >
+              <UiFileUploadGrid />
+            </UiFileUpload>
+
+            <UButton
+              v-if="pendingPosterFiles.length > 0"
+              color="primary"
+              icon="line-md:cloud-upload-loop"
+              :label="`Upload ${pendingPosterFiles.length} poster(s) to storage`"
+              :loading="posterUploadRunning"
+              :disabled="!jobId"
+              @click="uploadPendingPosters"
+            />
+
+            <ul
+              v-if="posterUploadQueue.length > 0"
+              class="border-default divide-default divide-y rounded-md border text-sm"
+            >
+              <li
+                v-for="item in posterUploadQueue"
+                :key="item.id"
+                class="flex items-center justify-between gap-3 px-3 py-2"
+              >
+                <span class="truncate" :title="item.fileName">{{
+                  item.fileName
+                }}</span>
+                <UBadge
+                  :color="
+                    item.status === 'done'
+                      ? 'success'
+                      : item.status === 'error'
+                        ? 'error'
+                        : item.status === 'uploading'
+                          ? 'info'
+                          : 'neutral'
+                  "
+                  variant="soft"
+                  size="xs"
+                >
+                  {{
+                    item.status === "done"
+                      ? "Stored"
+                      : item.status === "error"
+                        ? item.error ?? "Failed"
+                        : item.status === "uploading"
+                          ? "Uploading…"
+                          : "Queued"
+                  }}
+                </UBadge>
+              </li>
+            </ul>
+
+            <div v-if="stagedPosters.length > 0" class="space-y-2">
+              <p class="text-sm font-medium">
+                {{ stagedPosters.length }} poster(s) in this import
+              </p>
+              <ul
+                class="border-default divide-default max-h-[320px] divide-y overflow-y-auto rounded-md border"
+              >
+                <li
+                  v-for="poster in stagedPosters"
+                  :key="poster.filePath"
+                  class="truncate px-3 py-1.5 text-sm"
+                  :title="poster.fileName"
+                >
+                  {{ poster.fileName }}
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <div
+          class="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-6 dark:border-gray-800"
+        >
+          <UButton
+            color="neutral"
+            variant="ghost"
+            icon="i-lucide-arrow-left"
+            label="Back"
+            @click="goToStep('setup')"
+          />
+          <UButton
+            color="primary"
+            icon="i-lucide-arrow-right"
+            trailing
+            label="Continue to metadata"
+            :disabled="!uploadStepComplete"
+            @click="continueToMetadata"
+          />
+        </div>
+      </template>
+
+      <template v-else-if="currentStep === 'metadata'">
+        <div class="space-y-4">
+          <div>
+            <h3 class="text-base font-semibold">
+              Step {{ currentStepNumber }}: Licenses &amp; metadata
+            </h3>
+            <p class="text-muted mt-1 text-sm">
+              Download a CSV template listing your uploaded poster file names,
+              fill in an SPDX license for each row, then upload the completed
+              file. Additional metadata sheets for extraction can be added here
+              later.
+            </p>
+          </div>
+
+          <div
+            class="space-y-4 rounded-lg border border-gray-200 p-4 dark:border-gray-800"
+          >
+            <div class="flex flex-wrap items-center gap-2">
+              <UButton
+                color="neutral"
+                variant="outline"
+                size="sm"
+                icon="i-lucide-file-spreadsheet"
+                :disabled="stagedPosters.length === 0"
+                :label="`Download ${CONFERENCE_BULK_IMPORT_LICENSE_METADATA_BASENAME}.csv template`"
+                @click="downloadLicenseMetadataTemplate"
+              />
+              <span class="text-muted text-xs">
+                {{ stagedPosters.length }} poster file name(s) from step
+                {{ currentStepNumber - 1 }}
+              </span>
+            </div>
+
+            <UiFileUpload
+              hide-file-list
+              hide-rejections
+              :accept="'.csv,text/csv'"
+              :validate-file="validateLicenseMetadataFile"
+              :hint="`Completed ${CONFERENCE_BULK_IMPORT_LICENSE_METADATA_BASENAME}.csv`"
+              @on-change="onLicenseMetadataLocalChange"
+            >
+              <UiFileUploadGrid />
+            </UiFileUpload>
+
+            <UButton
+              v-if="licenseMetadataLocalFile.length > 0"
+              color="primary"
+              icon="line-md:cloud-upload-loop"
+              label="Upload license metadata to storage"
+              :disabled="!jobId"
+              @click="uploadLicenseMetadata"
+            />
+
+            <UAlert
+              v-if="licenseMetadataUploaded"
+              color="success"
+              variant="soft"
+              icon="i-lucide-circle-check"
+              title="Metadata stored"
+              :description="`${CONFERENCE_BULK_IMPORT_LICENSE_METADATA_BASENAME}.csv is saved with this import on secure storage.`"
+            />
+
+            <UAlert
+              v-if="licenseMetadataParseError"
+              color="warning"
+              variant="soft"
+              icon="i-lucide-alert-triangle"
+              title="Could not read metadata file"
+              :description="licenseMetadataParseError"
+            />
+          </div>
+        </div>
+
+        <div
+          class="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-6 dark:border-gray-800"
+        >
+          <UButton
+            color="neutral"
+            variant="ghost"
+            icon="i-lucide-arrow-left"
+            label="Back"
+            @click="goToStep('upload')"
+          />
+          <UButton
+            color="primary"
+            icon="i-lucide-arrow-right"
+            trailing
             label="Continue to review"
-            :disabled="!step1Complete"
+            :disabled="!metadataStepComplete"
             @click="continueToReview"
           />
         </div>
@@ -511,8 +1022,8 @@ function stepIsActive(step: ConferenceBulkImportWizardStep) {
             color="info"
             variant="soft"
             icon="i-lucide-info"
-            title="ZIP bundle"
-            description="Poster files inside your ZIP will be listed after unpack when server import is enabled. You can continue to the simulated batch progress step."
+            title="Posters already in storage"
+            description="Each row matches an uploaded poster file name with license metadata. Fix any warnings before starting extraction."
           />
 
           <div v-if="submissionRows.length > 0" class="flex flex-wrap gap-2">
@@ -605,7 +1116,7 @@ function stepIsActive(step: ConferenceBulkImportWizardStep) {
             variant="outline"
             icon="i-lucide-arrow-left"
             label="Back"
-            @click="goToStep('assets')"
+            @click="goToStep('metadata')"
           />
           <UButton
             color="primary"
@@ -622,12 +1133,12 @@ function stepIsActive(step: ConferenceBulkImportWizardStep) {
         <div class="space-y-4">
           <div>
             <h3 class="text-base font-semibold">
-              Step {{ currentStepNumber }}: Batch import
+              Step {{ currentStepNumber }}: Extraction pipeline
             </h3>
             <p class="text-muted mt-1 text-sm">
-              Upload and metadata extraction for each poster in this batch.
-              Finished posters will show under conference management →
-              Submitted.
+              Start extraction for each poster that passed review. Files are
+              already in storage; this step creates poster records and runs the
+              same pipeline as single-poster share.
             </p>
           </div>
 
@@ -655,7 +1166,7 @@ function stepIsActive(step: ConferenceBulkImportWizardStep) {
             variant="soft"
             icon="i-lucide-circle-check"
             title="Batch import complete (simulated)"
-            description="When this is wired up, posters will appear on your conference dashboard as they finish processing."
+            description="When this is wired up, posters will appear on your dashboard as they finish processing."
           />
 
           <div v-if="batchItems.length > 0" class="space-y-2">
@@ -716,14 +1227,14 @@ function stepIsActive(step: ConferenceBulkImportWizardStep) {
               v-if="batchImportFinished"
               color="neutral"
               variant="outline"
-              label="Back to conference"
-              :to="conferenceManagementDetailPath(conferenceId)"
+              label="Back to dashboard"
+              to="/dashboard"
             />
             <UButton
               v-if="!batchImportRunning && !batchImportFinished"
               color="primary"
               icon="line-md:file-upload"
-              label="Start import"
+              label="Start extraction"
               @click="startImport"
             />
           </div>

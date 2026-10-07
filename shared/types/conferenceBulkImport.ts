@@ -1,31 +1,17 @@
-/** Wizard steps for conference bulk poster import (UI + future server job). */
-export type ConferenceBulkImportWizardStep = "assets" | "review" | "submit";
+import {
+  BULK_IMPORT_WIZARD_STEPS,
+  type BulkImportWizardStep,
+} from "#shared/types/bulkImportWizard";
+
+/** @deprecated Use BulkImportWizardStep */
+export type ConferenceBulkImportWizardStep = BulkImportWizardStep;
 
 /** Base file name (no extension) for per-poster SPDX metadata in bulk import ZIPs. */
 export const CONFERENCE_BULK_IMPORT_LICENSE_METADATA_BASENAME =
   "license_metadata";
 
-export const CONFERENCE_BULK_IMPORT_WIZARD_STEPS: {
-  id: ConferenceBulkImportWizardStep;
-  label: string;
-  description: string;
-}[] = [
-  {
-    id: "assets",
-    label: "Posters & licenses",
-    description: "Upload files and license metadata",
-  },
-  {
-    id: "review",
-    label: "Review",
-    description: "Check file names and licenses",
-  },
-  {
-    id: "submit",
-    label: "Import",
-    description: "Submit bulk import to Posters.science",
-  },
-];
+/** @deprecated Use BULK_IMPORT_WIZARD_STEPS */
+export const CONFERENCE_BULK_IMPORT_WIZARD_STEPS = BULK_IMPORT_WIZARD_STEPS;
 
 export type BulkImportSubmissionRowStatus =
   | "ready"

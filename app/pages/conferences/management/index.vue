@@ -4,10 +4,7 @@ import type {
   ManagedConference,
   ManagedConferenceStatus,
 } from "#shared/types/managedConference";
-import {
-  conferenceManagementDetailPath,
-  conferencePosterAdditionPath,
-} from "~/utils/conferenceManagementPaths";
+import { conferenceManagementDetailPath } from "~/utils/conferenceManagementPaths";
 
 definePageMeta({
   middleware: ["auth"],
@@ -173,6 +170,15 @@ function conferenceDetailPath(conference: ManagedConference) {
                   {{ dayjs(conference.submittedAt).format("MMMM D, YYYY") }}
                 </span>
                 <div class="ml-auto flex items-center gap-2" @click.stop>
+                  <UButton
+                    v-if="conference.status === 'approved'"
+                    color="primary"
+                    variant="solid"
+                    label="Share Posters in bulk"
+                    icon="line-md:file-upload"
+                    size="xs"
+                    to="/share/new-bulk"
+                  />
                   <UButton
                     color="primary"
                     variant="subtle"

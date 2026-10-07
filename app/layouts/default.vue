@@ -25,6 +25,12 @@ const postersNavChildren = [
     to: "/share/new",
   },
   {
+    label: "Share Posters in bulk",
+    description: "Name a batch and import many posters with license metadata.",
+    icon: "material-symbols:library-add",
+    to: "/share/new-bulk",
+  },
+  {
     label: "Browse Posters",
     description: "Browse and discover scientific posters.",
     icon: "material-symbols:saved-search",
@@ -63,7 +69,7 @@ type NavDropdownMenu = {
 const desktopNavDropdowns: NavDropdownMenu[] = [
   {
     label: "Posters",
-    contentWidth: "w-60",
+    contentWidth: "w-72",
     children: postersNavChildren,
   },
   {

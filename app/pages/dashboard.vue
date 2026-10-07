@@ -8,6 +8,7 @@ import {
 } from "#shared/utils/posterFile";
 import { LICENSE_OPTIONS } from "~/utils/poster_schema";
 import { normalizeDoi, validateDoi } from "~/utils/doi";
+import { shareNewBulkPath } from "~/utils/sharePaths";
 
 definePageMeta({
   middleware: ["auth"],
@@ -22,6 +23,8 @@ useSeoMeta({
   ogDescription: "Manage and track your scientific posters.",
   ogImage,
 });
+
+const bulkAddPostersPath = shareNewBulkPath();
 
 type Poster = {
   id: number;
@@ -1495,6 +1498,13 @@ function posterMenuItems(poster: Poster) {
           to: '/share/new',
           icon: 'heroicons:plus',
           color: 'primary' as const,
+        },
+        {
+          label: 'Share Posters in bulk',
+          to: bulkAddPostersPath,
+          icon: 'line-md:file-upload',
+          color: 'neutral' as const,
+          variant: 'outline' as const,
         },
       ]"
     >
