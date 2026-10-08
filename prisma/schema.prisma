@@ -46,6 +46,8 @@ model User {
 
   adminAuditLogs AdminAuditLog[] @relation("AdminActions")
 
+  bulkSubmissions BulkSubmission[]
+
   @@index([emailAddress])
 }
 
@@ -254,6 +256,47 @@ model MetricsSnapshot {
   generatedAt DateTime @default(now())
 
   @@index([generatedAt])
+}
+
+/// In-progress bulk poster import (wizard state). Distinct from `ExtractionJob` per poster.
+model BulkSubmission {
+  id String @id @default(cuid(2))
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+
+  name String
+
+  // setup | upload | metadata | review | submit (legacy: assets)
+  wizardStep String @default("upload")
+  // draft | processing | completed | failed
+  status String @default("draft")
+  // How posters in this batch will be processed when sent to the pipeline (e.g. automated vs manual).
+  extractionMethod String @default("automated")
+
+  stagedPosters Json @default("[]")
+
+  licenseMetadataFileName String?
+  licenseMetadataFilePath String?
+
+  zipFileName String?
+  zipFilePath String?
+
+  posterCount Int?
+
+  submissionSummary Json?
+
+  error String?
+
+  managedConferenceId String?
+
+  completedAt DateTime?
+
+  created DateTime @default(now())
+  updated DateTime @updatedAt
+
+  @@index([userId, updated])
+  @@index([status])
 }
 
 model ExtractionJob {

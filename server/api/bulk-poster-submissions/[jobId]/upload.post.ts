@@ -45,7 +45,7 @@ async function putOnBunny(input: {
 }
 
 export default defineEventHandler(async (event) => {
-  const session = await requireUserSession(event);
+  const session = await requireDbUserSession(event);
   const jobId = getRouterParam(event, "jobId");
 
   if (!jobId) {

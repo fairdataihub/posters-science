@@ -4,7 +4,8 @@ export default defineEventHandler(async (event) => {
   const { user } = session;
   const userId = user.id;
 
-  const posterRows = await prisma.poster.findMany({
+  const [posterRows, bulkSubmissionRows] = await Promise.all([
+    prisma.poster.findMany({
     include: {
       posterMetadata: {
         select: {
@@ -41,7 +42,25 @@ export default defineEventHandler(async (event) => {
     orderBy: {
       updated: "desc",
     },
-  });
+  }),
+    prisma.bulkSubmission.findMany({
+      where: {
+        userId,
+        status: { in: ["draft", "processing", "failed"] },
+      },
+      orderBy: { updated: "desc" },
+      select: {
+        id: true,
+        name: true,
+        wizardStep: true,
+        status: true,
+        extractionMethod: true,
+        posterCount: true,
+        created: true,
+        updated: true,
+      },
+    }),
+  ]);
 
   const families = new Map<number, typeof posterRows>();
 
@@ -96,19 +115,59 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  return posterRows.map((poster) => {
-    const rootPosterId = posterFamilyRootId(poster);
-    const details = familyDetails.get(rootPosterId)!;
-    const isLatestPublished = details.latestPublishedId === poster.id;
+  const posters = posterRows.map((poster) => {
+      const rootPosterId = posterFamilyRootId(poster);
+      const details = familyDetails.get(rootPosterId)!;
+      const isLatestPublished = details.latestPublishedId === poster.id;
 
-    return {
-      ...poster,
-      rootPosterId,
-      versionCount: details.publishedCount,
-      isLatestPublished,
-      // Only the latest published record owns the family-level edit action.
-      // Drafts are returned separately so each dashboard card has one state.
-      activeVersionDraft: isLatestPublished ? details.activeVersionDraft : null,
-    };
-  });
+      return {
+        ...poster,
+        rootPosterId,
+        versionCount: details.publishedCount,
+        isLatestPublished,
+        // Only the latest published record owns the family-level edit action.
+        // Drafts are returned separately so each dashboard card has one state.
+        activeVersionDraft: isLatestPublished
+          ? details.activeVersionDraft
+          : null,
+      };
+    });
+
+  const bulkSubmissions = bulkSubmissionRows.map((bulk) => ({
+    id: bulk.id,
+    name: bulk.name,
+    wizardStep: bulk.wizardStep,
+    status: bulk.status,
+    extractionMethod: bulk.extractionMethod,
+    posterCount: bulk.posterCount,
+    createdAt: bulk.created.toISOString(),
+    updatedAt: bulk.updated.toISOString(),
+  }));
+
+  const inProgressFeed = [
+    ...posters
+      .filter((poster) => poster.status !== "published")
+      .map((poster) => ({
+        type: "poster" as const,
+        posterId: poster.id,
+        updatedAt:
+          poster.updated instanceof Date
+            ? poster.updated.toISOString()
+            : String(poster.updated),
+      })),
+    ...bulkSubmissions.map((bulk) => ({
+      type: "bulkSubmission" as const,
+      bulkSubmissionId: bulk.id,
+      updatedAt: bulk.updatedAt,
+    })),
+  ].sort(
+    (a, b) =>
+      new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+  );
+
+  return {
+    posters,
+    bulkSubmissions,
+    inProgressFeed,
+  };
 });

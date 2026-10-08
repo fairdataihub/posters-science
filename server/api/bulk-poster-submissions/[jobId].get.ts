@@ -1,7 +1,7 @@
 import { getBulkPosterSubmissionJobRepository } from "~~/server/utils/bulkPosterSubmissionJobs";
 
 export default defineEventHandler(async (event) => {
-  const session = await requireUserSession(event);
+  const session = await requireDbUserSession(event);
   const jobId = getRouterParam(event, "jobId");
 
   if (!jobId) {

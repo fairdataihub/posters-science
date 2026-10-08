@@ -9,6 +9,11 @@ import {
 import { LICENSE_OPTIONS } from "~/utils/poster_schema";
 import { normalizeDoi, validateDoi } from "~/utils/doi";
 import { shareNewBulkPath } from "~/utils/sharePaths";
+import type {
+  DashboardBulkSubmission,
+  DashboardInProgressFeedEntry,
+  DashboardPosterFeedResponse,
+} from "#shared/types/dashboardFeed";
 
 definePageMeta({
   middleware: ["auth"],
@@ -91,6 +96,8 @@ type VersionThumbnailResponse = {
 };
 
 const posters = ref<Poster[]>([]);
+const bulkSubmissions = ref<DashboardBulkSubmission[]>([]);
+const inProgressFeed = ref<DashboardInProgressFeedEntry[]>([]);
 const showTombstonedPosters = useCookie<boolean>(
   "dashboard-show-tombstoned-posters",
   {
@@ -114,6 +121,27 @@ const inProgressPosters = computed(() =>
     (poster) => poster.status !== "published",
   ),
 );
+
+const inProgressDashboardItems = computed(() => {
+  const bulkById = new Map(
+    bulkSubmissions.value.map((bulk) => [bulk.id, bulk]),
+  );
+  const posterById = new Map(
+    inProgressPosters.value.map((poster) => [poster.id, poster]),
+  );
+
+  return inProgressFeed.value.flatMap((entry) => {
+    if (entry.type === "bulkSubmission") {
+      const bulk = bulkById.get(entry.bulkSubmissionId);
+      if (!bulk) return [];
+      return [{ type: "bulk" as const, key: `bulk-${bulk.id}`, bulk }];
+    }
+
+    const poster = posterById.get(entry.posterId);
+    if (!poster) return [];
+    return [{ type: "poster" as const, key: `poster-${poster.id}`, poster }];
+  });
+});
 const publishedPosters = computed(() =>
   tombstoneFilteredPosters.value.filter(
     (poster) => poster.status === "published" && poster.isLatestPublished,
@@ -122,7 +150,7 @@ const publishedPosters = computed(() =>
 const activeDashboardTab = ref<"in-progress" | "published">("in-progress");
 const dashboardTabs = computed(() => [
   {
-    label: `In progress (${inProgressPosters.value.length})`,
+    label: `In progress (${inProgressDashboardItems.value.length})`,
     icon: "i-lucide-pencil-line",
     value: "in-progress",
   },
@@ -132,16 +160,26 @@ const dashboardTabs = computed(() => [
     value: "published",
   },
 ]);
-const activeDashboardPosters = computed(() =>
+type ActiveTabListItem =
+  | { type: "bulk"; key: string; bulk: DashboardBulkSubmission }
+  | { type: "poster"; key: string; poster: Poster };
+
+const activeTabListItems = computed((): ActiveTabListItem[] =>
   activeDashboardTab.value === "in-progress"
-    ? inProgressPosters.value
-    : publishedPosters.value,
+    ? inProgressDashboardItems.value
+    : publishedPosters.value.map((poster) => ({
+        type: "poster" as const,
+        key: `poster-${poster.id}`,
+        poster,
+      })),
 );
+
+const activeTabHasItems = computed(() => activeTabListItems.value.length > 0);
 // FEATURE FLAG (versioning)
 const versioningEnabled = useVersioningEnabled();
 const activeDashboardDescription = computed(() => {
   if (activeDashboardTab.value === "in-progress") {
-    return "Posters that still need your attention.";
+    return "Posters and bulk imports that still need your attention.";
   }
 
   // FEATURE FLAG (versioning)
@@ -150,7 +188,8 @@ const activeDashboardDescription = computed(() => {
   return "The latest published version of each poster.";
 });
 const visiblePosterCount = computed(
-  () => inProgressPosters.value.length + publishedPosters.value.length,
+  () =>
+    inProgressDashboardItems.value.length + publishedPosters.value.length,
 );
 
 function publishedVersionHistory(poster: Poster) {
@@ -184,14 +223,30 @@ function togglePublishedHistory(poster: Poster) {
   expandedPublishedFamilies.value = expanded;
 }
 
-const { data, error, refresh } = await useFetch("/api/poster");
+const { data, error, refresh } =
+  await useFetch<DashboardPosterFeedResponse>("/api/poster");
+
+function applyDashboardFeed(feed: DashboardPosterFeedResponse) {
+  posters.value = feed.posters as unknown as Poster[];
+  bulkSubmissions.value = feed.bulkSubmissions ?? [];
+  inProgressFeed.value = feed.inProgressFeed ?? [];
+}
 
 if (data.value) {
-  posters.value = data.value as unknown as Poster[];
-  if (inProgressPosters.value.length === 0 && publishedPosters.value.length) {
+  applyDashboardFeed(data.value);
+  if (
+    inProgressDashboardItems.value.length === 0 &&
+    publishedPosters.value.length
+  ) {
     activeDashboardTab.value = "published";
   }
 }
+
+watch(data, (feed) => {
+  if (feed) {
+    applyDashboardFeed(feed);
+  }
+});
 
 if (error.value) {
   console.error(error.value);
@@ -1533,11 +1588,18 @@ function posterMenuItems(poster: Poster) {
       class="w-full"
     />
 
-    <section v-if="activeDashboardPosters.length > 0" class="space-y-3">
+    <section v-if="activeTabHasItems" class="space-y-3">
       <p class="text-muted text-sm">{{ activeDashboardDescription }}</p>
 
       <UPageList class="max-md:flex max-md:flex-col max-md:gap-4">
-        <template v-for="poster in activeDashboardPosters" :key="poster.id">
+        <template v-for="item in activeTabListItems" :key="item.key">
+          <DashboardBulkSubmissionCard
+            v-if="item.type === 'bulk'"
+            :bulk="item.bulk"
+          />
+
+          <template v-else>
+            <template v-for="poster in [item.poster]" :key="poster.id">
           <UPageCard
             variant="ghost"
             class="group h-50 overflow-hidden rounded-none border-t border-b border-gray-100 transition-all duration-300 max-md:h-auto max-md:rounded-xl max-md:border max-md:bg-white max-md:shadow-sm dark:max-md:border-gray-800 dark:max-md:bg-gray-950"
@@ -1874,6 +1936,8 @@ function posterMenuItems(poster: Poster) {
               </button>
             </div>
           </div>
+            </template>
+          </template>
         </template>
       </UPageList>
     </section>
