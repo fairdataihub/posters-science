@@ -226,7 +226,14 @@ function togglePublishedHistory(poster: Poster) {
 const { data, error, refresh } =
   await useFetch<DashboardPosterFeedResponse>("/api/poster");
 
-function applyDashboardFeed(feed: DashboardPosterFeedResponse) {
+function applyDashboardFeed(feed: DashboardPosterFeedResponse | Poster[]) {
+  if (Array.isArray(feed)) {
+    posters.value = feed;
+    bulkSubmissions.value = [];
+    inProgressFeed.value = [];
+    return;
+  }
+
   posters.value = feed.posters as unknown as Poster[];
   bulkSubmissions.value = feed.bulkSubmissions ?? [];
   inProgressFeed.value = feed.inProgressFeed ?? [];

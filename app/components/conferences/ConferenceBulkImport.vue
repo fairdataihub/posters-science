@@ -771,8 +771,15 @@ function startImport() {
         </div>
 
         <div
-          class="flex flex-col items-end gap-2 border-t border-gray-100 pt-6 dark:border-gray-800"
+          class="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-6 dark:border-gray-800"
         >
+          <UButton
+            color="neutral"
+            variant="ghost"
+            icon="i-lucide-arrow-left"
+            label="Back to dashboard"
+            to="/dashboard"
+          />
           <UButton
             color="primary"
             icon="i-lucide-arrow-right"
