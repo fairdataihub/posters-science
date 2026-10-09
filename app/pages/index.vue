@@ -26,6 +26,9 @@ const links = ref([
     variant: "outline" as const,
   },
 ]);
+
+const scienceArticleUrl =
+  "https://www.science.org/content/article/conference-posters-could-garner-wider-audience-thanks-new-online-platform";
 </script>
 
 <template>
@@ -37,6 +40,33 @@ const links = ref([
       :links="links"
       class="mb-0 pb-0"
     >
+      <!-- Press mention -->
+      <template #headline>
+        <a
+          :href="scienceArticleUrl"
+          target="_blank"
+          class="group border-primary/30 bg-primary/10 hover:border-primary/60 hover:bg-primary/15 inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm transition-colors"
+        >
+          <Icon
+            name="heroicons:newspaper"
+            class="text-primary h-4 w-4 shrink-0"
+          />
+
+          <span class="text-highlighted font-medium">
+            Featured in Science Magazine
+          </span>
+
+          <span class="text-primary hidden font-semibold sm:inline">
+            Read the article
+          </span>
+
+          <Icon
+            name="heroicons:arrow-right"
+            class="text-primary h-4 w-4 shrink-0 transition-transform group-hover:translate-x-0.5"
+          />
+        </a>
+      </template>
+
       <div class="group relative inline-block">
         <img src="/assets/images/fairy.png" alt="Logo" class="block sm:pl-16" />
         <!-- Glow effect behind the image -->
