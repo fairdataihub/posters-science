@@ -1,8 +1,6 @@
 import {
-  ALLOWED_POSTER_FILE_LABEL,
-  isAllowedPosterFile,
   MAX_POSTER_FILE_SIZE_BYTES,
-  MAX_POSTER_FILE_SIZE_LABEL,
+  posterFileRejectionReason,
 } from "#shared/utils/posterFile";
 import { CONFERENCE_BULK_IMPORT_LICENSE_METADATA_BASENAME } from "#shared/types/conferenceBulkImport";
 import type { BulkImportStagedPoster } from "#shared/types/bulkPosterSubmissionJob";
@@ -99,14 +97,6 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  if (fileEntry.data.length > MAX_POSTER_FILE_SIZE_BYTES) {
-    throw createError({
-      statusCode: 413,
-      statusMessage: "File too large",
-      message: `File must be ${MAX_POSTER_FILE_SIZE_LABEL} or smaller`,
-    });
-  }
-
   const repository = getBulkPosterSubmissionJobRepository();
   const job = await repository.getByIdForUser(jobId, session.user.id);
 
@@ -124,11 +114,28 @@ export default defineEventHandler(async (event) => {
     const fileName = fileEntry.filename;
     const fileType = fileEntry.type || "application/pdf";
 
-    if (!isAllowedPosterFile(fileName, fileType)) {
+    const rejection = posterFileRejectionReason({
+      name: fileName,
+      type: fileType,
+      size: fileEntry.data.length,
+    });
+
+    if (rejection) {
+      const statusCode = fileEntry.data.length > MAX_POSTER_FILE_SIZE_BYTES
+        ? 413
+        : fileEntry.data.length === 0
+          ? 400
+          : 415;
+
       throw createError({
-        statusCode: 415,
-        statusMessage: "Unsupported file type",
-        message: `File must be a ${ALLOWED_POSTER_FILE_LABEL}`,
+        statusCode,
+        statusMessage:
+          statusCode === 413
+            ? "File too large"
+            : statusCode === 415
+              ? "Unsupported file type"
+              : "Invalid file",
+        message: rejection,
       });
     }
 

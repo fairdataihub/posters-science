@@ -1099,6 +1099,15 @@ onBeforeUnmount(() => {
 });
 
 function openPoster(poster: Poster) {
+  if (!poster?.id) {
+    toast.add({
+      title: "Cannot open this draft",
+      description: "This item is missing a poster id. Try refreshing the dashboard.",
+      color: "warning",
+    });
+    return;
+  }
+
   if (poster.tombstone) {
     tombstonedPoster.value = poster;
     tombstoneModalOpen.value = true;

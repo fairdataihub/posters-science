@@ -271,8 +271,8 @@ model BulkSubmission {
   wizardStep String @default("upload")
   // draft | processing | completed | failed
   status String @default("draft")
-  // How posters in this batch will be processed when sent to the pipeline (e.g. automated vs manual).
-  extractionMethod String @default("automated")
+  // minimal | full_fair | full_acknowledged (legacy: automated, manual)
+  extractionMethod String @default("full_fair")
 
   stagedPosters Json @default("[]")
 

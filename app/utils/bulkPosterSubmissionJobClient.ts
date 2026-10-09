@@ -1,4 +1,5 @@
 import type {
+  BulkImportStagedPoster,
   BulkPosterSubmissionJob,
   CreateBulkPosterSubmissionJobBody,
   UpdateBulkPosterSubmissionJobBody,
@@ -26,6 +27,16 @@ export async function getBulkPosterSubmissionJob(jobId: string) {
   );
 }
 
+/** Reconcile `stagedPosters` with objects under this job's Bunny prefix. */
+export async function syncBulkStagedPostersFromStorage(jobId: string) {
+  return $fetch<{
+    stagedPosters: BulkImportStagedPoster[];
+    syncedFromStorage: boolean;
+  }>(`/api/bulk-poster-submissions/${jobId}/sync-staged`, {
+    method: "POST",
+  });
+}
+
 export async function updateBulkPosterSubmissionJob(
   jobId: string,
   body: UpdateBulkPosterSubmissionJobBody,
@@ -40,6 +51,23 @@ export async function updateBulkPosterSubmissionJob(
 }
 
 export type BulkPosterSubmissionUploadRole = "poster" | "license_metadata";
+
+export async function deleteBulkStagedPoster(jobId: string, filePath: string) {
+  return $fetch<{ job: BulkPosterSubmissionJob }>(
+    `/api/bulk-poster-submissions/${jobId}/staged-poster`,
+    {
+      method: "DELETE",
+      body: { filePath },
+    },
+  );
+}
+
+export async function deleteAllBulkStagedPosters(jobId: string) {
+  return $fetch<{ job: BulkPosterSubmissionJob; deletedCount: number }>(
+    `/api/bulk-poster-submissions/${jobId}/staged-posters`,
+    { method: "DELETE" },
+  );
+}
 
 export async function uploadBulkPosterSubmissionFile(
   jobId: string,

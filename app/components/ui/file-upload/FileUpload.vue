@@ -105,6 +105,15 @@ function handleDrop(e: DragEvent) {
     : [];
   if (droppedFiles.length) handleFileChange(droppedFiles);
 }
+
+function clearFiles() {
+  files.value = [];
+  rejections.value = [];
+  if (fileInputRef.value) fileInputRef.value.value = "";
+  emit("onChange", []);
+}
+
+defineExpose({ clearFiles });
 </script>
 
 <template>

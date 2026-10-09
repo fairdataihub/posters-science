@@ -41,6 +41,21 @@ const toast = useToast();
 
 const { id } = route.params as { id: string };
 
+const numericPosterId = Number.parseInt(id, 10);
+const posterRouteIdValid =
+  Boolean(id) &&
+  id !== "null" &&
+  id !== "undefined" &&
+  !Number.isNaN(numericPosterId);
+
+if (!posterRouteIdValid) {
+  await navigateTo("/dashboard", { replace: true });
+  throw createError({
+    statusCode: 404,
+    statusMessage: "Poster not found",
+  });
+}
+
 const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Edit Poster Metadata - Posters.science")}&description=${encodeURIComponent("Review and edit the metadata for your poster submission")}&app=posters-science&org=fairdataihub`;
 
 useSeoMeta({
@@ -156,7 +171,7 @@ const state = reactive<StrictFormSchema>({
   domain: "",
 });
 
-const { data, error } = await useFetch(`/api/poster/${id}`);
+const { data, error } = await useFetch(`/api/poster/${numericPosterId}`);
 
 if (data.value) {
   const poster = data.value as PosterResponse;

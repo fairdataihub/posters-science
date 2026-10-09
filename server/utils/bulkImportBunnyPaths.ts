@@ -10,6 +10,20 @@ export function bulkImportJobPrefix(folderExtension: string, jobId: string) {
   return `bulk-imports/${folderExtension}/${jobId}`;
 }
 
+export function bulkImportPostersPrefix(folderExtension: string, jobId: string) {
+  return `${bulkImportJobPrefix(folderExtension, jobId)}/posters/`;
+}
+
+/** Guard deletes so paths cannot escape this job's poster prefix. */
+export function isBulkImportPosterObjectPath(
+  filePath: string,
+  folderExtension: string,
+  jobId: string,
+): boolean {
+  const prefix = bulkImportPostersPrefix(folderExtension, jobId);
+  return filePath.startsWith(prefix) && filePath.length > prefix.length;
+}
+
 export function bulkImportPosterObjectPath(
   folderExtension: string,
   jobId: string,

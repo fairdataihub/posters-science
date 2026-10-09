@@ -6,9 +6,18 @@ import {
   POSTER_FILE_ACCEPT,
   posterFileRejectionReason,
 } from "#shared/utils/posterFile";
+import { BULK_EXTRACTION_LEVEL_OPTIONS } from "#shared/types/bulkExtractionLevel";
 import type { BulkImportWizardStep } from "#shared/types/bulkImportWizard";
 import { normalizeBulkImportWizardStep } from "#shared/types/bulkImportWizard";
-import type { BulkImportStagedPoster } from "#shared/types/bulkPosterSubmissionJob";
+import type { BulkSubmissionExtractionMethod } from "#shared/types/bulkSubmission";
+import {
+  DEFAULT_BULK_SUBMISSION_EXTRACTION_METHOD,
+  normalizeBulkSubmissionExtractionMethod,
+} from "#shared/types/bulkSubmission";
+import type {
+  BulkImportStagedPoster,
+  BulkPosterSubmissionJob,
+} from "#shared/types/bulkPosterSubmissionJob";
 import {
   CONFERENCE_BULK_IMPORT_LICENSE_METADATA_BASENAME,
   type BulkImportBatchItem,
@@ -29,7 +38,10 @@ import {
 import {
   createBulkPosterSubmissionJob,
   getBulkPosterSubmissionJob,
+  syncBulkStagedPostersFromStorage,
   updateBulkPosterSubmissionJob,
+  deleteAllBulkStagedPosters,
+  deleteBulkStagedPoster,
   uploadBulkPosterSubmissionFile,
 } from "~/utils/bulkPosterSubmissionJobClient";
 import { shareNewBulkPath } from "~/utils/sharePaths";
@@ -70,17 +82,27 @@ const props = defineProps<{
   initialJobId?: string;
   initialImportName?: string;
   initialStep?: BulkImportWizardStep | "assets";
+  initialExtractionMethod?: BulkSubmissionExtractionMethod | string;
   initialStagedPosters?: BulkImportStagedPoster[];
   initialLicenseMetadataUploaded?: boolean;
+  resumeLoading?: boolean;
 }>();
 
 const toast = useToast();
 
-const stagedPosters = ref<BulkImportStagedPoster[]>(
-  props.initialStagedPosters ?? [],
-);
+const stagedPosters = ref<BulkImportStagedPoster[]>([]);
 const licenseMetadataUploaded = ref(
   props.initialLicenseMetadataUploaded ?? false,
+);
+
+const extractionMethod = ref<BulkSubmissionExtractionMethod>(
+  normalizeBulkSubmissionExtractionMethod(
+    props.initialExtractionMethod ?? DEFAULT_BULK_SUBMISSION_EXTRACTION_METHOD,
+  ),
+);
+const fullExtractionAcknowledged = ref(
+  normalizeBulkSubmissionExtractionMethod(props.initialExtractionMethod) ===
+    "full_acknowledged",
 );
 
 const POSTER_ONLY_HINT = `${ALLOWED_POSTER_FILE_LABEL}, up to ${MAX_POSTER_FILE_SIZE_LABEL} per file`;
@@ -100,23 +122,109 @@ function validatePosterUploadFile(file: File): string | null {
   return validatePosterFile(file);
 }
 
-type PosterUploadQueueItem = {
+function onPosterFilesRejected(rejections: { file: File; reason: string }[]) {
+  const first = rejections[0];
+  if (!first) return;
+
+  toast.add({
+    title: "File not accepted",
+    description: `${first.file.name}: ${first.reason}`,
+    color: "error",
+  });
+}
+
+type PosterListRowStatus = "uploading" | "stored" | "error";
+
+type PosterListRow = {
   id: string;
   fileName: string;
-  status: "pending" | "uploading" | "done" | "error";
+  filePath?: string;
+  status: PosterListRowStatus;
   error?: string;
 };
 
-const posterUploadQueue = ref<PosterUploadQueueItem[]>([]);
-const posterUploadRunning = ref(false);
-const pendingPosterFiles = ref<File[]>([]);
+const posterFileUploadRef = ref<{ clearFiles: () => void } | null>(null);
+const posterRowStatus = ref<
+  Record<string, { status: "uploading" | "error"; error?: string }>
+>({});
+const activePosterUploads = ref(0);
+const stagedPosterDeletePath = ref<string | null>(null);
+const deleteAllPostersModalOpen = ref(false);
+const deleteAllPostersLoading = ref(false);
+const stagedPostersLoading = ref(false);
+const resumeWizardHydrated = ref(false);
+const resumeJobLoading = ref(false);
+
+const posterUploadRunning = computed(() => activePosterUploads.value > 0);
 
 const stagedPosterFileNames = computed(() =>
   stagedPosters.value.map((poster) => poster.fileName),
 );
 
-function onPendingPosterFilesChange(files: File[]) {
-  pendingPosterFiles.value = files;
+const posterListRows = computed((): PosterListRow[] => {
+  const byKey = new Map<string, PosterListRow>();
+
+  for (const poster of stagedPosters.value) {
+    const rowStatus = posterRowStatus.value[poster.fileName];
+    byKey.set(poster.fileName.toLowerCase(), {
+      id: poster.filePath,
+      fileName: poster.fileName,
+      filePath: poster.filePath,
+      status: rowStatus?.status === "uploading" ? "uploading" : "stored",
+      error: rowStatus?.error,
+    });
+  }
+
+  for (const [fileName, state] of Object.entries(posterRowStatus.value)) {
+    const key = fileName.toLowerCase();
+    if (byKey.has(key)) {
+      const row = byKey.get(key)!;
+      if (state.status === "uploading") row.status = "uploading";
+      if (state.status === "error") {
+        row.status = "error";
+        row.error = state.error;
+      }
+      continue;
+    }
+
+    byKey.set(key, {
+      id: `upload-${key}`,
+      fileName,
+      status: state.status,
+      error: state.error,
+    });
+  }
+
+  return [...byKey.values()].sort((a, b) =>
+    a.fileName.localeCompare(b.fileName, undefined, { sensitivity: "base" }),
+  );
+});
+
+function clearPosterRowStatus(fileName: string) {
+  const { [fileName]: _removed, ...rest } = posterRowStatus.value;
+  posterRowStatus.value = rest;
+}
+
+async function onPosterFilesSelected(files: File[]) {
+  if (files.length === 0) return;
+
+  if (!jobId.value) {
+    toast.add({
+      title: "Name this import first",
+      description:
+        "Go back to step 1 and continue so uploads can be attached to your job.",
+      color: "warning",
+    });
+    posterFileUploadRef.value?.clearFiles();
+    return;
+  }
+
+  const batch = [...files];
+  posterFileUploadRef.value?.clearFiles();
+
+  for (const file of batch) {
+    await uploadPosterFileImmediately(file);
+  }
 }
 
 function validateLicenseMetadataFile(file: File): string | null {
@@ -149,6 +257,10 @@ const readySubmissionCount = computed(
 
 const uploadStepComplete = computed(() => stagedPosters.value.length > 0);
 
+const canContinueFromUpload = computed(
+  () => stagedPosters.value.length > 0 && !posterUploadRunning.value,
+);
+
 const metadataStepComplete = computed(() => licenseMetadataUploaded.value);
 
 const canProceedFromReview = computed(() => {
@@ -170,6 +282,7 @@ const {
   stepIsActive,
   goToStep: goToWizardStep,
   continueAfterSetupPersisted,
+  restoreWizardStep,
   BULK_IMPORT_NAME_MAX_LENGTH,
   BULK_IMPORT_NAME_MIN_LENGTH,
 } = useBulkImportWizard(
@@ -185,28 +298,31 @@ const {
   },
 );
 
+const setupExtractionReady = computed(() => {
+  if (extractionMethod.value !== "full_acknowledged") return true;
+  return fullExtractionAcknowledged.value;
+});
+
+const setupCanContinue = computed(
+  () => importNameValid.value && setupExtractionReady.value,
+);
+
 watch(
   () => props.initialJobId,
   (id) => {
     if (id) jobId.value = id;
   },
+  { immediate: true },
 );
 
 watch(
   () => props.initialImportName,
   (name) => {
-    if (name) importName.value = name;
-  },
-);
-
-watch(
-  () => props.initialStagedPosters,
-  (posters) => {
-    if (posters && posters.length > 0) {
-      stagedPosters.value = posters;
+    if (typeof name === "string" && name.length > 0) {
+      importName.value = name;
     }
   },
-  { deep: true },
+  { immediate: true },
 );
 
 watch(
@@ -214,6 +330,111 @@ watch(
   (uploaded) => {
     if (uploaded) licenseMetadataUploaded.value = true;
   },
+);
+
+watch(
+  () => props.initialExtractionMethod,
+  (method) => {
+    if (method) {
+      extractionMethod.value = normalizeBulkSubmissionExtractionMethod(method);
+    }
+  },
+);
+
+watch(extractionMethod, (level) => {
+  if (level !== "full_acknowledged") {
+    fullExtractionAcknowledged.value = false;
+  }
+});
+
+/** Hide poster list until job + Bunny sync finish (avoids stale rows on resume). */
+const posterStorageListLoading = computed(
+  () =>
+    Boolean(props.resumeLoading) ||
+    resumeJobLoading.value ||
+    stagedPostersLoading.value ||
+    (Boolean(props.initialJobId) && !resumeWizardHydrated.value),
+);
+
+function resolveResumeWizardStep(): BulkImportWizardStep {
+  const fromProps = normalizeBulkImportWizardStep(props.initialStep);
+  if (fromProps) return fromProps;
+  return "setup";
+}
+
+function applyJobSnapshot(job: BulkPosterSubmissionJob) {
+  jobId.value = job.id;
+  importName.value = job.name;
+  extractionMethod.value = normalizeBulkSubmissionExtractionMethod(
+    job.extractionMethod,
+  );
+  fullExtractionAcknowledged.value =
+    extractionMethod.value === "full_acknowledged";
+
+  if (job.licenseMetadataFilePath) {
+    licenseMetadataUploaded.value = true;
+  }
+
+  const step =
+    normalizeBulkImportWizardStep(job.wizardStep) ?? resolveResumeWizardStep();
+
+  restoreWizardStep(step);
+}
+
+async function hydrateListsAfterResume(step: BulkImportWizardStep) {
+  if (step === "upload" || step === "metadata" || step === "review") {
+    await refreshStagedPostersFromStorage();
+  }
+  if (step === "review" || step === "submit") {
+    await refreshSubmissionRows();
+  }
+}
+
+async function ensureResumeJobLoaded() {
+  const id = props.initialJobId ?? jobId.value;
+  if (!id || resumeJobLoading.value) return;
+
+  resumeJobLoading.value = true;
+  stagedPosters.value = [];
+
+  try {
+    const job = await getBulkPosterSubmissionJob(id);
+    applyJobSnapshot(job);
+
+    const step =
+      normalizeBulkImportWizardStep(job.wizardStep) ??
+      resolveResumeWizardStep();
+    await hydrateListsAfterResume(step);
+
+    resumeWizardHydrated.value = true;
+
+    const path = shareNewBulkPath({ jobId: job.id });
+    if (typeof path !== "string" && route.query.jobId !== job.id) {
+      await router.replace(path);
+    }
+  } catch {
+    resumeWizardHydrated.value = true;
+  } finally {
+    resumeJobLoading.value = false;
+  }
+}
+
+watch(
+  () => props.initialJobId,
+  (id) => {
+    if (!id) {
+      resumeWizardHydrated.value = false;
+      stagedPosters.value = [];
+      return;
+    }
+    resumeWizardHydrated.value = false;
+    void ensureResumeJobLoaded();
+  },
+  { immediate: true },
+);
+
+const currentStepTask = computed(
+  () => wizardSteps.find((step) => step.id === currentStep.value)?.task ?? "",
 );
 
 const setupSaving = ref(false);
@@ -243,7 +464,8 @@ function scrollActiveStepToSecondSlot(behavior: ScrollBehavior = "smooth") {
   if (previousEl) {
     const containerRect = container.getBoundingClientRect();
     const previousRect = previousEl.getBoundingClientRect();
-    targetLeft = container.scrollLeft + (previousRect.left - containerRect.left);
+    targetLeft =
+      container.scrollLeft + (previousRect.left - containerRect.left);
   }
 
   const maxScroll = Math.max(0, container.scrollWidth - container.clientWidth);
@@ -275,9 +497,32 @@ async function persistWizardStep(step: BulkImportWizardStep) {
   }
 }
 
+async function refreshStagedPostersFromStorage() {
+  if (!jobId.value || stagedPostersLoading.value) return;
+
+  stagedPostersLoading.value = true;
+
+  try {
+    const result = await syncBulkStagedPostersFromStorage(jobId.value);
+    stagedPosters.value = result.stagedPosters;
+  } catch {
+    try {
+      const job = await getBulkPosterSubmissionJob(jobId.value);
+      stagedPosters.value = job.stagedPosters ?? [];
+    } catch {
+      // Keep the last known list if sync and fetch both fail.
+    }
+  } finally {
+    stagedPostersLoading.value = false;
+  }
+}
+
 function goToStep(step: BulkImportWizardStep) {
   const moved = goToWizardStep(step, {
     beforeEnter: (target) => {
+      if (target === "upload") {
+        void refreshStagedPostersFromStorage();
+      }
       if (target === "review") {
         void refreshSubmissionRows();
       }
@@ -289,6 +534,15 @@ function goToStep(step: BulkImportWizardStep) {
   }
 }
 
+watch(
+  () => [jobId.value, currentStep.value] as const,
+  ([id, step]) => {
+    if (id && step === "upload") {
+      void refreshStagedPostersFromStorage();
+    }
+  },
+);
+
 async function persistSetupJob(): Promise<string> {
   const name = importNameTrimmed.value;
 
@@ -296,7 +550,7 @@ async function persistSetupJob(): Promise<string> {
     try {
       const job = await updateBulkPosterSubmissionJob(jobId.value, {
         name,
-        wizardStep: "upload",
+        extractionMethod: extractionMethod.value,
       });
       return job.id;
     } catch (error) {
@@ -307,7 +561,10 @@ async function persistSetupJob(): Promise<string> {
     }
   }
 
-  const job = await createBulkPosterSubmissionJob({ name });
+  const job = await createBulkPosterSubmissionJob({
+    name,
+    extractionMethod: extractionMethod.value,
+  });
   jobId.value = job.id;
   return job.id;
 }
@@ -334,14 +591,14 @@ async function commitSetupAndContinue() {
     setupSaving.value = false;
   }
 
-  continueAfterSetupPersisted();
+  if (!continueAfterSetupPersisted()) return;
+
+  void persistWizardStep("upload");
+
+  if (!savedJobId) return;
 
   const path = shareNewBulkPath({ jobId: savedJobId });
-  if (typeof path === "string") {
-    if (route.fullPath !== path) {
-      await router.replace(path);
-    }
-  } else if (route.query.jobId !== savedJobId) {
+  if (typeof path !== "string" && route.query.jobId !== savedJobId) {
     await router.replace(path);
   }
 }
@@ -392,58 +649,169 @@ async function refreshSubmissionRows() {
   }
 }
 
-async function uploadPendingPosters() {
-  if (!jobId.value || posterUploadRunning.value) return;
+function findStagedPosterByFileName(fileName: string) {
+  return stagedPosters.value.find(
+    (poster) =>
+      poster.fileName.localeCompare(fileName, undefined, {
+        sensitivity: "base",
+      }) === 0,
+  );
+}
 
-  const files = pendingPosterFiles.value;
-  if (files.length === 0) return;
+const duplicateReplaceModalOpen = ref(false);
+const duplicateReplaceNames = ref<string[]>([]);
+let duplicateReplaceResolve:
+  | ((choice: "replace" | "skip" | "cancel") => void)
+  | null = null;
 
-  posterUploadRunning.value = true;
-  posterUploadQueue.value = files.map((file, index) => ({
-    id: `${file.name}-${index}`,
-    fileName: file.name,
-    status: "pending" as const,
-  }));
+function resolveDuplicateReplace(choice: "replace" | "skip" | "cancel") {
+  if (!duplicateReplaceResolve) return;
 
-  let successCount = 0;
+  const resolve = duplicateReplaceResolve;
+  duplicateReplaceResolve = null;
+  duplicateReplaceModalOpen.value = false;
+  resolve(choice);
+}
 
-  for (const item of posterUploadQueue.value) {
-    const file = files.find((entry) => entry.name === item.fileName);
-    if (!file) continue;
+function askDuplicateReplace(fileNames: string[]) {
+  return new Promise<"replace" | "skip" | "cancel">((resolve) => {
+    duplicateReplaceResolve = resolve;
+    duplicateReplaceNames.value = fileNames;
+    void nextTick(() => {
+      duplicateReplaceModalOpen.value = true;
+    });
+  });
+}
 
-    item.status = "uploading";
+async function uploadPosterFileImmediately(file: File) {
+  if (!jobId.value) return;
+
+  const rejection = validatePosterUploadFile(file);
+  if (rejection) {
+    toast.add({
+      title: "File not accepted",
+      description: `${file.name}: ${rejection}`,
+      color: "error",
+    });
+    return;
+  }
+
+  const existing = findStagedPosterByFileName(file.name);
+  if (existing) {
+    const choice = await askDuplicateReplace([file.name]);
+    if (choice === "cancel" || choice === "skip") return;
 
     try {
-      const response = await uploadBulkPosterSubmissionFile(
+      const { job } = await deleteBulkStagedPoster(
         jobId.value,
-        file,
-        "poster",
+        existing.filePath,
       );
-      stagedPosters.value = response.job.stagedPosters ?? [];
-      item.status = "done";
-      successCount += 1;
-    } catch {
-      item.status = "error";
-      item.error = "Upload failed";
+      stagedPosters.value = job.stagedPosters ?? [];
+      clearPosterRowStatus(file.name);
+    } catch (error) {
+      toast.add({
+        title: "Could not replace file",
+        description:
+          fetchErrorDescription(error) ??
+          "The existing file could not be removed from storage.",
+        color: "error",
+      });
+      return;
     }
   }
 
-  posterUploadRunning.value = false;
-  pendingPosterFiles.value = [];
+  posterRowStatus.value = {
+    ...posterRowStatus.value,
+    [file.name]: { status: "uploading" },
+  };
+  activePosterUploads.value += 1;
 
-  if (successCount > 0) {
+  try {
+    const response = await uploadBulkPosterSubmissionFile(
+      jobId.value,
+      file,
+      "poster",
+    );
+    stagedPosters.value = response.job.stagedPosters ?? stagedPosters.value;
+    clearPosterRowStatus(file.name);
+    void persistWizardStep("upload");
+  } catch (error) {
+    posterRowStatus.value = {
+      ...posterRowStatus.value,
+      [file.name]: {
+        status: "error",
+        error:
+          fetchErrorDescription(error) ??
+          (fetchErrorStatusCode(error) === 413
+            ? `File is too large. Maximum size is ${MAX_POSTER_FILE_SIZE_LABEL}.`
+            : "Upload failed"),
+      },
+    };
+  } finally {
+    activePosterUploads.value = Math.max(0, activePosterUploads.value - 1);
+  }
+}
+
+function removeStagedPosterByPath(filePath: string) {
+  const poster = stagedPosters.value.find(
+    (entry) => entry.filePath === filePath,
+  );
+  if (poster) void removeStagedPoster(poster);
+}
+
+async function removeAllStagedPosters() {
+  if (
+    !jobId.value ||
+    deleteAllPostersLoading.value ||
+    posterUploadRunning.value
+  ) {
+    return;
+  }
+
+  deleteAllPostersLoading.value = true;
+
+  try {
+    const { job } = await deleteAllBulkStagedPosters(jobId.value);
+    stagedPosters.value = job.stagedPosters ?? [];
+    posterRowStatus.value = {};
+    deleteAllPostersModalOpen.value = false;
     toast.add({
-      title: "Posters stored",
-      description: `${successCount} file(s) uploaded to secure storage for this import.`,
+      title: "All posters removed",
+      description: "Every staged poster file was deleted from this import.",
       color: "success",
     });
-    void persistWizardStep("upload");
-  } else {
+  } catch (error) {
     toast.add({
-      title: "Upload failed",
-      description: "None of the selected posters could be uploaded. Try again.",
+      title: "Could not remove all posters",
+      description:
+        fetchErrorDescription(error) ??
+        "Some files may still be in storage. Try again or remove them one by one.",
       color: "error",
     });
+  } finally {
+    deleteAllPostersLoading.value = false;
+  }
+}
+
+async function removeStagedPoster(poster: BulkImportStagedPoster) {
+  if (!jobId.value || stagedPosterDeletePath.value) return;
+
+  stagedPosterDeletePath.value = poster.filePath;
+
+  try {
+    const { job } = await deleteBulkStagedPoster(jobId.value, poster.filePath);
+    stagedPosters.value = job.stagedPosters ?? [];
+    clearPosterRowStatus(poster.fileName);
+  } catch (error) {
+    toast.add({
+      title: "Could not remove poster",
+      description:
+        fetchErrorDescription(error) ??
+        "The file could not be deleted from storage. Try again.",
+      color: "error",
+    });
+  } finally {
+    stagedPosterDeletePath.value = null;
   }
 }
 
@@ -577,7 +945,9 @@ function batchStatusColor(
 }
 
 function buildSimulatedBatchItems(): BulkImportBatchItem[] {
-  const readyRows = submissionRows.value.filter((row) => row.status === "ready");
+  const readyRows = submissionRows.value.filter(
+    (row) => row.status === "ready",
+  );
   return readyRows.map((row, index) => ({
     id: `bulk-sim-${index + 1}`,
     fileName: row.fileName,
@@ -629,8 +999,18 @@ onBeforeUnmount(() => {
   stopBatchSimulation();
 });
 
-function continueToMetadata() {
-  if (!uploadStepComplete.value) return;
+async function continueToMetadata() {
+  if (posterUploadRunning.value) return;
+
+  if (stagedPosters.value.length === 0) {
+    toast.add({
+      title: "Add poster files",
+      description: "Drop or select at least one poster file before continuing.",
+      color: "warning",
+    });
+    return;
+  }
+
   goToStep("metadata");
 }
 
@@ -669,14 +1049,10 @@ function startImport() {
   });
   advanceBatchSimulation();
 }
-
 </script>
 
 <template>
-  <UCard
-    class="flex flex-col"
-    :ui="{ header: 'overflow-visible' }"
-  >
+  <UCard class="flex flex-col" :ui="{ header: 'overflow-visible' }">
     <template #header>
       <div class="flex flex-col gap-4 overflow-visible">
         <h2 class="text-lg font-semibold">{{ headerTitle }}</h2>
@@ -687,7 +1063,7 @@ function startImport() {
         >
           <ol
             ref="stepperScrollRef"
-            class="flex flex-row items-start gap-3 overflow-x-auto overflow-y-visible overscroll-x-contain scroll-smooth px-0.5 py-1.5 pb-2 [scrollbar-width:thin]"
+            class="flex [scrollbar-width:thin] flex-row items-start gap-3 overflow-x-auto overflow-y-visible overscroll-x-contain scroll-smooth px-0.5 py-1.5 pb-2"
           >
             <li
               v-for="(step, index) in wizardSteps"
@@ -744,15 +1120,22 @@ function startImport() {
     </template>
 
     <div class="flex flex-col gap-8">
+      <p
+        v-if="resumeLoading || resumeJobLoading"
+        class="text-muted text-center text-sm"
+        aria-live="polite"
+      >
+        Loading your import…
+      </p>
+
       <template v-if="currentStep === 'setup'">
         <div class="space-y-4">
           <div>
             <h3 class="text-base font-semibold">
-              Step {{ currentStepNumber }}: Name this bulk import
+              Step {{ currentStepNumber }}: Name
             </h3>
             <p class="text-muted mt-1 text-sm">
-              Choose a label you will recognize on your dashboard. You can pause
-              and return to this import later once progress saving is enabled.
+              {{ currentStepTask }}
             </p>
           </div>
 
@@ -768,6 +1151,56 @@ function startImport() {
               autocomplete="off"
             />
           </UFormField>
+
+          <UFormField label="How should we get poster details?" required>
+            <div
+              class="space-y-3"
+              role="radiogroup"
+              aria-label="How should we get poster details?"
+            >
+              <label
+                v-for="option in BULK_EXTRACTION_LEVEL_OPTIONS"
+                :key="option.value"
+                class="flex cursor-pointer gap-3 rounded-lg border p-4 transition-colors"
+                :class="
+                  extractionMethod === option.value
+                    ? 'border-primary bg-primary/5 ring-primary/30 ring-1'
+                    : 'border-gray-200 dark:border-gray-800'
+                "
+              >
+                <input
+                  v-model="extractionMethod"
+                  type="radio"
+                  class="mt-1 shrink-0"
+                  name="bulk-extraction-level"
+                  :value="option.value"
+                />
+
+                <div class="min-w-0 space-y-1">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <span class="text-sm font-semibold">{{
+                      option.label
+                    }}</span>
+                    <UBadge
+                      v-if="option.badge"
+                      color="primary"
+                      variant="soft"
+                      size="xs"
+                    >
+                      {{ option.badge }}
+                    </UBadge>
+                  </div>
+                  <p class="text-muted text-sm">{{ option.description }}</p>
+                </div>
+              </label>
+            </div>
+          </UFormField>
+
+          <UCheckbox
+            v-if="extractionMethod === 'full_acknowledged'"
+            v-model="fullExtractionAcknowledged"
+            label="I’m okay with less manual review on extracted fields (I can still edit before publishing)."
+          />
         </div>
 
         <div
@@ -785,7 +1218,7 @@ function startImport() {
             icon="i-lucide-arrow-right"
             trailing
             label="Continue to upload posters"
-            :disabled="!importNameValid"
+            :disabled="!setupCanContinue"
             :loading="setupSaving"
             @click="commitSetupAndContinue"
           />
@@ -796,12 +1229,10 @@ function startImport() {
         <div class="space-y-4">
           <div>
             <h3 class="text-base font-semibold">
-              Step {{ currentStepNumber }}: Upload poster files
+              Step {{ currentStepNumber }}: Posters
             </h3>
             <p class="text-muted mt-1 text-sm">
-              Upload each poster PDF or image to secure storage first. You will
-              add license and extraction metadata in the next step, then send
-              everything to the extraction pipeline.
+              {{ currentStepTask }}
             </p>
           </div>
 
@@ -818,81 +1249,108 @@ function startImport() {
             class="space-y-4 rounded-lg border border-gray-200 p-4 dark:border-gray-800"
           >
             <UiFileUpload
+              ref="posterFileUploadRef"
               hide-file-list
-              hide-rejections
               multiple
               :accept="POSTER_FILE_ACCEPT"
               :validate-file="validatePosterUploadFile"
-              :hint="POSTER_ONLY_HINT"
-              @on-change="onPendingPosterFilesChange"
+              :hint="`${POSTER_ONLY_HINT} Files upload as soon as you add them.`"
+              @on-change="onPosterFilesSelected"
+              @on-reject="onPosterFilesRejected"
             >
               <UiFileUploadGrid />
             </UiFileUpload>
 
-            <UButton
-              v-if="pendingPosterFiles.length > 0"
-              color="primary"
-              icon="line-md:cloud-upload-loop"
-              :label="`Upload ${pendingPosterFiles.length} poster(s) to storage`"
-              :loading="posterUploadRunning"
-              :disabled="!jobId"
-              @click="uploadPendingPosters"
-            />
-
-            <ul
-              v-if="posterUploadQueue.length > 0"
-              class="border-default divide-default divide-y rounded-md border text-sm"
+            <div
+              v-if="posterStorageListLoading || posterListRows.length > 0"
+              class="space-y-2"
             >
-              <li
-                v-for="item in posterUploadQueue"
-                :key="item.id"
-                class="flex items-center justify-between gap-3 px-3 py-2"
+              <div
+                v-if="posterStorageListLoading"
+                class="flex flex-col items-center justify-center gap-2 py-10"
+                aria-live="polite"
+                aria-busy="true"
               >
-                <span class="truncate" :title="item.fileName">{{
-                  item.fileName
-                }}</span>
-                <UBadge
-                  :color="
-                    item.status === 'done'
-                      ? 'success'
-                      : item.status === 'error'
-                        ? 'error'
-                        : item.status === 'uploading'
-                          ? 'info'
-                          : 'neutral'
-                  "
-                  variant="soft"
-                  size="xs"
-                >
-                  {{
-                    item.status === "done"
-                      ? "Stored"
-                      : item.status === "error"
-                        ? item.error ?? "Failed"
-                        : item.status === "uploading"
-                          ? "Uploading…"
-                          : "Queued"
-                  }}
-                </UBadge>
-              </li>
-            </ul>
+                <UIcon
+                  name="i-lucide-loader-circle"
+                  class="text-primary size-8 animate-spin"
+                />
+                <p class="text-muted text-sm">Loading poster files…</p>
+              </div>
 
-            <div v-if="stagedPosters.length > 0" class="space-y-2">
-              <p class="text-sm font-medium">
-                {{ stagedPosters.length }} poster(s) in this import
-              </p>
-              <ul
-                class="border-default divide-default max-h-[320px] divide-y overflow-y-auto rounded-md border"
-              >
-                <li
-                  v-for="poster in stagedPosters"
-                  :key="poster.filePath"
-                  class="truncate px-3 py-1.5 text-sm"
-                  :title="poster.fileName"
+              <template v-else>
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                  <p class="text-sm font-medium">
+                    {{ stagedPosters.length }} poster(s) added to this import
+                  </p>
+                  <UButton
+                    v-if="stagedPosters.length > 0"
+                    color="neutral"
+                    variant="outline"
+                    size="xs"
+                    icon="i-lucide-trash-2"
+                    label="Delete all"
+                    :disabled="
+                      !jobId ||
+                      posterUploadRunning ||
+                      stagedPosterDeletePath !== null ||
+                      deleteAllPostersLoading
+                    "
+                    :loading="deleteAllPostersLoading"
+                    @click="deleteAllPostersModalOpen = true"
+                  />
+                </div>
+                <ul
+                  v-if="posterListRows.length > 0"
+                  class="border-default divide-default max-h-[320px] divide-y overflow-y-auto rounded-md border"
                 >
-                  {{ poster.fileName }}
-                </li>
-              </ul>
+                  <li
+                    v-for="row in posterListRows"
+                    :key="row.id"
+                    class="flex items-center justify-between gap-2 px-3 py-1.5 text-sm"
+                  >
+                    <span class="min-w-0 truncate" :title="row.fileName">
+                      {{ row.fileName }}
+                    </span>
+                    <div class="flex shrink-0 items-center gap-1">
+                      <UBadge
+                        :color="
+                          row.status === 'stored'
+                            ? 'success'
+                            : row.status === 'uploading'
+                              ? 'info'
+                              : 'error'
+                        "
+                        variant="soft"
+                        size="xs"
+                      >
+                        {{
+                          row.status === "stored"
+                            ? "Stored"
+                            : row.status === "uploading"
+                              ? "Uploading…"
+                              : (row.error ?? "Failed")
+                        }}
+                      </UBadge>
+                      <UButton
+                        v-if="row.filePath"
+                        color="neutral"
+                        variant="ghost"
+                        size="xs"
+                        icon="i-lucide-trash-2"
+                        aria-label="Remove from storage"
+                        :disabled="
+                          !jobId ||
+                          posterUploadRunning ||
+                          stagedPosterDeletePath !== null
+                        "
+                        :loading="stagedPosterDeletePath === row.filePath"
+                        @click="removeStagedPosterByPath(row.filePath)"
+                      />
+                    </div>
+                  </li>
+                </ul>
+              </template>
             </div>
           </div>
         </div>
@@ -912,7 +1370,10 @@ function startImport() {
             icon="i-lucide-arrow-right"
             trailing
             label="Continue to metadata"
-            :disabled="!uploadStepComplete"
+            :disabled="
+              !canContinueFromUpload || !jobId || posterStorageListLoading
+            "
+            :loading="posterUploadRunning"
             @click="continueToMetadata"
           />
         </div>
@@ -922,13 +1383,14 @@ function startImport() {
         <div class="space-y-4">
           <div>
             <h3 class="text-base font-semibold">
-              Step {{ currentStepNumber }}: Licenses &amp; metadata
+              Step {{ currentStepNumber }}: Licenses
             </h3>
             <p class="text-muted mt-1 text-sm">
-              Download a CSV template listing your uploaded poster file names,
-              fill in an SPDX license for each row, then upload the completed
-              file. Additional metadata sheets for extraction can be added here
-              later.
+              {{ currentStepTask }}
+              <template v-if="extractionMethod === 'minimal'">
+                You can also add title, authors, and other columns in the CSV—we
+                won’t overwrite what you type.
+              </template>
             </p>
           </div>
 
@@ -1016,12 +1478,10 @@ function startImport() {
         <div class="space-y-4">
           <div>
             <h3 class="text-base font-semibold">
-              Step {{ currentStepNumber }}: Review submissions
+              Step {{ currentStepNumber }}: Check
             </h3>
             <p class="text-muted mt-1 text-sm">
-              Each poster file must match a row in
-              {{ CONFERENCE_BULK_IMPORT_LICENSE_METADATA_BASENAME }} with a
-              valid SPDX license before import.
+              {{ currentStepTask }}
             </p>
           </div>
 
@@ -1030,7 +1490,7 @@ function startImport() {
             variant="soft"
             icon="i-lucide-info"
             title="Posters already in storage"
-            description="Each row matches an uploaded poster file name with license metadata. Fix any warnings before starting extraction."
+            description="Each spreadsheet row should match one uploaded file name and include a license. Fix warnings before you import."
           />
 
           <div v-if="submissionRows.length > 0" class="flex flex-wrap gap-2">
@@ -1140,12 +1600,10 @@ function startImport() {
         <div class="space-y-4">
           <div>
             <h3 class="text-base font-semibold">
-              Step {{ currentStepNumber }}: Extraction pipeline
+              Step {{ currentStepNumber }}: Finish
             </h3>
             <p class="text-muted mt-1 text-sm">
-              Start extraction for each poster that passed review. Files are
-              already in storage; this step creates poster records and runs the
-              same pipeline as single-poster share.
+              {{ currentStepTask }}
             </p>
           </div>
 
@@ -1241,7 +1699,7 @@ function startImport() {
               v-if="!batchImportRunning && !batchImportFinished"
               color="primary"
               icon="line-md:file-upload"
-              label="Start extraction"
+              label="Start import"
               @click="startImport"
             />
           </div>
@@ -1249,4 +1707,74 @@ function startImport() {
       </template>
     </div>
   </UCard>
+
+  <UModal
+    v-model:open="deleteAllPostersModalOpen"
+    title="Delete all staged posters?"
+    description="This removes every poster file from storage for this bulk import."
+    class="max-w-md"
+  >
+    <template #footer>
+      <UButton
+        color="neutral"
+        variant="outline"
+        label="Cancel"
+        :disabled="deleteAllPostersLoading"
+        @click="deleteAllPostersModalOpen = false"
+      />
+      <UButton
+        color="error"
+        label="Delete all"
+        :loading="deleteAllPostersLoading"
+        @click="removeAllStagedPosters"
+      />
+    </template>
+  </UModal>
+
+  <UModal
+    v-model:open="duplicateReplaceModalOpen"
+    :dismissible="false"
+    title="Replace files already in storage?"
+    description="These poster file names are already saved for this import."
+    class="max-w-md"
+  >
+    <template #body>
+      <ul
+        class="border-default divide-default max-h-48 divide-y overflow-y-auto rounded-md border text-sm"
+      >
+        <li
+          v-for="name in duplicateReplaceNames"
+          :key="name"
+          class="truncate px-3 py-2"
+          :title="name"
+        >
+          {{ name }}
+        </li>
+      </ul>
+      <p class="text-muted mt-3 text-sm">
+        Replace removes the stored copy and uploads your newly selected file.
+        Keep existing skips uploading those names.
+      </p>
+    </template>
+
+    <template #footer>
+      <UButton
+        color="neutral"
+        variant="outline"
+        label="Cancel"
+        @click="resolveDuplicateReplace('cancel')"
+      />
+      <UButton
+        color="neutral"
+        variant="soft"
+        label="Keep existing"
+        @click="resolveDuplicateReplace('skip')"
+      />
+      <UButton
+        color="primary"
+        label="Replace"
+        @click="resolveDuplicateReplace('replace')"
+      />
+    </template>
+  </UModal>
 </template>

@@ -3,8 +3,8 @@ import { Prisma } from "#shared/generated/client";
 import type { BulkPosterSubmissionJob } from "#shared/types/bulkPosterSubmissionJob";
 import type { BulkImportStagedPoster } from "#shared/types/bulkPosterSubmissionJob";
 import {
-  BULK_SUBMISSION_EXTRACTION_METHODS,
   DEFAULT_BULK_SUBMISSION_EXTRACTION_METHOD,
+  normalizeBulkSubmissionExtractionMethod,
   type BulkSubmissionExtractionMethod,
 } from "#shared/types/bulkSubmission";
 import prisma from "~~/server/utils/prisma";
@@ -36,14 +36,7 @@ type BulkSubmissionRow = {
 };
 
 function parseExtractionMethod(value: string): BulkSubmissionExtractionMethod {
-  if (
-    BULK_SUBMISSION_EXTRACTION_METHODS.includes(
-      value as BulkSubmissionExtractionMethod,
-    )
-  ) {
-    return value as BulkSubmissionExtractionMethod;
-  }
-  return DEFAULT_BULK_SUBMISSION_EXTRACTION_METHOD;
+  return normalizeBulkSubmissionExtractionMethod(value);
 }
 
 function parseStagedPosters(value: unknown): BulkImportStagedPoster[] {

@@ -1,9 +1,6 @@
 <script setup lang="ts">
 import dayjs from "dayjs";
-import {
-  BULK_IMPORT_WIZARD_STEPS,
-  normalizeBulkImportWizardStep,
-} from "#shared/types/bulkImportWizard";
+import { bulkExtractionLevelLabel } from "#shared/types/bulkExtractionLevel";
 import type { DashboardBulkSubmission } from "#shared/types/dashboardFeed";
 import { shareNewBulkPath } from "~/utils/sharePaths";
 
@@ -11,43 +8,61 @@ const props = defineProps<{
   bulk: DashboardBulkSubmission;
 }>();
 
-const stepLabel = computed(() => {
-  const step = normalizeBulkImportWizardStep(props.bulk.wizardStep);
-  return (
-    BULK_IMPORT_WIZARD_STEPS.find((item) => item.id === step)?.label ??
-    "Bulk import"
-  );
+const CARD_TITLE_MAX_LENGTH = 80;
+
+const displayTitle = computed(() => {
+  const title = props.bulk.name;
+  return title.length > CARD_TITLE_MAX_LENGTH
+    ? `${title.slice(0, CARD_TITLE_MAX_LENGTH).trimEnd()}…`
+    : title;
 });
 
-const statusPresentation = computed(() => {
-  switch (props.bulk.status) {
-    case "processing":
-      return {
-        label: "Processing",
-        color: "info" as const,
-        icon: "i-lucide-loader-circle",
-      };
-    case "failed":
-      return {
-        label: "Needs attention",
-        color: "error" as const,
-        icon: "i-lucide-alert-circle",
-      };
-    default:
-      return {
-        label: "Bulk import",
-        color: "primary" as const,
-        icon: "i-lucide-layers",
-      };
+const previewSeed = computed(() => `bulk-${props.bulk.id}`);
+
+function statusPresentation() {
+  if (props.bulk.status === "failed") {
+    return {
+      label: "Needs attention",
+      color: "error" as const,
+      icon: "i-lucide-circle-alert",
+    };
   }
+  if (props.bulk.status === "processing") {
+    return {
+      label: "Extracting metadata",
+      color: "info" as const,
+      icon: "i-lucide-loader-circle",
+    };
+  }
+
+  return {
+    label: "Draft",
+    color: "warning" as const,
+    icon: "i-lucide-file-pen-line",
+  };
+}
+
+const status = computed(() => statusPresentation());
+
+const description = computed(() => {
+  const count = props.bulk.posterCount ?? 0;
+  const staged =
+    count === 1 ? "1 file staged" : `${count} files staged`;
+
+  const extraction = bulkExtractionLevelLabel(props.bulk.extractionMethod);
+  if (extraction) {
+    return `${staged} · ${extraction}`;
+  }
+
+  return staged;
 });
 
-const summaryLine = computed(() => {
-  const count = props.bulk.posterCount ?? 0;
-  const posters =
-    count === 1 ? "1 poster file" : `${count} poster files`;
-  return `${posters} · ${stepLabel.value}`;
-});
+function actionLabel() {
+  if (props.bulk.status === "failed") return "Resolve issue";
+  if (props.bulk.status === "processing") return "View progress";
+
+  return "Continue editing";
+}
 
 function continueImport() {
   void navigateTo(shareNewBulkPath({ jobId: props.bulk.id }));
@@ -61,14 +76,15 @@ function continueImport() {
     @click="continueImport"
   >
     <div
-      class="flex h-full flex-row max-md:flex-col max-md:gap-0 md:items-stretch"
+      class="flex h-full gap-8 max-md:h-auto max-md:flex-col max-md:gap-0 md:items-stretch"
     >
       <div
-        class="bg-muted/30 flex w-48 shrink-0 items-center justify-center max-md:w-full max-md:py-8"
+        class="h-full w-[150px] shrink-0 overflow-hidden max-md:h-44 max-md:w-full max-md:border-b max-md:border-gray-100 dark:max-md:border-gray-800"
       >
-        <Icon
-          name="i-lucide-files"
-          class="text-primary size-16 opacity-80"
+        <img
+          :src="`https://api.dicebear.com/9.x/shapes/svg?seed=${previewSeed}`"
+          :alt="bulk.name"
+          class="max-h-[150px] w-full object-contain p-2 transition-transform duration-300 max-md:h-full max-md:max-h-none max-md:p-3 group-hover:scale-105"
         />
       </div>
 
@@ -76,44 +92,72 @@ function continueImport() {
         class="flex h-full w-full min-w-0 flex-col justify-between py-1 max-md:h-auto max-md:gap-3 max-md:p-4 max-md:py-4"
       >
         <div class="flex flex-col gap-2">
-          <UBadge
-            :color="statusPresentation.color"
-            variant="solid"
-            size="sm"
-            :icon="statusPresentation.icon"
-          >
-            {{ statusPresentation.label }}
-          </UBadge>
+          <div class="flex flex-wrap items-center gap-2">
+            <UBadge
+              :color="status.color"
+              variant="solid"
+              size="sm"
+              :icon="status.icon"
+            >
+              {{ status.label }}
+            </UBadge>
+
+            <UBadge color="neutral" variant="soft" size="sm">
+              Bulk import
+            </UBadge>
+          </div>
 
           <h3
             class="line-clamp-2 max-h-14 overflow-hidden text-lg font-semibold break-words"
             :title="bulk.name"
           >
-            {{ bulk.name }}
+            {{ displayTitle || "Untitled bulk import" }}
           </h3>
 
-          <p class="text-muted line-clamp-2 text-sm">
-            {{ summaryLine }}
-          </p>
+          <div class="flex flex-col gap-1">
+            <p class="text-muted line-clamp-2 text-sm">
+              {{ description }}
+            </p>
+          </div>
         </div>
 
         <div
           class="flex items-center justify-between border-t border-gray-100 pt-2 text-xs max-md:flex-wrap max-md:gap-y-2 dark:border-gray-800"
         >
-          <span class="text-muted flex items-center gap-1">
-            <Icon name="heroicons:calendar-days" class="h-3 w-3" />
-            Updated {{ dayjs(bulk.updatedAt).format("MMMM D, YYYY") }}
-          </span>
+          <div
+            class="text-muted flex items-center gap-2 max-md:flex-col max-md:items-start max-md:gap-1"
+          >
+            <span class="flex items-center gap-1">
+              <Icon name="heroicons:calendar-days" class="h-3 w-3" />
+              Created {{ dayjs(bulk.createdAt).format("MMMM D, YYYY") }}
+            </span>
 
-          <UButton
-            color="primary"
-            variant="subtle"
-            label="Continue"
-            icon="i-lucide-arrow-right"
-            trailing
-            size="xs"
-            @click.stop="continueImport"
-          />
+            <span
+              v-if="
+                dayjs(bulk.updatedAt).isAfter(dayjs(bulk.createdAt), 'day')
+              "
+              class="flex items-center gap-1 border-l border-gray-100 pl-2 max-md:border-l-0 max-md:pl-0 dark:border-gray-800"
+            >
+              <Icon name="i-lucide-pencil-line" class="h-3 w-3" />
+              Updated {{ dayjs(bulk.updatedAt).format("MMMM D, YYYY") }}
+            </span>
+          </div>
+
+          <div class="flex items-center gap-2 max-md:flex-wrap" @click.stop>
+            <UButton
+              color="primary"
+              variant="subtle"
+              :label="actionLabel()"
+              :icon="
+                bulk.status === 'processing'
+                  ? 'i-lucide-activity'
+                  : 'i-lucide-arrow-right'
+              "
+              trailing
+              size="xs"
+              @click="continueImport"
+            />
+          </div>
         </div>
       </div>
     </div>

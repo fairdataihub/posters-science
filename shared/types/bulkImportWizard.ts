@@ -13,33 +13,40 @@ export type BulkImportWizardStepDefinition = {
   id: BulkImportWizardStep;
   label: string;
   description: string;
+  /** One-line hint for what the user does on this step. */
+  task: string;
 };
 
 export const BULK_IMPORT_WIZARD_STEPS: BulkImportWizardStepDefinition[] = [
   {
     id: "setup",
-    label: "Name import",
-    description: "Label this batch for your dashboard",
+    label: "Name",
+    description: "Batch name + how we read poster info",
+    task: "Give your bulk posters upload a name that you will recognize on your dashboard. Then, select the level of extraction you want to use.",
   },
   {
     id: "upload",
-    label: "Upload posters",
-    description: "Store poster files on Posters.science",
+    label: "Posters",
+    description: "Your PDF or image files",
+    task: "Add every poster file, then continue.",
   },
   {
     id: "metadata",
-    label: "Licenses & metadata",
-    description: "Spreadsheets for licenses and extraction",
+    label: "Licenses",
+    description: "One CSV for the whole batch",
+    task: "Download the template, add a license for each file, upload the CSV.",
   },
   {
     id: "review",
-    label: "Review",
-    description: "Check file names and licenses",
+    label: "Check",
+    description: "Files match the CSV",
+    task: "Fix any rows that are not ready, then continue.",
   },
   {
     id: "submit",
-    label: "Extract",
-    description: "Run the extraction pipeline",
+    label: "Finish",
+    description: "Create poster drafts",
+    task: "Start import—we’ll read each poster and add drafts to your dashboard.",
   },
 ];
 

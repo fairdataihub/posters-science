@@ -14,5 +14,3 @@ const repository: BulkPosterSubmissionJobRepository =
 export function getBulkPosterSubmissionJobRepository(): BulkPosterSubmissionJobRepository {
   return repository;
 }
-
-export type { BulkPosterSubmissionJobRepository } from "~~/server/utils/bulkPosterSubmissionJobs/repository.types";

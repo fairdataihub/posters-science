@@ -117,6 +117,11 @@ export function useBulkImportWizard(
     return goToStep("upload");
   }
 
+  /** Restore saved step when resuming a job (skips forward-navigation gates). */
+  function restoreWizardStep(step: BulkImportWizardStep) {
+    currentStep.value = step;
+  }
+
   const headerTitle = computed(() =>
     setupSaved.value
       ? `Bulk import — ${importNameTrimmed.value}`
@@ -138,6 +143,7 @@ export function useBulkImportWizard(
     stepIsActive,
     goToStep,
     continueAfterSetupPersisted,
+    restoreWizardStep,
     BULK_IMPORT_NAME_MAX_LENGTH,
     BULK_IMPORT_NAME_MIN_LENGTH,
   };
