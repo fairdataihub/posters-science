@@ -7,6 +7,19 @@ const mobileMenuOpen = ref(false);
 
 const route = useRoute();
 
+const scienceArticleUrl =
+  "https://www.science.org/content/article/conference-posters-could-garner-wider-audience-thanks-new-online-platform";
+
+const scienceBannerActions = [
+  {
+    label: "Read the article",
+    to: scienceArticleUrl,
+    target: "_blank",
+    trailingIcon: "heroicons:arrow-right",
+    class: "hidden bg-white text-pink-700 hover:bg-pink-50 sm:inline-flex",
+  },
+];
+
 function openFeedback() {
   mobileMenuOpen.value = false;
   feedbackOpen.value = true;
@@ -132,6 +145,36 @@ const footerItems: NavigationMenuItem[] = [
 <template>
   <div class="relative">
     <!-- <UiAuroraBackground class="absolute inset-0 -z-10 h-full" /> -->
+
+    <!-- Press announcement. The id remembers a close, so change it to show a new one. -->
+    <UBanner
+      v-if="route.path === '/'"
+      id="science-article-2026-10"
+      icon="lucide:party-popper"
+      :to="scienceArticleUrl"
+      target="_blank"
+      :actions="scienceBannerActions"
+      close
+      :ui="{
+        root: 'bg-gradient-to-r from-pink-600 to-fuchsia-600',
+        icon: 'text-white',
+        title: 'text-white',
+        close: 'text-white hover:bg-white/15',
+      }"
+    >
+      <template #title>
+        <span class="md:hidden">We're in Science Magazine!</span>
+
+        <Icon
+          name="heroicons:arrow-right"
+          class="ml-1 inline-block size-4 align-[-3px] sm:hidden"
+        />
+
+        <span class="hidden md:inline">
+          Big news: Posters.science is featured in Science Magazine!
+        </span>
+      </template>
+    </UBanner>
 
     <UHeader
       v-model:open="mobileMenuOpen"
