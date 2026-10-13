@@ -38,6 +38,7 @@ export function bulkImportLicenseMetadataObjectPath(
   folderExtension: string,
   jobId: string,
   basename: string,
+  extension: "xlsx" | "csv" = "xlsx",
 ) {
-  return `${bulkImportJobPrefix(folderExtension, jobId)}/${basename}.csv`;
+  return `${bulkImportJobPrefix(folderExtension, jobId)}/${basename}.${extension}`;
 }

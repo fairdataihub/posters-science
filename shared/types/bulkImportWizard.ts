@@ -33,8 +33,8 @@ export const BULK_IMPORT_WIZARD_STEPS: BulkImportWizardStepDefinition[] = [
   {
     id: "metadata",
     label: "Licenses",
-    description: "One CSV for the whole batch",
-    task: "Download the template, add a license for each file, upload the CSV.",
+    description: "Same license or per-poster spreadsheet",
+    task: "Choose one license for every poster, or fill out a spreadsheet per file.",
   },
   {
     id: "review",

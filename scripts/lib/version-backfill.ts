@@ -282,6 +282,24 @@ function bool(value: string | undefined, key: string): boolean {
   throw new Error(`${key} must be true or false`);
 }
 
+export const ACCEPTABLE_LICENSE_LIST_SHEET = "Acceptable License List";
+
+export function readXlsxSheetRows(
+  filePath: string,
+  sheetName: string,
+): Array<Record<string, string>> {
+  const entries = readZipEntries(readFileSync(filePath));
+  return readWorksheet(entries, sheetName);
+}
+
+export function readXlsxSheetRowsFromBuffer(
+  data: Buffer,
+  sheetName: string,
+): Array<Record<string, string>> {
+  const entries = readZipEntries(data);
+  return readWorksheet(entries, sheetName);
+}
+
 export function readVersionWorkbook(filePath: string): VersionWorkbook {
   const entries = readZipEntries(readFileSync(filePath));
   const resolved = readWorksheet(entries, RESOLVED_SHEET).map((row) => ({

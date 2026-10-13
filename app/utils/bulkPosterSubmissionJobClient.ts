@@ -82,6 +82,7 @@ export async function uploadBulkPosterSubmissionFile(
     role: BulkPosterSubmissionUploadRole;
     fileName: string;
     filePath: string;
+    licenseSpreadsheetRows?: import("~/utils/conferenceImportSpreadsheet").ConferenceImportSpreadsheetRow[];
     job: BulkPosterSubmissionJob;
   }>(`/api/bulk-poster-submissions/${jobId}/upload`, {
     method: "POST",

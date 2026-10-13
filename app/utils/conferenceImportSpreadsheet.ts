@@ -1,4 +1,5 @@
 import licenses from "@/assets/data/licenses.json";
+import { BULK_IMPORT_LICENSE_SHEET_HEADERS } from "#shared/types/conferenceBulkImport";
 
 export type ConferenceImportSpreadsheetRow = {
   rowNumber: number;
@@ -11,24 +12,38 @@ const VALID_LICENSE_IDS = new Set(
   licenses.map((license) => license.licenseId.toLowerCase()),
 );
 
+export function isConferenceImportLicenseId(license: string) {
+  return VALID_LICENSE_IDS.has(license.trim().toLowerCase());
+}
+
 function normalizeHeader(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
 function fileNameColumnIndex(headers: string[]) {
   const match = headers.findIndex((header) =>
-    ["filename", "file name", "poster file", "file", "poster filename"].includes(
-      header,
-    ),
+    [
+      "filename",
+      "file name",
+      "file_name",
+      "poster file",
+      "poster filename",
+      "file",
+    ].includes(header),
   );
   return match >= 0 ? match : 0;
 }
 
 function licenseColumnIndex(headers: string[]) {
   const match = headers.findIndex((header) =>
-    ["license", "licence", "spdx", "spdx license", "license id"].includes(
-      header,
-    ),
+    [
+      "license",
+      "licence",
+      "spdx",
+      "spdx license",
+      "license id",
+      "poster license (spdx id)",
+    ].includes(header),
   );
   return match >= 0 ? match : 1;
 }
@@ -115,12 +130,56 @@ function escapeCsvField(value: string) {
   return value;
 }
 
+function bulkImportLicenseCsvHeaderLine() {
+  return BULK_IMPORT_LICENSE_SHEET_HEADERS.join(",");
+}
+
+export function conferenceImportSpreadsheetRowsFromLicenseSheetRecords(
+  records: Array<Record<string, string>>,
+): ConferenceImportSpreadsheetRow[] {
+  const [fileNameHeader, licenseHeader] = BULK_IMPORT_LICENSE_SHEET_HEADERS;
+
+  return records.flatMap((row, index) => {
+    const fileName = (row[fileNameHeader] ?? "").trim();
+    const license = (row[licenseHeader] ?? "").trim();
+    if (!fileName && !license) return [];
+
+    return [
+      {
+        rowNumber: index + 2,
+        fileName,
+        license,
+        licenseValid: isConferenceImportLicenseId(license),
+      },
+    ];
+  });
+}
+
 export function conferenceImportSpreadsheetTemplateCsv() {
   return [
-    "file_name,license",
-    "smith-2026-poster.pdf,CC-BY-4.0",
-    "lee-2026-poster.png,CC0-1.0",
+    bulkImportLicenseCsvHeaderLine(),
+    `${escapeCsvField("smith-2026-poster.pdf")},CC-BY-4.0`,
+    `${escapeCsvField("lee-2026-poster.png")},CC0-1.0`,
   ].join("\n");
+}
+
+export function buildSpreadsheetRowsForUniformLicense(
+  fileNames: string[],
+  licenseId: string,
+): ConferenceImportSpreadsheetRow[] {
+  const license = licenseId.trim();
+  const licenseValid = VALID_LICENSE_IDS.has(license.toLowerCase());
+
+  const uniqueNames = [...new Set(fileNames.map((name) => name.trim()))].filter(
+    Boolean,
+  );
+
+  return uniqueNames.map((fileName, index) => ({
+    rowNumber: index + 2,
+    fileName,
+    license,
+    licenseValid,
+  }));
 }
 
 export function conferenceImportSpreadsheetRowsFromFileNames(
@@ -138,13 +197,14 @@ export function conferenceImportSpreadsheetRowsFromFileNames(
   }));
 }
 
+/** License CSV from bulk-submission-templates/licenses.xlsx with poster file names filled in. */
 export function conferenceImportSpreadsheetCsvFromFileNames(fileNames: string[]) {
   const uniqueNames = [...new Set(fileNames.map((name) => name.trim()))].filter(
     Boolean,
   );
 
   return [
-    "file_name,license",
+    bulkImportLicenseCsvHeaderLine(),
     ...uniqueNames.map((fileName) => `${escapeCsvField(fileName)},`),
   ].join("\n");
 }
@@ -158,7 +218,7 @@ export async function readConferenceImportSpreadsheetFile(
     return {
       rows: [],
       error:
-        "Excel (.xlsx) upload is not parsed in the browser yet. Export your sheet as CSV and upload that file, or use the template below.",
+        "Excel files are validated when you upload license.xlsx to storage. Use the download button to get a pre-filled workbook.",
     };
   }
 

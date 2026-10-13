@@ -7,6 +7,11 @@ import {
   posterFileRejectionReason,
 } from "#shared/utils/posterFile";
 import { BULK_EXTRACTION_LEVEL_OPTIONS } from "#shared/types/bulkExtractionLevel";
+import type {
+  BulkImportLicenseMode,
+  BulkImportSubmissionSummary,
+  BulkImportUniformLicenseOption,
+} from "#shared/types/bulkImportLicenses";
 import type { BulkImportWizardStep } from "#shared/types/bulkImportWizard";
 import { normalizeBulkImportWizardStep } from "#shared/types/bulkImportWizard";
 import type { BulkSubmissionExtractionMethod } from "#shared/types/bulkSubmission";
@@ -19,11 +24,13 @@ import type {
   BulkPosterSubmissionJob,
 } from "#shared/types/bulkPosterSubmissionJob";
 import {
-  CONFERENCE_BULK_IMPORT_LICENSE_METADATA_BASENAME,
+  CONFERENCE_BULK_IMPORT_LICENSE_FILE_BASENAME,
   type BulkImportBatchItem,
   type BulkImportBatchItemStatus,
   type BulkImportSubmissionRow,
 } from "#shared/types/conferenceBulkImport";
+import type { BulkImportValidationIssue } from "#shared/types/bulkImportValidation";
+import { validateBulkImportPerPosterLicenseMetadata } from "~/utils/bulkImportLicenseMetadataValidation";
 import {
   buildSubmissionRowsFromSeparateUpload,
   countSubmissionRowsByStatus,
@@ -31,7 +38,7 @@ import {
   submissionRowStatusLabel,
 } from "~/utils/conferenceBulkImportSubmissions";
 import {
-  conferenceImportSpreadsheetCsvFromFileNames,
+  buildSpreadsheetRowsForUniformLicense,
   readConferenceImportSpreadsheetFile,
   type ConferenceImportSpreadsheetRow,
 } from "~/utils/conferenceImportSpreadsheet";
@@ -229,14 +236,47 @@ async function onPosterFilesSelected(files: File[]) {
 
 function validateLicenseMetadataFile(file: File): string | null {
   const lower = file.name.toLowerCase();
-  if (!lower.endsWith(".csv")) {
-    return `Upload ${CONFERENCE_BULK_IMPORT_LICENSE_METADATA_BASENAME}.csv (CSV format).`;
+  if (!lower.endsWith(".xlsx") && !lower.endsWith(".xls")) {
+    return `Upload ${CONFERENCE_BULK_IMPORT_LICENSE_FILE_BASENAME}.xlsx (Excel).`;
   }
   return null;
 }
 
+const licenseTemplateDownloading = ref(false);
+
+const licenseMode = ref<BulkImportLicenseMode | null>(null);
+const uniformLicense = ref<string>("");
+const uniformLicenseSaving = ref(false);
+
 const licenseMetadataLocalFile = ref<File[]>([]);
 const licenseMetadataParseError = ref<string | null>(null);
+const licenseMetadataValidationIssues = ref<BulkImportValidationIssue[]>([]);
+const licenseSpreadsheetRows = ref<ConferenceImportSpreadsheetRow[]>([]);
+
+const {
+  data: uniformLicenseOptionsResponse,
+  status: uniformLicenseOptionsStatus,
+  error: uniformLicenseOptionsError,
+} = useFetch<{ data: BulkImportUniformLicenseOption[] }>(
+  "/api/bulk-poster-submissions/acceptable-licenses",
+);
+
+const uniformLicenseOptions = computed(
+  () => uniformLicenseOptionsResponse.value?.data ?? [],
+);
+
+const uniformLicenseSelectItems = computed(() =>
+  uniformLicenseOptions.value.map((option) => ({
+    label: option.label,
+    value: option.value,
+  })),
+);
+
+const selectedUniformLicenseOption = computed(() =>
+  uniformLicenseOptions.value.find(
+    (option) => option.value === uniformLicense.value,
+  ),
+);
 
 const submissionRows = ref<BulkImportSubmissionRow[]>([]);
 const submissionLoading = ref(false);
@@ -261,7 +301,24 @@ const canContinueFromUpload = computed(
   () => stagedPosters.value.length > 0 && !posterUploadRunning.value,
 );
 
-const metadataStepComplete = computed(() => licenseMetadataUploaded.value);
+const perPosterLicenseMetadataValid = computed(() => {
+  if (!licenseMetadataUploaded.value) return false;
+
+  return validateBulkImportPerPosterLicenseMetadata({
+    spreadsheetRows: licenseSpreadsheetRows.value,
+    posterFileNames: stagedPosterFileNames.value,
+  }).valid;
+});
+
+const metadataStepComplete = computed(() => {
+  if (!licenseMode.value) return false;
+  if (licenseMode.value === "uniform") {
+    return Boolean(uniformLicense.value.trim());
+  }
+  return (
+    licenseMetadataUploaded.value && perPosterLicenseMetadataValid.value
+  );
+});
 
 const canProceedFromReview = computed(() => {
   if (submissionRows.value.length === 0) return false;
@@ -362,6 +419,29 @@ function resolveResumeWizardStep(): BulkImportWizardStep {
   return "setup";
 }
 
+function applyLicenseSummaryFromJob(job: BulkPosterSubmissionJob) {
+  const summary = job.submissionSummary as BulkImportSubmissionSummary | null;
+
+  if (summary?.licenseMode === "uniform" && summary.uniformLicense) {
+    licenseMode.value = "uniform";
+    uniformLicense.value = summary.uniformLicense;
+    licenseMetadataUploaded.value = true;
+    return;
+  }
+
+  if (summary?.licenseMode === "per_poster" || job.licenseMetadataFilePath) {
+    licenseMode.value = "per_poster";
+    if (job.licenseMetadataFilePath) {
+      licenseMetadataUploaded.value = true;
+    }
+    const rows = summary?.licenseSpreadsheetRows;
+    if (Array.isArray(rows)) {
+      licenseSpreadsheetRows.value =
+        rows as ConferenceImportSpreadsheetRow[];
+    }
+  }
+}
+
 function applyJobSnapshot(job: BulkPosterSubmissionJob) {
   jobId.value = job.id;
   importName.value = job.name;
@@ -371,14 +451,31 @@ function applyJobSnapshot(job: BulkPosterSubmissionJob) {
   fullExtractionAcknowledged.value =
     extractionMethod.value === "full_acknowledged";
 
-  if (job.licenseMetadataFilePath) {
-    licenseMetadataUploaded.value = true;
-  }
+  applyLicenseSummaryFromJob(job);
 
   const step =
     normalizeBulkImportWizardStep(job.wizardStep) ?? resolveResumeWizardStep();
 
   restoreWizardStep(step);
+}
+
+function onLicenseModeChange(mode: BulkImportLicenseMode) {
+  if (licenseMode.value === mode) return;
+
+  licenseMode.value = mode;
+
+  if (mode === "uniform") {
+    licenseMetadataLocalFile.value = [];
+    licenseMetadataParseError.value = null;
+    licenseMetadataValidationIssues.value = [];
+    licenseSpreadsheetRows.value = [];
+    licenseMetadataUploaded.value = Boolean(uniformLicense.value.trim());
+  } else {
+    uniformLicense.value = "";
+    licenseMetadataUploaded.value = false;
+    licenseSpreadsheetRows.value = [];
+    licenseMetadataValidationIssues.value = [];
+  }
 }
 
 async function hydrateListsAfterResume(step: BulkImportWizardStep) {
@@ -607,6 +704,20 @@ async function refreshSubmissionRows() {
   submissionLoading.value = true;
 
   try {
+    if (
+      licenseMode.value === "uniform" &&
+      uniformLicense.value.trim().length > 0
+    ) {
+      submissionRows.value = buildSubmissionRowsFromSeparateUpload({
+        spreadsheetRows: buildSpreadsheetRowsForUniformLicense(
+          stagedPosterFileNames.value,
+          uniformLicense.value,
+        ),
+        posterFileNames: stagedPosterFileNames.value,
+      });
+      return;
+    }
+
     const metadataFile = licenseMetadataLocalFile.value[0];
     if (metadataFile) {
       const parsed = await readConferenceImportSpreadsheetFile(metadataFile);
@@ -631,9 +742,24 @@ async function refreshSubmissionRows() {
 
     const job = await getBulkPosterSubmissionJob(jobId.value);
     const summary = job.submissionSummary as
-      | { licenseSpreadsheetRows?: ConferenceImportSpreadsheetRow[] }
+      | BulkImportSubmissionSummary
       | null
       | undefined;
+
+    if (
+      summary?.licenseMode === "uniform" &&
+      summary.uniformLicense &&
+      stagedPosterFileNames.value.length > 0
+    ) {
+      submissionRows.value = buildSubmissionRowsFromSeparateUpload({
+        spreadsheetRows: buildSpreadsheetRowsForUniformLicense(
+          stagedPosterFileNames.value,
+          summary.uniformLicense,
+        ),
+        posterFileNames: stagedPosterFileNames.value,
+      });
+      return;
+    }
 
     if (summary?.licenseSpreadsheetRows?.length) {
       submissionRows.value = buildSubmissionRowsFromSeparateUpload({
@@ -821,17 +947,6 @@ async function uploadLicenseMetadata() {
   const file = licenseMetadataLocalFile.value[0];
   if (!file) return;
 
-  const parsed = await readConferenceImportSpreadsheetFile(file);
-  if (parsed.error) {
-    licenseMetadataParseError.value = parsed.error;
-    toast.add({
-      title: "Invalid metadata file",
-      description: parsed.error,
-      color: "warning",
-    });
-    return;
-  }
-
   try {
     const response = await uploadBulkPosterSubmissionFile(
       jobId.value,
@@ -841,44 +956,119 @@ async function uploadLicenseMetadata() {
     licenseMetadataUploaded.value = Boolean(
       response.job.licenseMetadataFilePath,
     );
-    await updateBulkPosterSubmissionJob(jobId.value, {
-      submissionSummary: { licenseSpreadsheetRows: parsed.rows },
-    });
+    licenseMetadataParseError.value = null;
+    licenseMetadataValidationIssues.value = [];
+
+    const summary = response.job.submissionSummary as
+      | BulkImportSubmissionSummary
+      | null
+      | undefined;
+    if (Array.isArray(summary?.licenseSpreadsheetRows)) {
+      licenseSpreadsheetRows.value =
+        summary.licenseSpreadsheetRows as ConferenceImportSpreadsheetRow[];
+    } else if (response.licenseSpreadsheetRows?.length) {
+      licenseSpreadsheetRows.value = response.licenseSpreadsheetRows;
+    }
+
     toast.add({
       title: "License metadata saved",
-      description: `${CONFERENCE_BULK_IMPORT_LICENSE_METADATA_BASENAME}.csv is stored with this import.`,
+      description: `${CONFERENCE_BULK_IMPORT_LICENSE_FILE_BASENAME}.xlsx is stored with this import.`,
       color: "success",
     });
     void persistWizardStep("metadata");
     await refreshSubmissionRows();
-  } catch {
+  } catch (error) {
+    licenseMetadataParseError.value =
+      fetchErrorDescription(error) ??
+      "Check the file format and try again.";
+
+    if (error && typeof error === "object" && "data" in error) {
+      const data = error.data as { issues?: BulkImportValidationIssue[] };
+      licenseMetadataValidationIssues.value = data.issues ?? [];
+    } else {
+      licenseMetadataValidationIssues.value = [];
+    }
+
     toast.add({
       title: "Could not upload metadata",
-      description: "Check the file format and try again.",
+      description: licenseMetadataParseError.value,
       color: "error",
     });
   }
 }
 
-function downloadLicenseMetadataTemplate() {
-  const csv = conferenceImportSpreadsheetCsvFromFileNames(
-    stagedPosterFileNames.value,
-  );
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = `${CONFERENCE_BULK_IMPORT_LICENSE_METADATA_BASENAME}.csv`;
-  document.body.appendChild(anchor);
-  anchor.click();
-  document.body.removeChild(anchor);
-  URL.revokeObjectURL(url);
+async function downloadLicenseMetadataTemplate() {
+  if (!jobId.value) return;
+
+  licenseTemplateDownloading.value = true;
+
+  try {
+    const blob = await $fetch<Blob>(
+      `/api/bulk-poster-submissions/${jobId.value}/license-template`,
+      { responseType: "blob" },
+    );
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${CONFERENCE_BULK_IMPORT_LICENSE_FILE_BASENAME}.xlsx`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
+  } catch (error) {
+    toast.add({
+      title: "Could not download license workbook",
+      description:
+        fetchErrorDescription(error) ??
+        "Try again after your poster files finish uploading.",
+      color: "error",
+    });
+  } finally {
+    licenseTemplateDownloading.value = false;
+  }
 }
 
 function onLicenseMetadataLocalChange(files: File[]) {
   licenseMetadataLocalFile.value = files;
   licenseMetadataUploaded.value = false;
   licenseMetadataParseError.value = null;
+  licenseMetadataValidationIssues.value = [];
+}
+
+async function persistUniformLicense() {
+  if (!jobId.value) return false;
+
+  const license = uniformLicense.value.trim();
+  if (!license) return false;
+
+  uniformLicenseSaving.value = true;
+
+  try {
+    const rows = buildSpreadsheetRowsForUniformLicense(
+      stagedPosterFileNames.value,
+      license,
+    );
+    await updateBulkPosterSubmissionJob(jobId.value, {
+      submissionSummary: {
+        licenseMode: "uniform",
+        uniformLicense: license,
+        licenseSpreadsheetRows: rows,
+      },
+    });
+    licenseMetadataUploaded.value = true;
+    void persistWizardStep("metadata");
+    await refreshSubmissionRows();
+    return true;
+  } catch {
+    toast.add({
+      title: "Could not save license",
+      description: "Try again in a moment.",
+      color: "error",
+    });
+    return false;
+  } finally {
+    uniformLicenseSaving.value = false;
+  }
 }
 
 const batchItems = ref<BulkImportBatchItem[]>([]);
@@ -1014,9 +1204,16 @@ async function continueToMetadata() {
   goToStep("metadata");
 }
 
-function continueToReview() {
+async function continueToReview() {
   if (!metadataStepComplete.value) return;
+
+  if (licenseMode.value === "uniform") {
+    const saved = await persistUniformLicense();
+    if (!saved) return;
+  }
+
   goToStep("review");
+  await refreshSubmissionRows();
 }
 
 function continueToSubmit() {
@@ -1394,7 +1591,117 @@ function startImport() {
             </p>
           </div>
 
+          <UFormField label="How do you want to set licenses?" required>
+            <div
+              class="space-y-3"
+              role="radiogroup"
+              aria-label="How do you want to set licenses?"
+            >
+              <label
+                class="flex cursor-pointer gap-3 rounded-lg border p-4 transition-colors"
+                :class="
+                  licenseMode === 'uniform'
+                    ? 'border-primary bg-primary/5 ring-primary/30 ring-1'
+                    : 'border-gray-200 dark:border-gray-800'
+                "
+              >
+                <input
+                  type="radio"
+                  class="mt-1 shrink-0"
+                  name="bulk-license-mode"
+                  value="uniform"
+                  :checked="licenseMode === 'uniform'"
+                  @change="onLicenseModeChange('uniform')"
+                />
+                <div class="min-w-0 space-y-1">
+                  <span class="text-sm font-semibold"
+                    >Same license for every poster</span
+                  >
+                  <p class="text-muted text-sm">
+                    Pick one license from the list below. It will apply to all
+                    {{ stagedPosters.length }} staged file(s).
+                  </p>
+                </div>
+              </label>
+
+              <label
+                class="flex cursor-pointer gap-3 rounded-lg border p-4 transition-colors"
+                :class="
+                  licenseMode === 'per_poster'
+                    ? 'border-primary bg-primary/5 ring-primary/30 ring-1'
+                    : 'border-gray-200 dark:border-gray-800'
+                "
+              >
+                <input
+                  type="radio"
+                  class="mt-1 shrink-0"
+                  name="bulk-license-mode"
+                  value="per_poster"
+                  :checked="licenseMode === 'per_poster'"
+                  @change="onLicenseModeChange('per_poster')"
+                />
+                <div class="min-w-0 space-y-1">
+                  <span class="text-sm font-semibold"
+                    >License per poster (spreadsheet)</span
+                  >
+                  <p class="text-muted text-sm">
+                    Download a template with your file names, fill in a license
+                    for each row, and upload the CSV.
+                  </p>
+                </div>
+              </label>
+            </div>
+          </UFormField>
+
           <div
+            v-if="licenseMode === 'uniform'"
+            class="space-y-4 rounded-lg border border-gray-200 p-4 dark:border-gray-800"
+          >
+            <UFormField label="License for all posters" required>
+              <USelectMenu
+                v-model="uniformLicense"
+                :items="uniformLicenseSelectItems"
+                value-key="value"
+                searchable
+                :search-input="{
+                  placeholder: 'Search licenses…',
+                  icon: 'i-lucide-search',
+                }"
+                placeholder="Choose a license…"
+                class="w-full max-w-md"
+                :virtualize="true"
+                :disabled="uniformLicenseOptionsStatus === 'pending'"
+              />
+            </UFormField>
+
+            <UAlert
+              v-if="uniformLicenseOptionsError"
+              color="warning"
+              variant="soft"
+              icon="i-lucide-alert-triangle"
+              title="Could not load license list"
+              description="Refresh the page. The list comes from bulk-submission-templates/license.xlsx."
+            />
+
+            <p
+              v-else-if="selectedUniformLicenseOption"
+              class="text-muted text-sm"
+            >
+              {{ selectedUniformLicenseOption.description }}
+            </p>
+
+            <UAlert
+              v-if="licenseMetadataUploaded && uniformLicense"
+              color="success"
+              variant="soft"
+              icon="i-lucide-circle-check"
+              title="License saved"
+              :description="`${uniformLicense} will apply to every poster in this batch.`"
+            />
+          </div>
+
+          <div
+            v-else-if="licenseMode === 'per_poster'"
             class="space-y-4 rounded-lg border border-gray-200 p-4 dark:border-gray-800"
           >
             <div class="flex flex-wrap items-center gap-2">
@@ -1404,21 +1711,22 @@ function startImport() {
                 size="sm"
                 icon="i-lucide-file-spreadsheet"
                 :disabled="stagedPosters.length === 0"
-                :label="`Download ${CONFERENCE_BULK_IMPORT_LICENSE_METADATA_BASENAME}.csv template`"
+                label="Download license.xlsx"
+                :loading="licenseTemplateDownloading"
                 @click="downloadLicenseMetadataTemplate"
               />
               <span class="text-muted text-xs">
-                {{ stagedPosters.length }} poster file name(s) from step
-                {{ currentStepNumber - 1 }}
+                Includes your {{ stagedPosters.length }} staged poster file
+                name(s); add a license (SPDX id) in each row.
               </span>
             </div>
 
             <UiFileUpload
               hide-file-list
               hide-rejections
-              :accept="'.csv,text/csv'"
+              :accept="'.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'"
               :validate-file="validateLicenseMetadataFile"
-              :hint="`Completed ${CONFERENCE_BULK_IMPORT_LICENSE_METADATA_BASENAME}.csv`"
+              :hint="`Completed ${CONFERENCE_BULK_IMPORT_LICENSE_FILE_BASENAME}.xlsx`"
               @on-change="onLicenseMetadataLocalChange"
             >
               <UiFileUploadGrid />
@@ -1439,7 +1747,7 @@ function startImport() {
               variant="soft"
               icon="i-lucide-circle-check"
               title="Metadata stored"
-              :description="`${CONFERENCE_BULK_IMPORT_LICENSE_METADATA_BASENAME}.csv is saved with this import on secure storage.`"
+              :description="`${CONFERENCE_BULK_IMPORT_LICENSE_FILE_BASENAME}.xlsx is saved with this import on secure storage.`"
             />
 
             <UAlert
@@ -1447,9 +1755,28 @@ function startImport() {
               color="warning"
               variant="soft"
               icon="i-lucide-alert-triangle"
-              title="Could not read metadata file"
-              :description="licenseMetadataParseError"
-            />
+              title="License file could not be imported"
+            >
+              <template #description>
+                <p
+                  v-if="licenseMetadataValidationIssues.length === 0"
+                  class="whitespace-pre-line"
+                >
+                  {{ licenseMetadataParseError }}
+                </p>
+                <ul
+                  v-else
+                  class="list-disc space-y-1 pl-5 text-sm"
+                >
+                  <li
+                    v-for="(issue, index) in licenseMetadataValidationIssues"
+                    :key="`${issue.code}-${issue.rowNumber ?? index}`"
+                  >
+                    {{ issue.message }}
+                  </li>
+                </ul>
+              </template>
+            </UAlert>
           </div>
         </div>
 
@@ -1469,6 +1796,7 @@ function startImport() {
             trailing
             label="Continue to review"
             :disabled="!metadataStepComplete"
+            :loading="uniformLicenseSaving"
             @click="continueToReview"
           />
         </div>

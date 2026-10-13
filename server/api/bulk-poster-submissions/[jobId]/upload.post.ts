@@ -2,7 +2,10 @@ import {
   MAX_POSTER_FILE_SIZE_BYTES,
   posterFileRejectionReason,
 } from "#shared/utils/posterFile";
-import { CONFERENCE_BULK_IMPORT_LICENSE_METADATA_BASENAME } from "#shared/types/conferenceBulkImport";
+import { CONFERENCE_BULK_IMPORT_LICENSE_FILE_BASENAME } from "#shared/types/conferenceBulkImport";
+import { formatBulkImportValidationMessage } from "#shared/utils/bulkImportValidation";
+import { validateBulkImportPerPosterLicenseMetadata } from "~/utils/bulkImportLicenseMetadataValidation";
+import { parseBulkImportLicenseUpload } from "~~/server/utils/parseBulkImportLicenseUpload";
 import type { BulkImportStagedPoster } from "#shared/types/bulkPosterSubmissionJob";
 import {
   bulkImportFolderExtension,
@@ -182,19 +185,52 @@ export default defineEventHandler(async (event) => {
   }
 
   const lowerName = fileEntry.filename.toLowerCase();
-  if (!lowerName.endsWith(".csv")) {
+  const isXlsx = lowerName.endsWith(".xlsx") || lowerName.endsWith(".xls");
+  const isCsv = lowerName.endsWith(".csv");
+
+  if (!isXlsx && !isCsv) {
     throw createError({
       statusCode: 415,
       statusMessage: "Unsupported metadata file",
-      message: "Upload license metadata as a CSV file (.csv).",
+      message: "Upload license.xlsx (Excel) from the download button.",
     });
   }
 
-  const metadataFileName = `${CONFERENCE_BULK_IMPORT_LICENSE_METADATA_BASENAME}.csv`;
+  const parsed = parseBulkImportLicenseUpload({
+    fileName: fileEntry.filename,
+    data: fileEntry.data,
+  });
+
+  if (parsed.error) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: "Invalid license file",
+      message: parsed.error,
+    });
+  }
+
+  const posterFileNames = (job.stagedPosters ?? []).map((poster) => poster.fileName);
+  const validation = validateBulkImportPerPosterLicenseMetadata({
+    spreadsheetRows: parsed.rows,
+    posterFileNames,
+  });
+
+  if (!validation.valid) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: "License metadata validation failed",
+      message: formatBulkImportValidationMessage(validation),
+      data: { issues: validation.issues },
+    });
+  }
+
+  const extension = isXlsx ? "xlsx" : "csv";
+  const metadataFileName = `${CONFERENCE_BULK_IMPORT_LICENSE_FILE_BASENAME}.${extension}`;
   const metadataPath = bulkImportLicenseMetadataObjectPath(
     folderExtension,
     jobId,
-    CONFERENCE_BULK_IMPORT_LICENSE_METADATA_BASENAME,
+    CONFERENCE_BULK_IMPORT_LICENSE_FILE_BASENAME,
+    extension,
   );
 
   await putOnBunny({
@@ -202,19 +238,26 @@ export default defineEventHandler(async (event) => {
     bunnyPrivateStorageKey,
     filePath: metadataPath,
     body: fileEntry.data,
-    contentType: "text/csv",
+    contentType: isXlsx
+      ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      : "text/csv",
   });
 
   const updated = await repository.updateForUser(jobId, session.user.id, {
     licenseMetadataFileName: metadataFileName,
     licenseMetadataFilePath: metadataPath,
     wizardStep: "metadata",
+    submissionSummary: {
+      licenseMode: "per_poster",
+      licenseSpreadsheetRows: parsed.rows,
+    },
   });
 
   return {
     role,
     fileName: metadataFileName,
     filePath: metadataPath,
+    licenseSpreadsheetRows: parsed.rows,
     job: updated,
   };
 });
