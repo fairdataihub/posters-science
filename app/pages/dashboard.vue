@@ -56,6 +56,10 @@ type Poster = {
     description: string;
     extractionJob?: ExtractionJobSummary | null;
   } | null;
+  // An auto-indexed poster the user claimed as an author. Listed with their
+  // own published posters but read-only, since the user doesn't own it.
+  claimed: boolean;
+  claimedAt: Date | null;
 };
 
 type ExtractionJobSummary = {
@@ -203,6 +207,51 @@ const modalPublisher = ref("");
 const isSaving = ref(false);
 const doiError = ref("");
 const toast = useToast();
+
+// Removing a claim on an auto-indexed poster
+const removeClaimTarget = ref<Poster | null>(null);
+const removeClaimOpen = computed({
+  get: () => removeClaimTarget.value !== null,
+  set: (open) => {
+    if (!open) removeClaimTarget.value = null;
+  },
+});
+const removingClaim = ref(false);
+
+async function confirmRemoveClaim() {
+  const poster = removeClaimTarget.value;
+  if (!poster || removingClaim.value) return;
+
+  removingClaim.value = true;
+
+  try {
+    await $fetch(`/api/poster/${poster.rootPosterId}/claim`, {
+      method: "DELETE",
+    });
+
+    posters.value = posters.value.filter(
+      (row) => !(row.claimed && row.rootPosterId === poster.rootPosterId),
+    );
+    removeClaimTarget.value = null;
+    toast.add({
+      title: "Claim removed",
+      description: "The poster is no longer linked to your account.",
+      color: "success",
+    });
+  } catch (error) {
+    const message =
+      (error as { data?: { statusMessage?: string } })?.data?.statusMessage ||
+      "There was a problem removing your claim.";
+
+    toast.add({
+      title: "Could not remove claim",
+      description: message,
+      color: "error",
+    });
+  } finally {
+    removingClaim.value = false;
+  }
+}
 const tombstoneModalOpen = ref(false);
 const tombstonedPoster = ref<Poster | null>(null);
 
@@ -1329,7 +1378,7 @@ const getImage = (poster: Poster) => {
 // itself succeeded. Surface it once the job is settled so the card is not
 // nagging about a preview that is simply still being made.
 function posterPreviewMissing(poster: Poster) {
-  if (poster.imageUrl || poster.tombstone) return false;
+  if (poster.claimed || poster.imageUrl || poster.tombstone) return false;
 
   const job = poster.extractionJob;
 
@@ -1611,6 +1660,41 @@ function posterMenuItems(poster: Poster) {
                       {{ posterStatusPresentation(poster).label }}
                     </UBadge>
 
+                    <UTooltip
+                      v-if="poster.claimed"
+                      text="You claimed this poster. Only its original publisher can edit it."
+                    >
+                      <UBadge
+                        color="info"
+                        variant="soft"
+                        size="sm"
+                        icon="i-heroicons-hand-raised"
+                        class="cursor-help"
+                      >
+                        Claimed
+                      </UBadge>
+                    </UTooltip>
+
+                    <UBadge
+                      v-if="poster.automated"
+                      color="primary"
+                      variant="soft"
+                      size="sm"
+                      icon="i-lucide-sparkles"
+                    >
+                      Auto-indexed
+                    </UBadge>
+
+                    <UBadge
+                      v-if="poster.claimed"
+                      color="neutral"
+                      variant="soft"
+                      size="sm"
+                      icon="i-lucide-user-check"
+                    >
+                      Author
+                    </UBadge>
+
                     <!-- FEATURE FLAG (versioning) -->
                     <UBadge
                       v-if="
@@ -1708,7 +1792,16 @@ function posterMenuItems(poster: Poster) {
                   <div
                     class="text-muted flex items-center gap-2 max-md:flex-col max-md:items-start max-md:gap-1"
                   >
-                    <span class="flex items-center gap-1">
+                    <span
+                      v-if="poster.claimedAt"
+                      class="flex items-center gap-1"
+                    >
+                      <Icon name="heroicons:hand-raised" class="h-3 w-3" />
+                      Claimed
+                      {{ dayjs(poster.claimedAt).format("MMMM D, YYYY") }}
+                    </span>
+
+                    <span v-else class="flex items-center gap-1">
                       <Icon name="heroicons:calendar-days" class="h-3 w-3" />
                       Created {{ dayjs(poster.created).format("MMMM D, YYYY") }}
                     </span>
@@ -1739,6 +1832,16 @@ function posterMenuItems(poster: Poster) {
                         icon="i-lucide-eye"
                         size="xs"
                         @click="openPoster(poster)"
+                      />
+
+                      <UButton
+                        v-if="poster.claimed"
+                        color="neutral"
+                        variant="ghost"
+                        label="Remove claim"
+                        icon="i-lucide-x"
+                        size="xs"
+                        @click="removeClaimTarget = poster"
                       />
 
                       <!-- FEATURE FLAG (versioning) -->
@@ -1956,6 +2059,31 @@ function posterMenuItems(poster: Poster) {
         </p>
       </NuxtLink>
     </div>
+
+    <UModal
+      v-model:open="removeClaimOpen"
+      title="Remove this claim?"
+      description="The poster will no longer appear on your dashboard or profile. You can claim it again from its page."
+    >
+      <template #footer="{ close }">
+        <div class="flex w-full items-center justify-between gap-3">
+          <UButton
+            color="neutral"
+            variant="subtle"
+            label="Cancel"
+            @click="close"
+          />
+
+          <UButton
+            color="error"
+            label="Remove claim"
+            icon="i-lucide-x"
+            :loading="removingClaim"
+            @click="confirmRemoveClaim"
+          />
+        </div>
+      </template>
+    </UModal>
 
     <!-- Delete draft modal -->
     <USlideover

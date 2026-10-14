@@ -66,14 +66,20 @@ const profileDropdownItems = computed(() => [
       type: "label",
     },
     {
+      // Your own profile page, public or private.
       icon: "material-symbols:account-circle",
       label: "Profile",
-      to: "/profile",
+      to: "/profile/me",
     },
     {
       icon: "material-symbols:star",
       label: "Liked posters",
       to: "/liked",
+    },
+    {
+      icon: "material-symbols:settings",
+      label: "Settings",
+      to: "/profile",
     },
     ...(user?.value?.role === "admin"
       ? [
@@ -98,12 +104,17 @@ const mobileProfileNavItems = computed<NavigationMenuItem[]>(() => [
   {
     icon: "material-symbols:account-circle",
     label: "Profile",
-    to: "/profile",
+    to: "/profile/me",
   },
   {
     icon: "material-symbols:star",
     label: "Liked posters",
     to: "/liked",
+  },
+  {
+    icon: "material-symbols:settings",
+    label: "Settings",
+    to: "/profile",
   },
   {
     icon: "majesticons:logout",
@@ -282,9 +293,23 @@ const footerItems: NavigationMenuItem[] = [
 
     <UFooter>
       <template #left>
-        <p class="text-muted text-sm">
-          Copyright © {{ new Date().getFullYear() }}
-        </p>
+        <div
+          class="text-muted flex flex-wrap items-center gap-x-4 gap-y-1 text-sm"
+        >
+          <p>Copyright © {{ new Date().getFullYear() }}</p>
+
+          <NuxtLink to="/faq" class="hover:text-default transition-colors">
+            FAQ
+          </NuxtLink>
+
+          <NuxtLink to="/terms" class="hover:text-default transition-colors">
+            Terms of Use
+          </NuxtLink>
+
+          <NuxtLink to="/privacy" class="hover:text-default transition-colors">
+            Privacy Policy
+          </NuxtLink>
+        </div>
       </template>
 
       <UNavigationMenu :items="footerItems" variant="link" color="primary" />

@@ -2,8 +2,6 @@
 import dayjs from "dayjs";
 
 import {
-  DISCOVER_FREE_TEXT_FIELDS,
-  DISCOVER_SEARCH_EXAMPLES,
   DISCOVER_SEARCH_FIELD_LABELS,
   discoverHighlightTerms,
   parseDiscoverSearch,
@@ -193,36 +191,6 @@ const parsedSearch = computed(() => parseDiscoverSearch(committedSearch.value));
 const highlightTerms = computed(() =>
   discoverHighlightTerms(parsedSearch.value),
 );
-
-const FREE_TEXT_SCOPE =
-  "title, description, keywords, authors, affiliations, conference and DOI";
-
-const searchScopeLabel = computed(() => {
-  const { clauses, freeText } = parsedSearch.value;
-
-  if (clauses.length === 0) {
-    return freeText ? `Searching ${FREE_TEXT_SCOPE} for "${freeText}".` : "";
-  }
-
-  const parts = clauses.map(
-    ({ field, term }) => `${DISCOVER_SEARCH_FIELD_LABELS[field]} "${term}"`,
-  );
-
-  if (freeText) parts.push(`"${freeText}" in any of the default fields`);
-
-  return `Matching ${parts.join(" and ")}.`;
-});
-
-const searchHelp = (
-  Object.keys(DISCOVER_SEARCH_EXAMPLES) as Array<
-    keyof typeof DISCOVER_SEARCH_EXAMPLES
-  >
-).map((field) => ({
-  field,
-  label: DISCOVER_SEARCH_FIELD_LABELS[field],
-  example: DISCOVER_SEARCH_EXAMPLES[field],
-  inFreeText: (DISCOVER_FREE_TEXT_FIELDS as readonly string[]).includes(field),
-}));
 
 watch(sortBy, () => {
   page.value = 1;
@@ -560,61 +528,11 @@ function clearAllFilters() {
           </div>
         </div>
 
-        <div class="flex items-center gap-2 pb-4">
-          <UTooltip
-            :ui="{ content: 'h-auto max-w-md items-start p-3' }"
-            :delay-duration="300"
-          >
-            <UInput
-              v-model="searchQuery"
-              placeholder="Search title, author, affiliation, DOI, ORCID..."
-              icon="i-lucide-search"
-              class="w-full sm:w-96"
-              @keydown.enter="triggerSearch"
-            />
-
-            <template #content>
-              <div class="space-y-2 text-xs">
-                <p>
-                  A plain search looks at the {{ FREE_TEXT_SCOPE }}. Pasting an
-                  ORCID, ROR or DOI searches for that identifier.
-                </p>
-
-                <p>
-                  Narrow it with one or more prefixes. Put values with spaces in
-                  quotes.
-                </p>
-
-                <ul class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
-                  <template v-for="item in searchHelp" :key="item.field">
-                    <li class="contents">
-                      <span class="text-muted">{{ item.label }}</span>
-
-                      <code>{{ item.example }}</code>
-                    </li>
-                  </template>
-                </ul>
-              </div>
-            </template>
-          </UTooltip>
-
-          <UButton
-            color="primary"
-            variant="outline"
-            label="Search Posters"
-            icon="i-lucide-search"
-            @click="triggerSearch"
-          />
-        </div>
-
-        <p
-          v-if="searchScopeLabel"
-          class="text-muted -mt-2 flex items-center gap-1.5 pb-4 text-xs"
-        >
-          <UIcon name="i-lucide-search" class="size-3.5 shrink-0" />
-
-          {{ searchScopeLabel }}
-        </p>
+        <DiscoverSearchBar
+          v-model="searchQuery"
+          :committed="committedSearch"
+          @submit="triggerSearch"
+        />
 
         <div class="flex items-center justify-between pb-4">
           <div>

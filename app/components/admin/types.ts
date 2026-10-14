@@ -125,6 +125,15 @@ export type AdminExtractionJobRow = {
   };
 };
 
+export type AdminClaimRow = {
+  id: string;
+  posterId: number;
+  role: string;
+  created: string;
+  poster: { title: string; tombstone: boolean };
+  user: PosterOwner;
+};
+
 export type AdminAuditLogRow = {
   id: string;
   action: string;

@@ -34,6 +34,7 @@ const activeTab = ref("posters");
 const tabs = [
   { label: "Posters", icon: "material-symbols:article", value: "posters" },
   { label: "Users", icon: "material-symbols:group", value: "users" },
+  { label: "Claims", icon: "material-symbols:how-to-reg", value: "claims" },
   {
     label: "Extraction",
     icon: "material-symbols:conveyor-belt",
@@ -105,6 +106,10 @@ async function onChanged() {
 
       <div v-show="activeTab === 'users'">
         <AdminUsersTable :preset="userPreset" @changed="onChanged" />
+      </div>
+
+      <div v-show="activeTab === 'claims'">
+        <AdminClaimsTable @changed="onChanged" />
       </div>
 
       <div v-show="activeTab === 'extraction'">
