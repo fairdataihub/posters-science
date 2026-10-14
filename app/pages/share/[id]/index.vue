@@ -336,7 +336,6 @@ if (data.value) {
           }
         });
       });
-      console.log("Transformed creators", state.creators);
     }
 
     // Publisher - convert from possible array/object to single object
@@ -560,6 +559,258 @@ const conferenceYearOptions = Array.from(
   (_, i) => currentYear + 1 - i,
 ).map((y) => ({ label: String(y), value: y }));
 
+// Load conference options from scraper data
+type ConferenceOption = {
+  label: string;
+  value: string;
+};
+
+const conferenceNameOptions = shallowRef<ConferenceOption[]>([]);
+const selectedConference = ref<string | undefined>();
+const conferenceOptionsError = ref<string | null>(null);
+const conferenceDataMap = ref<
+  Record<
+    string,
+    {
+      id: string;
+      conferenceName?: string;
+      conferenceYear?: number;
+      conferenceAcronym?: string | null;
+      conferenceLocation?: string | null;
+      conferenceIdentifier?: string;
+      conferenceIdentifierType?: string;
+      conferenceSchemaUri?: string;
+      conferenceStartDate?: string | null;
+      conferenceEndDate?: string | null;
+      conferenceUri?: string | null;
+      conferenceSeries?: string | null;
+      collectionDate?: string | null;
+      conferenceCategories?: string[] | null;
+      conferenceText?: string | null;
+      submissionDeadline?: string | null;
+      sources?: string[] | null;
+    }
+  >
+>({});
+
+// Set the minimum search length for the conference search to reduce API calls and load times
+const CONFERENCE_MIN_SEARCH_LENGTH = 2;
+const CONFERENCE_SEARCH_ERROR_MESSAGE =
+  "Conference suggestions are temporarily unavailable. Try again or enter the conference details manually.";
+
+const conferenceSearchTermRaw = ref("");
+const conferenceSearchTerm = ref("");
+
+let conferenceSearchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+let conferenceSearchAbort: AbortController | null = null;
+let conferenceSearchRequestId = 0;
+const conferenceSearchLoading = ref(false);
+
+watch(conferenceSearchTermRaw, (value) => {
+  if (conferenceSearchDebounceTimer)
+    clearTimeout(conferenceSearchDebounceTimer);
+
+  conferenceOptionsError.value = null;
+  conferenceSearchAbort?.abort();
+  conferenceSearchAbort = null;
+  conferenceSearchRequestId += 1;
+  conferenceNameOptions.value = [];
+
+  const trimmed = value.trim();
+  if (trimmed.length < CONFERENCE_MIN_SEARCH_LENGTH) {
+    conferenceSearchTerm.value = "";
+    conferenceSearchLoading.value = false;
+
+    return;
+  }
+
+  conferenceSearchLoading.value = true;
+  conferenceSearchDebounceTimer = setTimeout(() => {
+    conferenceSearchDebounceTimer = null;
+    conferenceSearchTerm.value = value;
+    loadConferenceOptions(value);
+  }, 500);
+});
+
+onBeforeUnmount(() => {
+  if (conferenceSearchDebounceTimer) {
+    clearTimeout(conferenceSearchDebounceTimer);
+    conferenceSearchDebounceTimer = null;
+  }
+
+  conferenceSearchAbort?.abort();
+  conferenceSearchAbort = null;
+  conferenceSearchRequestId += 1;
+});
+
+const conferenceItemsToShow = computed(() => {
+  if (conferenceSearchTerm.value.trim().length < CONFERENCE_MIN_SEARCH_LENGTH) {
+    return [];
+  }
+
+  return conferenceNameOptions.value;
+});
+
+type ConferenceDataEntry = (typeof conferenceDataMap.value)[string];
+
+function missingConferenceFieldLabels(data: ConferenceDataEntry): string[] {
+  const missing: string[] = [];
+
+  if (data.conferenceYear == null || Number.isNaN(data.conferenceYear)) {
+    missing.push("Conference year");
+  }
+  if (!data.conferenceLocation?.trim()) {
+    missing.push("Location");
+  }
+  if (!data.conferenceAcronym?.trim()) {
+    missing.push("Acronym");
+  }
+  if (!data.conferenceUri?.trim()) {
+    missing.push("Conference Website");
+  }
+  if (!data.conferenceStartDate?.trim()) {
+    missing.push("Conference start date");
+  }
+  if (!data.conferenceEndDate?.trim()) {
+    missing.push("Conference end date");
+  }
+
+  return missing;
+}
+
+function applyConferenceSelection(conferenceId: string) {
+  if (!state.conference) return;
+
+  const conferenceData = conferenceDataMap.value[conferenceId];
+  const name = conferenceData?.conferenceName?.trim();
+
+  if (!conferenceData || !name) return;
+
+  state.conference.conferenceName = name;
+
+  if (conferenceData.conferenceYear) {
+    state.conference.conferenceYear = conferenceData.conferenceYear;
+  }
+  if (conferenceData.conferenceAcronym?.trim()) {
+    state.conference.conferenceAcronym = conferenceData.conferenceAcronym;
+  }
+  if (conferenceData.conferenceLocation?.trim()) {
+    state.conference.conferenceLocation = conferenceData.conferenceLocation;
+  }
+  if (conferenceData.conferenceIdentifier?.trim()) {
+    state.conference.conferenceIdentifier = conferenceData.conferenceIdentifier;
+  }
+  if (conferenceData.conferenceIdentifierType?.trim()) {
+    state.conference.conferenceIdentifierType =
+      conferenceData.conferenceIdentifierType;
+  }
+  if (conferenceData.conferenceStartDate?.trim()) {
+    state.conference.conferenceStartDate = conferenceData.conferenceStartDate;
+  }
+  if (conferenceData.conferenceEndDate?.trim()) {
+    state.conference.conferenceEndDate = conferenceData.conferenceEndDate;
+  }
+  if (conferenceData.conferenceUri?.trim()) {
+    state.conference.conferenceUri = conferenceData.conferenceUri;
+  }
+  if (conferenceData.conferenceSeries?.trim()) {
+    state.conference.conferenceSeries = conferenceData.conferenceSeries;
+  }
+  // Clear the search selection so the search bar is empty after choosing.
+  // Run on nextTick so the SelectMenu's internal update finishes first.
+  nextTick(() => {
+    selectedConference.value = undefined;
+  });
+}
+
+function conferenceOptionLabel(data: ConferenceDataEntry): string {
+  const name = data.conferenceName?.trim() ?? "";
+  const details = [
+    data.conferenceAcronym?.trim(),
+    data.conferenceYear ? String(data.conferenceYear) : undefined,
+  ].filter((detail): detail is string => Boolean(detail));
+
+  return details.length > 0 ? `${name} (${details.join(", ")})` : name;
+}
+
+function mergeConferenceOptionsFromApi(options: any[]) {
+  const nextOptions: ConferenceOption[] = [];
+  const nextDataMap: Record<string, ConferenceDataEntry> = {};
+
+  for (const opt of options) {
+    const id = typeof opt.id === "string" ? opt.id : "";
+    const name =
+      typeof opt.conferenceName === "string" ? opt.conferenceName.trim() : "";
+
+    if (!id || !name) continue;
+
+    const data: ConferenceDataEntry = {
+      id,
+      conferenceName: name,
+      conferenceYear: opt.conferenceYear,
+      conferenceAcronym: opt.conferenceAcronym,
+      conferenceLocation: opt.conferenceLocation,
+      conferenceStartDate: opt.conferenceStartDate,
+      conferenceEndDate: opt.conferenceEndDate,
+      conferenceUri: opt.conferenceUri,
+      conferenceSeries: opt.conferenceSeries,
+    };
+
+    nextDataMap[id] = data;
+    nextOptions.push({ label: conferenceOptionLabel(data), value: id });
+  }
+
+  conferenceDataMap.value = nextDataMap;
+  conferenceNameOptions.value = nextOptions;
+}
+
+async function loadConferenceOptions(search: string) {
+  const q = search.trim();
+  if (!q || q.length < CONFERENCE_MIN_SEARCH_LENGTH) {
+    conferenceNameOptions.value = [];
+    conferenceSearchLoading.value = false;
+
+    return;
+  }
+
+  conferenceSearchAbort?.abort();
+  const controller = new AbortController();
+  conferenceSearchAbort = controller;
+  const requestId = ++conferenceSearchRequestId;
+  conferenceSearchLoading.value = true;
+
+  try {
+    conferenceOptionsError.value = null;
+    const response = (await $fetch("/api/conferences/conferences", {
+      query: { search: q },
+      signal: controller.signal,
+    })) as any;
+
+    if (requestId !== conferenceSearchRequestId) return;
+
+    if (response?.options && Array.isArray(response.options)) {
+      mergeConferenceOptionsFromApi(response.options);
+    } else {
+      conferenceNameOptions.value = [];
+    }
+  } catch (error) {
+    if (controller.signal.aborted) return;
+    if (requestId !== conferenceSearchRequestId) return;
+
+    console.error("[conference search] Failed to load options", error);
+    conferenceOptionsError.value = CONFERENCE_SEARCH_ERROR_MESSAGE;
+    conferenceNameOptions.value = [];
+  } finally {
+    if (requestId === conferenceSearchRequestId) {
+      conferenceSearchLoading.value = false;
+    }
+  }
+}
+
+function retryConferenceSearch() {
+  loadConferenceOptions(conferenceSearchTermRaw.value);
+}
+
 /** Extract a year from text (e.g. "ARVO 2025" or "Conference 25") for auto-fill. */
 function yearFromText(text: string): number | undefined {
   if (!text || typeof text !== "string") return undefined;
@@ -587,13 +838,38 @@ function yearFromText(text: string): number | undefined {
 watch(
   () => state.conference?.conferenceName,
   (name) => {
-    if (!state.conference || state.conference.conferenceYear != null) return;
+    if (!state.conference || !name) return;
 
-    const year = yearFromText(name ?? "");
-
-    if (year != null) state.conference.conferenceYear = year;
+    if (!state.conference.conferenceYear) {
+      // Extract the year when users enter a conference name manually.
+      const year = yearFromText(name);
+      if (year != null) state.conference.conferenceYear = year;
+    }
   },
 );
+
+function handleConferenceSelection(conferenceId: string) {
+  const conferenceData = conferenceDataMap.value[conferenceId];
+  applyConferenceSelection(conferenceId);
+
+  if (!conferenceData) return;
+
+  const missing = missingConferenceFieldLabels(conferenceData);
+  if (missing.length === 0) return;
+
+  const list =
+    missing.length === 1
+      ? missing[0]
+      : `${missing.slice(0, -1).join(", ")} and ${missing.at(-1)}`;
+
+  toast.add({
+    title: "Some conference details were not found",
+    description: `Please fill in manually: ${list}.`,
+    color: "warning",
+    icon: "i-lucide-info",
+    duration: 8000,
+  });
+}
 
 const savingDraft = ref(false);
 
@@ -702,19 +978,16 @@ async function onSubmit(event: FormSubmitEvent<StrictFormSchema>) {
     return;
   }
 
-  console.log("Submitting poster metadata");
   loading.value = true;
 
   try {
     const formData = event.data;
-    console.log("Submitting poster metadata (API payload)", formData);
     const response = await $fetch(`/api/poster/${id}`, {
       method: "PUT",
       body: formData,
     });
 
     if (!response || (response as any).error) {
-      console.log("Error response from API:", response);
       throw new Error(
         (response as any)?.message ||
           "Unknown error occurred while saving poster metadata.",
@@ -1688,6 +1961,66 @@ const moveCreator = (index: number, direction: "up" | "down") => {
             description="The conference or event where the poster was presented"
           >
             <div class="space-y-4">
+              <div
+                class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 dark:border-gray-800 dark:bg-gray-900/40"
+              >
+                <div
+                  class="mb-1 text-xs font-medium text-gray-500 dark:text-gray-400"
+                >
+                  Find a conference
+                </div>
+
+                <USelectMenu
+                  v-model="selectedConference"
+                  v-model:search-term="conferenceSearchTermRaw"
+                  :items="conferenceItemsToShow"
+                  :loading="conferenceSearchLoading"
+                  :virtualize="{ estimateSize: 36, overscan: 16 }"
+                  placeholder="Search conferences by name or acronym…"
+                  value-key="value"
+                  :ignore-filter="true"
+                  class="w-full"
+                  :search-input="{
+                    placeholder: 'Search conferences by name or acronym…',
+                    icon: 'i-lucide-search',
+                  }"
+                  @update:model-value="handleConferenceSelection"
+                >
+                  <template #empty="{ searchTerm }">
+                    <span class="text-sm text-gray-500 dark:text-gray-400">
+                      {{
+                        conferenceSearchLoading
+                          ? "Searching conferences…"
+                          : !searchTerm?.trim()
+                            ? "Start typing to search conferences…"
+                            : searchTerm.trim().length <
+                                CONFERENCE_MIN_SEARCH_LENGTH
+                              ? `Type at least ${CONFERENCE_MIN_SEARCH_LENGTH} characters to search…`
+                              : "No conferences match your search."
+                      }}
+                    </span>
+                  </template>
+                </USelectMenu>
+
+                <div
+                  v-if="conferenceOptionsError"
+                  class="mt-2 flex flex-wrap items-center justify-between gap-2 text-sm text-red-600 dark:text-red-400"
+                  role="alert"
+                >
+                  <span>{{ conferenceOptionsError }}</span>
+
+                  <UButton
+                    label="Try again"
+                    color="error"
+                    variant="soft"
+                    size="xs"
+                    icon="i-lucide-refresh-cw"
+                    :loading="conferenceSearchLoading"
+                    @click="retryConferenceSearch"
+                  />
+                </div>
+              </div>
+
               <div class="grid gap-3 md:grid-cols-2">
                 <UFormField
                   name="conference.conferenceName"
@@ -1696,7 +2029,7 @@ const moveCreator = (index: number, direction: "up" | "down") => {
                 >
                   <UInput
                     v-model="state.conference.conferenceName"
-                    placeholder="e.g., Association for Research in Vision and Ophthalmology Conference"
+                    placeholder="Enter the conference name"
                   />
                 </UFormField>
 
