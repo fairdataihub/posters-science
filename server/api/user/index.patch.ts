@@ -5,8 +5,9 @@ import {
 } from "#shared/utils/profile";
 
 const updateUserSchema = z.object({
-  givenName: z.string().optional(),
-  familyName: z.string().optional(),
+  // Names can be changed but never cleared.
+  givenName: z.string().trim().min(1, "First name is required").optional(),
+  familyName: z.string().trim().min(1, "Last name is required").optional(),
   affiliation: z.string().trim().max(PROFILE_AFFILIATION_MAX).optional(),
   bio: z.string().trim().max(PROFILE_BIO_MAX).optional(),
   profilePublic: z.boolean().optional(),

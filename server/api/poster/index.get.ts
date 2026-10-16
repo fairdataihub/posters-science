@@ -129,11 +129,12 @@ export default defineEventHandler(async (event) => {
 /**
  * Auto-indexed posters the user claimed as an author, each as its latest
  * published version and shaped like an owned published poster so the
- * dashboard can list them together. Retired posters are left out.
+ * dashboard can list them together. Retired posters are included and show as
+ * tombstoned, like the user's own. Only the team can restore them.
  */
 async function loadClaimedPosters(userId: string) {
   const claims = await prisma.posterClaim.findMany({
-    where: { userId, poster: { tombstone: false } },
+    where: { userId },
     select: { posterId: true, created: true },
   });
 
@@ -148,7 +149,6 @@ async function loadClaimedPosters(userId: string) {
     include: posterInclude,
     where: {
       status: "published",
-      tombstone: false,
       isLatestVersion: true,
       // Never list a poster the user already owns twice.
       NOT: { userId },

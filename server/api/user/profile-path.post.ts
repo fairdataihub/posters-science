@@ -11,16 +11,5 @@ export default defineEventHandler(async (event) => {
 
   const profileId = await ensureProfileId(userId);
 
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { givenName: true, familyName: true },
-  });
-
-  return {
-    path: profilePath({
-      givenName: user?.givenName ?? "",
-      familyName: user?.familyName ?? "",
-      profileId,
-    }),
-  };
+  return { path: profilePath(profileId) };
 });

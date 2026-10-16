@@ -115,8 +115,8 @@
  *     both are reported as errors and neither is written.
  *   - --tombstone-missing refuses to apply when any record failed to parse or
  *     match, since those records' posters would look missing.
- *   - Posters owned by a user, or in a version family, are never tombstoned.
- *     They show up in the report as "blocked" for review by hand.
+ *   - Posters owned or claimed by a user, or in a version family, are never
+ *     tombstoned. They show up in the report as "blocked" for review by hand.
  *
  * ## Output
  *
@@ -814,6 +814,8 @@ type ExistingPoster = {
   versionRootId: number | null;
   /** Like count, used to pick which duplicate copy survives */
   likes: number;
+  /** People who claimed it as an author. Claimed posters are never tombstoned */
+  claims: number;
   /** Lowercased, with a blank DOI stored as null */
   doi: string | null;
   identifiers: unknown;
@@ -970,7 +972,7 @@ async function loadAutomatedPosters(
       tombstone: true,
       tombedReason: true,
       versionRootId: true,
-      _count: { select: { likes: true } },
+      _count: { select: { likes: true, claims: true } },
       posterMetadata: { select: { doi: true, identifiers: true } },
     },
     orderBy: { id: "asc" },
@@ -985,6 +987,7 @@ async function loadAutomatedPosters(
     tombedReason: row.tombedReason,
     versionRootId: row.versionRootId,
     likes: row._count.likes,
+    claims: row._count.claims,
     doi: normalizeDoi(row.posterMetadata?.doi),
     identifiers: row.posterMetadata?.identifiers ?? [],
   }));
@@ -1007,8 +1010,8 @@ type MatchResult = {
 
 /**
  * Picks which of several copies of one record keeps its id: a live poster
- * over a tombstoned one, then one in a version family, then the most liked,
- * then one with a thumbnail, then the oldest.
+ * over a tombstoned one, then one in a version family, then one someone
+ * claimed, then the most liked, then one with a thumbnail, then the oldest.
  *
  * @param copies - Posters that all hold the same record.
  * @param familyIds - Ids of every poster that belongs to a version family.
@@ -1022,6 +1025,7 @@ function pickKeeper(
     (a, b) =>
       Number(a.tombstone) - Number(b.tombstone) ||
       Number(familyIds.has(b.id)) - Number(familyIds.has(a.id)) ||
+      Number(b.claims > 0) - Number(a.claims > 0) ||
       b.likes - a.likes ||
       Number(Boolean(b.imageUrl)) - Number(Boolean(a.imageUrl)) ||
       a.id - b.id,
@@ -1196,7 +1200,9 @@ const IMPORT_USER_ID = "0";
  * decide. Blocked plans are listed in the report but never applied.
  *
  *   - Owned by a user: only imported posters are ever retired, since a poster
- *     someone shared or claimed belongs to them.
+ *     someone shared belongs to them.
+ *   - Claimed by a user: claiming keeps the import owner, so claims are
+ *     checked separately. Retiring it would pull it off their profile.
  *   - In a version family: retiring one member would leave the others
  *     pointing at a hidden root, or leave a gap in the version sequence.
  *
@@ -1219,6 +1225,7 @@ function blockVersionFamilies(
   const userOwned = new Set(
     posters.filter((p) => p.userId !== IMPORT_USER_ID).map((p) => p.id),
   );
+  const claimed = new Set(posters.filter((p) => p.claims > 0).map((p) => p.id));
 
   return plans.map((plan) => {
     if (userOwned.has(plan.posterId)) {
@@ -1226,6 +1233,13 @@ function blockVersionFamilies(
         ...plan,
         status: "blocked",
         message: "Owned by a user, not imported; review by hand",
+      };
+    }
+    if (claimed.has(plan.posterId)) {
+      return {
+        ...plan,
+        status: "blocked",
+        message: "Claimed by a user; review by hand",
       };
     }
     if (inFamily.has(plan.posterId)) {

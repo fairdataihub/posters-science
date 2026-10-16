@@ -156,8 +156,8 @@ async function onDeleteAccount() {
 }
 
 const schema = z.object({
-  givenName: z.string(),
-  familyName: z.string(),
+  givenName: z.string().trim().min(1, "Enter your first name"),
+  familyName: z.string().trim().min(1, "Enter your last name"),
   affiliation: z
     .string()
     .trim()
@@ -451,7 +451,7 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
                 @submit="onSubmit"
               >
                 <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
-                  <UFormField label="First name" name="givenName">
+                  <UFormField label="First name" name="givenName" required>
                     <UInput
                       v-model="state.givenName"
                       type="text"
@@ -459,7 +459,7 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
                     />
                   </UFormField>
 
-                  <UFormField label="Last name" name="familyName">
+                  <UFormField label="Last name" name="familyName" required>
                     <UInput
                       v-model="state.familyName"
                       type="text"

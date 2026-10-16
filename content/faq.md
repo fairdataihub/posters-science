@@ -123,7 +123,7 @@ No. Claiming adds the poster to your dashboard and profile but doesn't change th
 
 ### My name is abbreviated or spelled differently on the poster. Can I fix it?
 
-Author names are shown exactly as they appear in the original record, so citations stay consistent with its DOI. Your public profile shows your name the way you enter it on your [profile page](/profile).
+Author names are shown exactly as they appear in the original record, so citations stay consistent with its DOI. Your public profile shows your name the way you enter it on your [Settings page](/profile).
 
 ### How do I remove a claim?
 
@@ -137,6 +137,10 @@ Select **Remove claim** on the poster in your dashboard, or **Remove** next to "
 
 Yes. If an auto-indexed poster has wrong details, isn't a poster, or you'd like it taken down, [contact us](https://tally.so/r/XxEBYP) with a link to it.
 
+### What happens if a poster I claimed is removed?
+
+We sometimes retire (tombstone) a poster record, for example when it's a duplicate. It's hidden from Discover and your public profile, and stays on your dashboard marked **Tombstoned** with the reason. Your claim is kept, so if we restore the poster it comes back for you. Only our team can restore a poster, so [contact us](https://tally.so/r/XxEBYP) if you have questions.
+
 ## Your profile and account
 
 ### What is a public profile?
@@ -145,15 +149,15 @@ An optional page that lists the posters you have shared and claimed, along with 
 
 ### How do I make my profile public or private?
 
-Go to your [profile page](/profile) and use **Make profile public** or **Make profile private**. You can switch at any time. A private profile can't be viewed by anyone else.
+Go to your [Settings page](/profile) and use **Make profile public** or **Make profile private**. You can switch at any time. A private profile can't be viewed by anyone else.
 
 ### Can other people see the posters I like?
 
-Only if you choose. Turn on **Show my liked posters on my public profile** on your [profile page](/profile) to add a Liked tab to your public profile. It's off by default, and your likes are never shown while your profile is private.
+Only if you choose. Turn on **Show my liked posters on my public profile** on your [Settings page](/profile) to add a Liked tab to your public profile. It's off by default, and your likes are never shown while your profile is private.
 
 ### What is my profile link?
 
-It looks like `posters.science/profile/your-name-k3x9p2q7m4`. The letters and numbers at the end never change, so the link keeps working even if you change your name.
+It looks like `posters.science/profile/k3x9p2q7m4`. The letters and numbers are yours alone and never change, so the link keeps working even if you change your name.
 
 ### Why do I need to verify my email address?
 
@@ -165,7 +169,7 @@ Select **Forgot your password?** on the [sign-in page](/login) and we'll email y
 
 ### How do I change my name, affiliation or bio?
 
-Edit them on your [profile page](/profile).
+Edit them on your [Settings page](/profile).
 
 ### How do I delete my account?
 

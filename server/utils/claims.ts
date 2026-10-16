@@ -84,16 +84,10 @@ export async function ensureProfileId(userId: string): Promise<string> {
 export function publicProfilePath(user: {
   profilePublic: boolean;
   profileId: string | null;
-  givenName: string;
-  familyName: string;
 }): string | null {
   if (!user.profilePublic || !user.profileId) return null;
 
-  return profilePath({
-    givenName: user.givenName,
-    familyName: user.familyName,
-    profileId: user.profileId,
-  });
+  return profilePath(user.profileId);
 }
 
 export function isUniqueConstraintError(error: unknown): boolean {

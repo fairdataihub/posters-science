@@ -105,7 +105,8 @@ export type AdminPosterRow = {
     status: string;
     lastPublishedZenodoDoi: string | null;
   } | null;
-  _count: { likes: number };
+  _count: { likes: number; claims: number };
+  versionRoot: { _count: { claims: number } } | null;
 };
 
 export type AdminExtractionJobRow = {

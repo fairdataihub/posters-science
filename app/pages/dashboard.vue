@@ -2420,6 +2420,17 @@ function posterMenuItems(poster: Poster) {
             tombstonedPoster?.tombedReason?.trim() || 'No reason was provided.'
           "
         />
+
+        <p class="text-muted mt-4 text-sm">
+          Only the Posters.science team can restore a tombstoned poster. If you
+          have questions or concerns,
+          <ULink
+            to="https://tally.so/r/XxEBYP"
+            target="_blank"
+            class="text-primary underline"
+            >contact us</ULink
+          >.
+        </p>
       </template>
     </UModal>
 

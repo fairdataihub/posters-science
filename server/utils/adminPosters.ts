@@ -155,5 +155,8 @@ export const POSTER_ADMIN_SELECT = {
       lastPublishedZenodoDoi: true,
     },
   },
-  _count: { select: { likes: true } },
+  _count: { select: { likes: true, claims: true } },
+  // Claims are stored on the version root, so a later version reads its
+  // root's count. The retire dialog warns when people have claimed a poster.
+  versionRoot: { select: { _count: { select: { claims: true } } } },
 } satisfies Prisma.PosterSelect;

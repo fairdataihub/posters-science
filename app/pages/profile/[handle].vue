@@ -40,8 +40,8 @@ const {
   { query: { search: committedSearch } },
 );
 
-// The name part of the address is cosmetic. Send old or misspelled links to
-// the current address so there is one canonical URL per profile.
+// Ids are matched case-insensitively. Send other spellings to the lower case
+// address so there is one canonical URL per profile.
 if (profile.value && profile.value.path !== route.path) {
   await navigateTo(profile.value.path, { redirectCode: 301, replace: true });
 }
@@ -139,15 +139,33 @@ async function makeProfilePublic() {
   }
 }
 
+// The preview card shown when the profile is shared, drawn by Kalai like the
+// other pages. Set for X as well, which would otherwise use the site default.
+const ogImage = computed(() => {
+  const title = profile.value ? displayName.value : "Profile not found";
+  const description = profile.value
+    ? [
+        profile.value.affiliation,
+        `${posterCountLabel.value} on Posters.science`,
+      ]
+        .filter(Boolean)
+        .join(". ")
+    : "This profile doesn't exist or isn't public.";
+
+  return `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent(title)}&description=${encodeURIComponent(description)}&app=posters-science&org=fairdataihub`;
+});
+
 useSeoMeta({
-  title: () =>
-    profile.value ? `${displayName.value} - Posters.science` : "Profile",
+  // The title template adds " - Posters.science".
+  title: () => (profile.value ? displayName.value : "Profile"),
   description: seoDescription,
   ogTitle: () =>
     profile.value
       ? `${displayName.value} - Posters.science`
       : "Profile - Posters.science",
   ogDescription: seoDescription,
+  ogImage,
+  twitterImage: ogImage,
   robots: () => (profile.value?.isPublic ? undefined : "noindex"),
 });
 </script>

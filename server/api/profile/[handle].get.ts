@@ -43,17 +43,17 @@ const posterSelect = {
 } as const;
 
 /**
- * Public profile for /profile/<name>-<profileId>. Only the id is used for the
- * lookup. To anyone but its owner, a private profile and an unknown id both
- * return 404, so a private user's name never shows up behind a URL that
- * resolves. The owner can still open their own private profile to preview it.
+ * Public profile for /profile/<profileId>. To anyone but its owner, a private
+ * profile and an unknown id both return 404, so a private user's name never
+ * shows up behind a URL that resolves. The owner can still open their own
+ * private profile to preview it.
  *
  * `search` takes the Discover search syntax. Every poster is still returned so
  * the page can show totals; `searchMatches` lists the ones that match.
  */
 export default defineEventHandler(async (event) => {
   const { handle } = event.context.params as { handle: string };
-  const { profileId } = parseProfileParam(handle ?? "");
+  const profileId = parseProfileParam(handle ?? "");
 
   if (!profileId) {
     throw createError({ statusCode: 404, statusMessage: "Profile not found" });
@@ -132,11 +132,7 @@ export default defineEventHandler(async (event) => {
   );
 
   return {
-    path: profilePath({
-      givenName: user.givenName,
-      familyName: user.familyName,
-      profileId: user.profileId,
-    }),
+    path: profilePath(user.profileId),
     givenName: user.givenName,
     familyName: user.familyName,
     affiliation: user.affiliation,
