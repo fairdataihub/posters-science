@@ -267,11 +267,11 @@ model BulkSubmission {
 
   name String
 
-  // setup | upload | metadata | review | submit (legacy: assets)
+  // setup | upload | extraction | conference | submit (legacy: assets, review, metadata)
   wizardStep String @default("upload")
   // draft | processing | completed | failed
   status String @default("draft")
-  // minimal | full_fair | full_acknowledged (legacy: automated, manual)
+  // metadata | assisted | full (legacy: minimal, full_fair, full_acknowledged, automated, manual)
   extractionMethod String @default("full_fair")
 
   stagedPosters Json @default("[]")

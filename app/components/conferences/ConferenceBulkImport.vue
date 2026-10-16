@@ -7,11 +7,17 @@ import {
   posterFileRejectionReason,
 } from "#shared/utils/posterFile";
 import { BULK_EXTRACTION_LEVEL_OPTIONS } from "#shared/types/bulkExtractionLevel";
-import type {
-  BulkImportLicenseMode,
-  BulkImportSubmissionSummary,
-  BulkImportUniformLicenseOption,
-} from "#shared/types/bulkImportLicenses";
+import {
+  applyBulkImportConferenceToForm,
+  BULK_IMPORT_CONFERENCE_ATTENDANCE_OPTIONS,
+  bulkImportConferenceFormValid,
+  bulkImportConferenceFromForm,
+  emptyBulkImportConferenceForm,
+  type BulkImportConferenceFormState,
+} from "#shared/types/bulkImportConference";
+import type { BulkImportSubmissionSummary } from "#shared/types/bulkImportLicenses";
+import { BULK_IMPORT_ACCEPTABLE_LICENSES } from "#shared/data/bulkImportAcceptableLicenses";
+import identifierTypes from "@/assets/data/identifier-types.json";
 import type { BulkImportWizardStep } from "#shared/types/bulkImportWizard";
 import { normalizeBulkImportWizardStep } from "#shared/types/bulkImportWizard";
 import type { BulkSubmissionExtractionMethod } from "#shared/types/bulkSubmission";
@@ -24,24 +30,17 @@ import type {
   BulkPosterSubmissionJob,
 } from "#shared/types/bulkPosterSubmissionJob";
 import {
-  CONFERENCE_BULK_IMPORT_LICENSE_FILE_BASENAME,
   type BulkImportBatchItem,
   type BulkImportBatchItemStatus,
   type BulkImportSubmissionRow,
 } from "#shared/types/conferenceBulkImport";
-import type { BulkImportValidationIssue } from "#shared/types/bulkImportValidation";
-import { validateBulkImportPerPosterLicenseMetadata } from "~/utils/bulkImportLicenseMetadataValidation";
 import {
   buildSubmissionRowsFromSeparateUpload,
   countSubmissionRowsByStatus,
   submissionRowStatusColor,
   submissionRowStatusLabel,
 } from "~/utils/conferenceBulkImportSubmissions";
-import {
-  buildSpreadsheetRowsForUniformLicense,
-  readConferenceImportSpreadsheetFile,
-  type ConferenceImportSpreadsheetRow,
-} from "~/utils/conferenceImportSpreadsheet";
+import { buildSpreadsheetRowsForUniformLicense } from "~/utils/conferenceImportSpreadsheet";
 import {
   createBulkPosterSubmissionJob,
   getBulkPosterSubmissionJob,
@@ -91,25 +90,72 @@ const props = defineProps<{
   initialStep?: BulkImportWizardStep | "assets";
   initialExtractionMethod?: BulkSubmissionExtractionMethod | string;
   initialStagedPosters?: BulkImportStagedPoster[];
-  initialLicenseMetadataUploaded?: boolean;
   resumeLoading?: boolean;
 }>();
 
 const toast = useToast();
 
 const stagedPosters = ref<BulkImportStagedPoster[]>([]);
-const licenseMetadataUploaded = ref(
-  props.initialLicenseMetadataUploaded ?? false,
-);
 
 const extractionMethod = ref<BulkSubmissionExtractionMethod>(
   normalizeBulkSubmissionExtractionMethod(
     props.initialExtractionMethod ?? DEFAULT_BULK_SUBMISSION_EXTRACTION_METHOD,
   ),
 );
-const fullExtractionAcknowledged = ref(
-  normalizeBulkSubmissionExtractionMethod(props.initialExtractionMethod) ===
-    "full_acknowledged",
+
+type OrcidRorAutomationChoice = "yes" | "no";
+
+const orcidRorAutomationChoice = ref<OrcidRorAutomationChoice | undefined>(
+  undefined,
+);
+
+const orcidRorAutomationItems: {
+  label: string;
+  value: OrcidRorAutomationChoice;
+  description: string;
+}[] = [
+  {
+    label: "Yes",
+    value: "yes",
+    description:
+      "Look up ORCID and ROR identifiers for creators and affiliations when we extract or import metadata.",
+  },
+  {
+    label: "No",
+    value: "no",
+    description: "Do not run automated ORCID or ROR lookups for this batch.",
+  },
+];
+
+function isExtractionLevelSelected(value: BulkSubmissionExtractionMethod) {
+  return extractionMethod.value === value;
+}
+
+function onExtractionLevelCheckbox(
+  value: BulkSubmissionExtractionMethod,
+  checked: boolean,
+) {
+  if (!checked) return;
+
+  const option = BULK_EXTRACTION_LEVEL_OPTIONS.find(
+    (item) => item.value === value,
+  );
+  if (option?.disabled) return;
+
+  extractionMethod.value = value;
+}
+
+watch(
+  extractionMethod,
+  (method) => {
+    const option = BULK_EXTRACTION_LEVEL_OPTIONS.find(
+      (item) => item.value === method,
+    );
+    if (option?.disabled) {
+      extractionMethod.value = "full";
+    }
+  },
+  { immediate: true },
 );
 
 const POSTER_ONLY_HINT = `${ALLOWED_POSTER_FILE_LABEL}, up to ${MAX_POSTER_FILE_SIZE_LABEL} per file`;
@@ -234,36 +280,9 @@ async function onPosterFilesSelected(files: File[]) {
   }
 }
 
-function validateLicenseMetadataFile(file: File): string | null {
-  const lower = file.name.toLowerCase();
-  if (!lower.endsWith(".xlsx") && !lower.endsWith(".xls")) {
-    return `Upload ${CONFERENCE_BULK_IMPORT_LICENSE_FILE_BASENAME}.xlsx (Excel).`;
-  }
-  return null;
-}
-
-const licenseTemplateDownloading = ref(false);
-
-const licenseMode = ref<BulkImportLicenseMode | null>(null);
 const uniformLicense = ref<string>("");
-const uniformLicenseSaving = ref(false);
 
-const licenseMetadataLocalFile = ref<File[]>([]);
-const licenseMetadataParseError = ref<string | null>(null);
-const licenseMetadataValidationIssues = ref<BulkImportValidationIssue[]>([]);
-const licenseSpreadsheetRows = ref<ConferenceImportSpreadsheetRow[]>([]);
-
-const {
-  data: uniformLicenseOptionsResponse,
-  status: uniformLicenseOptionsStatus,
-  error: uniformLicenseOptionsError,
-} = useFetch<{ data: BulkImportUniformLicenseOption[] }>(
-  "/api/bulk-poster-submissions/acceptable-licenses",
-);
-
-const uniformLicenseOptions = computed(
-  () => uniformLicenseOptionsResponse.value?.data ?? [],
-);
+const uniformLicenseOptions = computed(() => BULK_IMPORT_ACCEPTABLE_LICENSES);
 
 const uniformLicenseSelectItems = computed(() =>
   uniformLicenseOptions.value.map((option) => ({
@@ -272,11 +291,11 @@ const uniformLicenseSelectItems = computed(() =>
   })),
 );
 
-const selectedUniformLicenseOption = computed(() =>
-  uniformLicenseOptions.value.find(
-    (option) => option.value === uniformLicense.value,
-  ),
-);
+const selectedUniformLicenseOption = computed(() => {
+  const value = uniformLicense.value.trim();
+  if (!value) return undefined;
+  return uniformLicenseOptions.value.find((option) => option.value === value);
+});
 
 const submissionRows = ref<BulkImportSubmissionRow[]>([]);
 const submissionLoading = ref(false);
@@ -301,29 +320,127 @@ const canContinueFromUpload = computed(
   () => stagedPosters.value.length > 0 && !posterUploadRunning.value,
 );
 
-const perPosterLicenseMetadataValid = computed(() => {
-  if (!licenseMetadataUploaded.value) return false;
+const extractionStepAcknowledged = ref(false);
 
-  return validateBulkImportPerPosterLicenseMetadata({
-    spreadsheetRows: licenseSpreadsheetRows.value,
-    posterFileNames: stagedPosterFileNames.value,
-  }).valid;
-});
+const extractionStepReady = computed(
+  () => orcidRorAutomationChoice.value !== undefined,
+);
 
-const metadataStepComplete = computed(() => {
-  if (!licenseMode.value) return false;
-  if (licenseMode.value === "uniform") {
-    return Boolean(uniformLicense.value.trim());
-  }
-  return (
-    licenseMetadataUploaded.value && perPosterLicenseMetadataValid.value
-  );
-});
+const extractionStepComplete = computed(
+  () => extractionStepAcknowledged.value && extractionStepReady.value,
+);
+
+const extractionStepSaving = ref(false);
 
 const canProceedFromReview = computed(() => {
   if (submissionRows.value.length === 0) return false;
   return submissionRows.value.every((row) => row.status === "ready");
 });
+
+const conferenceYearOptions = Array.from(
+  { length: 12 },
+  (_, index) => new Date().getFullYear() - 2 + index,
+).map((year) => ({ label: String(year), value: year }));
+
+const conferenceIdentifierTypeOptions = identifierTypes.map((entry) => ({
+  label: entry.label,
+  value: entry.value,
+}));
+
+const conferenceForm = reactive<BulkImportConferenceFormState>(
+  emptyBulkImportConferenceForm(),
+);
+const conferenceStepAttempted = ref(false);
+const conferenceStepSaving = ref(false);
+
+const showConferenceIdentifierDetails = computed(
+  () => conferenceForm.conferenceIdentifier.trim().length > 0,
+);
+
+const conferenceStepComplete = computed(
+  () =>
+    bulkImportConferenceFormValid(conferenceForm) &&
+    Boolean(uniformLicense.value.trim()),
+);
+
+watch(
+  () => conferenceForm.conferenceIdentifier,
+  (identifier) => {
+    if (!identifier.trim()) {
+      conferenceForm.conferenceIdentifierType = "";
+      conferenceForm.conferenceSchemaUri = "";
+    }
+  },
+);
+
+watch(
+  () => conferenceForm.conferenceAttendance,
+  (attendance) => {
+    if (attendance === "Online") {
+      conferenceForm.conferenceLocation = "";
+    }
+  },
+);
+
+function conferenceFieldError(condition: boolean, message: string) {
+  return conferenceStepAttempted.value && condition ? message : undefined;
+}
+
+const conferenceNameError = computed(() =>
+  conferenceFieldError(
+    !conferenceForm.conferenceName.trim(),
+    "Conference name is required",
+  ),
+);
+
+const conferenceYearError = computed(() =>
+  conferenceFieldError(
+    conferenceForm.conferenceYear == null,
+    "Conference year is required",
+  ),
+);
+
+const conferenceIdentifierTypeError = computed(() =>
+  conferenceFieldError(
+    Boolean(
+      conferenceForm.conferenceIdentifier.trim() &&
+      !conferenceForm.conferenceIdentifierType.trim(),
+    ),
+    "Identifier type is required when an identifier is provided",
+  ),
+);
+
+const conferenceAttendanceError = computed(() =>
+  conferenceFieldError(
+    !conferenceForm.conferenceAttendance,
+    "Select whether the conference is in-person or online",
+  ),
+);
+
+const conferenceLocationError = computed(() =>
+  conferenceFieldError(
+    conferenceForm.conferenceAttendance === "In-person" &&
+      !conferenceForm.conferenceLocation.trim(),
+    "Conference location is required for in-person conferences",
+  ),
+);
+
+const conferenceLicenseError = computed(() =>
+  conferenceFieldError(!uniformLicense.value.trim(), "License is required"),
+);
+
+async function mergeJobSubmissionSummary(
+  patch: Partial<BulkImportSubmissionSummary>,
+) {
+  if (!jobId.value) return;
+
+  const job = await getBulkPosterSubmissionJob(jobId.value);
+  const existing = (job.submissionSummary ?? {}) as BulkImportSubmissionSummary;
+
+  await updateBulkPosterSubmissionJob(jobId.value, {
+    submissionSummary: { ...existing, ...patch },
+  });
+}
 
 const {
   wizardSteps,
@@ -345,8 +462,9 @@ const {
 } = useBulkImportWizard(
   {
     upload: uploadStepComplete,
-    metadata: metadataStepComplete,
-    review: canProceedFromReview,
+    extraction: extractionStepComplete,
+    conference: conferenceStepComplete,
+    submit: canProceedFromReview,
   },
   {
     initialJobId: props.initialJobId,
@@ -355,14 +473,7 @@ const {
   },
 );
 
-const setupExtractionReady = computed(() => {
-  if (extractionMethod.value !== "full_acknowledged") return true;
-  return fullExtractionAcknowledged.value;
-});
-
-const setupCanContinue = computed(
-  () => importNameValid.value && setupExtractionReady.value,
-);
+const setupCanContinue = computed(() => importNameValid.value);
 
 watch(
   () => props.initialJobId,
@@ -383,13 +494,6 @@ watch(
 );
 
 watch(
-  () => props.initialLicenseMetadataUploaded,
-  (uploaded) => {
-    if (uploaded) licenseMetadataUploaded.value = true;
-  },
-);
-
-watch(
   () => props.initialExtractionMethod,
   (method) => {
     if (method) {
@@ -397,12 +501,6 @@ watch(
     }
   },
 );
-
-watch(extractionMethod, (level) => {
-  if (level !== "full_acknowledged") {
-    fullExtractionAcknowledged.value = false;
-  }
-});
 
 /** Hide poster list until job + Bunny sync finish (avoids stale rows on resume). */
 const posterStorageListLoading = computed(
@@ -422,23 +520,21 @@ function resolveResumeWizardStep(): BulkImportWizardStep {
 function applyLicenseSummaryFromJob(job: BulkPosterSubmissionJob) {
   const summary = job.submissionSummary as BulkImportSubmissionSummary | null;
 
-  if (summary?.licenseMode === "uniform" && summary.uniformLicense) {
-    licenseMode.value = "uniform";
+  if (summary?.uniformLicense?.trim()) {
     uniformLicense.value = summary.uniformLicense;
-    licenseMetadataUploaded.value = true;
-    return;
+  } else if (Array.isArray(summary?.licenseSpreadsheetRows)) {
+    const rows = summary.licenseSpreadsheetRows as { license?: string }[];
+    const firstLicense = rows.find((row) => row.license?.trim())?.license;
+    if (firstLicense) uniformLicense.value = firstLicense;
   }
 
-  if (summary?.licenseMode === "per_poster" || job.licenseMetadataFilePath) {
-    licenseMode.value = "per_poster";
-    if (job.licenseMetadataFilePath) {
-      licenseMetadataUploaded.value = true;
-    }
-    const rows = summary?.licenseSpreadsheetRows;
-    if (Array.isArray(rows)) {
-      licenseSpreadsheetRows.value =
-        rows as ConferenceImportSpreadsheetRow[];
-    }
+  applyBulkImportConferenceToForm(conferenceForm, summary?.conference);
+  if (summary?.automateOrcidRorLookups === true) {
+    orcidRorAutomationChoice.value = "yes";
+  } else if (summary?.automateOrcidRorLookups === false) {
+    orcidRorAutomationChoice.value = "no";
+  } else {
+    orcidRorAutomationChoice.value = undefined;
   }
 }
 
@@ -448,41 +544,28 @@ function applyJobSnapshot(job: BulkPosterSubmissionJob) {
   extractionMethod.value = normalizeBulkSubmissionExtractionMethod(
     job.extractionMethod,
   );
-  fullExtractionAcknowledged.value =
-    extractionMethod.value === "full_acknowledged";
-
   applyLicenseSummaryFromJob(job);
 
   const step =
     normalizeBulkImportWizardStep(job.wizardStep) ?? resolveResumeWizardStep();
 
+  if (step === "extraction" || step === "conference" || step === "submit") {
+    extractionStepAcknowledged.value = true;
+  }
+
   restoreWizardStep(step);
 }
 
-function onLicenseModeChange(mode: BulkImportLicenseMode) {
-  if (licenseMode.value === mode) return;
-
-  licenseMode.value = mode;
-
-  if (mode === "uniform") {
-    licenseMetadataLocalFile.value = [];
-    licenseMetadataParseError.value = null;
-    licenseMetadataValidationIssues.value = [];
-    licenseSpreadsheetRows.value = [];
-    licenseMetadataUploaded.value = Boolean(uniformLicense.value.trim());
-  } else {
-    uniformLicense.value = "";
-    licenseMetadataUploaded.value = false;
-    licenseSpreadsheetRows.value = [];
-    licenseMetadataValidationIssues.value = [];
-  }
-}
-
 async function hydrateListsAfterResume(step: BulkImportWizardStep) {
-  if (step === "upload" || step === "metadata" || step === "review") {
+  if (
+    step === "upload" ||
+    step === "extraction" ||
+    step === "conference" ||
+    step === "submit"
+  ) {
     await refreshStagedPostersFromStorage();
   }
-  if (step === "review" || step === "submit") {
+  if (step === "submit") {
     await refreshSubmissionRows();
   }
 }
@@ -620,7 +703,7 @@ function goToStep(step: BulkImportWizardStep) {
       if (target === "upload") {
         void refreshStagedPostersFromStorage();
       }
-      if (target === "review") {
+      if (target === "submit") {
         void refreshSubmissionRows();
       }
     },
@@ -704,66 +787,23 @@ async function refreshSubmissionRows() {
   submissionLoading.value = true;
 
   try {
-    if (
-      licenseMode.value === "uniform" &&
-      uniformLicense.value.trim().length > 0
-    ) {
+    let license = uniformLicense.value.trim();
+
+    if (!license && jobId.value) {
+      const job = await getBulkPosterSubmissionJob(jobId.value);
+      const summary = job.submissionSummary as
+        | BulkImportSubmissionSummary
+        | null
+        | undefined;
+      license = summary?.uniformLicense?.trim() ?? "";
+    }
+
+    if (license && stagedPosterFileNames.value.length > 0) {
       submissionRows.value = buildSubmissionRowsFromSeparateUpload({
         spreadsheetRows: buildSpreadsheetRowsForUniformLicense(
           stagedPosterFileNames.value,
-          uniformLicense.value,
+          license,
         ),
-        posterFileNames: stagedPosterFileNames.value,
-      });
-      return;
-    }
-
-    const metadataFile = licenseMetadataLocalFile.value[0];
-    if (metadataFile) {
-      const parsed = await readConferenceImportSpreadsheetFile(metadataFile);
-      if (parsed.error) {
-        licenseMetadataParseError.value = parsed.error;
-        submissionRows.value = [];
-        return;
-      }
-
-      licenseMetadataParseError.value = null;
-      submissionRows.value = buildSubmissionRowsFromSeparateUpload({
-        spreadsheetRows: parsed.rows,
-        posterFileNames: stagedPosterFileNames.value,
-      });
-      return;
-    }
-
-    if (!jobId.value) {
-      submissionRows.value = [];
-      return;
-    }
-
-    const job = await getBulkPosterSubmissionJob(jobId.value);
-    const summary = job.submissionSummary as
-      | BulkImportSubmissionSummary
-      | null
-      | undefined;
-
-    if (
-      summary?.licenseMode === "uniform" &&
-      summary.uniformLicense &&
-      stagedPosterFileNames.value.length > 0
-    ) {
-      submissionRows.value = buildSubmissionRowsFromSeparateUpload({
-        spreadsheetRows: buildSpreadsheetRowsForUniformLicense(
-          stagedPosterFileNames.value,
-          summary.uniformLicense,
-        ),
-        posterFileNames: stagedPosterFileNames.value,
-      });
-      return;
-    }
-
-    if (summary?.licenseSpreadsheetRows?.length) {
-      submissionRows.value = buildSubmissionRowsFromSeparateUpload({
-        spreadsheetRows: summary.licenseSpreadsheetRows,
         posterFileNames: stagedPosterFileNames.value,
       });
       return;
@@ -853,11 +893,7 @@ async function uploadPosterFileImmediately(file: File) {
   activePosterUploads.value += 1;
 
   try {
-    const response = await uploadBulkPosterSubmissionFile(
-      jobId.value,
-      file,
-      "poster",
-    );
+    const response = await uploadBulkPosterSubmissionFile(jobId.value, file);
     stagedPosters.value = response.job.stagedPosters ?? stagedPosters.value;
     clearPosterRowStatus(file.name);
     void persistWizardStep("upload");
@@ -938,136 +974,6 @@ async function removeStagedPoster(poster: BulkImportStagedPoster) {
     });
   } finally {
     stagedPosterDeletePath.value = null;
-  }
-}
-
-async function uploadLicenseMetadata() {
-  if (!jobId.value) return;
-
-  const file = licenseMetadataLocalFile.value[0];
-  if (!file) return;
-
-  try {
-    const response = await uploadBulkPosterSubmissionFile(
-      jobId.value,
-      file,
-      "license_metadata",
-    );
-    licenseMetadataUploaded.value = Boolean(
-      response.job.licenseMetadataFilePath,
-    );
-    licenseMetadataParseError.value = null;
-    licenseMetadataValidationIssues.value = [];
-
-    const summary = response.job.submissionSummary as
-      | BulkImportSubmissionSummary
-      | null
-      | undefined;
-    if (Array.isArray(summary?.licenseSpreadsheetRows)) {
-      licenseSpreadsheetRows.value =
-        summary.licenseSpreadsheetRows as ConferenceImportSpreadsheetRow[];
-    } else if (response.licenseSpreadsheetRows?.length) {
-      licenseSpreadsheetRows.value = response.licenseSpreadsheetRows;
-    }
-
-    toast.add({
-      title: "License metadata saved",
-      description: `${CONFERENCE_BULK_IMPORT_LICENSE_FILE_BASENAME}.xlsx is stored with this import.`,
-      color: "success",
-    });
-    void persistWizardStep("metadata");
-    await refreshSubmissionRows();
-  } catch (error) {
-    licenseMetadataParseError.value =
-      fetchErrorDescription(error) ??
-      "Check the file format and try again.";
-
-    if (error && typeof error === "object" && "data" in error) {
-      const data = error.data as { issues?: BulkImportValidationIssue[] };
-      licenseMetadataValidationIssues.value = data.issues ?? [];
-    } else {
-      licenseMetadataValidationIssues.value = [];
-    }
-
-    toast.add({
-      title: "Could not upload metadata",
-      description: licenseMetadataParseError.value,
-      color: "error",
-    });
-  }
-}
-
-async function downloadLicenseMetadataTemplate() {
-  if (!jobId.value) return;
-
-  licenseTemplateDownloading.value = true;
-
-  try {
-    const blob = await $fetch<Blob>(
-      `/api/bulk-poster-submissions/${jobId.value}/license-template`,
-      { responseType: "blob" },
-    );
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `${CONFERENCE_BULK_IMPORT_LICENSE_FILE_BASENAME}.xlsx`;
-    document.body.appendChild(anchor);
-    anchor.click();
-    document.body.removeChild(anchor);
-    URL.revokeObjectURL(url);
-  } catch (error) {
-    toast.add({
-      title: "Could not download license workbook",
-      description:
-        fetchErrorDescription(error) ??
-        "Try again after your poster files finish uploading.",
-      color: "error",
-    });
-  } finally {
-    licenseTemplateDownloading.value = false;
-  }
-}
-
-function onLicenseMetadataLocalChange(files: File[]) {
-  licenseMetadataLocalFile.value = files;
-  licenseMetadataUploaded.value = false;
-  licenseMetadataParseError.value = null;
-  licenseMetadataValidationIssues.value = [];
-}
-
-async function persistUniformLicense() {
-  if (!jobId.value) return false;
-
-  const license = uniformLicense.value.trim();
-  if (!license) return false;
-
-  uniformLicenseSaving.value = true;
-
-  try {
-    const rows = buildSpreadsheetRowsForUniformLicense(
-      stagedPosterFileNames.value,
-      license,
-    );
-    await updateBulkPosterSubmissionJob(jobId.value, {
-      submissionSummary: {
-        licenseMode: "uniform",
-        uniformLicense: license,
-        licenseSpreadsheetRows: rows,
-      },
-    });
-    licenseMetadataUploaded.value = true;
-    void persistWizardStep("metadata");
-    await refreshSubmissionRows();
-    return true;
-  } catch {
-    toast.add({
-      title: "Could not save license",
-      description: "Try again in a moment.",
-      color: "error",
-    });
-    return false;
-  } finally {
-    uniformLicenseSaving.value = false;
   }
 }
 
@@ -1189,7 +1095,7 @@ onBeforeUnmount(() => {
   stopBatchSimulation();
 });
 
-async function continueToMetadata() {
+async function continueToExtraction() {
   if (posterUploadRunning.value) return;
 
   if (stagedPosters.value.length === 0) {
@@ -1201,24 +1107,86 @@ async function continueToMetadata() {
     return;
   }
 
-  goToStep("metadata");
+  goToStep("extraction");
 }
 
-async function continueToReview() {
-  if (!metadataStepComplete.value) return;
+async function continueToConference() {
+  if (!extractionStepReady.value) return;
 
-  if (licenseMode.value === "uniform") {
-    const saved = await persistUniformLicense();
-    if (!saved) return;
+  if (!jobId.value) {
+    extractionStepAcknowledged.value = true;
+    goToStep("conference");
+    return;
   }
 
-  goToStep("review");
-  await refreshSubmissionRows();
+  extractionStepSaving.value = true;
+
+  try {
+    await updateBulkPosterSubmissionJob(jobId.value, {
+      extractionMethod: extractionMethod.value,
+    });
+    await mergeJobSubmissionSummary({
+      automateOrcidRorLookups: orcidRorAutomationChoice.value === "yes",
+    });
+    extractionStepAcknowledged.value = true;
+    void persistWizardStep("extraction");
+    goToStep("conference");
+  } catch (error) {
+    toast.add({
+      title: "Could not save extraction choice",
+      description:
+        fetchErrorDescription(error) ?? "Try again before continuing.",
+      color: "error",
+    });
+  } finally {
+    extractionStepSaving.value = false;
+  }
 }
 
-function continueToSubmit() {
-  if (!canProceedFromReview.value) return;
-  goToStep("submit");
+async function continueToSubmit() {
+  conferenceStepAttempted.value = true;
+  if (!conferenceStepComplete.value) return;
+
+  const conference = bulkImportConferenceFromForm(conferenceForm);
+  const license = uniformLicense.value.trim();
+  if (!conference || !license || !jobId.value) {
+    goToStep("submit");
+    await refreshSubmissionRows();
+    return;
+  }
+
+  conferenceStepSaving.value = true;
+
+  try {
+    await mergeJobSubmissionSummary({
+      conference,
+      uniformLicense: license,
+      licenseSpreadsheetRows: buildSpreadsheetRowsForUniformLicense(
+        stagedPosterFileNames.value,
+        license,
+      ),
+    });
+    void persistWizardStep("conference");
+    goToStep("submit");
+    await refreshSubmissionRows();
+  } catch (error) {
+    toast.add({
+      title: "Could not save conference information",
+      description:
+        fetchErrorDescription(error) ?? "Try again before continuing.",
+      color: "error",
+    });
+  } finally {
+    conferenceStepSaving.value = false;
+  }
+}
+
+function onSubmitStepContinue() {
+  if (batchImportFinished.value) {
+    void navigateTo("/dashboard");
+    return;
+  }
+  startImport();
 }
 
 function startImport() {
@@ -1231,7 +1199,7 @@ function startImport() {
   if (batchItems.value.length === 0) {
     toast.add({
       title: "Nothing to import",
-      description: "Fix submission issues on the review step first.",
+      description: "Fix submission issues before submitting.",
       color: "warning",
     });
     return;
@@ -1348,56 +1316,6 @@ function startImport() {
               autocomplete="off"
             />
           </UFormField>
-
-          <UFormField label="How should we get poster details?" required>
-            <div
-              class="space-y-3"
-              role="radiogroup"
-              aria-label="How should we get poster details?"
-            >
-              <label
-                v-for="option in BULK_EXTRACTION_LEVEL_OPTIONS"
-                :key="option.value"
-                class="flex cursor-pointer gap-3 rounded-lg border p-4 transition-colors"
-                :class="
-                  extractionMethod === option.value
-                    ? 'border-primary bg-primary/5 ring-primary/30 ring-1'
-                    : 'border-gray-200 dark:border-gray-800'
-                "
-              >
-                <input
-                  v-model="extractionMethod"
-                  type="radio"
-                  class="mt-1 shrink-0"
-                  name="bulk-extraction-level"
-                  :value="option.value"
-                />
-
-                <div class="min-w-0 space-y-1">
-                  <div class="flex flex-wrap items-center gap-2">
-                    <span class="text-sm font-semibold">{{
-                      option.label
-                    }}</span>
-                    <UBadge
-                      v-if="option.badge"
-                      color="primary"
-                      variant="soft"
-                      size="xs"
-                    >
-                      {{ option.badge }}
-                    </UBadge>
-                  </div>
-                  <p class="text-muted text-sm">{{ option.description }}</p>
-                </div>
-              </label>
-            </div>
-          </UFormField>
-
-          <UCheckbox
-            v-if="extractionMethod === 'full_acknowledged'"
-            v-model="fullExtractionAcknowledged"
-            label="I’m okay with less manual review on extracted fields (I can still edit before publishing)."
-          />
         </div>
 
         <div
@@ -1407,14 +1325,14 @@ function startImport() {
             color="neutral"
             variant="ghost"
             icon="i-lucide-arrow-left"
-            label="Back to dashboard"
+            label="Back"
             to="/dashboard"
           />
           <UButton
             color="primary"
             icon="i-lucide-arrow-right"
             trailing
-            label="Continue to upload posters"
+            label="Save and Continue"
             :disabled="!setupCanContinue"
             :loading="setupSaving"
             @click="commitSetupAndContinue"
@@ -1566,218 +1484,89 @@ function startImport() {
             color="primary"
             icon="i-lucide-arrow-right"
             trailing
-            label="Continue to metadata"
+            label="Save and Continue"
             :disabled="
               !canContinueFromUpload || !jobId || posterStorageListLoading
             "
             :loading="posterUploadRunning"
-            @click="continueToMetadata"
+            @click="continueToExtraction"
           />
         </div>
       </template>
 
-      <template v-else-if="currentStep === 'metadata'">
+      <template v-else-if="currentStep === 'extraction'">
         <div class="space-y-4">
           <div>
             <h3 class="text-base font-semibold">
-              Step {{ currentStepNumber }}: Licenses
+              Step {{ currentStepNumber }}: Poster details
             </h3>
             <p class="text-muted mt-1 text-sm">
               {{ currentStepTask }}
-              <template v-if="extractionMethod === 'minimal'">
-                You can also add title, authors, and other columns in the CSV—we
-                won’t overwrite what you type.
-              </template>
             </p>
           </div>
 
-          <UFormField label="How do you want to set licenses?" required>
-            <div
-              class="space-y-3"
-              role="radiogroup"
-              aria-label="How do you want to set licenses?"
-            >
+          <UFormField label="Extraction level" required>
+            <div class="space-y-3">
               <label
-                class="flex cursor-pointer gap-3 rounded-lg border p-4 transition-colors"
-                :class="
-                  licenseMode === 'uniform'
+                v-for="option in BULK_EXTRACTION_LEVEL_OPTIONS"
+                :key="option.value"
+                class="flex gap-3 rounded-lg border p-4 transition-colors"
+                :class="[
+                  option.disabled
+                    ? 'cursor-not-allowed opacity-70'
+                    : 'cursor-pointer',
+                  isExtractionLevelSelected(option.value)
                     ? 'border-primary bg-primary/5 ring-primary/30 ring-1'
-                    : 'border-gray-200 dark:border-gray-800'
-                "
+                    : 'border-gray-200 dark:border-gray-800',
+                ]"
               >
-                <input
-                  type="radio"
-                  class="mt-1 shrink-0"
-                  name="bulk-license-mode"
-                  value="uniform"
-                  :checked="licenseMode === 'uniform'"
-                  @change="onLicenseModeChange('uniform')"
+                <UCheckbox
+                  class="mt-0.5 shrink-0"
+                  :model-value="isExtractionLevelSelected(option.value)"
+                  :disabled="option.disabled"
+                  @update:model-value="
+                    (checked) =>
+                      onExtractionLevelCheckbox(option.value, checked)
+                  "
                 />
-                <div class="min-w-0 space-y-1">
-                  <span class="text-sm font-semibold"
-                    >Same license for every poster</span
-                  >
-                  <p class="text-muted text-sm">
-                    Pick one license from the list below. It will apply to all
-                    {{ stagedPosters.length }} staged file(s).
-                  </p>
-                </div>
-              </label>
 
-              <label
-                class="flex cursor-pointer gap-3 rounded-lg border p-4 transition-colors"
-                :class="
-                  licenseMode === 'per_poster'
-                    ? 'border-primary bg-primary/5 ring-primary/30 ring-1'
-                    : 'border-gray-200 dark:border-gray-800'
-                "
-              >
-                <input
-                  type="radio"
-                  class="mt-1 shrink-0"
-                  name="bulk-license-mode"
-                  value="per_poster"
-                  :checked="licenseMode === 'per_poster'"
-                  @change="onLicenseModeChange('per_poster')"
-                />
                 <div class="min-w-0 space-y-1">
-                  <span class="text-sm font-semibold"
-                    >License per poster (spreadsheet)</span
-                  >
-                  <p class="text-muted text-sm">
-                    Download a template with your file names, fill in a license
-                    for each row, and upload the CSV.
-                  </p>
+                  <div class="flex flex-wrap items-center gap-2">
+                    <span class="text-sm font-semibold">{{
+                      option.label
+                    }}</span>
+                    <UBadge
+                      v-if="option.badge"
+                      color="neutral"
+                      variant="soft"
+                      size="xs"
+                    >
+                      {{ option.badge }}
+                    </UBadge>
+                    <span class="text-muted text-xs">
+                      {{ option.accuracyNote }}
+                    </span>
+                  </div>
+                  <p class="text-muted text-sm">{{ option.description }}</p>
                 </div>
               </label>
             </div>
           </UFormField>
 
-          <div
-            v-if="licenseMode === 'uniform'"
-            class="space-y-4 rounded-lg border border-gray-200 p-4 dark:border-gray-800"
+          <UFormField
+            label="Automate ORCID and ROR lookups"
+            required
+            hint="Choose whether we should look up ORCID and ROR identifiers for creators and affiliations in this batch."
           >
-            <UFormField label="License for all posters" required>
-              <USelectMenu
-                v-model="uniformLicense"
-                :items="uniformLicenseSelectItems"
-                value-key="value"
-                searchable
-                :search-input="{
-                  placeholder: 'Search licenses…',
-                  icon: 'i-lucide-search',
-                }"
-                placeholder="Choose a license…"
-                class="w-full max-w-md"
-                :virtualize="true"
-                :disabled="uniformLicenseOptionsStatus === 'pending'"
-              />
-            </UFormField>
-
-            <UAlert
-              v-if="uniformLicenseOptionsError"
-              color="warning"
-              variant="soft"
-              icon="i-lucide-alert-triangle"
-              title="Could not load license list"
-              description="Refresh the page. The list comes from bulk-submission-templates/license.xlsx."
+            <URadioGroup
+              v-model="orcidRorAutomationChoice"
+              :items="orcidRorAutomationItems"
+              value-key="value"
+              label-key="label"
+              description-key="description"
+              :ui="{ fieldset: 'gap-3', item: 'items-start' }"
             />
-
-            <p
-              v-else-if="selectedUniformLicenseOption"
-              class="text-muted text-sm"
-            >
-              {{ selectedUniformLicenseOption.description }}
-            </p>
-
-            <UAlert
-              v-if="licenseMetadataUploaded && uniformLicense"
-              color="success"
-              variant="soft"
-              icon="i-lucide-circle-check"
-              title="License saved"
-              :description="`${uniformLicense} will apply to every poster in this batch.`"
-            />
-          </div>
-
-          <div
-            v-else-if="licenseMode === 'per_poster'"
-            class="space-y-4 rounded-lg border border-gray-200 p-4 dark:border-gray-800"
-          >
-            <div class="flex flex-wrap items-center gap-2">
-              <UButton
-                color="neutral"
-                variant="outline"
-                size="sm"
-                icon="i-lucide-file-spreadsheet"
-                :disabled="stagedPosters.length === 0"
-                label="Download license.xlsx"
-                :loading="licenseTemplateDownloading"
-                @click="downloadLicenseMetadataTemplate"
-              />
-              <span class="text-muted text-xs">
-                Includes your {{ stagedPosters.length }} staged poster file
-                name(s); add a license (SPDX id) in each row.
-              </span>
-            </div>
-
-            <UiFileUpload
-              hide-file-list
-              hide-rejections
-              :accept="'.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'"
-              :validate-file="validateLicenseMetadataFile"
-              :hint="`Completed ${CONFERENCE_BULK_IMPORT_LICENSE_FILE_BASENAME}.xlsx`"
-              @on-change="onLicenseMetadataLocalChange"
-            >
-              <UiFileUploadGrid />
-            </UiFileUpload>
-
-            <UButton
-              v-if="licenseMetadataLocalFile.length > 0"
-              color="primary"
-              icon="line-md:cloud-upload-loop"
-              label="Upload license metadata to storage"
-              :disabled="!jobId"
-              @click="uploadLicenseMetadata"
-            />
-
-            <UAlert
-              v-if="licenseMetadataUploaded"
-              color="success"
-              variant="soft"
-              icon="i-lucide-circle-check"
-              title="Metadata stored"
-              :description="`${CONFERENCE_BULK_IMPORT_LICENSE_FILE_BASENAME}.xlsx is saved with this import on secure storage.`"
-            />
-
-            <UAlert
-              v-if="licenseMetadataParseError"
-              color="warning"
-              variant="soft"
-              icon="i-lucide-alert-triangle"
-              title="License file could not be imported"
-            >
-              <template #description>
-                <p
-                  v-if="licenseMetadataValidationIssues.length === 0"
-                  class="whitespace-pre-line"
-                >
-                  {{ licenseMetadataParseError }}
-                </p>
-                <ul
-                  v-else
-                  class="list-disc space-y-1 pl-5 text-sm"
-                >
-                  <li
-                    v-for="(issue, index) in licenseMetadataValidationIssues"
-                    :key="`${issue.code}-${issue.rowNumber ?? index}`"
-                  >
-                    {{ issue.message }}
-                  </li>
-                </ul>
-              </template>
-            </UAlert>
-          </div>
+          </UFormField>
         </div>
 
         <div
@@ -1794,19 +1583,219 @@ function startImport() {
             color="primary"
             icon="i-lucide-arrow-right"
             trailing
-            label="Continue to review"
-            :disabled="!metadataStepComplete"
-            :loading="uniformLicenseSaving"
-            @click="continueToReview"
+            label="Save and Continue"
+            :disabled="!extractionStepReady"
+            :loading="extractionStepSaving"
+            @click="continueToConference"
           />
         </div>
       </template>
 
-      <template v-else-if="currentStep === 'review'">
+      <template v-else-if="currentStep === 'conference'">
         <div class="space-y-4">
           <div>
             <h3 class="text-base font-semibold">
-              Step {{ currentStepNumber }}: Check
+              Step {{ currentStepNumber }}: Conference information
+            </h3>
+            <p class="text-muted mt-1 text-sm">
+              {{ currentStepTask }}
+            </p>
+          </div>
+
+          <p class="text-muted text-sm">
+            Conference name and year are required. Other fields match the poster
+            metadata schema and are optional.
+          </p>
+
+          <div class="grid gap-4 sm:grid-cols-2">
+            <UFormField
+              label="Conference name"
+              required
+              class="sm:col-span-2"
+              :error="conferenceNameError"
+            >
+              <UInput
+                v-model="conferenceForm.conferenceName"
+                placeholder="e.g. Annual Research Conference"
+                class="w-full"
+              />
+            </UFormField>
+
+            <UFormField label="Conference acronym" name="conferenceAcronym">
+              <UInput
+                v-model="conferenceForm.conferenceAcronym"
+                placeholder="e.g. EARC"
+                class="w-full"
+              />
+            </UFormField>
+
+            <UFormField
+              label="Conference year"
+              required
+              :error="conferenceYearError"
+            >
+              <USelect
+                v-model="conferenceForm.conferenceYear"
+                class="w-full"
+                :items="conferenceYearOptions"
+                placeholder="Select a year"
+              />
+            </UFormField>
+
+            <UFormField
+              label="Conference format"
+              required
+              :error="conferenceAttendanceError"
+            >
+              <USelect
+                v-model="conferenceForm.conferenceAttendance"
+                class="w-full"
+                :items="BULK_IMPORT_CONFERENCE_ATTENDANCE_OPTIONS"
+                placeholder="In-person or online"
+              />
+            </UFormField>
+
+            <UFormField
+              label="License for all posters"
+              required
+              :error="conferenceLicenseError"
+            >
+              <div class="space-y-2">
+                <USelectMenu
+                  v-model="uniformLicense"
+                  :items="uniformLicenseSelectItems"
+                  value-key="value"
+                  searchable
+                  :search-input="{
+                    placeholder: 'Search licenses…',
+                    icon: 'i-lucide-search',
+                  }"
+                  placeholder="Choose a license…"
+                  class="w-full"
+                  :virtualize="true"
+                />
+                <p
+                  v-if="selectedUniformLicenseOption"
+                  class="text-muted text-xs leading-snug"
+                >
+                  {{ selectedUniformLicenseOption.description }}
+                  <span class="text-muted/80">
+                    ({{ selectedUniformLicenseOption.value }})
+                  </span>
+                </p>
+              </div>
+            </UFormField>
+
+            <UFormField
+              v-if="conferenceForm.conferenceAttendance === 'In-person'"
+              label="Conference location"
+              required
+              class="sm:col-span-2"
+              :error="conferenceLocationError"
+            >
+              <UInput
+                v-model="conferenceForm.conferenceLocation"
+                placeholder="e.g. Seattle, WA, USA"
+                class="w-full"
+              />
+            </UFormField>
+
+            <UFormField label="Conference start date">
+              <UInput
+                v-model="conferenceForm.conferenceStartDate"
+                type="date"
+                class="w-full"
+              />
+            </UFormField>
+
+            <UFormField label="Conference end date">
+              <UInput
+                v-model="conferenceForm.conferenceEndDate"
+                type="date"
+                class="w-full"
+              />
+            </UFormField>
+
+            <UFormField label="Conference website" class="sm:col-span-2">
+              <UInput
+                v-model="conferenceForm.conferenceUri"
+                type="url"
+                placeholder="https://"
+                class="w-full"
+              />
+            </UFormField>
+
+            <UFormField label="Conference identifier" class="sm:col-span-2">
+              <UInput
+                v-model="conferenceForm.conferenceIdentifier"
+                placeholder="Optional external identifier"
+                class="w-full"
+              />
+            </UFormField>
+
+            <template v-if="showConferenceIdentifierDetails">
+              <UFormField
+                label="Conference identifier type"
+                required
+                :error="conferenceIdentifierTypeError"
+              >
+                <USelectMenu
+                  v-model="conferenceForm.conferenceIdentifierType"
+                  :items="conferenceIdentifierTypeOptions"
+                  value-key="value"
+                  searchable
+                  placeholder="Select identifier type"
+                  class="w-full"
+                />
+              </UFormField>
+
+              <UFormField label="Conference schema URI">
+                <UInput
+                  v-model="conferenceForm.conferenceSchemaUri"
+                  type="url"
+                  placeholder="https://"
+                  class="w-full"
+                />
+              </UFormField>
+            </template>
+
+            <UFormField label="Conference series" class="sm:col-span-2">
+              <UInput
+                v-model="conferenceForm.conferenceSeries"
+                placeholder="Optional series name"
+                class="w-full"
+              />
+            </UFormField>
+          </div>
+        </div>
+
+        <div
+          class="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-6 dark:border-gray-800"
+        >
+          <UButton
+            color="neutral"
+            variant="ghost"
+            icon="i-lucide-arrow-left"
+            label="Back"
+            @click="goToStep('extraction')"
+          />
+          <UButton
+            color="primary"
+            icon="i-lucide-arrow-right"
+            trailing
+            label="Save and Continue"
+            :disabled="!conferenceStepComplete"
+            :loading="conferenceStepSaving"
+            @click="continueToSubmit"
+          />
+        </div>
+      </template>
+
+      <template v-else-if="currentStep === 'submit'">
+        <div class="space-y-4">
+          <div>
+            <h3 class="text-base font-semibold">
+              Step {{ currentStepNumber }}: Submit posters
             </h3>
             <p class="text-muted mt-1 text-sm">
               {{ currentStepTask }}
@@ -1814,11 +1803,19 @@ function startImport() {
           </div>
 
           <UAlert
+            color="warning"
+            variant="soft"
+            icon="i-lucide-construction"
+            title="Submit flow in progress"
+            description="Checking posters and running the import will be wired up soon. You can still review readiness below."
+          />
+
+          <UAlert
             color="info"
             variant="soft"
             icon="i-lucide-info"
             title="Posters already in storage"
-            description="Each spreadsheet row should match one uploaded file name and include a license. Fix warnings before you import."
+            description="Each row should match one uploaded file name and include a license. Fix warnings before you submit."
           />
 
           <div v-if="submissionRows.length > 0" class="flex flex-wrap gap-2">
@@ -1901,39 +1898,6 @@ function startImport() {
               </template>
             </UTable>
           </div>
-        </div>
-
-        <div
-          class="flex flex-wrap justify-between gap-3 border-t border-gray-100 pt-6 dark:border-gray-800"
-        >
-          <UButton
-            color="neutral"
-            variant="outline"
-            icon="i-lucide-arrow-left"
-            label="Back"
-            @click="goToStep('metadata')"
-          />
-          <UButton
-            color="primary"
-            icon="i-lucide-arrow-right"
-            trailing
-            label="Continue to import"
-            :disabled="!canProceedFromReview || submissionLoading"
-            @click="continueToSubmit"
-          />
-        </div>
-      </template>
-
-      <template v-else-if="currentStep === 'submit'">
-        <div class="space-y-4">
-          <div>
-            <h3 class="text-base font-semibold">
-              Step {{ currentStepNumber }}: Finish
-            </h3>
-            <p class="text-muted mt-1 text-sm">
-              {{ currentStepTask }}
-            </p>
-          </div>
 
           <UAlert
             v-if="!batchImportRunning && !batchImportFinished"
@@ -2004,33 +1968,30 @@ function startImport() {
         </div>
 
         <div
-          class="flex flex-wrap justify-between gap-3 border-t border-gray-100 pt-6 dark:border-gray-800"
+          class="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-6 dark:border-gray-800"
         >
           <UButton
             color="neutral"
-            variant="outline"
+            variant="ghost"
             icon="i-lucide-arrow-left"
-            label="Back to review"
+            label="Back"
             :disabled="batchImportRunning"
-            @click="goToStep('review')"
+            @click="goToStep('conference')"
           />
 
-          <div class="flex flex-wrap gap-2">
-            <UButton
-              v-if="batchImportFinished"
-              color="neutral"
-              variant="outline"
-              label="Back to dashboard"
-              to="/dashboard"
-            />
-            <UButton
-              v-if="!batchImportRunning && !batchImportFinished"
-              color="primary"
-              icon="line-md:file-upload"
-              label="Start import"
-              @click="startImport"
-            />
-          </div>
+          <UButton
+            color="primary"
+            icon="i-lucide-arrow-right"
+            trailing
+            label="Save and Continue"
+            :disabled="
+              batchImportRunning ||
+              (!batchImportFinished &&
+                (!canProceedFromReview || submissionLoading))
+            "
+            :loading="batchImportRunning"
+            @click="onSubmitStepContinue"
+          />
         </div>
       </template>
     </div>

@@ -7,30 +7,27 @@ export type BulkExtractionLevelOption = {
   value: BulkSubmissionExtractionMethod;
   label: string;
   description: string;
-  /** Short badge in the wizard (e.g. recommended). */
+  /** Shown in the poster-details step (e.g. accuracy threshold). */
+  accuracyNote: string;
   badge?: string;
+  disabled?: boolean;
 };
 
 /** Wizard copy for bulk extraction levels (pipeline behavior is enforced server-side later). */
 export const BULK_EXTRACTION_LEVEL_OPTIONS: BulkExtractionLevelOption[] = [
   {
-    value: "full_fair",
-    label: "Read from each poster file",
-    badge: "Recommended",
-    description:
-      "We pull title, authors, abstract, and more from the posters. You’ll review anything we’re unsure about before publishing.",
-  },
-  {
     value: "minimal",
-    label: "Use my spreadsheet",
+    label: "Minimal",
+    accuracyNote: "95% accuracy threshold",
     description:
-      "Your CSV is the source of truth. We only fill empty cells from the poster when we’re very confident, and we won’t change what you entered.",
+      "Fill in poster details only when extraction meets a 95% accuracy threshold. Spreadsheet values you provide are never overwritten.",
   },
   {
-    value: "full_acknowledged",
-    label: "Read from posters (less review)",
+    value: "full",
+    label: "Full",
+    accuracyNote: "75% accuracy threshold",
     description:
-      "Same as above, but you allow us to keep some fields without a manual check when confidence is lower. You can still edit everything before publish.",
+      "Extract poster details from each file. Fields below a 75% accuracy threshold are flagged for review.",
   },
 ];
 

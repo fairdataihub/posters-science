@@ -22,4 +22,5 @@ export type BulkPosterSubmissionJobRepository = {
     userId: string,
     patch: UpdateBulkPosterSubmissionJobBody,
   ): Promise<BulkPosterSubmissionJob>;
+  deleteForUser(id: string, userId: string): Promise<void>;
 };

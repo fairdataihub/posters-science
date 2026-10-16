@@ -2,12 +2,18 @@
 export type BulkImportWizardStep =
   | "setup"
   | "upload"
-  | "metadata"
-  | "review"
+  | "extraction"
+  | "conference"
   | "submit";
 
 /** @deprecated Jobs saved on the old flow; map to `upload` when resuming. */
 export type LegacyBulkImportWizardStep = "assets";
+
+/** @deprecated Merged into `submit`. */
+export type DeprecatedBulkImportWizardStep = "review";
+
+/** @deprecated License step merged into `conference`. */
+export type LegacyBulkImportLicenseWizardStep = "metadata";
 
 export type BulkImportWizardStepDefinition = {
   id: BulkImportWizardStep;
@@ -21,8 +27,8 @@ export const BULK_IMPORT_WIZARD_STEPS: BulkImportWizardStepDefinition[] = [
   {
     id: "setup",
     label: "Name",
-    description: "Batch name + how we read poster info",
-    task: "Give your bulk posters upload a name that you will recognize on your dashboard. Then, select the level of extraction you want to use.",
+    description: "Batch name for your dashboard",
+    task: "Give your bulk posters upload a name that you will recognize on your dashboard.",
   },
   {
     id: "upload",
@@ -31,22 +37,22 @@ export const BULK_IMPORT_WIZARD_STEPS: BulkImportWizardStepDefinition[] = [
     task: "Add every poster file, then continue.",
   },
   {
-    id: "metadata",
-    label: "Licenses",
-    description: "Same license or per-poster spreadsheet",
-    task: "Choose one license for every poster, or fill out a spreadsheet per file.",
+    id: "extraction",
+    label: "Poster details",
+    description: "How we read metadata from files",
+    task: "Choose an extraction level and whether to automate ORCID and ROR lookups.",
   },
   {
-    id: "review",
-    label: "Check",
-    description: "Files match the CSV",
-    task: "Fix any rows that are not ready, then continue.",
+    id: "conference",
+    label: "Conference information",
+    description: "License and conference metadata for this batch",
+    task: "Choose a license for every poster and enter conference information for this import.",
   },
   {
     id: "submit",
-    label: "Finish",
-    description: "Create poster drafts",
-    task: "Start import—we’ll read each poster and add drafts to your dashboard.",
+    label: "Submit posters",
+    description: "Check files and start import",
+    task: "Confirm each poster is ready, then submit the batch.",
   },
 ];
 
@@ -58,11 +64,13 @@ export function normalizeBulkImportWizardStep(
 ): BulkImportWizardStep | undefined {
   if (!step) return undefined;
   if (step === "assets") return "upload";
+  if (step === "review") return "submit";
+  if (step === "metadata") return "conference";
   if (
     step === "setup" ||
     step === "upload" ||
-    step === "metadata" ||
-    step === "review" ||
+    step === "extraction" ||
+    step === "conference" ||
     step === "submit"
   ) {
     return step;

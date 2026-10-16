@@ -7,8 +7,10 @@ import {
 
 export type BulkImportWizardStepCompletion = {
   upload: MaybeRefOrGetter<boolean>;
-  metadata: MaybeRefOrGetter<boolean>;
-  review: MaybeRefOrGetter<boolean>;
+  extraction: MaybeRefOrGetter<boolean>;
+  conference: MaybeRefOrGetter<boolean>;
+  /** All submission rows ready to import. */
+  submit: MaybeRefOrGetter<boolean>;
 };
 
 function stepIndex(step: BulkImportWizardStep) {
@@ -58,12 +60,12 @@ export function useBulkImportWizard(
         return setupSaved.value;
       case "upload":
         return readCompletion(completion.upload);
-      case "metadata":
-        return readCompletion(completion.metadata);
-      case "review":
-        return readCompletion(completion.review);
+      case "extraction":
+        return readCompletion(completion.extraction);
+      case "conference":
+        return readCompletion(completion.conference);
       case "submit":
-        return false;
+        return readCompletion(completion.submit);
     }
   }
 

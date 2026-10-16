@@ -82,4 +82,15 @@ export const mockBulkPosterSubmissionJobRepository: BulkPosterSubmissionJobRepos
       jobsById.set(id, updated);
       return updated;
     },
+
+    async deleteForUser(id, userId) {
+      const existing = await this.getByIdForUser(id, userId);
+      if (!existing) {
+        throw createError({
+          statusCode: 404,
+          statusMessage: "Bulk import not found",
+        });
+      }
+      jobsById.delete(id);
+    },
   };

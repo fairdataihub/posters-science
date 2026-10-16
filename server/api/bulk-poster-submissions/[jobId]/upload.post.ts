@@ -2,19 +2,12 @@ import {
   MAX_POSTER_FILE_SIZE_BYTES,
   posterFileRejectionReason,
 } from "#shared/utils/posterFile";
-import { CONFERENCE_BULK_IMPORT_LICENSE_FILE_BASENAME } from "#shared/types/conferenceBulkImport";
-import { formatBulkImportValidationMessage } from "#shared/utils/bulkImportValidation";
-import { validateBulkImportPerPosterLicenseMetadata } from "~/utils/bulkImportLicenseMetadataValidation";
-import { parseBulkImportLicenseUpload } from "~~/server/utils/parseBulkImportLicenseUpload";
 import type { BulkImportStagedPoster } from "#shared/types/bulkPosterSubmissionJob";
 import {
   bulkImportFolderExtension,
-  bulkImportLicenseMetadataObjectPath,
   bulkImportPosterObjectPath,
 } from "~~/server/utils/bulkImportBunnyPaths";
 import { getBulkPosterSubmissionJobRepository } from "~~/server/utils/bulkPosterSubmissionJobs";
-
-type BulkImportUploadRole = "poster" | "license_metadata";
 
 async function putOnBunny(input: {
   bunnyPrivateStorage: string;
@@ -90,13 +83,13 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  const role = (roleEntry?.data?.toString("utf8") ??
-    "poster") as BulkImportUploadRole;
+  const role = roleEntry?.data?.toString("utf8") ?? "poster";
 
-  if (role !== "poster" && role !== "license_metadata") {
+  if (role !== "poster") {
     throw createError({
       statusCode: 400,
       statusMessage: "Invalid upload role",
+      message: "Only poster file uploads are supported.",
     });
   }
 
@@ -113,151 +106,72 @@ export default defineEventHandler(async (event) => {
   const folderExtension = bulkImportFolderExtension(siteEnv);
   const uploadedAt = new Date().toISOString();
 
-  if (role === "poster") {
-    const fileName = fileEntry.filename;
-    const fileType = fileEntry.type || "application/pdf";
+  const fileName = fileEntry.filename;
+  const fileType = fileEntry.type || "application/pdf";
 
-    const rejection = posterFileRejectionReason({
-      name: fileName,
-      type: fileType,
-      size: fileEntry.data.length,
-    });
-
-    if (rejection) {
-      const statusCode = fileEntry.data.length > MAX_POSTER_FILE_SIZE_BYTES
-        ? 413
-        : fileEntry.data.length === 0
-          ? 400
-          : 415;
-
-      throw createError({
-        statusCode,
-        statusMessage:
-          statusCode === 413
-            ? "File too large"
-            : statusCode === 415
-              ? "Unsupported file type"
-              : "Invalid file",
-        message: rejection,
-      });
-    }
-
-    const filePath = bulkImportPosterObjectPath(
-      folderExtension,
-      jobId,
-      fileName,
-    );
-
-    await putOnBunny({
-      bunnyPrivateStorage,
-      bunnyPrivateStorageKey,
-      filePath,
-      body: fileEntry.data,
-      contentType: fileType,
-    });
-
-    const staged: BulkImportStagedPoster = {
-      fileName,
-      filePath,
-      uploadedAt,
-    };
-
-    const existing = job.stagedPosters ?? [];
-    const nextStaged = [
-      ...existing.filter((item) => item.fileName !== fileName),
-      staged,
-    ].sort((a, b) =>
-      a.fileName.localeCompare(b.fileName, undefined, { sensitivity: "base" }),
-    );
-
-    const updated = await repository.updateForUser(jobId, session.user.id, {
-      stagedPosters: nextStaged,
-      posterCount: nextStaged.length,
-      wizardStep: "upload",
-    });
-
-    return {
-      role,
-      fileName,
-      filePath,
-      job: updated,
-    };
-  }
-
-  const lowerName = fileEntry.filename.toLowerCase();
-  const isXlsx = lowerName.endsWith(".xlsx") || lowerName.endsWith(".xls");
-  const isCsv = lowerName.endsWith(".csv");
-
-  if (!isXlsx && !isCsv) {
-    throw createError({
-      statusCode: 415,
-      statusMessage: "Unsupported metadata file",
-      message: "Upload license.xlsx (Excel) from the download button.",
-    });
-  }
-
-  const parsed = parseBulkImportLicenseUpload({
-    fileName: fileEntry.filename,
-    data: fileEntry.data,
+  const rejection = posterFileRejectionReason({
+    name: fileName,
+    type: fileType,
+    size: fileEntry.data.length,
   });
 
-  if (parsed.error) {
+  if (rejection) {
+    const statusCode = fileEntry.data.length > MAX_POSTER_FILE_SIZE_BYTES
+      ? 413
+      : fileEntry.data.length === 0
+        ? 400
+        : 415;
+
     throw createError({
-      statusCode: 400,
-      statusMessage: "Invalid license file",
-      message: parsed.error,
+      statusCode,
+      statusMessage:
+        statusCode === 413
+          ? "File too large"
+          : statusCode === 415
+            ? "Unsupported file type"
+            : "Invalid file",
+      message: rejection,
     });
   }
 
-  const posterFileNames = (job.stagedPosters ?? []).map((poster) => poster.fileName);
-  const validation = validateBulkImportPerPosterLicenseMetadata({
-    spreadsheetRows: parsed.rows,
-    posterFileNames,
-  });
-
-  if (!validation.valid) {
-    throw createError({
-      statusCode: 400,
-      statusMessage: "License metadata validation failed",
-      message: formatBulkImportValidationMessage(validation),
-      data: { issues: validation.issues },
-    });
-  }
-
-  const extension = isXlsx ? "xlsx" : "csv";
-  const metadataFileName = `${CONFERENCE_BULK_IMPORT_LICENSE_FILE_BASENAME}.${extension}`;
-  const metadataPath = bulkImportLicenseMetadataObjectPath(
+  const filePath = bulkImportPosterObjectPath(
     folderExtension,
     jobId,
-    CONFERENCE_BULK_IMPORT_LICENSE_FILE_BASENAME,
-    extension,
+    fileName,
   );
 
   await putOnBunny({
     bunnyPrivateStorage,
     bunnyPrivateStorageKey,
-    filePath: metadataPath,
+    filePath,
     body: fileEntry.data,
-    contentType: isXlsx
-      ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-      : "text/csv",
+    contentType: fileType,
   });
 
+  const staged: BulkImportStagedPoster = {
+    fileName,
+    filePath,
+    uploadedAt,
+  };
+
+  const existing = job.stagedPosters ?? [];
+  const nextStaged = [
+    ...existing.filter((item) => item.fileName !== fileName),
+    staged,
+  ].sort((a, b) =>
+    a.fileName.localeCompare(b.fileName, undefined, { sensitivity: "base" }),
+  );
+
   const updated = await repository.updateForUser(jobId, session.user.id, {
-    licenseMetadataFileName: metadataFileName,
-    licenseMetadataFilePath: metadataPath,
-    wizardStep: "metadata",
-    submissionSummary: {
-      licenseMode: "per_poster",
-      licenseSpreadsheetRows: parsed.rows,
-    },
+    stagedPosters: nextStaged,
+    posterCount: nextStaged.length,
+    wizardStep: "upload",
   });
 
   return {
     role,
-    fileName: metadataFileName,
-    filePath: metadataPath,
-    licenseSpreadsheetRows: parsed.rows,
+    fileName,
+    filePath,
     job: updated,
   };
 });

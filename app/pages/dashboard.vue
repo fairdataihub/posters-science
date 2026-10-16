@@ -702,9 +702,18 @@ function updateLocalVersionDetails(
 async function refreshPosterList() {
   const openRootId = versionPoster.value?.rootPosterId;
   await refresh();
-  posters.value = (data.value ?? []) as unknown as Poster[];
+  if (data.value) {
+    applyDashboardFeed(data.value);
+  }
   if (openRootId) {
     versionPoster.value = latestPublishedPoster(openRootId) ?? null;
+  }
+}
+
+async function onBulkDraftDeleted() {
+  await refresh();
+  if (data.value) {
+    applyDashboardFeed(data.value);
   }
 }
 
@@ -1612,6 +1621,7 @@ function posterMenuItems(poster: Poster) {
           <DashboardBulkSubmissionCard
             v-if="item.type === 'bulk'"
             :bulk="item.bulk"
+            @deleted="onBulkDraftDeleted"
           />
 
           <template v-else>
@@ -1864,7 +1874,7 @@ function posterMenuItems(poster: Poster) {
                         :icon="
                           isVersionPreparing(poster)
                             ? 'i-lucide-activity'
-                            : 'i-lucide-arrow-right'
+                            : 'line-md:arrow-right'
                         "
                         trailing
                         size="xs"

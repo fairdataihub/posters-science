@@ -50,7 +50,11 @@ export async function updateBulkPosterSubmissionJob(
   );
 }
 
-export type BulkPosterSubmissionUploadRole = "poster" | "license_metadata";
+export async function deleteBulkPosterSubmissionJob(jobId: string) {
+  return $fetch<{ success: true }>(`/api/bulk-poster-submissions/${jobId}`, {
+    method: "DELETE",
+  });
+}
 
 export async function deleteBulkStagedPoster(jobId: string, filePath: string) {
   return $fetch<{ job: BulkPosterSubmissionJob }>(
@@ -69,20 +73,15 @@ export async function deleteAllBulkStagedPosters(jobId: string) {
   );
 }
 
-export async function uploadBulkPosterSubmissionFile(
-  jobId: string,
-  file: File,
-  role: BulkPosterSubmissionUploadRole,
-) {
+export async function uploadBulkPosterSubmissionFile(jobId: string, file: File) {
   const formData = new FormData();
   formData.append("file", file);
-  formData.append("role", role);
+  formData.append("role", "poster");
 
   return $fetch<{
-    role: BulkPosterSubmissionUploadRole;
+    role: "poster";
     fileName: string;
     filePath: string;
-    licenseSpreadsheetRows?: import("~/utils/conferenceImportSpreadsheet").ConferenceImportSpreadsheetRow[];
     job: BulkPosterSubmissionJob;
   }>(`/api/bulk-poster-submissions/${jobId}/upload`, {
     method: "POST",

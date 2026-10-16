@@ -2,11 +2,65 @@
 import dayjs from "dayjs";
 import { bulkExtractionLevelLabel } from "#shared/types/bulkExtractionLevel";
 import type { DashboardBulkSubmission } from "#shared/types/dashboardFeed";
+import { deleteBulkPosterSubmissionJob } from "~/utils/bulkPosterSubmissionJobClient";
 import { shareNewBulkPath } from "~/utils/sharePaths";
 
 const props = defineProps<{
   bulk: DashboardBulkSubmission;
 }>();
+
+const emit = defineEmits<{
+  deleted: [];
+}>();
+
+const toast = useToast();
+const deleteModalOpen = ref(false);
+const isDeleting = ref(false);
+
+const canDeleteDraft = computed(
+  () => props.bulk.status === "draft" || props.bulk.status === "failed",
+);
+
+const bulkMenuItems = computed(() => {
+  if (!canDeleteDraft.value) return [];
+
+  return [
+    [
+      {
+        label: "Delete draft",
+        icon: "i-lucide-trash-2",
+        color: "error" as const,
+        onSelect: () => openDeleteModal(),
+      },
+    ],
+  ];
+});
+
+function openDeleteModal() {
+  deleteModalOpen.value = true;
+}
+
+async function confirmDeleteDraft() {
+  isDeleting.value = true;
+  try {
+    await deleteBulkPosterSubmissionJob(props.bulk.id);
+    toast.add({
+      title: "Bulk import deleted",
+      description: "Your draft bulk import has been removed.",
+      color: "success",
+    });
+    deleteModalOpen.value = false;
+    emit("deleted");
+  } catch {
+    toast.add({
+      title: "Could not delete bulk import",
+      description: "Try again or contact support if the problem continues.",
+      color: "error",
+    });
+  } finally {
+    isDeleting.value = false;
+  }
+}
 
 const CARD_TITLE_MAX_LENGTH = 80;
 
@@ -151,15 +205,55 @@ function continueImport() {
               :icon="
                 bulk.status === 'processing'
                   ? 'i-lucide-activity'
-                  : 'i-lucide-arrow-right'
+                  : 'line-md:arrow-right'
               "
               trailing
               size="xs"
               @click="continueImport"
             />
+
+            <UDropdownMenu
+              v-if="bulkMenuItems.length"
+              :items="bulkMenuItems"
+              :content="{ align: 'end' }"
+            >
+              <UButton
+                color="neutral"
+                variant="ghost"
+                icon="i-lucide-ellipsis"
+                size="xs"
+                aria-label="More bulk import actions"
+              />
+            </UDropdownMenu>
           </div>
         </div>
       </div>
     </div>
+
+    <UModal v-model:open="deleteModalOpen" title="Delete bulk import draft">
+      <template #body>
+        <p class="text-sm">
+          Are you sure you want to delete
+          <span class="font-medium">{{ bulk.name || "this bulk import" }}</span
+          >? Staged poster files for this import will
+          be removed. This cannot be undone.
+        </p>
+      </template>
+
+      <template #footer>
+        <div class="flex justify-end gap-3">
+          <UButton variant="outline" @click="deleteModalOpen = false">
+            Cancel
+          </UButton>
+          <UButton
+            color="error"
+            :loading="isDeleting"
+            @click="confirmDeleteDraft"
+          >
+            Delete draft
+          </UButton>
+        </div>
+      </template>
+    </UModal>
   </UPageCard>
 </template>

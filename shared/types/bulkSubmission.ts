@@ -1,22 +1,23 @@
 /** How a bulk batch is processed when submitted to the extraction pipeline. */
-export const BULK_SUBMISSION_EXTRACTION_METHODS = [
-  "minimal",
-  "full_fair",
-  "full_acknowledged",
-] as const;
+export const BULK_SUBMISSION_EXTRACTION_METHODS = ["minimal", "full"] as const;
 
 export type BulkSubmissionExtractionMethod =
   (typeof BULK_SUBMISSION_EXTRACTION_METHODS)[number];
 
 export const DEFAULT_BULK_SUBMISSION_EXTRACTION_METHOD: BulkSubmissionExtractionMethod =
-  "full_fair";
+  "full";
 
 const LEGACY_EXTRACTION_METHOD_MAP: Record<
   string,
   BulkSubmissionExtractionMethod
 > = {
-  automated: "full_fair",
+  automated: "full",
   manual: "minimal",
+  metadata: "minimal",
+  assisted: "minimal",
+  minimal: "minimal",
+  full_fair: "full",
+  full_acknowledged: "full",
 };
 
 export function normalizeBulkSubmissionExtractionMethod(

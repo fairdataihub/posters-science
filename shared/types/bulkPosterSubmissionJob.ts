@@ -18,7 +18,7 @@ export type BulkPosterSubmissionJob = {
   id: string;
   userId: string;
   name: string;
-  wizardStep: BulkImportWizardStep | "assets";
+  wizardStep: BulkImportWizardStep | "assets" | "metadata";
   status: BulkPosterSubmissionJobStatus;
   extractionMethod: BulkSubmissionExtractionMethod;
   /** Posters uploaded to Bunny under this job (before extraction). */
@@ -46,7 +46,7 @@ export type CreateBulkPosterSubmissionJobBody = {
 
 export type UpdateBulkPosterSubmissionJobBody = {
   name?: string;
-  wizardStep?: BulkImportWizardStep | "assets";
+  wizardStep?: BulkImportWizardStep | "assets" | "metadata";
   status?: BulkPosterSubmissionJobStatus;
   extractionMethod?: BulkSubmissionExtractionMethod;
   stagedPosters?: BulkImportStagedPoster[];

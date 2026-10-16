@@ -1,13 +1,17 @@
-export type BulkImportLicenseMode = "uniform" | "per_poster";
-
 export type BulkImportUniformLicenseOption = {
   value: string;
   label: string;
   description: string;
 };
 
+export { BULK_IMPORT_ACCEPTABLE_LICENSES } from "#shared/data/bulkImportAcceptableLicenses";
+
+import type { BulkImportConferenceMetadata } from "#shared/types/bulkImportConference";
+
 export type BulkImportSubmissionSummary = {
-  licenseMode?: BulkImportLicenseMode;
   uniformLicense?: string;
   licenseSpreadsheetRows?: unknown[];
+  conference?: BulkImportConferenceMetadata;
+  /** When true, run automated ORCID and ROR lookups where possible. */
+  automateOrcidRorLookups?: boolean;
 };

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import identifierTypes from "@/assets/data/identifier-types.json";
+
 definePageMeta({
   middleware: ["auth"],
 });
@@ -17,18 +19,97 @@ useSeoMeta({
 
 const toast = useToast();
 
+type ConferenceFormat = "In-person" | "Online" | "Hybrid";
+
+const CONFERENCE_FORMAT_OPTIONS: { label: string; value: ConferenceFormat }[] =
+  [
+    { label: "In-person", value: "In-person" },
+    { label: "Online", value: "Online" },
+    { label: "Hybrid", value: "Hybrid" },
+  ];
+
+const currentYear = new Date().getFullYear();
+const conferenceYearOptions = Array.from(
+  { length: currentYear + 1 - 2000 + 1 },
+  (_, index) => currentYear + 1 - index,
+).map((year) => ({ label: String(year), value: year }));
+
+const conferenceIdentifierTypeOptions = identifierTypes.map((entry) => ({
+  label: entry.label,
+  value: entry.value,
+}));
+
 const conference = reactive({
-  name: "",
-  acronym: "",
-  location: "",
-  website: "",
-  startDate: "",
-  endDate: "",
+  conferenceName: "",
+  conferenceAcronym: "",
+  conferenceYear: undefined as number | undefined,
+  conferenceStartDate: "",
+  conferenceEndDate: "",
+  conferenceFormat: undefined as ConferenceFormat | undefined,
+  conferenceLocation: "",
+  conferenceUri: "",
+  conferenceIdentifier: "",
+  conferenceIdentifierType: "",
+  conferenceSchemaUri: "",
+  conferenceSeries: "",
+  conferenceText: "",
   submissionDeadline: "",
-  organizerName: "",
-  contactEmail: "",
-  description: "",
 });
+
+type ConferenceOrganizer = {
+  name: string;
+  email: string;
+};
+
+const organizers = ref<ConferenceOrganizer[]>([{ name: "", email: "" }]);
+
+const conferenceCategories = ref<string[]>([]);
+const categoryInput = ref("");
+
+const requiresConferenceLocation = computed(
+  () =>
+    conference.conferenceFormat === "In-person" ||
+    conference.conferenceFormat === "Hybrid",
+);
+
+const showConferenceLocation = requiresConferenceLocation;
+
+const showConferenceIdentifierDetails = computed(
+  () => conference.conferenceIdentifier.trim().length > 0,
+);
+
+function isValidEmail(email: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+}
+
+function addCategory() {
+  const value = categoryInput.value.trim();
+  if (!value) return;
+
+  const exists = conferenceCategories.value.some(
+    (category) => category.toLowerCase() === value.toLowerCase(),
+  );
+  if (exists) {
+    categoryInput.value = "";
+    return;
+  }
+
+  conferenceCategories.value.push(value);
+  categoryInput.value = "";
+}
+
+function removeCategory(index: number) {
+  conferenceCategories.value.splice(index, 1);
+}
+
+function addOrganizer() {
+  organizers.value.push({ name: "", email: "" });
+}
+
+function removeOrganizer(index: number) {
+  if (organizers.value.length <= 1) return;
+  organizers.value.splice(index, 1);
+}
 
 type ParticipantPosterChoice = "participants-submit" | "organizer-import";
 
@@ -59,99 +140,132 @@ const participantPosterNotes = ref("");
 
 const organizerLicensingAcknowledged = ref(false);
 
-const CONFERENCE_IMAGE_ACCEPT = "image/jpeg,image/png,image/webp";
-const MAX_CONFERENCE_IMAGE_BYTES = 5 * 1024 * 1024;
-const CONFERENCE_IMAGE_HINT = "JPEG, PNG, or WebP up to 5 MB";
-
-const conferenceImageFiles = ref<File[]>([]);
-const conferenceImagePreviewUrl = ref<string | null>(null);
-
-function validateConferenceImage(file: File): string | null {
-  const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
-  if (!allowedTypes.includes(file.type)) {
-    return "Use a JPEG, PNG, or WebP image.";
-  }
-  if (file.size > MAX_CONFERENCE_IMAGE_BYTES) {
-    return "Image must be 5 MB or smaller.";
-  }
-  return null;
-}
-
-function onConferenceImageRejected(
-  rejections: { file: File; reason: string }[],
-) {
-  const first = rejections[0];
-  if (!first) return;
-
-  toast.add({
-    title: "Image not accepted",
-    description: `${first.file.name}: ${first.reason}`,
-    color: "error",
-  });
-}
-
 watch(participantPosterChoice, (choice) => {
   if (choice !== "organizer-import") {
     organizerLicensingAcknowledged.value = false;
   }
 });
 
-watch(conferenceImageFiles, (files) => {
-  if (conferenceImagePreviewUrl.value) {
-    URL.revokeObjectURL(conferenceImagePreviewUrl.value);
-    conferenceImagePreviewUrl.value = null;
-  }
-
-  const file = files[0];
-  if (file) {
-    conferenceImagePreviewUrl.value = URL.createObjectURL(file);
-  }
-});
-
-onUnmounted(() => {
-  if (conferenceImagePreviewUrl.value) {
-    URL.revokeObjectURL(conferenceImagePreviewUrl.value);
-  }
-});
-
-const canSubmit = computed(() => {
-  const base =
-    conference.name.trim().length > 0 &&
-    conference.acronym.trim().length > 0 &&
-    conference.contactEmail.trim().length > 0;
-
-  if (!base) return false;
-
-  if (participantPosterChoice.value === "organizer-import") {
-    return organizerLicensingAcknowledged.value;
-  }
-
-  return true;
-});
-
-const submitAttempted = ref(false);
-
-const acronymFieldError = computed(() =>
-  submitAttempted.value && !conference.acronym.trim()
-    ? "Acronym is required"
-    : undefined,
+watch(
+  () => conference.conferenceFormat,
+  (format) => {
+    if (format === "Online") {
+      conference.conferenceLocation = "";
+    }
+  },
 );
 
-function submitRegistration() {
-  submitAttempted.value = true;
+watch(
+  () => conference.conferenceIdentifier,
+  (identifier) => {
+    if (!identifier.trim()) {
+      conference.conferenceIdentifierType = "";
+      conference.conferenceSchemaUri = "";
+    }
+  },
+);
+
+function conferenceFieldsValid() {
+  if (!conference.conferenceName.trim()) return false;
+  if (conference.conferenceYear == null) return false;
+  if (!conference.conferenceStartDate) return false;
+  if (!conference.conferenceEndDate) return false;
+  if (!conference.conferenceFormat) return false;
 
   if (
-    !conference.name.trim() ||
-    !conference.acronym.trim() ||
-    !conference.contactEmail.trim()
+    requiresConferenceLocation.value &&
+    !conference.conferenceLocation.trim()
   ) {
-    return;
+    return false;
+  }
+
+  if (!conference.conferenceText.trim()) return false;
+
+  if (conference.conferenceIdentifier.trim()) {
+    if (!conference.conferenceIdentifierType.trim()) return false;
+  }
+
+  if (
+    organizers.value.length === 0 ||
+    !organizers.value.every((organizer) => isValidEmail(organizer.email))
+  ) {
+    return false;
   }
 
   if (
     participantPosterChoice.value === "organizer-import" &&
     !organizerLicensingAcknowledged.value
   ) {
+    return false;
+  }
+
+  return true;
+}
+
+const canSubmit = computed(() => conferenceFieldsValid());
+
+const submitAttempted = ref(false);
+
+function fieldError(condition: boolean, message: string) {
+  return submitAttempted.value && condition ? message : undefined;
+}
+
+const conferenceNameError = computed(() =>
+  fieldError(!conference.conferenceName.trim(), "Conference name is required"),
+);
+
+const conferenceYearError = computed(() =>
+  fieldError(conference.conferenceYear == null, "Conference year is required"),
+);
+
+const conferenceStartDateError = computed(() =>
+  fieldError(!conference.conferenceStartDate, "Start date is required"),
+);
+
+const conferenceEndDateError = computed(() =>
+  fieldError(!conference.conferenceEndDate, "End date is required"),
+);
+
+const conferenceFormatError = computed(() =>
+  fieldError(!conference.conferenceFormat, "Conference format is required"),
+);
+
+const conferenceLocationError = computed(() =>
+  fieldError(
+    requiresConferenceLocation.value && !conference.conferenceLocation.trim(),
+    "Location is required for in-person and hybrid conferences",
+  ),
+);
+
+const conferenceTextError = computed(() =>
+  fieldError(
+    !conference.conferenceText.trim(),
+    "Conference description is required",
+  ),
+);
+
+const conferenceIdentifierTypeError = computed(() =>
+  fieldError(
+    conference.conferenceIdentifier.trim().length > 0 &&
+      !conference.conferenceIdentifierType.trim(),
+    "Identifier type is required when an identifier is provided",
+  ),
+);
+
+function organizerEmailError(index: number) {
+  const organizer = organizers.value[index];
+  if (!organizer) return undefined;
+
+  return fieldError(
+    !isValidEmail(organizer.email),
+    "A valid organizer email is required",
+  );
+}
+
+function submitRegistration() {
+  submitAttempted.value = true;
+
+  if (!conferenceFieldsValid()) {
     return;
   }
 
@@ -188,127 +302,315 @@ function submitRegistration() {
 
         <div class="flex flex-col gap-8">
           <div class="grid gap-4 sm:grid-cols-2">
-            <UFormField label="Conference name" required class="sm:col-span-2">
+            <UFormField
+              label="Conference name"
+              name="conferenceName"
+              required
+              class="sm:col-span-2"
+              :error="conferenceNameError"
+            >
               <UInput
-                v-model="conference.name"
+                v-model="conference.conferenceName"
+                name="conferenceName"
+                required
                 placeholder="e.g. Annual Research Conference"
                 class="w-full"
               />
             </UFormField>
 
-            <UFormField
-              label="Acronym"
-              name="acronym"
-              required
-              :error="acronymFieldError"
-            >
+            <UFormField label="Conference acronym" name="conferenceAcronym">
               <UInput
-                v-model="conference.acronym"
-                name="acronym"
-                required
+                v-model="conference.conferenceAcronym"
+                name="conferenceAcronym"
                 placeholder="e.g. EARC"
                 class="w-full"
               />
             </UFormField>
 
-            <UFormField label="Location">
+            <UFormField
+              label="Conference year"
+              name="conferenceYear"
+              required
+              :error="conferenceYearError"
+            >
+              <USelect
+                v-model="conference.conferenceYear"
+                name="conferenceYear"
+                class="w-full"
+                :items="conferenceYearOptions"
+                placeholder="Select a year"
+              />
+            </UFormField>
+
+            <UFormField
+              label="Conference format"
+              name="conferenceFormat"
+              required
+              :error="conferenceFormatError"
+            >
+              <USelect
+                v-model="conference.conferenceFormat"
+                name="conferenceFormat"
+                class="w-full"
+                :items="CONFERENCE_FORMAT_OPTIONS"
+                placeholder="Select format"
+              />
+            </UFormField>
+
+            <UFormField label="Submission deadline" name="submissionDeadline">
               <UInput
-                v-model="conference.location"
-                placeholder="City, country, or Virtual"
+                v-model="conference.submissionDeadline"
+                name="submissionDeadline"
+                type="date"
                 class="w-full"
               />
             </UFormField>
 
-            <div class="grid gap-4 sm:col-span-2 sm:grid-cols-2">
-              <UFormField label="Start date">
-                <UInput
-                  v-model="conference.startDate"
-                  type="date"
-                  class="w-full"
-                />
-              </UFormField>
-
-              <UFormField label="End date">
-                <UInput
-                  v-model="conference.endDate"
-                  type="date"
-                  class="w-full"
-                />
-              </UFormField>
-
-              <UFormField
-                label="Participant submission deadline"
-                description="A target date you share with attendees for when you would like posters submitted."
-              >
-                <UInput
-                  v-model="conference.submissionDeadline"
-                  type="date"
-                  class="w-full"
-                />
-              </UFormField>
-            </div>
-
-            <UFormField label="Conference website" class="sm:col-span-2">
+            <UFormField
+              v-if="showConferenceLocation"
+              label="Conference location"
+              name="conferenceLocation"
+              required
+              class="sm:col-span-2"
+              :error="conferenceLocationError"
+            >
               <UInput
-                v-model="conference.website"
+                v-model="conference.conferenceLocation"
+                name="conferenceLocation"
+                placeholder="e.g. Seattle, WA, USA"
+                class="w-full"
+              />
+            </UFormField>
+
+            <UFormField
+              label="Conference start date"
+              name="conferenceStartDate"
+              required
+              :error="conferenceStartDateError"
+            >
+              <UInput
+                v-model="conference.conferenceStartDate"
+                name="conferenceStartDate"
+                type="date"
+                class="w-full"
+              />
+            </UFormField>
+
+            <UFormField
+              label="Conference end date"
+              name="conferenceEndDate"
+              required
+              :error="conferenceEndDateError"
+            >
+              <UInput
+                v-model="conference.conferenceEndDate"
+                name="conferenceEndDate"
+                type="date"
+                class="w-full"
+              />
+            </UFormField>
+
+            <UFormField
+              label="Conference website"
+              name="conferenceUri"
+              class="sm:col-span-2"
+            >
+              <UInput
+                v-model="conference.conferenceUri"
+                name="conferenceUri"
                 type="url"
                 placeholder="https://"
                 class="w-full"
               />
             </UFormField>
 
-            <UFormField label="Organizer name">
+            <UFormField
+              label="Conference identifier"
+              name="conferenceIdentifier"
+              class="sm:col-span-2"
+            >
               <UInput
-                v-model="conference.organizerName"
-                placeholder="Primary contact name"
+                v-model="conference.conferenceIdentifier"
+                name="conferenceIdentifier"
+                placeholder="Optional external identifier"
                 class="w-full"
               />
             </UFormField>
 
-            <UFormField label="Organizer email" required>
+            <template v-if="showConferenceIdentifierDetails">
+              <UFormField
+                label="Conference identifier type"
+                name="conferenceIdentifierType"
+                required
+                :error="conferenceIdentifierTypeError"
+              >
+                <USelectMenu
+                  v-model="conference.conferenceIdentifierType"
+                  :items="conferenceIdentifierTypeOptions"
+                  value-key="value"
+                  searchable
+                  placeholder="Select identifier type"
+                  class="w-full"
+                />
+              </UFormField>
+
+              <UFormField
+                label="Conference schema URI"
+                name="conferenceSchemaUri"
+              >
+                <UInput
+                  v-model="conference.conferenceSchemaUri"
+                  name="conferenceSchemaUri"
+                  type="url"
+                  placeholder="https://"
+                  class="w-full"
+                />
+              </UFormField>
+            </template>
+
+            <UFormField
+              label="Conference series"
+              name="conferenceSeries"
+              class="sm:col-span-2"
+            >
               <UInput
-                v-model="conference.contactEmail"
-                type="email"
-                placeholder="you@institution.edu"
+                v-model="conference.conferenceSeries"
+                name="conferenceSeries"
+                placeholder="Optional series name"
                 class="w-full"
               />
             </UFormField>
 
             <UFormField
-              label="About the conference"
-              description="Optional. Help us understand the scope and audience."
+              label="Conference description"
+              name="conferenceText"
+              required
               class="sm:col-span-2"
+              :error="conferenceTextError"
             >
               <UTextarea
-                v-model="conference.description"
+                v-model="conference.conferenceText"
+                name="conferenceText"
                 :rows="4"
-                placeholder="Brief description of the conference (optional)"
+                placeholder="Describe the conference scope and audience"
                 class="w-full"
               />
             </UFormField>
 
             <UFormField
-              label="Conference image"
-              description="Optional. Logo, banner, or photo for the conference listing after approval."
+              label="Conference categories"
+              name="conferenceCategories"
+              description="Optional. Add topics or disciplines for discovery."
               class="sm:col-span-2"
             >
-              <UiFileUpload
-                :accept="CONFERENCE_IMAGE_ACCEPT"
-                :validate-file="validateConferenceImage"
-                :hint="CONFERENCE_IMAGE_HINT"
-                @on-change="conferenceImageFiles = $event"
-                @on-reject="onConferenceImageRejected"
-              >
-                <UiFileUploadGrid />
-              </UiFileUpload>
+              <div class="flex flex-wrap gap-2">
+                <UInput
+                  v-model="categoryInput"
+                  placeholder="Add a category"
+                  class="min-w-[12rem] flex-1"
+                  @keydown.enter.prevent="addCategory"
+                />
+                <UButton
+                  type="button"
+                  color="neutral"
+                  variant="outline"
+                  icon="i-lucide-plus"
+                  label="Add"
+                  @click="addCategory"
+                />
+              </div>
 
-              <img
-                v-if="conferenceImagePreviewUrl"
-                :src="conferenceImagePreviewUrl"
-                alt="Conference image preview"
-                class="border-default mt-4 max-h-48 w-full max-w-md rounded-lg border object-contain"
-              />
+              <div
+                v-if="conferenceCategories.length > 0"
+                class="mt-3 flex flex-wrap gap-2"
+              >
+                <UBadge
+                  v-for="(category, index) in conferenceCategories"
+                  :key="category"
+                  color="neutral"
+                  variant="subtle"
+                  class="gap-1"
+                >
+                  {{ category }}
+                  <button
+                    type="button"
+                    class="hover:text-error rounded p-0.5"
+                    aria-label="Remove category"
+                    @click="removeCategory(index)"
+                  >
+                    <UIcon name="i-lucide-x" class="size-3.5" />
+                  </button>
+                </UBadge>
+              </div>
             </UFormField>
+          </div>
+
+          <USeparator />
+
+          <div class="space-y-4">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h3 class="text-base font-semibold">Conference organizers</h3>
+              </div>
+              <UButton
+                type="button"
+                color="neutral"
+                variant="outline"
+                size="sm"
+                icon="i-lucide-user-plus"
+                label="Add organizer"
+                @click="addOrganizer"
+              />
+            </div>
+
+            <div
+              v-for="(organizer, index) in organizers"
+              :key="index"
+              class="grid gap-4 rounded-lg border border-gray-200 p-4 sm:grid-cols-2 dark:border-gray-800"
+            >
+              <UFormField
+                :label="
+                  index === 0 ? 'Organizer name' : `Organizer ${index + 1} name`
+                "
+                :name="`organizers.${index}.name`"
+              >
+                <UInput
+                  v-model="organizer.name"
+                  placeholder="Optional"
+                  class="w-full"
+                />
+              </UFormField>
+
+              <UFormField
+                :label="
+                  index === 0
+                    ? 'Organizer email'
+                    : `Organizer ${index + 1} email`
+                "
+                :name="`organizers.${index}.email`"
+                required
+                :error="organizerEmailError(index)"
+              >
+                <div class="flex gap-2">
+                  <UInput
+                    v-model="organizer.email"
+                    type="email"
+                    required
+                    placeholder="you@institution.edu"
+                    class="w-full min-w-0 flex-1"
+                  />
+                  <UButton
+                    v-if="organizers.length > 1"
+                    type="button"
+                    color="neutral"
+                    variant="ghost"
+                    icon="i-lucide-trash-2"
+                    aria-label="Remove organizer"
+                    @click="removeOrganizer(index)"
+                  />
+                </div>
+              </UFormField>
+            </div>
           </div>
 
           <USeparator />

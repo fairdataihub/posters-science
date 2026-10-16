@@ -186,4 +186,19 @@ export const prismaBulkPosterSubmissionJobRepository: BulkPosterSubmissionJobRep
 
       return toApiJob(record);
     },
+
+    async deleteForUser(id, userId) {
+      const existing = await prisma.bulkSubmission.findFirst({
+        where: { id, userId },
+      });
+
+      if (!existing) {
+        throw createError({
+          statusCode: 404,
+          statusMessage: "Bulk import not found",
+        });
+      }
+
+      await prisma.bulkSubmission.delete({ where: { id } });
+    },
   };

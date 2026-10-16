@@ -38,21 +38,19 @@ function contactSupport() {
   });
 }
 
-function addPosterComingSoon() {
-  toast.add({
-    title: "Coming soon",
-    description:
-      "Adding a single poster for this conference is not available yet.",
-    color: "info",
-  });
-}
+const showRegistrationFlow = computed(() => {
+  const status = reg.value?.status;
+  return (
+    status === "pending_review" ||
+    status === "rejected" ||
+    status === "approved"
+  );
+});
 
-const showRegistrationFlow = computed(
+const showRegistrationProgress = computed(
   () =>
-    reg.value?.status === "pending_review" || reg.value?.status === "rejected",
+    reg.value?.status === "pending_review" || reg.value?.status === "approved",
 );
-
-const isApproved = computed(() => reg.value?.status === "approved");
 
 const statusBadge = computed(() => {
   if (!reg.value) {
@@ -180,7 +178,7 @@ const progressSteps = computed(() => {
           description="This conference registration was not approved. Contact Posters.science if you believe this is an error."
         />
 
-        <div v-if="reg.status === 'pending_review'" class="space-y-3">
+        <div v-if="showRegistrationProgress" class="space-y-3">
           <h2 class="text-base font-semibold">Registration progress</h2>
 
           <ol class="space-y-3">
@@ -237,66 +235,30 @@ const progressSteps = computed(() => {
         </div>
 
         <div
-          class="flex justify-start border-t border-gray-100 pt-4 dark:border-gray-800"
+          class="flex flex-wrap gap-2 border-t border-gray-100 pt-4 dark:border-gray-800"
+          :class="reg.status === 'approved' ? '' : 'justify-start'"
         >
+          <template v-if="reg.status === 'approved'">
+            <UButton
+              color="primary"
+              icon="line-md:file-upload"
+              label="Share Posters in bulk"
+              to="/share/new-bulk"
+            />
+            <UButton
+              color="primary"
+              icon="line-md:file-upload"
+              label="Share a poster"
+              to="/share/new"
+            />
+          </template>
           <UButton
+            v-else
             color="neutral"
             variant="outline"
             icon="i-lucide-mail"
             label="Contact Posters.science"
             @click="contactSupport"
-          />
-        </div>
-      </div>
-    </UCard>
-
-    <UCard v-else-if="isApproved">
-      <div class="flex flex-col gap-6">
-        <div class="flex flex-wrap items-center gap-2">
-          <UBadge
-            :color="statusBadge.color"
-            variant="solid"
-            size="sm"
-            :icon="statusBadge.icon"
-          >
-            {{ statusBadge.label }}
-          </UBadge>
-        </div>
-
-        <p class="text-muted text-sm">
-          {{ reg.description }}
-        </p>
-
-        <UAlert
-          color="info"
-          variant="soft"
-          icon="i-lucide-info"
-          title="Poster submissions"
-          description="Use your main dashboard to track individual poster drafts and published work. Import many posters at once with the bulk upload flow."
-        />
-
-        <div
-          class="flex flex-wrap gap-2 border-t border-gray-100 pt-4 dark:border-gray-800"
-        >
-          <UButton
-            color="primary"
-            icon="line-md:file-upload"
-            label="Share Posters in bulk"
-            to="/share/new-bulk"
-          />
-          <UButton
-            color="neutral"
-            variant="outline"
-            icon="heroicons:plus"
-            label="Add a poster"
-            @click="addPosterComingSoon"
-          />
-          <UButton
-            color="neutral"
-            variant="ghost"
-            icon="i-lucide-layout-dashboard"
-            label="Go to dashboard"
-            to="/dashboard"
           />
         </div>
       </div>

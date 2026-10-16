@@ -50,10 +50,7 @@ useSeoMeta({
 
 <template>
   <div class="mx-auto flex w-full max-w-screen-xl flex-col gap-6 px-6 pb-12">
-    <UPageHeader
-      title="Share Posters in bulk"
-      description="Upload posters, add a license spreadsheet, check the list, then finish. You can save and come back anytime from your dashboard."
-    >
+    <UPageHeader title="Share Posters in bulk">
       <template #headline>
         <UBreadcrumb
           :items="[
@@ -71,7 +68,6 @@ useSeoMeta({
       :initial-import-name="resumeJob?.name"
       :initial-step="normalizeBulkImportWizardStep(resumeJob?.wizardStep)"
       :initial-extraction-method="resumeJob?.extractionMethod"
-      :initial-license-metadata-uploaded="Boolean(resumeJob?.licenseMetadataFilePath)"
       :resume-loading="resumeLoading"
     />
 
