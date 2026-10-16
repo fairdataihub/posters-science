@@ -5,8 +5,8 @@ import { logwatch } from "../../utils/logwatch";
 
 const signupSchema = z.object({
   emailAddress: z.email(),
-  familyName: z.string(),
-  givenName: z.string(),
+  familyName: z.string().trim().min(1),
+  givenName: z.string().trim().min(1),
   password: z
     .string()
     .trim()

@@ -105,7 +105,8 @@ export type AdminPosterRow = {
     status: string;
     lastPublishedZenodoDoi: string | null;
   } | null;
-  _count: { likes: number };
+  _count: { likes: number; claims: number };
+  versionRoot: { _count: { claims: number } } | null;
 };
 
 export type AdminExtractionJobRow = {
@@ -123,6 +124,15 @@ export type AdminExtractionJobRow = {
     automated: boolean;
     user: { emailAddress: string };
   };
+};
+
+export type AdminClaimRow = {
+  id: string;
+  posterId: number;
+  role: string;
+  created: string;
+  poster: { title: string; tombstone: boolean };
+  user: PosterOwner;
 };
 
 export type AdminAuditLogRow = {

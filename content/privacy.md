@@ -8,6 +8,8 @@ We may collect the following types of information when you use Posters.science:
 
 - **Account information:** such as your name, email address, affiliation, and password when you create an account.
 - **Poster submissions:** metadata and poster files you upload when submitting a poster, including information used to generate a `poster.json` file and to archive your poster on Zenodo.
+- **Profile information:** an optional short biography, and your profile settings, such as whether your profile is public and whether it shows the posters you liked.
+- **Claims and likes:** the auto-indexed poster records you claim as one of the authors, and the posters you like.
 - **Anonymous usage analytics:** aggregated, non-personally-identifiable data about how the platform is used, such as page views and general navigation patterns. We use [Umami](https://umami.is), a privacy-focused analytics tool that does not collect personal information, does not use cookies, and does not track users across sites.
 - **Support and feedback:** information you provide if you contact us with questions, feedback, or bug reports (for example via the contact form or GitHub issues).
 
@@ -30,6 +32,7 @@ Posters.science uses cookies strictly to keep you logged in and remember your pr
 
 We may share information in the following situations:
 
+- **Your public profile:** your profile is private unless you make it public. A public profile can be seen by anyone with the link, and search engines may list it. It shows your name, affiliation, short biography, the posters you shared, the poster records you claimed and, if you choose, the posters you liked. It never shows your email address. While your profile is public, others may save or share what it shows, and making it private later does not remove those copies.
 - **Team members:** with members of the FAIR Data Innovations Hub team as needed to operate and improve the platform.
 - **Service providers:** with trusted third-party vendors that provide infrastructure or related services (for example, cloud hosting) under appropriate agreements.
 - **Zenodo:** when you submit a poster, your poster file and metadata are archived on Zenodo in accordance with Zenodo's own terms and privacy policy.
@@ -43,7 +46,7 @@ We use technical and organizational measures to help protect information process
 
 ## 6. Data Retention
 
-We retain information for as long as reasonably necessary to operate the platform, support reporting, and meet legal or institutional requirements. When information is no longer needed, we aim to delete or anonymize it in a reasonable timeframe. Note that poster records archived on Zenodo are subject to Zenodo's own retention policies.
+We retain information for as long as reasonably necessary to operate the platform, support reporting, and meet legal or institutional requirements. When information is no longer needed, we aim to delete or anonymize it in a reasonable timeframe. If you remove a claim, it no longer appears on your dashboard or profile. If we remove a claim, for example because it was made in error, we keep a record of the removal and the reason in our internal audit log. Note that poster records archived on Zenodo are subject to Zenodo's own retention policies.
 
 ## 7. Your Choices and Rights
 
@@ -53,6 +56,8 @@ Depending on your location and applicable laws, you may have certain rights rega
 - Requesting corrections to inaccurate or incomplete information;
 - Requesting deletion of certain information, where appropriate; and
 - Limiting or objecting to certain types of processing, where permitted by law.
+
+You can also make your profile private, hide your liked posters or change your profile details at any time from your [Settings page](/profile), and remove a claim from your dashboard.
 
 To exercise these rights or ask questions about your data, you can contact us using the details below.
 

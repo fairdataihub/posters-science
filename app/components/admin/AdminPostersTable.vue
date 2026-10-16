@@ -290,6 +290,16 @@ const posterToDelete = computed(
   () => posters.value.find((p) => p.id === confirmDeletePosterId.value) ?? null,
 );
 
+// People who claimed the poster as an author. Retiring hides it from their
+// profiles and marks it tombstoned on their dashboards.
+const posterToDeleteClaims = computed(() => {
+  const poster = posterToDelete.value;
+
+  return poster
+    ? (poster.versionRoot?._count.claims ?? poster._count.claims)
+    : 0;
+});
+
 function closeDeletePosterModal() {
   confirmDeletePosterId.value = null;
   tombstoneReason.value = "";
@@ -724,6 +734,20 @@ async function restorePoster(poster: AdminPosterRow) {
       "
     >
       <template v-if="posterToDelete?.status === 'published'" #body>
+        <UAlert
+          v-if="posterToDeleteClaims > 0"
+          color="warning"
+          variant="subtle"
+          icon="i-heroicons-hand-raised"
+          :title="
+            posterToDeleteClaims === 1
+              ? '1 person has claimed this poster'
+              : `${posterToDeleteClaims} people have claimed this poster`
+          "
+          description="It will be removed from their public profiles and shown as tombstoned on their dashboards, with your reason. Their claims are kept, so restoring the poster brings it back for them."
+          class="mb-4"
+        />
+
         <UFormField label="Reason for retiring" required>
           <UTextarea
             v-model="tombstoneReason"

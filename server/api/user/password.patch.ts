@@ -2,7 +2,9 @@ import { z } from "zod";
 import { compare, hash } from "bcrypt";
 
 const schema = z.object({
-  currentPassword: z.string().trim().min(8),
+  // Optional because an account created through ORCID has no password to
+  // confirm. It is still required below whenever the account has one.
+  currentPassword: z.string().trim().min(8).optional(),
   newPassword: z.string().trim().min(8),
 });
 
@@ -31,7 +33,11 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  if (!(await compare(body.data.currentPassword, user.password))) {
+  if (
+    user.password &&
+    (!body.data.currentPassword ||
+      !(await compare(body.data.currentPassword, user.password)))
+  ) {
     throw createError({
       statusCode: 401,
       statusMessage: "Current password is incorrect",

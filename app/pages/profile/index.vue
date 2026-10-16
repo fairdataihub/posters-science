@@ -2,6 +2,10 @@
 import { z } from "zod";
 import type { FormSubmitEvent } from "#ui/types";
 import { parseApiError } from "~/utils/apiError";
+import {
+  PROFILE_AFFILIATION_MAX,
+  PROFILE_BIO_MAX,
+} from "#shared/utils/profile";
 
 definePageMeta({
   middleware: ["auth"],
@@ -9,12 +13,12 @@ definePageMeta({
 
 const { clear, user } = useUserSession();
 
-const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Profile - Posters.science")}&description=${encodeURIComponent("Manage your account profile and preferences on Posters.science")}&app=posters-science&org=fairdataihub`;
+const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Settings - Posters.science")}&description=${encodeURIComponent("Manage your account profile and preferences on Posters.science")}&app=posters-science&org=fairdataihub`;
 
 useSeoMeta({
-  title: "Profile",
+  title: "Settings",
   description: "Manage your Scholar Data profile and preferences.",
-  ogTitle: "Profile - Posters.science",
+  ogTitle: "Settings - Posters.science",
   ogDescription:
     "Manage your account profile and preferences on Posters.science.",
   ogImage,
@@ -25,9 +29,18 @@ const loading = ref(false);
 const deleteLoading = ref(false);
 const passwordLoading = ref(false);
 
+const { data: userData, refresh: refreshUser } = await useFetch("/api/user");
+
+// Accounts created through ORCID start without a password, so they set one
+// rather than change it and have no current password to confirm.
+const hasPassword = computed(() => userData.value?.hasPassword ?? true);
+const passwordActionLabel = computed(() =>
+  hasPassword.value ? "Change password" : "Set password",
+);
+
 const passwordSchema = z
   .object({
-    currentPassword: z.string().trim().min(8, "Must be at least 8 characters"),
+    currentPassword: z.string().trim(),
     newPassword: z
       .string()
       .trim()
@@ -42,6 +55,10 @@ const passwordSchema = z
   .refine((d) => d.newPassword === d.confirmPassword, {
     message: "Passwords do not match",
     path: ["confirmPassword"],
+  })
+  .refine((d) => !hasPassword.value || d.currentPassword.length >= 8, {
+    message: "Must be at least 8 characters",
+    path: ["currentPassword"],
   });
 
 type PasswordSchema = z.output<typeof passwordSchema>;
@@ -58,15 +75,17 @@ async function onChangePassword(event: FormSubmitEvent<PasswordSchema>) {
     await $fetch("/api/user/password", {
       method: "PATCH",
       body: {
-        currentPassword: event.data.currentPassword,
+        currentPassword: hasPassword.value
+          ? event.data.currentPassword
+          : undefined,
         newPassword: event.data.newPassword,
       },
     });
 
     toast.add({
-      title: "Password changed",
+      title: hasPassword.value ? "Password changed" : "Password set",
       description:
-        "Your password has been updated successfully. Please log in with your new password.",
+        "Your password has been saved. Please log in with your new password.",
       color: "success",
       icon: "i-heroicons-check-circle",
     });
@@ -79,9 +98,11 @@ async function onChangePassword(event: FormSubmitEvent<PasswordSchema>) {
     await logout();
   } catch (err: unknown) {
     const message =
-      parseApiError(err).statusMessage ?? "Failed to change password";
+      parseApiError(err).statusMessage ?? "Failed to save password";
     toast.add({
-      title: "Change password failed",
+      title: hasPassword.value
+        ? "Change password failed"
+        : "Set password failed",
       description: message,
       color: "error",
       icon: "i-heroicons-exclamation-circle",
@@ -134,11 +155,20 @@ async function onDeleteAccount() {
   // }
 }
 
-const { data: userData, refresh: refreshUser } = await useFetch("/api/user");
-
 const schema = z.object({
-  givenName: z.string(),
-  familyName: z.string(),
+  givenName: z.string().trim().min(1, "Enter your first name"),
+  familyName: z.string().trim().min(1, "Enter your last name"),
+  affiliation: z
+    .string()
+    .trim()
+    .max(
+      PROFILE_AFFILIATION_MAX,
+      `Must be at most ${PROFILE_AFFILIATION_MAX} characters`,
+    ),
+  bio: z
+    .string()
+    .trim()
+    .max(PROFILE_BIO_MAX, `Must be at most ${PROFILE_BIO_MAX} characters`),
 });
 
 type Schema = z.output<typeof schema>;
@@ -146,6 +176,8 @@ type Schema = z.output<typeof schema>;
 const state = reactive<Schema>({
   givenName: "",
   familyName: "",
+  affiliation: "",
+  bio: "",
 });
 
 watch(
@@ -154,15 +186,90 @@ watch(
     if (u) {
       state.givenName = u.givenName ?? "";
       state.familyName = u.familyName ?? "";
+      state.affiliation = u.affiliation ?? "";
+      state.bio = u.bio ?? "";
     }
   },
   { immediate: true },
 );
 
+// Public profile. Opt-in, and the address is created the first time it is
+// turned on.
+const publicSaving = ref(false);
+
+async function setProfilePublic(profilePublic: boolean) {
+  publicSaving.value = true;
+  try {
+    await $fetch("/api/user", {
+      method: "PATCH",
+      body: { profilePublic },
+    });
+    await refreshUser();
+    toast.add({
+      title: profilePublic
+        ? "Your profile is public"
+        : "Your profile is private",
+      color: "success",
+      icon: "i-heroicons-check-circle",
+    });
+  } catch (err: unknown) {
+    toast.add({
+      title: "Update failed",
+      description:
+        parseApiError(err).statusMessage ?? "Failed to update your profile",
+      color: "error",
+      icon: "i-heroicons-exclamation-circle",
+    });
+  } finally {
+    publicSaving.value = false;
+  }
+}
+
+// Liked posters on the public profile. Opt-in and independent of whether the
+// profile is public, so it can be set up before the profile goes live.
+const showLikesSaving = ref(false);
+
+async function setShowLikes(profileShowLikes: boolean) {
+  showLikesSaving.value = true;
+  try {
+    await $fetch("/api/user", {
+      method: "PATCH",
+      body: { profileShowLikes },
+    });
+    await refreshUser();
+    toast.add({
+      title: profileShowLikes
+        ? "Liked posters are shown on your profile"
+        : "Liked posters are hidden from your profile",
+      color: "success",
+      icon: "i-heroicons-check-circle",
+    });
+  } catch (err: unknown) {
+    toast.add({
+      title: "Update failed",
+      description:
+        parseApiError(err).statusMessage ?? "Failed to update your profile",
+      color: "error",
+      icon: "i-heroicons-exclamation-circle",
+    });
+  } finally {
+    showLikesSaving.value = false;
+  }
+}
+
+const requestUrl = useRequestURL();
+const publicProfileUrl = computed(() => {
+  const path = userData.value?.profilePath;
+
+  return path ? `${requestUrl.origin}${path}` : "";
+});
+
 async function onSubmit(event: FormSubmitEvent<Schema>) {
   const body = {
     givenName: event.data.givenName,
     familyName: event.data.familyName,
+    affiliation: event.data.affiliation,
+    bio: event.data.bio,
   };
 
   loading.value = true;
@@ -233,6 +340,106 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
 
         <UPageBody>
           <div class="space-y-6">
+            <!-- Public profile -->
+            <UCard>
+              <div class="flex flex-wrap items-center gap-2">
+                <h2 class="text-lg font-semibold">Public profile</h2>
+
+                <UBadge
+                  :color="userData?.profilePublic ? 'success' : 'neutral'"
+                  variant="subtle"
+                  :icon="
+                    userData?.profilePublic
+                      ? 'i-heroicons-globe-alt'
+                      : 'i-heroicons-lock-closed'
+                  "
+                >
+                  {{ userData?.profilePublic ? "Public" : "Private" }}
+                </UBadge>
+              </div>
+
+              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                {{
+                  userData?.profilePublic
+                    ? "Anyone with the link can see your name, affiliation, bio and the posters you have published and claimed. Your email address is never shown."
+                    : "Make your profile public to share a page listing the posters you have published and claimed, with your name, affiliation and bio. Your email address is never shown."
+                }}
+              </p>
+
+              <div
+                v-if="userData?.profilePublic && userData?.profilePath"
+                class="mt-4 flex flex-wrap items-center gap-3"
+              >
+                <code
+                  class="rounded bg-gray-100 px-2 py-1 text-sm break-all dark:bg-gray-800"
+                >
+                  {{ publicProfileUrl }}
+                </code>
+
+                <UButton
+                  :to="userData.profilePath"
+                  size="sm"
+                  color="neutral"
+                  variant="subtle"
+                  icon="i-heroicons-arrow-top-right-on-square"
+                >
+                  View public profile
+                </UButton>
+              </div>
+
+              <div class="mt-4">
+                <UButton
+                  v-if="userData?.profilePublic"
+                  size="sm"
+                  color="neutral"
+                  variant="outline"
+                  icon="i-heroicons-lock-closed"
+                  :loading="publicSaving"
+                  @click="setProfilePublic(false)"
+                >
+                  Make profile private
+                </UButton>
+
+                <UButton
+                  v-else
+                  size="sm"
+                  color="primary"
+                  icon="i-heroicons-globe-alt"
+                  :loading="publicSaving"
+                  @click="setProfilePublic(true)"
+                >
+                  Make profile public
+                </UButton>
+
+                <UButton
+                  v-if="!userData?.profilePublic"
+                  to="/profile/me"
+                  size="sm"
+                  color="neutral"
+                  variant="ghost"
+                  icon="i-heroicons-eye"
+                  class="ml-2"
+                >
+                  Preview your profile
+                </UButton>
+              </div>
+
+              <USeparator class="my-4" />
+
+              <USwitch
+                :model-value="userData?.profileShowLikes ?? false"
+                :loading="showLikesSaving"
+                :disabled="showLikesSaving"
+                label="Show my liked posters on my public profile"
+                :description="
+                  userData?.profilePublic
+                    ? 'Adds a Liked tab to your profile that anyone with the link can see.'
+                    : 'Adds a Liked tab to your profile once you make it public.'
+                "
+                @update:model-value="setShowLikes"
+              />
+            </UCard>
+
             <!-- Edit Profile Form -->
             <UCard>
               <h2 class="mb-6 text-xl font-semibold">Edit profile</h2>
@@ -244,7 +451,7 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
                 @submit="onSubmit"
               >
                 <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
-                  <UFormField label="First name" name="givenName">
+                  <UFormField label="First name" name="givenName" required>
                     <UInput
                       v-model="state.givenName"
                       type="text"
@@ -252,11 +459,42 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
                     />
                   </UFormField>
 
-                  <UFormField label="Last name" name="familyName">
+                  <UFormField label="Last name" name="familyName" required>
                     <UInput
                       v-model="state.familyName"
                       type="text"
                       placeholder="e.g. Smith"
+                    />
+                  </UFormField>
+
+                  <UFormField
+                    label="Affiliation"
+                    name="affiliation"
+                    class="md:col-span-2"
+                    help="Shown on your public profile."
+                  >
+                    <UInput
+                      v-model="state.affiliation"
+                      type="text"
+                      placeholder="e.g. University of California San Diego"
+                      :maxlength="PROFILE_AFFILIATION_MAX"
+                      class="w-full"
+                    />
+                  </UFormField>
+
+                  <UFormField
+                    label="Bio"
+                    name="bio"
+                    class="md:col-span-2"
+                    :help="`Shown on your public profile. ${state.bio.length}/${PROFILE_BIO_MAX} characters.`"
+                  >
+                    <UTextarea
+                      v-model="state.bio"
+                      placeholder="A sentence or two about your research"
+                      :maxlength="PROFILE_BIO_MAX"
+                      :rows="3"
+                      autoresize
+                      class="w-full"
                     />
                   </UFormField>
                 </div>
@@ -319,13 +557,17 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
 
               <div class="flex items-center justify-between gap-4">
                 <UModal
-                  title="Change password"
-                  description="Update your account password"
+                  :title="passwordActionLabel"
+                  :description="
+                    hasPassword
+                      ? 'Update your account password'
+                      : 'Add a password so you can also log in with your email address'
+                  "
                 >
                   <UButton
                     color="primary"
                     variant="solid"
-                    label="Change password"
+                    :label="passwordActionLabel"
                     icon="i-heroicons-key"
                   />
 
@@ -337,6 +579,7 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
                       @submit="onChangePassword"
                     >
                       <UFormField
+                        v-if="hasPassword"
                         label="Current password"
                         name="currentPassword"
                       >
@@ -380,7 +623,7 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
                       <UButton
                         color="primary"
                         variant="solid"
-                        label="Change password"
+                        :label="passwordActionLabel"
                         icon="i-heroicons-key"
                         :loading="passwordLoading"
                         @click="

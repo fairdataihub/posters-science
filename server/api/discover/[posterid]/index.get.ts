@@ -20,7 +20,7 @@ export default defineEventHandler(async (event) => {
   const rootPosterId = posterFamilyRootId(requested);
   const root = await prisma.poster.findFirst({
     where: { id: rootPosterId, tombstone: false },
-    select: { id: true },
+    select: { id: true, automated: true, userId: true, tombstone: true },
   });
 
   if (!root) {
@@ -94,6 +94,15 @@ export default defineEventHandler(async (event) => {
     : false;
   const likes = await prisma.like.count({ where: { posterId: rootPosterId } });
 
+  const claimed = userId
+    ? Boolean(
+        await prisma.posterClaim.findUnique({
+          where: { posterId_userId: { posterId: rootPosterId, userId } },
+          select: { id: true },
+        }),
+      )
+    : false;
+
   const { umamiWebsiteId } = useRuntimeConfig();
 
   let views: number | null = null;
@@ -136,6 +145,8 @@ export default defineEventHandler(async (event) => {
     isLatestVersion: poster.isLatestVersion,
     versions,
     automated: poster.automated,
+    claimable: isClaimablePoster(root),
+    claimed,
     views,
     likes,
     liked,
