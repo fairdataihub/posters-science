@@ -73,6 +73,35 @@ export async function deleteAllBulkStagedPosters(jobId: string) {
   );
 }
 
+export type BulkPosterSubmissionSubmitResult = {
+  job: BulkPosterSubmissionJob;
+  posters: {
+    posterId: number;
+    extractionJobId: string;
+    fileName: string;
+  }[];
+};
+
+export async function applyBulkSubmissionMetadataToPosters(
+  jobId: string,
+  posterId?: number,
+) {
+  return $fetch<{ updatedPosterIds: number[] }>(
+    `/api/bulk-poster-submissions/${jobId}/apply-metadata`,
+    {
+      method: "POST",
+      body: posterId != null ? { posterId } : {},
+    },
+  );
+}
+
+export async function submitBulkPosterSubmissionJob(jobId: string) {
+  return $fetch<BulkPosterSubmissionSubmitResult>(
+    `/api/bulk-poster-submissions/${jobId}/submit`,
+    { method: "POST" },
+  );
+}
+
 export async function uploadBulkPosterSubmissionFile(jobId: string, file: File) {
   const formData = new FormData();
   formData.append("file", file);

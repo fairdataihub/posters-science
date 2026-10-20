@@ -14,4 +14,15 @@ export type BulkImportSubmissionSummary = {
   conference?: BulkImportConferenceMetadata;
   /** When true, run automated ORCID and ROR lookups where possible. */
   automateOrcidRorLookups?: boolean;
+  /** When true, posters stay in an on-site review spreadsheet for 30 days before Zenodo. */
+  reviewEmbargoEnabled?: boolean;
+  reviewEmbargoDays?: number;
+  /** Set when the batch is submitted to the extraction pipeline. */
+  submittedAt?: string;
+  createdPosterIds?: number[];
+  createdPosters?: {
+    posterId: number;
+    extractionJobId: string;
+    fileName: string;
+  }[];
 };

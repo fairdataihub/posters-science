@@ -1,3 +1,5 @@
+import { posterIdsHiddenByBulkImport } from "~~/server/utils/bulkImportDashboard";
+
 export default defineEventHandler(async (event) => {
   const session = await requireUserSession(event);
 
@@ -56,6 +58,7 @@ export default defineEventHandler(async (event) => {
         status: true,
         extractionMethod: true,
         posterCount: true,
+        submissionSummary: true,
         created: true,
         updated: true,
       },
@@ -144,9 +147,15 @@ export default defineEventHandler(async (event) => {
     updatedAt: bulk.updated.toISOString(),
   }));
 
+  const bulkHiddenPosterIds = posterIdsHiddenByBulkImport(bulkSubmissionRows);
+
   const inProgressFeed = [
     ...posters
-      .filter((poster) => poster.status !== "published")
+      .filter(
+        (poster) =>
+          poster.status !== "published" &&
+          !bulkHiddenPosterIds.has(poster.id),
+      )
       .map((poster) => ({
         type: "poster" as const,
         posterId: poster.id,

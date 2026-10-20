@@ -61,5 +61,7 @@ export type BulkImportBatchItem = {
   id: string;
   fileName: string;
   status: BulkImportBatchItemStatus;
+  posterId?: number;
+  extractionJobId?: string;
   error?: string;
 };

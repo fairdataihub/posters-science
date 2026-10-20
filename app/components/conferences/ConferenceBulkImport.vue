@@ -16,6 +16,10 @@ import {
   type BulkImportConferenceFormState,
 } from "#shared/types/bulkImportConference";
 import type { BulkImportSubmissionSummary } from "#shared/types/bulkImportLicenses";
+import {
+  DEFAULT_BULK_IMPORT_REVIEW_EMBARGO_DAYS,
+  type BulkImportReviewEmbargoChoice,
+} from "#shared/types/bulkImportReviewEmbargo";
 import { BULK_IMPORT_ACCEPTABLE_LICENSES } from "#shared/data/bulkImportAcceptableLicenses";
 import identifierTypes from "@/assets/data/identifier-types.json";
 import type { BulkImportWizardStep } from "#shared/types/bulkImportWizard";
@@ -49,8 +53,11 @@ import {
   deleteAllBulkStagedPosters,
   deleteBulkStagedPoster,
   uploadBulkPosterSubmissionFile,
+  submitBulkPosterSubmissionJob,
+  applyBulkSubmissionMetadataToPosters,
 } from "~/utils/bulkPosterSubmissionJobClient";
 import { shareNewBulkPath } from "~/utils/sharePaths";
+import BulkImportMetadataReview from "~/components/conferences/BulkImportMetadataReview.vue";
 
 const router = useRouter();
 const route = useRoute();
@@ -124,6 +131,29 @@ const orcidRorAutomationItems: {
     label: "No",
     value: "no",
     description: "Do not run automated ORCID or ROR lookups for this batch.",
+  },
+];
+
+const reviewEmbargoChoice = ref<BulkImportReviewEmbargoChoice | undefined>(
+  undefined,
+);
+
+const reviewEmbargoItems: {
+  label: string;
+  value: BulkImportReviewEmbargoChoice;
+  description: string;
+}[] = [
+  {
+    label: "Yes",
+    value: "yes",
+    description:
+      "Embargo posters for 30 days while we host a spreadsheet of posters and extractions on Posters.science for you to review and edit before anything is submitted to Zenodo.",
+  },
+  {
+    label: "No",
+    value: "no",
+    description:
+      "Submit to Zenodo as soon as each poster passes review in this import (when that flow is connected).",
   },
 ];
 
@@ -323,7 +353,9 @@ const canContinueFromUpload = computed(
 const extractionStepAcknowledged = ref(false);
 
 const extractionStepReady = computed(
-  () => orcidRorAutomationChoice.value !== undefined,
+  () =>
+    orcidRorAutomationChoice.value !== undefined &&
+    reviewEmbargoChoice.value !== undefined,
 );
 
 const extractionStepComplete = computed(
@@ -442,6 +474,9 @@ async function mergeJobSubmissionSummary(
   });
 }
 
+/** Declared before wizard composable (review step completion). */
+const batchImportFinished = ref(false);
+
 const {
   wizardSteps,
   currentStep,
@@ -465,6 +500,7 @@ const {
     extraction: extractionStepComplete,
     conference: conferenceStepComplete,
     submit: canProceedFromReview,
+    review: batchImportFinished,
   },
   {
     initialJobId: props.initialJobId,
@@ -536,6 +572,14 @@ function applyLicenseSummaryFromJob(job: BulkPosterSubmissionJob) {
   } else {
     orcidRorAutomationChoice.value = undefined;
   }
+
+  if (summary?.reviewEmbargoEnabled === true) {
+    reviewEmbargoChoice.value = "yes";
+  } else if (summary?.reviewEmbargoEnabled === false) {
+    reviewEmbargoChoice.value = "no";
+  } else {
+    reviewEmbargoChoice.value = undefined;
+  }
 }
 
 function applyJobSnapshot(job: BulkPosterSubmissionJob) {
@@ -549,11 +593,17 @@ function applyJobSnapshot(job: BulkPosterSubmissionJob) {
   const step =
     normalizeBulkImportWizardStep(job.wizardStep) ?? resolveResumeWizardStep();
 
-  if (step === "extraction" || step === "conference" || step === "submit") {
+  if (
+    step === "extraction" ||
+    step === "conference" ||
+    step === "submit" ||
+    step === "review"
+  ) {
     extractionStepAcknowledged.value = true;
   }
 
   restoreWizardStep(step);
+  applyBatchStateFromJob(job);
 }
 
 async function hydrateListsAfterResume(step: BulkImportWizardStep) {
@@ -565,8 +615,11 @@ async function hydrateListsAfterResume(step: BulkImportWizardStep) {
   ) {
     await refreshStagedPostersFromStorage();
   }
-  if (step === "submit") {
-    await refreshSubmissionRows();
+  if (step === "submit" || step === "review") {
+    if (step === "submit") {
+      await refreshSubmissionRows();
+    }
+    await syncSubmitStepBatchProgress();
   }
 }
 
@@ -705,6 +758,7 @@ function goToStep(step: BulkImportWizardStep) {
       }
       if (target === "submit") {
         void refreshSubmissionRows();
+        void syncSubmitStepBatchProgress();
       }
     },
   });
@@ -720,8 +774,18 @@ watch(
     if (id && step === "upload") {
       void refreshStagedPostersFromStorage();
     }
+    if (step === "submit" || step === "review") {
+      void syncSubmitStepBatchProgress();
+    }
+    if (step !== "submit") {
+      stopBatchExtractionPolling();
+    }
   },
 );
+
+onBeforeUnmount(() => {
+  stopBatchExtractionPolling();
+});
 
 async function persistSetupJob(): Promise<string> {
   const name = importNameTrimmed.value;
@@ -979,8 +1043,14 @@ async function removeStagedPoster(poster: BulkImportStagedPoster) {
 
 const batchItems = ref<BulkImportBatchItem[]>([]);
 const batchImportRunning = ref(false);
-const batchImportFinished = ref(false);
-let batchSimulationTimer: ReturnType<typeof setTimeout> | undefined;
+const BULK_BATCH_EXTRACTION_POLL_MS = 3000;
+let batchExtractionPollTimer: ReturnType<typeof setTimeout> | undefined;
+
+type BulkExtractionJobStatusResponse = {
+  status: string;
+  completed: boolean;
+  error: string | null;
+};
 
 const batchProgress = computed(() => {
   if (batchItems.value.length === 0) return 0;
@@ -997,6 +1067,114 @@ const batchCompletedCount = computed(
 const batchFailedCount = computed(
   () => batchItems.value.filter((item) => item.status === "failed").length,
 );
+
+const batchStillExtractingCount = computed(
+  () =>
+    batchItems.value.filter(
+      (item) => item.status !== "completed" && item.status !== "failed",
+    ).length,
+);
+
+function batchStatusFromExtractionJob(
+  job: BulkExtractionJobStatusResponse,
+): BulkImportBatchItemStatus {
+  if (job.status === "failed") return "failed";
+  if (job.completed && job.status === "completed") return "completed";
+  if (
+    job.status === "pending-extraction" ||
+    job.status === "pending-thumbnail"
+  ) {
+    return "queued";
+  }
+  return "extracting";
+}
+
+function stopBatchExtractionPolling() {
+  if (batchExtractionPollTimer) {
+    clearTimeout(batchExtractionPollTimer);
+    batchExtractionPollTimer = undefined;
+  }
+}
+
+function batchExtractionPollPending() {
+  return batchItems.value.some(
+    (item) => item.status !== "completed" && item.status !== "failed",
+  );
+}
+
+async function refreshBatchExtractionStatuses() {
+  const withJobs = batchItems.value.filter((item) => item.extractionJobId);
+  if (withJobs.length === 0) return;
+
+  const newlyCompletedPosterIds: number[] = [];
+
+  await Promise.all(
+    withJobs.map(async (item) => {
+      try {
+        const response = await $fetch<BulkExtractionJobStatusResponse>(
+          `/api/poster/job/${item.extractionJobId}`,
+        );
+        const row = batchItems.value.find((entry) => entry.id === item.id);
+        if (!row) return;
+        const wasTerminal =
+          row.status === "completed" || row.status === "failed";
+        row.status = batchStatusFromExtractionJob(response);
+        row.error = response.error?.trim() ? response.error : undefined;
+        if (
+          !wasTerminal &&
+          row.status === "completed" &&
+          row.posterId != null
+        ) {
+          newlyCompletedPosterIds.push(row.posterId);
+        }
+      } catch {
+        // Keep last known status if a single poll fails.
+      }
+    }),
+  );
+
+  if (newlyCompletedPosterIds.length > 0 && jobId.value) {
+    for (const posterId of newlyCompletedPosterIds) {
+      try {
+        await applyBulkSubmissionMetadataToPosters(jobId.value, posterId);
+      } catch {
+        // Non-fatal; review step can retry apply for the whole batch.
+      }
+    }
+  }
+}
+
+async function applyBatchLicenseAndConferenceToPosters() {
+  if (!jobId.value || !batchImportFinished.value) return;
+  try {
+    await applyBulkSubmissionMetadataToPosters(jobId.value);
+  } catch {
+    // Summary may be incomplete if user has not finished the conference step.
+  }
+}
+
+function scheduleBatchExtractionPolling() {
+  stopBatchExtractionPolling();
+  if (
+    (currentStep.value !== "submit" && currentStep.value !== "review") ||
+    !batchImportFinished.value ||
+    !batchExtractionPollPending()
+  ) {
+    return;
+  }
+
+  batchExtractionPollTimer = setTimeout(async () => {
+    await refreshBatchExtractionStatuses();
+    scheduleBatchExtractionPolling();
+  }, BULK_BATCH_EXTRACTION_POLL_MS);
+}
+
+async function syncSubmitStepBatchProgress() {
+  if (!batchImportFinished.value || batchItems.value.length === 0) return;
+  await refreshBatchExtractionStatuses();
+  await applyBatchLicenseAndConferenceToPosters();
+  scheduleBatchExtractionPolling();
+}
 
 const batchColumns: ColumnDef<BulkImportBatchItem>[] = [
   { accessorKey: "fileName", header: "Poster file" },
@@ -1040,60 +1218,37 @@ function batchStatusColor(
   }
 }
 
-function buildSimulatedBatchItems(): BulkImportBatchItem[] {
+function buildBatchItemsFromReadyRows(): BulkImportBatchItem[] {
   const readyRows = submissionRows.value.filter(
     (row) => row.status === "ready",
   );
   return readyRows.map((row, index) => ({
-    id: `bulk-sim-${index + 1}`,
+    id: `bulk-submit-${index + 1}`,
     fileName: row.fileName,
     status: "queued" as const,
   }));
 }
 
-function stopBatchSimulation() {
-  if (batchSimulationTimer) {
-    clearTimeout(batchSimulationTimer);
-    batchSimulationTimer = undefined;
+function applyBatchStateFromJob(job: BulkPosterSubmissionJob) {
+  const summary = job.submissionSummary as BulkImportSubmissionSummary | null;
+  const created = summary?.createdPosters;
+  if (!created?.length) return;
+
+  batchItems.value = created.map((poster) => ({
+    id: `bulk-poster-${poster.posterId}`,
+    fileName: poster.fileName,
+    posterId: poster.posterId,
+    extractionJobId: poster.extractionJobId,
+    status: "extracting" as const,
+  }));
+  batchImportFinished.value =
+    job.status === "processing" ||
+    job.status === "completed" ||
+    job.status === "failed";
+  if (batchImportFinished.value) {
+    void syncSubmitStepBatchProgress();
   }
 }
-
-function advanceBatchSimulation() {
-  const next = batchItems.value.find((item) => item.status === "queued");
-  if (!next) {
-    batchImportRunning.value = false;
-    batchImportFinished.value = true;
-    return;
-  }
-
-  const stages: BulkImportBatchItemStatus[] = [
-    "uploading",
-    "extracting",
-    "completed",
-  ];
-  let stageIndex = 0;
-
-  const tick = () => {
-    const item = batchItems.value.find((entry) => entry.id === next.id);
-    if (!item) return;
-
-    item.status = stages[stageIndex] ?? "completed";
-    stageIndex += 1;
-
-    if (item.status === "completed") {
-      batchSimulationTimer = setTimeout(advanceBatchSimulation, 400);
-      return;
-    }
-
-    batchSimulationTimer = setTimeout(tick, 700);
-  };
-
-  tick();
-}
-
-onBeforeUnmount(() => {
-  stopBatchSimulation();
-});
 
 async function continueToExtraction() {
   if (posterUploadRunning.value) return;
@@ -1125,8 +1280,13 @@ async function continueToConference() {
     await updateBulkPosterSubmissionJob(jobId.value, {
       extractionMethod: extractionMethod.value,
     });
+    const embargoEnabled = reviewEmbargoChoice.value === "yes";
     await mergeJobSubmissionSummary({
       automateOrcidRorLookups: orcidRorAutomationChoice.value === "yes",
+      reviewEmbargoEnabled: embargoEnabled,
+      reviewEmbargoDays: embargoEnabled
+        ? DEFAULT_BULK_IMPORT_REVIEW_EMBARGO_DAYS
+        : undefined,
     });
     extractionStepAcknowledged.value = true;
     void persistWizardStep("extraction");
@@ -1169,6 +1329,7 @@ async function continueToSubmit() {
     void persistWizardStep("conference");
     goToStep("submit");
     await refreshSubmissionRows();
+    await applyBatchLicenseAndConferenceToPosters();
   } catch (error) {
     toast.add({
       title: "Could not save conference information",
@@ -1181,20 +1342,25 @@ async function continueToSubmit() {
   }
 }
 
-function onSubmitStepContinue() {
-  if (batchImportFinished.value) {
-    void navigateTo("/dashboard");
-    return;
+function continueToReviewMetadata() {
+  if (!batchImportFinished.value) return;
+  if (goToStep("review")) {
+    void persistWizardStep("review");
   }
-  startImport();
 }
 
-function startImport() {
-  if (batchImportRunning.value) return;
+function onSubmitStepContinue() {
+  if (batchImportFinished.value) {
+    continueToReviewMetadata();
+    return;
+  }
+  void startImport();
+}
 
-  stopBatchSimulation();
-  batchImportFinished.value = false;
-  batchItems.value = buildSimulatedBatchItems();
+async function startImport() {
+  if (batchImportRunning.value || batchImportFinished.value) return;
+
+  batchItems.value = buildBatchItemsFromReadyRows();
 
   if (batchItems.value.length === 0) {
     toast.add({
@@ -1205,14 +1371,47 @@ function startImport() {
     return;
   }
 
+  if (!jobId.value) {
+    toast.add({
+      title: "Save your batch first",
+      description: "Complete the name step so this import is saved before submitting.",
+      color: "warning",
+    });
+    return;
+  }
+
   batchImportRunning.value = true;
-  toast.add({
-    title: "Simulated import started",
-    description:
-      "This preview runs in the browser only until bulk import is connected to the server.",
-    color: "info",
-  });
-  advanceBatchSimulation();
+
+  try {
+    const result = await submitBulkPosterSubmissionJob(jobId.value);
+    batchItems.value = result.posters.map((poster) => ({
+      id: `bulk-poster-${poster.posterId}`,
+      fileName: poster.fileName,
+      posterId: poster.posterId,
+      extractionJobId: poster.extractionJobId,
+      status: "extracting" as const,
+    }));
+    batchImportFinished.value = true;
+    await refreshBatchExtractionStatuses();
+    scheduleBatchExtractionPolling();
+    toast.add({
+      title: "Batch submitted",
+      description:
+        "Extraction jobs were created for each poster. Track the batch from your dashboard bulk import card.",
+      color: "success",
+    });
+  } catch (error) {
+    batchItems.value = [];
+    toast.add({
+      title: "Could not submit batch",
+      description:
+        fetchErrorDescription(error) ??
+        "Try again. If the problem persists, contact support.",
+      color: "error",
+    });
+  } finally {
+    batchImportRunning.value = false;
+  }
 }
 </script>
 
@@ -1567,6 +1766,21 @@ function startImport() {
               :ui="{ fieldset: 'gap-3', item: 'items-start' }"
             />
           </UFormField>
+
+          <UFormField
+            label="30-day embargo before Zenodo submission"
+            required
+            hint="Choose whether posters stay on Posters.science for a 30-day review period with an editable spreadsheet before Zenodo publish."
+          >
+            <URadioGroup
+              v-model="reviewEmbargoChoice"
+              :items="reviewEmbargoItems"
+              value-key="value"
+              label-key="label"
+              description-key="description"
+              :ui="{ fieldset: 'gap-3', item: 'items-start' }"
+            />
+          </UFormField>
         </div>
 
         <div
@@ -1674,15 +1888,6 @@ function startImport() {
                   class="w-full"
                   :virtualize="true"
                 />
-                <p
-                  v-if="selectedUniformLicenseOption"
-                  class="text-muted text-xs leading-snug"
-                >
-                  {{ selectedUniformLicenseOption.description }}
-                  <span class="text-muted/80">
-                    ({{ selectedUniformLicenseOption.value }})
-                  </span>
-                </p>
               </div>
             </UFormField>
 
@@ -1803,14 +2008,6 @@ function startImport() {
           </div>
 
           <UAlert
-            color="warning"
-            variant="soft"
-            icon="i-lucide-construction"
-            title="Submit flow in progress"
-            description="Checking posters and running the import will be wired up soon. You can still review readiness below."
-          />
-
-          <UAlert
             color="info"
             variant="soft"
             icon="i-lucide-info"
@@ -1904,8 +2101,8 @@ function startImport() {
             color="info"
             variant="soft"
             icon="i-lucide-info"
-            title="Ready to start"
-            :description="`${expectedBatchCount} poster(s) in this batch (simulated until the server endpoint is connected).`"
+            title="Ready to submit"
+            :description="`${expectedBatchCount} poster(s) will be sent to the extraction pipeline. Files are already in storage; submit creates a poster and extraction job for each file.`"
           />
 
           <UAlert
@@ -1913,8 +2110,8 @@ function startImport() {
             color="info"
             variant="soft"
             icon="i-lucide-loader-circle"
-            title="Import in progress"
-            :description="`${batchCompletedCount} of ${batchItems.length} completed${batchFailedCount ? ` · ${batchFailedCount} failed` : ''}.`"
+            title="Submitting batch"
+            description="Creating posters and extraction jobs…"
           />
 
           <UAlert
@@ -1922,8 +2119,12 @@ function startImport() {
             color="success"
             variant="soft"
             icon="i-lucide-circle-check"
-            title="Batch import complete (simulated)"
-            description="When this is wired up, posters will appear on your dashboard as they finish processing."
+            title="Batch submitted"
+            :description="
+              batchStillExtractingCount > 0
+                ? `${batchCompletedCount} of ${batchItems.length} completed${batchFailedCount ? ` · ${batchFailedCount} failed` : ''} · ${batchStillExtractingCount} still extracting.`
+                : `${batchCompletedCount} completed${batchFailedCount ? ` · ${batchFailedCount} failed` : ''}.`
+            "
           />
 
           <div v-if="batchItems.length > 0" class="space-y-2">
@@ -1983,7 +2184,9 @@ function startImport() {
             color="primary"
             icon="i-lucide-arrow-right"
             trailing
-            label="Save and Continue"
+            :label="
+              batchImportFinished ? 'Continue to review metadata' : 'Submit batch'
+            "
             :disabled="
               batchImportRunning ||
               (!batchImportFinished &&
@@ -1991,6 +2194,40 @@ function startImport() {
             "
             :loading="batchImportRunning"
             @click="onSubmitStepContinue"
+          />
+        </div>
+      </template>
+
+      <template v-else-if="currentStep === 'review'">
+        <div class="space-y-4">
+          <div>
+            <h3 class="text-base font-semibold">
+              Step {{ currentStepNumber }}: Review metadata
+            </h3>
+            <p class="text-muted mt-1 text-sm">
+              {{ currentStepTask }}
+            </p>
+          </div>
+
+          <BulkImportMetadataReview :items="batchItems" />
+        </div>
+
+        <div
+          class="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-6 dark:border-gray-800"
+        >
+          <UButton
+            color="neutral"
+            variant="ghost"
+            icon="i-lucide-arrow-left"
+            label="Back"
+            @click="goToStep('submit')"
+          />
+
+          <UButton
+            color="primary"
+            icon="i-lucide-layout-dashboard"
+            label="Go to dashboard"
+            to="/dashboard"
           />
         </div>
       </template>

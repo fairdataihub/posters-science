@@ -4,13 +4,14 @@ export type BulkImportWizardStep =
   | "upload"
   | "extraction"
   | "conference"
-  | "submit";
+  | "submit"
+  | "review";
 
 /** @deprecated Jobs saved on the old flow; map to `upload` when resuming. */
 export type LegacyBulkImportWizardStep = "assets";
 
-/** @deprecated Merged into `submit`. */
-export type DeprecatedBulkImportWizardStep = "review";
+/** @deprecated Old jobs used `review` before submit was split out; resume as `review`. */
+export type DeprecatedBulkImportWizardStep = never;
 
 /** @deprecated License step merged into `conference`. */
 export type LegacyBulkImportLicenseWizardStep = "metadata";
@@ -40,7 +41,7 @@ export const BULK_IMPORT_WIZARD_STEPS: BulkImportWizardStepDefinition[] = [
     id: "extraction",
     label: "Poster details",
     description: "How we read metadata from files",
-    task: "Choose an extraction level and whether to automate ORCID and ROR lookups.",
+    task: "Choose extraction settings, ORCID/ROR lookups, and whether to embargo posters for on-site review before Zenodo.",
   },
   {
     id: "conference",
@@ -54,6 +55,12 @@ export const BULK_IMPORT_WIZARD_STEPS: BulkImportWizardStepDefinition[] = [
     description: "Check files and start import",
     task: "Confirm each poster is ready, then submit the batch.",
   },
+  {
+    id: "review",
+    label: "Review metadata",
+    description: "Extracted metadata per poster",
+    task: "Review extracted metadata for each poster, then open the full editor to correct anything before publishing.",
+  },
 ];
 
 export const BULK_IMPORT_NAME_MIN_LENGTH = 2;
@@ -64,14 +71,14 @@ export function normalizeBulkImportWizardStep(
 ): BulkImportWizardStep | undefined {
   if (!step) return undefined;
   if (step === "assets") return "upload";
-  if (step === "review") return "submit";
   if (step === "metadata") return "conference";
   if (
     step === "setup" ||
     step === "upload" ||
     step === "extraction" ||
     step === "conference" ||
-    step === "submit"
+    step === "submit" ||
+    step === "review"
   ) {
     return step;
   }

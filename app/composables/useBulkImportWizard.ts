@@ -11,6 +11,8 @@ export type BulkImportWizardStepCompletion = {
   conference: MaybeRefOrGetter<boolean>;
   /** All submission rows ready to import. */
   submit: MaybeRefOrGetter<boolean>;
+  /** Batch submitted to the extraction pipeline. */
+  review: MaybeRefOrGetter<boolean>;
 };
 
 function stepIndex(step: BulkImportWizardStep) {
@@ -66,6 +68,8 @@ export function useBulkImportWizard(
         return readCompletion(completion.conference);
       case "submit":
         return readCompletion(completion.submit);
+      case "review":
+        return readCompletion(completion.review);
     }
   }
 
