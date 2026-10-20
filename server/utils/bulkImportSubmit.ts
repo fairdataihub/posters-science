@@ -10,6 +10,7 @@ export type BulkSubmitCreatedPoster = {
   posterId: number;
   extractionJobId: string;
   fileName: string;
+  filePath: string;
 };
 
 export type BulkSubmitResult = {
@@ -58,6 +59,10 @@ function validateSummaryForSubmit(summary: BulkImportSubmissionSummary | null) {
   return { license, conference };
 }
 
+function existingCreatedPosters(summary: BulkImportSubmissionSummary) {
+  return Array.isArray(summary.createdPosters) ? summary.createdPosters : [];
+}
+
 export function triggerPosterExtractionWorker() {
   const { posterExtractionApi } = useRuntimeConfig();
   if (!posterExtractionApi) return;
@@ -93,10 +98,10 @@ export async function submitBulkPosterSubmissionJob(
     });
   }
 
-  if (job.status !== "draft") {
+  if (job.status !== "draft" && job.status !== "processing") {
     throw createError({
       statusCode: 409,
-      statusMessage: "Bulk import already submitted",
+      statusMessage: "Bulk import cannot accept more posters",
       message: `This batch is "${job.status}" and cannot be submitted again.`,
     });
   }
@@ -126,10 +131,38 @@ export async function submitBulkPosterSubmissionJob(
     });
   }
 
+  const priorCreated = existingCreatedPosters(existingSummary);
+
   const created: BulkSubmitCreatedPoster[] = [];
+
+  function alreadyTracked(posterId: number) {
+    return (
+      priorCreated.some((entry) => entry.posterId === posterId) ||
+      created.some((entry) => entry.posterId === posterId)
+    );
+  }
 
   await prisma.$transaction(async (tx) => {
     for (const stagedPoster of staged) {
+      const existingJobForPath = await tx.extractionJob.findFirst({
+        where: {
+          filePath: stagedPoster.filePath,
+          poster: { userId },
+        },
+        select: { id: true, posterId: true },
+      });
+      if (existingJobForPath) {
+        if (!alreadyTracked(existingJobForPath.posterId)) {
+          created.push({
+            posterId: existingJobForPath.posterId,
+            extractionJobId: existingJobForPath.id,
+            fileName: stagedPoster.fileName,
+            filePath: stagedPoster.filePath,
+          });
+        }
+        continue;
+      }
+
       const poster = await tx.poster.create({
         data: {
           userId,
@@ -166,15 +199,17 @@ export async function submitBulkPosterSubmissionJob(
         posterId: poster.id,
         extractionJobId,
         fileName: stagedPoster.fileName,
+        filePath: stagedPoster.filePath,
       });
     }
   });
 
+  const mergedCreated = [...priorCreated, ...created];
   const submittedAt = new Date().toISOString();
   const nextSummary: BulkImportSubmissionSummary = {
     ...existingSummary,
-    createdPosterIds: created.map((item) => item.posterId),
-    createdPosters: created,
+    createdPosterIds: mergedCreated.map((item) => item.posterId),
+    createdPosters: mergedCreated,
     submittedAt,
   };
 
@@ -185,7 +220,9 @@ export async function submitBulkPosterSubmissionJob(
     error: null,
   });
 
-  triggerPosterExtractionWorker();
+  if (mergedCreated.length > 0) {
+    triggerPosterExtractionWorker();
+  }
 
   return { job: updated, posters: created };
 }

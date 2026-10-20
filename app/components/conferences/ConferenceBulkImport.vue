@@ -40,9 +40,6 @@ import {
 } from "#shared/types/conferenceBulkImport";
 import {
   buildSubmissionRowsFromSeparateUpload,
-  countSubmissionRowsByStatus,
-  submissionRowStatusColor,
-  submissionRowStatusLabel,
 } from "~/utils/conferenceBulkImportSubmissions";
 import { buildSpreadsheetRowsForUniformLicense } from "~/utils/conferenceImportSpreadsheet";
 import {
@@ -330,20 +327,6 @@ const selectedUniformLicenseOption = computed(() => {
 const submissionRows = ref<BulkImportSubmissionRow[]>([]);
 const submissionLoading = ref(false);
 
-const submissionColumns: ColumnDef<BulkImportSubmissionRow>[] = [
-  { accessorKey: "fileName", header: "Poster file" },
-  { accessorKey: "license", header: "License" },
-  { id: "status", header: "Status", enableSorting: false },
-];
-
-const submissionStatusCounts = computed(() =>
-  countSubmissionRowsByStatus(submissionRows.value),
-);
-
-const readySubmissionCount = computed(
-  () => submissionStatusCounts.value.ready ?? 0,
-);
-
 const uploadStepComplete = computed(() => stagedPosters.value.length > 0);
 
 const canContinueFromUpload = computed(
@@ -615,10 +598,9 @@ async function hydrateListsAfterResume(step: BulkImportWizardStep) {
   ) {
     await refreshStagedPostersFromStorage();
   }
-  if (step === "submit" || step === "review") {
-    if (step === "submit") {
-      await refreshSubmissionRows();
-    }
+  if (step === "submit") {
+    await onEnterSubmitStep();
+  } else if (step === "review") {
     await syncSubmitStepBatchProgress();
   }
 }
@@ -757,8 +739,7 @@ function goToStep(step: BulkImportWizardStep) {
         void refreshStagedPostersFromStorage();
       }
       if (target === "submit") {
-        void refreshSubmissionRows();
-        void syncSubmitStepBatchProgress();
+        void refreshStagedPostersFromStorage().then(() => onEnterSubmitStep());
       }
     },
   });
@@ -1084,9 +1065,58 @@ function batchStatusFromExtractionJob(
     job.status === "pending-extraction" ||
     job.status === "pending-thumbnail"
   ) {
-    return "queued";
+    return "extracting";
   }
   return "extracting";
+}
+
+const batchRetryingJobIds = ref<Set<string>>(new Set());
+
+function isBatchExtractionRetrying(item: BulkImportBatchItem) {
+  return (
+    item.extractionJobId != null &&
+    batchRetryingJobIds.value.has(item.extractionJobId)
+  );
+}
+
+async function retryBatchExtraction(item: BulkImportBatchItem) {
+  const extractionJobId = item.extractionJobId;
+  if (!extractionJobId || item.status !== "failed") return;
+
+  const retrying = new Set(batchRetryingJobIds.value);
+  retrying.add(extractionJobId);
+  batchRetryingJobIds.value = retrying;
+
+  try {
+    await $fetch(`/api/poster/job/${extractionJobId}/retry`, {
+      method: "POST",
+    });
+    const row = batchItems.value.find((entry) => entry.id === item.id);
+    if (row) {
+      row.status = "extracting";
+      row.error = undefined;
+    }
+    scheduleBatchExtractionPolling();
+  } catch (error) {
+    toast.add({
+      title: "Could not retry extraction",
+      description:
+        fetchErrorDescription(error) ??
+        "The extraction job could not be restarted.",
+      color: "error",
+    });
+  } finally {
+    const next = new Set(batchRetryingJobIds.value);
+    next.delete(extractionJobId);
+    batchRetryingJobIds.value = next;
+  }
+}
+
+async function retryAllFailedBatchExtractions() {
+  const failed = batchItems.value.filter(
+    (item) => item.status === "failed" && item.extractionJobId,
+  );
+  await Promise.all(failed.map((item) => retryBatchExtraction(item)));
 }
 
 function stopBatchExtractionPolling() {
@@ -1179,6 +1209,7 @@ async function syncSubmitStepBatchProgress() {
 const batchColumns: ColumnDef<BulkImportBatchItem>[] = [
   { accessorKey: "fileName", header: "Poster file" },
   { id: "batchStatus", header: "Progress", enableSorting: false },
+  { id: "batchActions", header: "", enableSorting: false },
 ];
 
 const expectedBatchCount = computed(
@@ -1188,7 +1219,7 @@ const expectedBatchCount = computed(
 function batchStatusLabel(status: BulkImportBatchItemStatus) {
   switch (status) {
     case "queued":
-      return "Queued";
+      return "Awaiting submit";
     case "uploading":
       return "Uploading";
     case "extracting":
@@ -1218,33 +1249,89 @@ function batchStatusColor(
   }
 }
 
-function buildBatchItemsFromReadyRows(): BulkImportBatchItem[] {
-  const readyRows = submissionRows.value.filter(
-    (row) => row.status === "ready",
+function isStagedPosterAlreadySubmitted(
+  staged: BulkImportStagedPoster,
+  created: BulkImportSubmissionSummary["createdPosters"],
+) {
+  if (!created?.length) return false;
+  if (created.some((entry) => entry.filePath === staged.filePath)) return true;
+  return created.some(
+    (entry) => !entry.filePath && entry.fileName === staged.fileName,
   );
-  return readyRows.map((row, index) => ({
-    id: `bulk-submit-${index + 1}`,
-    fileName: row.fileName,
-    status: "queued" as const,
-  }));
 }
 
-function applyBatchStateFromJob(job: BulkPosterSubmissionJob) {
-  const summary = job.submissionSummary as BulkImportSubmissionSummary | null;
-  const created = summary?.createdPosters;
-  if (!created?.length) return;
-
-  batchItems.value = created.map((poster) => ({
+function rebuildBatchItemsFromJobAndStaged(
+  summary: BulkImportSubmissionSummary | null,
+) {
+  const created = summary?.createdPosters ?? [];
+  const items: BulkImportBatchItem[] = created.map((poster) => ({
     id: `bulk-poster-${poster.posterId}`,
     fileName: poster.fileName,
+    filePath: poster.filePath,
     posterId: poster.posterId,
     extractionJobId: poster.extractionJobId,
     status: "extracting" as const,
   }));
+
+  for (const staged of stagedPosters.value) {
+    if (isStagedPosterAlreadySubmitted(staged, created)) continue;
+    items.push({
+      id: `bulk-pending-${staged.filePath}`,
+      fileName: staged.fileName,
+      filePath: staged.filePath,
+      status: "queued",
+    });
+  }
+
+  batchItems.value = items;
+}
+
+const hasUnsubmittedStagedPosters = computed(() =>
+  stagedPosters.value.some(
+    (staged) =>
+      !batchItems.value.some(
+        (item) =>
+          item.posterId != null &&
+          (item.filePath === staged.filePath ||
+            (!item.filePath && item.fileName === staged.fileName)),
+      ),
+  ),
+);
+
+async function onEnterSubmitStep() {
+  if (jobId.value) {
+    try {
+      const job = await getBulkPosterSubmissionJob(jobId.value);
+      rebuildBatchItemsFromJobAndStaged(
+        job.submissionSummary as BulkImportSubmissionSummary | null,
+      );
+    } catch {
+      // Keep current batch items if refresh fails.
+    }
+  }
+  await refreshSubmissionRows();
+
+  if (batchImportRunning.value) return;
+
+  if (hasUnsubmittedStagedPosters.value && canProceedFromReview.value) {
+    void startImport();
+    return;
+  }
+
+  await syncSubmitStepBatchProgress();
+}
+
+function applyBatchStateFromJob(job: BulkPosterSubmissionJob) {
+  const summary = job.submissionSummary as BulkImportSubmissionSummary | null;
   batchImportFinished.value =
     job.status === "processing" ||
     job.status === "completed" ||
     job.status === "failed";
+
+  if (batchImportFinished.value || summary?.createdPosters?.length) {
+    rebuildBatchItemsFromJobAndStaged(summary);
+  }
+
   if (batchImportFinished.value) {
     void syncSubmitStepBatchProgress();
   }
@@ -1350,6 +1437,10 @@ function continueToReviewMetadata() {
 }
 
 function onSubmitStepContinue() {
+  if (hasUnsubmittedStagedPosters.value) {
+    void startImport();
+    return;
+  }
   if (batchImportFinished.value) {
     continueToReviewMetadata();
     return;
@@ -1358,11 +1449,40 @@ function onSubmitStepContinue() {
 }
 
 async function startImport() {
-  if (batchImportRunning.value || batchImportFinished.value) return;
+  if (batchImportRunning.value) return;
+  if (batchImportFinished.value && !hasUnsubmittedStagedPosters.value) return;
 
-  batchItems.value = buildBatchItemsFromReadyRows();
+  if (
+    !hasUnsubmittedStagedPosters.value &&
+    stagedPosters.value.length === 0
+  ) {
+    toast.add({
+      title: "Nothing to import",
+      description: "Add at least one poster file before submitting.",
+      color: "warning",
+    });
+    return;
+  }
 
-  if (batchItems.value.length === 0) {
+  if (!hasUnsubmittedStagedPosters.value) {
+    toast.add({
+      title: "Nothing new to submit",
+      description: "Every staged file already has an extraction job.",
+      color: "info",
+    });
+    return;
+  }
+
+  if (!canProceedFromReview.value) {
+    toast.add({
+      title: "Fix submission issues",
+      description: "Resolve license or file issues before submitting.",
+      color: "warning",
+    });
+    return;
+  }
+
+  if (batchItems.value.length === 0 && stagedPosters.value.length === 0) {
     toast.add({
       title: "Nothing to import",
       description: "Fix submission issues before submitting.",
@@ -1383,22 +1503,37 @@ async function startImport() {
   batchImportRunning.value = true;
 
   try {
+    await syncBulkStagedPostersFromStorage(jobId.value);
+    const jobAfterSync = await getBulkPosterSubmissionJob(jobId.value);
+    stagedPosters.value = jobAfterSync.stagedPosters ?? [];
+    rebuildBatchItemsFromJobAndStaged(
+      jobAfterSync.submissionSummary as BulkImportSubmissionSummary | null,
+    );
+
+    if (!hasUnsubmittedStagedPosters.value) {
+      toast.add({
+        title: "Nothing new to submit",
+        description: "Every staged file already has an extraction job.",
+        color: "info",
+      });
+      return;
+    }
+
     const result = await submitBulkPosterSubmissionJob(jobId.value);
-    batchItems.value = result.posters.map((poster) => ({
-      id: `bulk-poster-${poster.posterId}`,
-      fileName: poster.fileName,
-      posterId: poster.posterId,
-      extractionJobId: poster.extractionJobId,
-      status: "extracting" as const,
-    }));
     batchImportFinished.value = true;
+    rebuildBatchItemsFromJobAndStaged(
+      result.job.submissionSummary as BulkImportSubmissionSummary | null,
+    );
     await refreshBatchExtractionStatuses();
     scheduleBatchExtractionPolling();
+    const addedCount = result.posters.length;
     toast.add({
-      title: "Batch submitted",
+      title: addedCount > 0 ? "Posters submitted" : "Nothing new to submit",
       description:
-        "Extraction jobs were created for each poster. Track the batch from your dashboard bulk import card.",
-      color: "success",
+        addedCount > 0
+          ? `Created extraction jobs for ${addedCount} poster(s).`
+          : "Every staged file already has an extraction job.",
+      color: addedCount > 0 ? "success" : "info",
     });
   } catch (error) {
     batchItems.value = [];
@@ -2008,95 +2143,6 @@ async function startImport() {
           </div>
 
           <UAlert
-            color="info"
-            variant="soft"
-            icon="i-lucide-info"
-            title="Posters already in storage"
-            description="Each row should match one uploaded file name and include a license. Fix warnings before you submit."
-          />
-
-          <div v-if="submissionRows.length > 0" class="flex flex-wrap gap-2">
-            <UBadge color="success" variant="soft" size="sm">
-              {{ readySubmissionCount }} ready
-            </UBadge>
-            <UBadge
-              v-if="(submissionStatusCounts.missing_license ?? 0) > 0"
-              color="warning"
-              variant="soft"
-              size="sm"
-            >
-              {{ submissionStatusCounts.missing_license }} missing license
-            </UBadge>
-            <UBadge
-              v-if="(submissionStatusCounts.missing_file ?? 0) > 0"
-              color="warning"
-              variant="soft"
-              size="sm"
-            >
-              {{ submissionStatusCounts.missing_file }} missing file
-            </UBadge>
-            <UBadge
-              v-if="(submissionStatusCounts.invalid_license ?? 0) > 0"
-              color="error"
-              variant="soft"
-              size="sm"
-            >
-              {{ submissionStatusCounts.invalid_license }} invalid license
-            </UBadge>
-          </div>
-
-          <div
-            class="border-default relative overflow-x-auto rounded-lg border"
-          >
-            <div
-              v-if="submissionLoading"
-              class="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-white/60 dark:bg-black/30"
-            >
-              <UIcon
-                name="i-lucide-loader-circle"
-                class="text-primary size-8 animate-spin"
-              />
-            </div>
-
-            <UTable
-              :data="submissionRows"
-              :columns="submissionColumns"
-              class="max-h-[480px]"
-            >
-              <template #fileName-cell="{ row }">
-                <span
-                  class="line-clamp-2 max-w-md text-sm font-medium"
-                  :title="row.original.fileName"
-                >
-                  {{ row.original.fileName }}
-                </span>
-              </template>
-
-              <template #license-cell="{ row }">
-                <UBadge
-                  v-if="row.original.license"
-                  color="neutral"
-                  variant="soft"
-                  size="xs"
-                >
-                  {{ row.original.license }}
-                </UBadge>
-                <span v-else class="text-muted text-sm">—</span>
-              </template>
-
-              <template #status-cell="{ row }">
-                <UBadge
-                  :color="submissionRowStatusColor(row.original.status)"
-                  variant="solid"
-                  size="xs"
-                >
-                  {{ submissionRowStatusLabel(row.original.status) }}
-                </UBadge>
-              </template>
-            </UTable>
-          </div>
-
-          <UAlert
             v-if="!batchImportRunning && !batchImportFinished"
             color="info"
             variant="soft"
@@ -2115,6 +2161,15 @@ async function startImport() {
           />
 
           <UAlert
+            v-else-if="batchImportFinished && hasUnsubmittedStagedPosters"
+            color="warning"
+            variant="soft"
+            icon="i-lucide-file-plus"
+            title="New posters added"
+            description="Submit again to send new files to the extraction pipeline. Posters already submitted keep their progress below."
+          />
+
+          <UAlert
             v-else-if="batchImportFinished"
             color="success"
             variant="soft"
@@ -2128,6 +2183,25 @@ async function startImport() {
           />
 
           <div v-if="batchItems.length > 0" class="space-y-2">
+            <div
+              v-if="batchFailedCount > 0 && batchImportFinished"
+              class="flex justify-end"
+            >
+              <UButton
+                size="sm"
+                color="neutral"
+                variant="outline"
+                icon="i-lucide-rotate-ccw"
+                label="Retry all failed"
+                :loading="
+                  batchItems.some(
+                    (item) =>
+                      item.status === 'failed' && isBatchExtractionRetrying(item),
+                  )
+                "
+                @click="retryAllFailedBatchExtractions"
+              />
+            </div>
             <div class="flex items-center justify-between text-sm">
               <span class="text-muted">Overall progress</span>
               <span class="font-medium">{{ batchProgress }}%</span>
@@ -2150,19 +2224,44 @@ async function startImport() {
               </template>
 
               <template #batchStatus-cell="{ row }">
-                <UBadge
-                  :color="batchStatusColor(row.original.status)"
-                  variant="solid"
-                  size="xs"
-                  :icon="
-                    row.original.status === 'uploading' ||
-                    row.original.status === 'extracting'
-                      ? 'i-lucide-loader-circle'
-                      : undefined
+                <div class="space-y-1">
+                  <UBadge
+                    :color="batchStatusColor(row.original.status)"
+                    variant="solid"
+                    size="xs"
+                    :icon="
+                      row.original.status === 'uploading' ||
+                      row.original.status === 'extracting'
+                        ? 'i-lucide-loader-circle'
+                        : undefined
+                    "
+                  >
+                    {{ batchStatusLabel(row.original.status) }}
+                  </UBadge>
+                  <p
+                    v-if="row.original.status === 'failed' && row.original.error"
+                    class="text-muted max-w-md text-xs"
+                    :title="row.original.error"
+                  >
+                    {{ row.original.error }}
+                  </p>
+                </div>
+              </template>
+
+              <template #batchActions-cell="{ row }">
+                <UButton
+                  v-if="
+                    row.original.status === 'failed' &&
+                    row.original.extractionJobId
                   "
-                >
-                  {{ batchStatusLabel(row.original.status) }}
-                </UBadge>
+                  size="xs"
+                  color="neutral"
+                  variant="outline"
+                  icon="i-lucide-rotate-ccw"
+                  label="Retry"
+                  :loading="isBatchExtractionRetrying(row.original)"
+                  @click="retryBatchExtraction(row.original)"
+                />
               </template>
             </UTable>
           </div>
@@ -2185,7 +2284,11 @@ async function startImport() {
             icon="i-lucide-arrow-right"
             trailing
             :label="
-              batchImportFinished ? 'Continue to review metadata' : 'Submit batch'
+              hasUnsubmittedStagedPosters
+                ? 'Submit new posters'
+                : batchImportFinished
+                  ? 'Continue to review metadata'
+                  : 'Submit batch'
             "
             :disabled="
               batchImportRunning ||
@@ -2209,7 +2312,12 @@ async function startImport() {
             </p>
           </div>
 
-          <BulkImportMetadataReview :items="batchItems" />
+          <BulkImportMetadataReview
+            :items="batchItems"
+            :bulk-import-job-id="jobId"
+            :retrying-job-ids="batchRetryingJobIds"
+            @retry="retryBatchExtraction"
+          />
         </div>
 
         <div

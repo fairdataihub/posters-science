@@ -24,5 +24,6 @@ export type BulkImportSubmissionSummary = {
     posterId: number;
     extractionJobId: string;
     fileName: string;
+    filePath?: string;
   }[];
 };

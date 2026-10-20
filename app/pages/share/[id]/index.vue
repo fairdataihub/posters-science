@@ -29,6 +29,10 @@ import {
 } from "@internationalized/date";
 import DatePicker from "~/components/ui/DatePicker.vue";
 import DateRangePicker from "~/components/ui/DateRangePicker.vue";
+import {
+  shareBulkImportReturnFromQuery,
+  shareNewBulkPath,
+} from "~/utils/sharePaths";
 
 type FundingReference = StrictFormSchema["fundingReferences"][number];
 
@@ -38,6 +42,18 @@ definePageMeta({
 
 const route = useRoute();
 const toast = useToast();
+
+const bulkImportReturn = computed(() =>
+  shareBulkImportReturnFromQuery(route.query),
+);
+const bulkImportReturnTo = computed(() => {
+  const ctx = bulkImportReturn.value;
+  if (!ctx) return null;
+  return shareNewBulkPath({
+    jobId: ctx.jobId,
+    wizardStep: ctx.wizardStep,
+  });
+});
 
 const { id } = route.params as { id: string };
 
@@ -693,16 +709,20 @@ async function continueAnyway() {
 }
 
 async function onSubmit(event: FormSubmitEvent<StrictFormSchema>) {
-  const unopened: ("additionalInfo" | "posterContent")[] = [];
-  if (!additionalInfoOpened.value) unopened.push("additionalInfo");
-  if (!posterContentOpened.value) unopened.push("posterContent");
+  const fromBulkImport = Boolean(bulkImportReturn.value);
 
-  if (unopened.length > 0) {
-    pendingUnopened.value = unopened;
-    pendingSubmitEvent.value = event;
-    showSectionModal.value = true;
+  if (!fromBulkImport) {
+    const unopened: ("additionalInfo" | "posterContent")[] = [];
+    if (!additionalInfoOpened.value) unopened.push("additionalInfo");
+    if (!posterContentOpened.value) unopened.push("posterContent");
 
-    return;
+    if (unopened.length > 0) {
+      pendingUnopened.value = unopened;
+      pendingSubmitEvent.value = event;
+      showSectionModal.value = true;
+
+      return;
+    }
   }
 
   if (Object.values(orcidErrors.value).some(Boolean)) {
@@ -742,7 +762,11 @@ async function onSubmit(event: FormSubmitEvent<StrictFormSchema>) {
       color: "success",
     });
 
-    // Navigate to review page
+    if (bulkImportReturnTo.value) {
+      await navigateTo(bulkImportReturnTo.value);
+      return;
+    }
+
     await navigateTo(`/share/${id}/publish`);
   } catch (err) {
     console.error(err);
@@ -1055,16 +1079,25 @@ const moveCreator = (index: number, direction: "up" | "down") => {
       <template #headline>
         <UBreadcrumb
           :items="
-            isVersionedPoster
+            bulkImportReturnTo
               ? [
                   { label: 'Dashboard', to: '/dashboard' },
+                  {
+                    label: 'Share Posters in bulk',
+                    to: bulkImportReturnTo,
+                  },
                   { label: 'Review Metadata' },
                 ]
-              : [
-                  { label: 'Dashboard', to: '/dashboard' },
-                  { label: 'Upload Poster', to: '/share/new' },
-                  { label: 'Review Metadata' },
-                ]
+              : isVersionedPoster
+                ? [
+                    { label: 'Dashboard', to: '/dashboard' },
+                    { label: 'Review Metadata' },
+                  ]
+                : [
+                    { label: 'Dashboard', to: '/dashboard' },
+                    { label: 'Upload Poster', to: '/share/new' },
+                    { label: 'Review Metadata' },
+                  ]
           "
         />
       </template>
@@ -2581,10 +2614,24 @@ const moveCreator = (index: number, direction: "up" | "down") => {
         </div>
       </div>
 
-      <div class="flex gap-3">
+      <div class="flex flex-wrap gap-3">
+        <UButton
+          v-if="bulkImportReturnTo"
+          color="neutral"
+          variant="ghost"
+          icon="i-lucide-arrow-left"
+          label="Back to bulk import"
+          :to="bulkImportReturnTo"
+          class="w-full sm:w-auto"
+        />
+
         <UTooltip
-          text="Save your progress without moving to the next step"
-          class="flex-1"
+          :text="
+            bulkImportReturnTo
+              ? 'Save without leaving this poster'
+              : 'Save your progress without moving to the next step'
+          "
+          class="min-w-0 flex-1"
         >
           <UButton
             :disabled="savingDraft || loading"
@@ -2600,16 +2647,25 @@ const moveCreator = (index: number, direction: "up" | "down") => {
         </UTooltip>
 
         <UTooltip
-          text="Save your changes and proceed to the publishing step"
-          class="flex-1"
+          :text="
+            bulkImportReturnTo
+              ? 'Save and return to the bulk import review step'
+              : 'Save your changes and proceed to the publishing step'
+          "
+          class="min-w-0 flex-1"
         >
           <UButton
             :disabled="loading || savingDraft"
             :loading="loading"
             class="w-full"
             variant="solid"
-            icon="i-lucide-arrow-right"
-            label="Save Changes and Continue"
+            :icon="bulkImportReturnTo ? 'i-lucide-arrow-left' : 'i-lucide-arrow-right'"
+            :trailing="!bulkImportReturnTo"
+            :label="
+              bulkImportReturnTo
+                ? 'Save and return to bulk import'
+                : 'Save Changes and Continue'
+            "
             type="submit"
             size="lg"
           />

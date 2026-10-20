@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import type { BulkPosterSubmissionJob } from "#shared/types/bulkPosterSubmissionJob";
-import { normalizeBulkImportWizardStep } from "#shared/types/bulkImportWizard";
 import ConferenceBulkImport from "~/components/conferences/ConferenceBulkImport.vue";
-import { shareNewBulkPath } from "~/utils/sharePaths";
+import { normalizeBulkImportWizardStep } from "#shared/types/bulkImportWizard";
+import {
+  SHARE_BULK_IMPORT_STEP_QUERY,
+  shareNewBulkPath,
+} from "~/utils/sharePaths";
 
 definePageMeta({
   middleware: ["auth"],
@@ -27,6 +30,20 @@ const { data: resumeJob, status: resumeStatus } =
 
 const resumeLoading = computed(
   () => Boolean(jobIdFromQuery.value) && resumeStatus.value === "pending",
+);
+
+const wizardStepFromQuery = computed(() => {
+  const raw = route.query[SHARE_BULK_IMPORT_STEP_QUERY];
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return normalizeBulkImportWizardStep(
+    typeof value === "string" ? value : undefined,
+  );
+});
+
+const initialWizardStep = computed(
+  () =>
+    wizardStepFromQuery.value ??
+    normalizeBulkImportWizardStep(resumeJob.value?.wizardStep),
 );
 
 const bulkBreadcrumbTo = computed(() =>
@@ -66,7 +83,7 @@ useSeoMeta({
       :key="jobIdFromQuery ?? 'new-bulk'"
       :initial-job-id="jobIdFromQuery ?? resumeJob?.id ?? undefined"
       :initial-import-name="resumeJob?.name"
-      :initial-step="normalizeBulkImportWizardStep(resumeJob?.wizardStep)"
+      :initial-step="initialWizardStep"
       :initial-extraction-method="resumeJob?.extractionMethod"
       :resume-loading="resumeLoading"
     />
