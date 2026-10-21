@@ -81,7 +81,7 @@ function statusPresentation() {
       icon: "i-lucide-circle-alert",
     };
   }
-  if (props.bulk.status === "processing") {
+  if (props.bulk.status === "processing" && props.bulk.hasActiveExtraction) {
     return {
       label: "Extracting metadata",
       color: "info" as const,
@@ -113,7 +113,9 @@ const description = computed(() => {
 
 function actionLabel() {
   if (props.bulk.status === "failed") return "Resolve issue";
-  if (props.bulk.status === "processing") return "View progress";
+  if (props.bulk.status === "processing" && props.bulk.hasActiveExtraction) {
+    return "View progress";
+  }
 
   return "Continue editing";
 }
@@ -203,7 +205,7 @@ function continueImport() {
               variant="subtle"
               :label="actionLabel()"
               :icon="
-                bulk.status === 'processing'
+                bulk.status === 'processing' && bulk.hasActiveExtraction
                   ? 'i-lucide-activity'
                   : 'line-md:arrow-right'
               "

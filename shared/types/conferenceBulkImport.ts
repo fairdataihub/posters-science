@@ -53,6 +53,7 @@ export type BulkImportSubmissionRow = {
 export type BulkImportBatchItemStatus =
   | "queued"
   | "uploading"
+  | "waitingInQueue"
   | "extracting"
   | "completed"
   | "failed";

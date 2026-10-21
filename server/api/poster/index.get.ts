@@ -1,4 +1,9 @@
-import { posterIdsHiddenByBulkImport } from "~~/server/utils/bulkImportDashboard";
+import {
+  bulkSubmissionHasActiveExtraction,
+  posterIdsFromBulkSubmissionSummary,
+  posterIdsHiddenByBulkImport,
+  posterIdsWithActiveExtractionJob,
+} from "~~/server/utils/bulkImportDashboard";
 
 export default defineEventHandler(async (event) => {
   const session = await requireUserSession(event);
@@ -136,6 +141,16 @@ export default defineEventHandler(async (event) => {
       };
     });
 
+  const bulkPosterIds = [
+    ...new Set(
+      bulkSubmissionRows.flatMap((bulk) =>
+        posterIdsFromBulkSubmissionSummary(bulk.submissionSummary),
+      ),
+    ),
+  ];
+  const activeExtractionPosterIds =
+    await posterIdsWithActiveExtractionJob(bulkPosterIds);
+
   const bulkSubmissions = bulkSubmissionRows.map((bulk) => ({
     id: bulk.id,
     name: bulk.name,
@@ -143,6 +158,12 @@ export default defineEventHandler(async (event) => {
     status: bulk.status,
     extractionMethod: bulk.extractionMethod,
     posterCount: bulk.posterCount,
+    hasActiveExtraction:
+      bulk.status === "processing" &&
+      bulkSubmissionHasActiveExtraction(
+        bulk.submissionSummary,
+        activeExtractionPosterIds,
+      ),
     createdAt: bulk.created.toISOString(),
     updatedAt: bulk.updated.toISOString(),
   }));

@@ -5,7 +5,8 @@ export type BulkImportWizardStep =
   | "extraction"
   | "conference"
   | "submit"
-  | "review";
+  | "review"
+  | "preview";
 
 /** @deprecated Jobs saved on the old flow; map to `upload` when resuming. */
 export type LegacyBulkImportWizardStep = "assets";
@@ -61,6 +62,12 @@ export const BULK_IMPORT_WIZARD_STEPS: BulkImportWizardStepDefinition[] = [
     description: "Extracted metadata per poster",
     task: "Review extracted metadata for each poster, then open the full editor to correct anything before publishing.",
   },
+  {
+    id: "preview",
+    label: "View metadata",
+    description: "poster.json preview per poster",
+    task: "Preview the poster.json that will accompany each poster file before you publish or download.",
+  },
 ];
 
 export const BULK_IMPORT_NAME_MIN_LENGTH = 2;
@@ -78,7 +85,8 @@ export function normalizeBulkImportWizardStep(
     step === "extraction" ||
     step === "conference" ||
     step === "submit" ||
-    step === "review"
+    step === "review" ||
+    step === "preview"
   ) {
     return step;
   }

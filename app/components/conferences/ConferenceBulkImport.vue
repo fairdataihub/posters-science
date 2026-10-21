@@ -38,9 +38,7 @@ import {
   type BulkImportBatchItemStatus,
   type BulkImportSubmissionRow,
 } from "#shared/types/conferenceBulkImport";
-import {
-  buildSubmissionRowsFromSeparateUpload,
-} from "~/utils/conferenceBulkImportSubmissions";
+import { buildSubmissionRowsFromSeparateUpload } from "~/utils/conferenceBulkImportSubmissions";
 import { buildSpreadsheetRowsForUniformLicense } from "~/utils/conferenceImportSpreadsheet";
 import {
   createBulkPosterSubmissionJob,
@@ -55,6 +53,7 @@ import {
 } from "~/utils/bulkPosterSubmissionJobClient";
 import { shareNewBulkPath } from "~/utils/sharePaths";
 import BulkImportMetadataReview from "~/components/conferences/BulkImportMetadataReview.vue";
+import BulkImportPosterJsonPreview from "~/components/conferences/BulkImportPosterJsonPreview.vue";
 
 const router = useRouter();
 const route = useRoute();
@@ -457,8 +456,12 @@ async function mergeJobSubmissionSummary(
   });
 }
 
-/** Declared before wizard composable (review step completion). */
+/** Declared before wizard composable (step completion reads batch state). */
+const batchItems = ref<BulkImportBatchItem[]>([]);
 const batchImportFinished = ref(false);
+const batchHasCompletedExtractions = computed(() =>
+  batchItems.value.some((item) => item.status === "completed"),
+);
 
 const {
   wizardSteps,
@@ -484,6 +487,7 @@ const {
     conference: conferenceStepComplete,
     submit: canProceedFromReview,
     review: batchImportFinished,
+    preview: batchHasCompletedExtractions,
   },
   {
     initialJobId: props.initialJobId,
@@ -580,7 +584,8 @@ function applyJobSnapshot(job: BulkPosterSubmissionJob) {
     step === "extraction" ||
     step === "conference" ||
     step === "submit" ||
-    step === "review"
+    step === "review" ||
+    step === "preview"
   ) {
     extractionStepAcknowledged.value = true;
   }
@@ -599,8 +604,8 @@ async function hydrateListsAfterResume(step: BulkImportWizardStep) {
     await refreshStagedPostersFromStorage();
   }
   if (step === "submit") {
-    await onEnterSubmitStep();
-  } else if (step === "review") {
+    await enterSubmitStep();
+  } else if (step === "review" || step === "preview") {
     await syncSubmitStepBatchProgress();
   }
 }
@@ -739,7 +744,7 @@ function goToStep(step: BulkImportWizardStep) {
         void refreshStagedPostersFromStorage();
       }
       if (target === "submit") {
-        void refreshStagedPostersFromStorage().then(() => onEnterSubmitStep());
+        void enterSubmitStep();
       }
     },
   });
@@ -755,10 +760,11 @@ watch(
     if (id && step === "upload") {
       void refreshStagedPostersFromStorage();
     }
-    if (step === "submit" || step === "review") {
+    // Submit step refresh is handled by onEnterSubmitStep to avoid duplicate polls.
+    if (step === "review" || step === "preview") {
       void syncSubmitStepBatchProgress();
     }
-    if (step !== "submit") {
+    if (step !== "submit" && step !== "review" && step !== "preview") {
       stopBatchExtractionPolling();
     }
   },
@@ -1022,7 +1028,6 @@ async function removeStagedPoster(poster: BulkImportStagedPoster) {
   }
 }
 
-const batchItems = ref<BulkImportBatchItem[]>([]);
 const batchImportRunning = ref(false);
 const BULK_BATCH_EXTRACTION_POLL_MS = 3000;
 let batchExtractionPollTimer: ReturnType<typeof setTimeout> | undefined;
@@ -1049,6 +1054,14 @@ const batchFailedCount = computed(
   () => batchItems.value.filter((item) => item.status === "failed").length,
 );
 
+const batchInProgressItems = computed(() =>
+  batchItems.value.filter((item) => item.status !== "failed"),
+);
+
+const batchFailedItems = computed(() =>
+  batchItems.value.filter((item) => item.status === "failed"),
+);
+
 const batchStillExtractingCount = computed(
   () =>
     batchItems.value.filter(
@@ -1061,13 +1074,10 @@ function batchStatusFromExtractionJob(
 ): BulkImportBatchItemStatus {
   if (job.status === "failed") return "failed";
   if (job.completed && job.status === "completed") return "completed";
-  if (
-    job.status === "pending-extraction" ||
-    job.status === "pending-thumbnail"
-  ) {
-    return "extracting";
-  }
-  return "extracting";
+  if (job.status === "pending-extraction") return "waitingInQueue";
+  if (job.status === "pending-thumbnail") return "extracting";
+  if (job.status === "processing") return "extracting";
+  return "waitingInQueue";
 }
 
 const batchRetryingJobIds = ref<Set<string>>(new Set());
@@ -1078,6 +1088,10 @@ function isBatchExtractionRetrying(item: BulkImportBatchItem) {
     batchRetryingJobIds.value.has(item.extractionJobId)
   );
 }
+
+const batchRetryingAnyFailed = computed(() =>
+  batchFailedItems.value.some((item) => isBatchExtractionRetrying(item)),
+);
 
 async function retryBatchExtraction(item: BulkImportBatchItem) {
   const extractionJobId = item.extractionJobId;
@@ -1093,7 +1107,7 @@ async function retryBatchExtraction(item: BulkImportBatchItem) {
     });
     const row = batchItems.value.find((entry) => entry.id === item.id);
     if (row) {
-      row.status = "extracting";
+      row.status = "waitingInQueue";
       row.error = undefined;
     }
     scheduleBatchExtractionPolling();
@@ -1148,8 +1162,10 @@ async function refreshBatchExtractionStatuses() {
         if (!row) return;
         const wasTerminal =
           row.status === "completed" || row.status === "failed";
-        row.status = batchStatusFromExtractionJob(response);
-        row.error = response.error?.trim() ? response.error : undefined;
+        const nextStatus = batchStatusFromExtractionJob(response);
+        const nextError = response.error?.trim() ? response.error : undefined;
+        if (row.status !== nextStatus) row.status = nextStatus;
+        if (row.error !== nextError) row.error = nextError;
         if (
           !wasTerminal &&
           row.status === "completed" &&
@@ -1186,7 +1202,9 @@ async function applyBatchLicenseAndConferenceToPosters() {
 function scheduleBatchExtractionPolling() {
   stopBatchExtractionPolling();
   if (
-    (currentStep.value !== "submit" && currentStep.value !== "review") ||
+    (currentStep.value !== "submit" &&
+      currentStep.value !== "review" &&
+      currentStep.value !== "preview") ||
     !batchImportFinished.value ||
     !batchExtractionPollPending()
   ) {
@@ -1202,19 +1220,60 @@ function scheduleBatchExtractionPolling() {
 async function syncSubmitStepBatchProgress() {
   if (!batchImportFinished.value || batchItems.value.length === 0) return;
   await refreshBatchExtractionStatuses();
-  await applyBatchLicenseAndConferenceToPosters();
   scheduleBatchExtractionPolling();
 }
 
-const batchColumns: ColumnDef<BulkImportBatchItem>[] = [
+const batchProgressColumns: ColumnDef<BulkImportBatchItem>[] = [
+  { id: "batchProgressRow", header: "Poster file", enableSorting: false },
+];
+
+const batchFailedColumns: ColumnDef<BulkImportBatchItem>[] = [
   { accessorKey: "fileName", header: "Poster file" },
-  { id: "batchStatus", header: "Progress", enableSorting: false },
-  { id: "batchActions", header: "", enableSorting: false },
+  { id: "batchError", header: "Error", enableSorting: false },
+  { id: "batchFailedActions", header: "", enableSorting: false },
 ];
 
 const expectedBatchCount = computed(
   () => submissionRows.value.filter((row) => row.status === "ready").length,
 );
+
+const submitStepBanner = computed(() => {
+  if (batchImportRunning.value) {
+    return {
+      color: "info" as const,
+      icon: "i-lucide-loader-circle",
+      title: "Submitting batch",
+      description: "Creating posters and extraction jobs…",
+    };
+  }
+  if (!batchImportFinished.value) {
+    return {
+      color: "info" as const,
+      icon: "i-lucide-info",
+      title: "Ready to submit",
+      description: `${expectedBatchCount.value} poster(s) will be sent to the extraction pipeline. Files are already in storage; submit creates a poster and extraction job for each file.`,
+    };
+  }
+  if (hasUnsubmittedStagedPosters.value) {
+    return {
+      color: "warning" as const,
+      icon: "i-lucide-file-plus",
+      title: "New posters added",
+      description:
+        "Submit again to send new files to the extraction pipeline. Posters already submitted keep their progress below.",
+    };
+  }
+  const progressSummary =
+    batchStillExtractingCount.value > 0
+      ? `${batchCompletedCount.value} of ${batchItems.value.length} completed${batchFailedCount.value ? ` · ${batchFailedCount.value} failed` : ""} · ${batchStillExtractingCount.value} still extracting.`
+      : `${batchCompletedCount.value} completed${batchFailedCount.value ? ` · ${batchFailedCount.value} failed` : ""}.`;
+  return {
+    color: "success" as const,
+    icon: "i-lucide-circle-check",
+    title: "Batch submitted",
+    description: progressSummary,
+  };
+});
 
 function batchStatusLabel(status: BulkImportBatchItemStatus) {
   switch (status) {
@@ -1222,6 +1281,8 @@ function batchStatusLabel(status: BulkImportBatchItemStatus) {
       return "Awaiting submit";
     case "uploading":
       return "Uploading";
+    case "waitingInQueue":
+      return "Waiting in job queue";
     case "extracting":
       return "Extracting metadata";
     case "completed":
@@ -1242,10 +1303,25 @@ function batchStatusColor(
     case "extracting":
     case "uploading":
       return "info";
+    case "waitingInQueue":
     case "queued":
       return "neutral";
     default:
       return "neutral";
+  }
+}
+
+function batchStatusIcon(
+  status: BulkImportBatchItemStatus,
+): string | undefined {
+  switch (status) {
+    case "waitingInQueue":
+      return "i-lucide-clock";
+    case "uploading":
+    case "extracting":
+      return "i-lucide-loader-circle";
+    default:
+      return undefined;
   }
 }
 
@@ -1264,14 +1340,37 @@ function rebuildBatchItemsFromJobAndStaged(
   summary: BulkImportSubmissionSummary | null,
 ) {
   const created = summary?.createdPosters ?? [];
-  const items: BulkImportBatchItem[] = created.map((poster) => ({
-    id: `bulk-poster-${poster.posterId}`,
-    fileName: poster.fileName,
-    filePath: poster.filePath,
-    posterId: poster.posterId,
-    extractionJobId: poster.extractionJobId,
-    status: "extracting" as const,
-  }));
+  const previousByKey = new Map<string, BulkImportBatchItem>();
+  for (const item of batchItems.value) {
+    if (item.posterId != null) {
+      previousByKey.set(`poster:${item.posterId}`, item);
+    }
+    if (item.filePath) {
+      previousByKey.set(`path:${item.filePath}`, item);
+    }
+  }
+
+  const items: BulkImportBatchItem[] = created.map((poster) => {
+    const prev =
+      previousByKey.get(`poster:${poster.posterId}`) ??
+      (poster.filePath
+        ? previousByKey.get(`path:${poster.filePath}`)
+        : undefined);
+    const sameJob =
+      prev?.extractionJobId != null &&
+      prev.extractionJobId === poster.extractionJobId;
+
+    return {
+      id: `bulk-poster-${poster.posterId}`,
+      fileName: poster.fileName,
+      filePath: poster.filePath,
+      posterId: poster.posterId,
+      extractionJobId: poster.extractionJobId,
+      status:
+        sameJob && prev ? prev.status : ("waitingInQueue" as const),
+      error: sameJob && prev ? prev.error : undefined,
+    };
+  });
 
   for (const staged of stagedPosters.value) {
     if (isStagedPosterAlreadySubmitted(staged, created)) continue;
@@ -1298,6 +1397,13 @@ const hasUnsubmittedStagedPosters = computed(() =>
   ),
 );
 
+async function enterSubmitStep() {
+  if (!batchImportFinished.value || hasUnsubmittedStagedPosters.value) {
+    await refreshStagedPostersFromStorage();
+  }
+  await onEnterSubmitStep();
+}
+
 async function onEnterSubmitStep() {
   if (jobId.value) {
     try {
@@ -1309,7 +1415,9 @@ async function onEnterSubmitStep() {
       // Keep current batch items if refresh fails.
     }
   }
-  await refreshSubmissionRows();
+  if (!batchImportFinished.value) {
+    await refreshSubmissionRows();
+  }
 
   if (batchImportRunning.value) return;
 
@@ -1330,10 +1438,6 @@ function applyBatchStateFromJob(job: BulkPosterSubmissionJob) {
 
   if (batchImportFinished.value || summary?.createdPosters?.length) {
     rebuildBatchItemsFromJobAndStaged(summary);
-  }
-
-  if (batchImportFinished.value) {
-    void syncSubmitStepBatchProgress();
   }
 }
 
@@ -1436,6 +1540,13 @@ function continueToReviewMetadata() {
   }
 }
 
+function continueToViewMetadata() {
+  if (!batchHasCompletedExtractions.value) return;
+  if (goToStep("preview")) {
+    void persistWizardStep("preview");
+  }
+}
+
 function onSubmitStepContinue() {
   if (hasUnsubmittedStagedPosters.value) {
     void startImport();
@@ -1452,10 +1563,7 @@ async function startImport() {
   if (batchImportRunning.value) return;
   if (batchImportFinished.value && !hasUnsubmittedStagedPosters.value) return;
 
-  if (
-    !hasUnsubmittedStagedPosters.value &&
-    stagedPosters.value.length === 0
-  ) {
+  if (!hasUnsubmittedStagedPosters.value && stagedPosters.value.length === 0) {
     toast.add({
       title: "Nothing to import",
       description: "Add at least one poster file before submitting.",
@@ -1494,7 +1602,8 @@ async function startImport() {
   if (!jobId.value) {
     toast.add({
       title: "Save your batch first",
-      description: "Complete the name step so this import is saved before submitting.",
+      description:
+        "Complete the name step so this import is saved before submitting.",
       color: "warning",
     });
     return;
@@ -2143,65 +2252,15 @@ async function startImport() {
           </div>
 
           <UAlert
-            v-if="!batchImportRunning && !batchImportFinished"
-            color="info"
+            v-if="submitStepBanner"
+            :color="submitStepBanner.color"
             variant="soft"
-            icon="i-lucide-info"
-            title="Ready to submit"
-            :description="`${expectedBatchCount} poster(s) will be sent to the extraction pipeline. Files are already in storage; submit creates a poster and extraction job for each file.`"
-          />
-
-          <UAlert
-            v-else-if="batchImportRunning"
-            color="info"
-            variant="soft"
-            icon="i-lucide-loader-circle"
-            title="Submitting batch"
-            description="Creating posters and extraction jobs…"
-          />
-
-          <UAlert
-            v-else-if="batchImportFinished && hasUnsubmittedStagedPosters"
-            color="warning"
-            variant="soft"
-            icon="i-lucide-file-plus"
-            title="New posters added"
-            description="Submit again to send new files to the extraction pipeline. Posters already submitted keep their progress below."
-          />
-
-          <UAlert
-            v-else-if="batchImportFinished"
-            color="success"
-            variant="soft"
-            icon="i-lucide-circle-check"
-            title="Batch submitted"
-            :description="
-              batchStillExtractingCount > 0
-                ? `${batchCompletedCount} of ${batchItems.length} completed${batchFailedCount ? ` · ${batchFailedCount} failed` : ''} · ${batchStillExtractingCount} still extracting.`
-                : `${batchCompletedCount} completed${batchFailedCount ? ` · ${batchFailedCount} failed` : ''}.`
-            "
+            :icon="submitStepBanner.icon"
+            :title="submitStepBanner.title"
+            :description="submitStepBanner.description"
           />
 
           <div v-if="batchItems.length > 0" class="space-y-2">
-            <div
-              v-if="batchFailedCount > 0 && batchImportFinished"
-              class="flex justify-end"
-            >
-              <UButton
-                size="sm"
-                color="neutral"
-                variant="outline"
-                icon="i-lucide-rotate-ccw"
-                label="Retry all failed"
-                :loading="
-                  batchItems.some(
-                    (item) =>
-                      item.status === 'failed' && isBatchExtractionRetrying(item),
-                  )
-                "
-                @click="retryAllFailedBatchExtractions"
-              />
-            </div>
             <div class="flex items-center justify-between text-sm">
               <span class="text-muted">Overall progress</span>
               <span class="font-medium">{{ batchProgress }}%</span>
@@ -2210,60 +2269,119 @@ async function startImport() {
           </div>
 
           <div
-            v-if="batchItems.length > 0"
-            class="border-default overflow-x-auto rounded-lg border"
+            v-if="
+              batchInProgressItems.length > 0 || batchFailedItems.length > 0
+            "
+            class="flex flex-col gap-4 lg:flex-row lg:items-start"
           >
-            <UTable :data="batchItems" :columns="batchColumns">
-              <template #fileName-cell="{ row }">
-                <span
-                  class="line-clamp-2 max-w-md text-sm font-medium"
-                  :title="row.original.fileName"
+            <div
+              v-if="batchInProgressItems.length > 0"
+              class="flex min-w-0 flex-1 flex-col gap-2"
+            >
+              <h4 class="text-sm font-semibold">Extraction progress</h4>
+              <div
+                class="border-default max-h-[1000px] overflow-auto rounded-lg border"
+              >
+                <UTable
+                  :data="batchInProgressItems"
+                  :columns="batchProgressColumns"
                 >
-                  {{ row.original.fileName }}
-                </span>
-              </template>
+                  <template #batchProgressRow-header>
+                    <div
+                      class="flex w-full items-center justify-between gap-4 pe-1"
+                    >
+                      <span>Poster file</span>
+                      <span class="text-muted font-medium">Progress</span>
+                    </div>
+                  </template>
 
-              <template #batchStatus-cell="{ row }">
-                <div class="space-y-1">
-                  <UBadge
-                    :color="batchStatusColor(row.original.status)"
-                    variant="solid"
-                    size="xs"
-                    :icon="
-                      row.original.status === 'uploading' ||
-                      row.original.status === 'extracting'
-                        ? 'i-lucide-loader-circle'
-                        : undefined
-                    "
-                  >
-                    {{ batchStatusLabel(row.original.status) }}
-                  </UBadge>
-                  <p
-                    v-if="row.original.status === 'failed' && row.original.error"
-                    class="text-muted max-w-md text-xs"
-                    :title="row.original.error"
-                  >
-                    {{ row.original.error }}
-                  </p>
-                </div>
-              </template>
+                  <template #batchProgressRow-cell="{ row }">
+                    <div
+                      class="flex w-full items-center justify-between gap-4"
+                    >
+                      <span
+                        class="line-clamp-2 min-w-0 flex-1 text-left text-sm font-medium"
+                        :title="row.original.fileName"
+                      >
+                        {{ row.original.fileName }}
+                      </span>
+                      <UBadge
+                        class="shrink-0"
+                        :color="batchStatusColor(row.original.status)"
+                        variant="solid"
+                        size="xs"
+                        :icon="batchStatusIcon(row.original.status)"
+                      >
+                        {{ batchStatusLabel(row.original.status) }}
+                      </UBadge>
+                    </div>
+                  </template>
+                </UTable>
+              </div>
+            </div>
 
-              <template #batchActions-cell="{ row }">
+            <div
+              v-if="batchFailedItems.length > 0"
+              class="flex min-w-0 flex-1 flex-col gap-2"
+            >
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <h4 class="text-sm font-semibold">
+                  Failed extractions ({{ batchFailedItems.length }})
+                </h4>
                 <UButton
-                  v-if="
-                    row.original.status === 'failed' &&
-                    row.original.extractionJobId
-                  "
-                  size="xs"
+                  size="sm"
                   color="neutral"
                   variant="outline"
                   icon="i-lucide-rotate-ccw"
-                  label="Retry"
-                  :loading="isBatchExtractionRetrying(row.original)"
-                  @click="retryBatchExtraction(row.original)"
+                  label="Retry all failed"
+                  :disabled="
+                    !batchFailedItems.some((item) => item.extractionJobId)
+                  "
+                  :loading="batchRetryingAnyFailed"
+                  @click="retryAllFailedBatchExtractions"
                 />
-              </template>
-            </UTable>
+              </div>
+
+              <div
+                class="border-default max-h-[1000px] overflow-auto rounded-lg border"
+              >
+                <UTable :data="batchFailedItems" :columns="batchFailedColumns">
+                  <template #fileName-cell="{ row }">
+                    <span
+                      class="line-clamp-2 max-w-md text-sm font-medium"
+                      :title="row.original.fileName"
+                    >
+                      {{ row.original.fileName }}
+                    </span>
+                  </template>
+
+                  <template #batchError-cell="{ row }">
+                    <p
+                      class="text-muted text-xs whitespace-pre-wrap"
+                      :title="row.original.error ?? undefined"
+                    >
+                      {{
+                        row.original.error?.trim() ||
+                        "Extraction failed with no error message."
+                      }}
+                    </p>
+                  </template>
+
+                  <template #batchFailedActions-cell="{ row }">
+                    <UButton
+                      v-if="row.original.extractionJobId"
+                      size="xs"
+                      color="neutral"
+                      variant="outline"
+                      icon="i-lucide-rotate-ccw"
+                      label="Retry"
+                      :loading="isBatchExtractionRetrying(row.original)"
+                      @click="retryBatchExtraction(row.original)"
+                    />
+                  </template>
+                </UTable>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -2329,6 +2447,52 @@ async function startImport() {
             icon="i-lucide-arrow-left"
             label="Back"
             @click="goToStep('submit')"
+          />
+
+          <div class="flex flex-wrap items-center gap-2">
+            <UButton
+              color="neutral"
+              variant="outline"
+              icon="i-lucide-layout-dashboard"
+              label="Go to dashboard"
+              to="/dashboard"
+            />
+
+            <UButton
+              color="primary"
+              icon="i-lucide-arrow-right"
+              trailing
+              label="Continue to view metadata"
+              :disabled="!batchHasCompletedExtractions"
+              @click="continueToViewMetadata"
+            />
+          </div>
+        </div>
+      </template>
+
+      <template v-else-if="currentStep === 'preview'">
+        <div class="space-y-4">
+          <div>
+            <h3 class="text-base font-semibold">
+              Step {{ currentStepNumber }}: View metadata
+            </h3>
+            <p class="text-muted mt-1 text-sm">
+              {{ currentStepTask }}
+            </p>
+          </div>
+
+          <BulkImportPosterJsonPreview :items="batchItems" />
+        </div>
+
+        <div
+          class="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-6 dark:border-gray-800"
+        >
+          <UButton
+            color="neutral"
+            variant="ghost"
+            icon="i-lucide-arrow-left"
+            label="Back"
+            @click="goToStep('review')"
           />
 
           <UButton

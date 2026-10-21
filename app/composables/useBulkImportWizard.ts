@@ -13,6 +13,8 @@ export type BulkImportWizardStepCompletion = {
   submit: MaybeRefOrGetter<boolean>;
   /** Batch submitted to the extraction pipeline. */
   review: MaybeRefOrGetter<boolean>;
+  /** At least one poster finished extraction (poster.json preview available). */
+  preview: MaybeRefOrGetter<boolean>;
 };
 
 function stepIndex(step: BulkImportWizardStep) {
@@ -70,6 +72,8 @@ export function useBulkImportWizard(
         return readCompletion(completion.submit);
       case "review":
         return readCompletion(completion.review);
+      case "preview":
+        return readCompletion(completion.preview);
     }
   }
 

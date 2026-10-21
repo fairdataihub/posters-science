@@ -8,6 +8,8 @@ export type DashboardBulkSubmission = {
   status: string;
   extractionMethod: BulkSubmissionExtractionMethod;
   posterCount: number | null;
+  /** True when `status` is `processing` and at least one batch poster has a running extraction job. */
+  hasActiveExtraction?: boolean;
   createdAt: string;
   updatedAt: string;
 };
