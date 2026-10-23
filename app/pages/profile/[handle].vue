@@ -150,7 +150,7 @@ const ogImage = computed(() => {
       ]
         .filter(Boolean)
         .join(". ")
-    : "This profile doesn't exist or isn't public.";
+    : "This profile doesn't exist or is set to private.";
 
   return `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent(title)}&description=${encodeURIComponent(description)}&app=posters-science&org=fairdataihub`;
 });
@@ -177,7 +177,7 @@ useSeoMeta({
         v-if="error || !profile"
         icon="i-heroicons-user-circle"
         title="Profile not found"
-        description="This profile doesn't exist or isn't public."
+        description="This profile doesn't exist or is set to private."
         :actions="[
           {
             label: 'Discover posters',

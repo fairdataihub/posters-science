@@ -261,9 +261,17 @@ model ZenodoToken {
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId String @unique
 
+  // oauth: issued by the Zenodo OAuth flow, expires and comes with a refresh
+  // token. personal: a personal access token the user pasted in, which never
+  // expires and has no refresh token.
+  tokenType String @default("oauth") // oauth | personal
+
+  // Both tokens are encrypted at rest (server/utils/zenodoTokenCrypto.ts).
+  // Rows written before encryption was added still hold plain text and are
+  // read as is.
   accessToken  String
-  refreshToken String
-  expiresAt    DateTime
+  refreshToken String?
+  expiresAt    DateTime?
 
   created DateTime @default(now())
   updated DateTime @updatedAt

@@ -1,17 +1,32 @@
 <script setup lang="ts">
 import {
   MAINTENANCE_LABELS,
+  ZENODO_OFF_LABEL,
   type MaintenanceKey,
 } from "#shared/utils/maintenance";
 
 const props = defineProps<{
-  /** Which paused workflow this notice speaks for. */
-  maintenanceKey: MaintenanceKey;
+  /**
+   * Which paused workflow this notice speaks for.
+   * It shows while Zenodo is off, which is when both Zenodo sign-in
+   * switches are paused.
+   */
+  maintenanceKey: MaintenanceKey | "zenodo";
 }>();
 
-const { entryFor } = useMaintenance();
+const { entryFor, zenodo } = useMaintenance();
 
-const entry = computed(() => entryFor(props.maintenanceKey));
+const entry = computed(() =>
+  props.maintenanceKey === "zenodo"
+    ? zenodo.value.off
+    : entryFor(props.maintenanceKey),
+);
+
+const label = computed(() =>
+  props.maintenanceKey === "zenodo"
+    ? ZENODO_OFF_LABEL
+    : MAINTENANCE_LABELS[props.maintenanceKey],
+);
 
 const since = computed(() => {
   const value = entry.value?.since;
@@ -32,7 +47,7 @@ const since = computed(() => {
     color="warning"
     variant="subtle"
     icon="material-symbols:build"
-    :title="`${MAINTENANCE_LABELS[maintenanceKey]} is paused`"
+    :title="`${label} is paused`"
   >
     <template #description>
       <p>{{ entry.message }}</p>

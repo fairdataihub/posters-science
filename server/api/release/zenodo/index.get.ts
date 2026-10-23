@@ -118,49 +118,77 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  // Check if Zenodo is configured
-  // redirectUri is checked too: without it Zenodo rejects the authorize request
-  // with a bare "invalid_request" that gives no hint about the cause.
+  // Check if Zenodo is configured. Both ways of connecting need the endpoints
+  // and the key stored tokens are encrypted with.
   if (
-    !config.zenodoClientId ||
     !config.zenodoEndpoint ||
     !config.zenodoApiEndpoint ||
-    !config.zenodoRedirectUri
+    !isZenodoTokenEncryptionConfigured()
   ) {
     console.log("[Zenodo] Missing config:", {
-      hasClientId: !!config.zenodoClientId,
       hasEndpoint: !!config.zenodoEndpoint,
       hasApiEndpoint: !!config.zenodoApiEndpoint,
-      hasRedirectUri: !!config.zenodoRedirectUri,
+      hasTokenEncryptionKey: isZenodoTokenEncryptionConfigured(),
     });
 
     return {
+      zenodoConfigured: false,
       zenodoLoginURL: null,
+      zenodoTokenSignIn: false,
+      zenodoNewTokenUrl: null,
       zenodoToken: false,
       message: "Zenodo integration is not configured",
       existingDepositions: [],
     };
   }
 
-  // Provide URL to initiate OAuth flow
-  const params = new URLSearchParams({
-    response_type: "code",
-    client_id: config.zenodoClientId,
-    redirect_uri: config.zenodoRedirectUri,
-    state: posterId,
-    scope: "deposit:write deposit:actions",
-  });
+  // Each way of signing in has its own maintenance switch, so an admin can
+  // pause OAuth while Zenodo's code exchange is failing
+  // (zenodo/zenodo-rdm#1484) and leave personal access tokens on. Pausing both
+  // turns Zenodo off, and the publish page then disables Zenodo altogether.
+  const paused = new Set(
+    (await getActiveMaintenance()).map((entry) => entry.key),
+  );
+  const zenodoTokenSignIn = !paused.has("zenodoToken");
+  let zenodoLoginURL: string | null = null;
 
-  const zenodoLoginURL = `${config.zenodoEndpoint}/oauth/authorize?${params.toString()}`;
+  if (paused.has("zenodoOAuth")) {
+    console.log("[Zenodo] OAuth sign-in is paused for maintenance");
+  } else if (!config.zenodoClientId || !config.zenodoRedirectUri) {
+    // redirectUri is checked too: without it Zenodo rejects the authorize
+    // request with a bare "invalid_request" that gives no hint about the cause.
+    console.log("[Zenodo] OAuth sign-in unavailable, missing config:", {
+      hasClientId: !!config.zenodoClientId,
+      hasRedirectUri: !!config.zenodoRedirectUri,
+    });
+  } else {
+    // Provide URL to initiate OAuth flow
+    const params = new URLSearchParams({
+      response_type: "code",
+      client_id: config.zenodoClientId,
+      redirect_uri: config.zenodoRedirectUri,
+      state: posterId,
+      scope: "deposit:write deposit:actions",
+    });
 
-  console.log(`[Zenodo] Authorize URL: ${zenodoLoginURL}`);
+    zenodoLoginURL = `${config.zenodoEndpoint}/oauth/authorize?${params.toString()}`;
+
+    console.log(`[Zenodo] Authorize URL: ${zenodoLoginURL}`);
+  }
+
+  // Points at sandbox or production to match the API the token will be used
+  // with, since a token from one is rejected by the other.
+  const zenodoNewTokenUrl = `${config.zenodoEndpoint}/account/settings/applications/tokens/new/`;
 
   try {
     const { zenodoToken, message, existingDepositions } =
       await validateZenodoToken(userId);
 
     return {
+      zenodoConfigured: true,
       zenodoLoginURL,
+      zenodoTokenSignIn,
+      zenodoNewTokenUrl,
       zenodoToken,
       message,
       existingDepositions,
@@ -175,7 +203,10 @@ export default defineEventHandler(async (event) => {
     console.error("[Zenodo] Error validating token:", errorMessage, error);
 
     return {
+      zenodoConfigured: true,
       zenodoLoginURL,
+      zenodoTokenSignIn,
+      zenodoNewTokenUrl,
       zenodoToken: false,
       message: "Error connecting to Zenodo",
       existingDepositions: [],
