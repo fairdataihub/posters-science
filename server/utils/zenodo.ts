@@ -169,6 +169,60 @@ async function getZenodoToken(userId: string) {
   };
 }
 
+/**
+ * Encrypts tokens stored in plain text before encryption was added. A row is
+ * only rewritten while it still holds the values read here, so a token saved
+ * in the meantime is never overwritten. Returns how many rows were encrypted.
+ */
+export async function encryptLegacyZenodoTokens() {
+  if (!isZenodoTokenEncryptionConfigured()) {
+    console.warn(
+      "[Zenodo] Skipping stored token encryption, no encryption key is set",
+    );
+
+    return 0;
+  }
+
+  const prefix = ENCRYPTED_ZENODO_TOKEN_PREFIX;
+  const rows = await prisma.zenodoToken.findMany({
+    where: {
+      OR: [
+        { accessToken: { not: { startsWith: prefix } } },
+        { refreshToken: { not: { startsWith: prefix } } },
+      ],
+    },
+    select: { userId: true, accessToken: true, refreshToken: true },
+  });
+
+  let encrypted = 0;
+
+  for (const row of rows) {
+    const { userId, accessToken, refreshToken } = row;
+    const { count } = await prisma.zenodoToken.updateMany({
+      where: { userId, accessToken, refreshToken },
+      data: {
+        accessToken: accessToken.startsWith(prefix)
+          ? accessToken
+          : encryptZenodoToken(accessToken, userId, "accessToken"),
+        refreshToken:
+          refreshToken && !refreshToken.startsWith(prefix)
+            ? encryptZenodoToken(refreshToken, userId, "refreshToken")
+            : refreshToken,
+      },
+    });
+
+    encrypted += count;
+  }
+
+  if (encrypted > 0) {
+    console.log(
+      `[Zenodo] Encrypted ${encrypted} stored token rows written before encryption was added`,
+    );
+  }
+
+  return encrypted;
+}
+
 function zenodoAuthHeader(zenodoToken: string) {
   return `Bearer ${zenodoToken}`;
 }

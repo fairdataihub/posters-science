@@ -28,14 +28,20 @@ const attempts = new Map<string, number[]>();
 
 function allowAttempt(userId: string) {
   const now = Date.now();
-  const recent = (attempts.get(userId) ?? []).filter(
-    (time) => now - time < WINDOW_MS,
-  );
+
+  // Forget attempts that have aged out, for every user, so the map only holds
+  // users seen in the last window, each with at most MAX_ATTEMPTS entries.
+  for (const [id, times] of attempts) {
+    const recent = times.filter((time) => now - time < WINDOW_MS);
+
+    if (recent.length === 0) attempts.delete(id);
+    else attempts.set(id, recent);
+  }
+
+  const recent = attempts.get(userId) ?? [];
   const allowed = recent.length < MAX_ATTEMPTS;
 
-  if (allowed) recent.push(now);
-
-  attempts.set(userId, recent);
+  if (allowed) attempts.set(userId, [...recent, now]);
 
   return allowed;
 }

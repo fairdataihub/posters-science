@@ -10,6 +10,9 @@ import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 // alphanumeric strings, so the prefix never collides with a row written in
 // plain text before encryption was added.
 const PREFIX = "enc:v1:";
+
+export const ENCRYPTED_ZENODO_TOKEN_PREFIX = PREFIX;
+
 const ALGORITHM = "aes-256-gcm";
 const IV_BYTES = 12;
 const AUTH_TAG_BYTES = 16;
