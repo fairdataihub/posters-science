@@ -347,93 +347,103 @@ const noun = computed(() =>
       "
       button-label="Search"
       @submit="submitSearch"
-    />
+    >
+      <!-- Grows from its natural width, so when the row is too narrow it
+           moves below the search box as one piece instead of splitting. -->
+      <div
+        class="flex grow flex-wrap items-center justify-between gap-x-4 gap-y-2"
+      >
+        <p class="text-sm whitespace-nowrap">
+          {{ sorted.length }} {{ noun }}{{ sorted.length === 1 ? "" : "s" }}
+          found
+        </p>
 
-    <div class="flex flex-wrap items-center justify-between gap-2 pb-4">
-      <p class="text-sm">
-        {{ sorted.length }} {{ noun }}{{ sorted.length === 1 ? "" : "s" }}
-        found
-      </p>
-
-      <div class="flex flex-wrap items-center gap-2">
-        <!-- On profiles the filters sit in a popup rather than a sidebar,
+        <div class="flex flex-wrap items-center gap-2">
+          <!-- On profiles the filters sit in a popup rather than a sidebar,
                since a profile has far fewer posters than /discover. -->
-        <UPopover :content="{ align: 'end' }">
-          <UButton
-            color="neutral"
-            variant="outline"
-            icon="i-lucide-sliders-horizontal"
-          >
-            Filters
-            <UBadge v-if="filterCount" color="primary" size="xs">
-              {{ filterCount }}
-            </UBadge>
-          </UButton>
+          <UPopover :content="{ align: 'end' }">
+            <UButton
+              color="neutral"
+              variant="outline"
+              icon="i-lucide-sliders-horizontal"
+            >
+              Filters
+              <UBadge v-if="filterCount" color="primary" size="xs">
+                {{ filterCount }}
+              </UBadge>
+            </UButton>
 
-          <template #content>
-            <div class="w-80 max-w-[calc(100vw-2rem)] space-y-5 p-4">
-              <div v-if="kind === 'posters'" class="space-y-2">
-                <p class="text-sm font-medium">Show</p>
+            <template #content>
+              <div class="w-80 max-w-[calc(100vw-2rem)] space-y-5 p-4">
+                <div v-if="kind === 'posters'" class="space-y-2">
+                  <p class="text-sm font-medium">Show</p>
 
-                <div
-                  class="flex flex-wrap gap-2"
-                  role="group"
-                  aria-label="Filter by how the poster was added"
-                >
-                  <UButton
-                    v-for="option in roleOptions"
-                    :key="option.value"
-                    size="xs"
-                    :color="roleFilter === option.value ? 'primary' : 'neutral'"
-                    :variant="roleFilter === option.value ? 'solid' : 'outline'"
-                    :disabled="option.value !== 'all' && option.count === 0"
-                    :aria-pressed="roleFilter === option.value"
-                    @click="roleFilter = option.value"
+                  <div
+                    class="flex flex-wrap gap-2"
+                    role="group"
+                    aria-label="Filter by how the poster was added"
                   >
-                    {{ option.label }} ({{ option.count }})
-                  </UButton>
+                    <UButton
+                      v-for="option in roleOptions"
+                      :key="option.value"
+                      size="xs"
+                      :color="
+                        roleFilter === option.value ? 'primary' : 'neutral'
+                      "
+                      :variant="
+                        roleFilter === option.value ? 'solid' : 'outline'
+                      "
+                      :disabled="option.value !== 'all' && option.count === 0"
+                      :aria-pressed="roleFilter === option.value"
+                      @click="roleFilter = option.value"
+                    >
+                      {{ option.label }} ({{ option.count }})
+                    </UButton>
+                  </div>
+                </div>
+
+                <DiscoverPublicationYearFilter
+                  v-model="yearFilter"
+                  :options="yearOptions"
+                />
+
+                <DiscoverLanguageFilter
+                  v-model="languageFilter"
+                  :options="languageOptions"
+                />
+
+                <DiscoverLicenseFilter
+                  v-model="licenseFilter"
+                  :options="licenseOptions"
+                />
+
+                <div class="border-default flex justify-end border-t pt-3">
+                  <UButton
+                    color="neutral"
+                    variant="ghost"
+                    size="xs"
+                    label="Clear filters"
+                    :disabled="filterCount === 0"
+                    @click="clearFilters"
+                  />
                 </div>
               </div>
+            </template>
+          </UPopover>
 
-              <DiscoverPublicationYearFilter
-                v-model="yearFilter"
-                :options="yearOptions"
-              />
+          <div class="flex items-center gap-2">
+            <p class="text-sm">Sort by:</p>
 
-              <DiscoverLanguageFilter
-                v-model="languageFilter"
-                :options="languageOptions"
-              />
-
-              <DiscoverLicenseFilter
-                v-model="licenseFilter"
-                :options="licenseOptions"
-              />
-
-              <div class="border-default flex justify-end border-t pt-3">
-                <UButton
-                  color="neutral"
-                  variant="ghost"
-                  size="xs"
-                  label="Clear filters"
-                  :disabled="filterCount === 0"
-                  @click="clearFilters"
-                />
-              </div>
-            </div>
-          </template>
-        </UPopover>
-
-        <p class="text-sm">Sort by:</p>
-
-        <USelect
-          v-model="sortBy"
-          :items="sortItems"
-          value-key="value"
-          class="w-48"
-        />
+            <USelect
+              v-model="sortBy"
+              :items="sortItems"
+              value-key="value"
+              class="w-48"
+            />
+          </div>
+        </div>
       </div>
-    </div>
+    </DiscoverSearchBar>
 
     <div
       v-if="activeBadges.length > 0"

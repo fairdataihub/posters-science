@@ -3,7 +3,13 @@ import {
   MAINTENANCE_DESCRIPTIONS,
   MAINTENANCE_LABELS,
   MAINTENANCE_OVERLAPS,
+  ZENODO_MODE_LABELS,
+  ZENODO_SIGN_IN_KEYS,
+  isZenodoSignInKey,
+  zenodoModeFor,
+  zenodoSwitchesFor,
   type MaintenanceKey,
+  type ZenodoMode,
 } from "#shared/utils/maintenance";
 
 import type { AdminMaintenanceRow } from "./types";
@@ -21,6 +27,18 @@ const {
 } = await useFetch<{ data: AdminMaintenanceRow[] }>("/api/admin/maintenance");
 
 const flags = computed(() => maintenanceData.value?.data ?? []);
+
+const standaloneFlags = computed(() =>
+  flags.value.filter((row) => !isZenodoSignInKey(row.key)),
+);
+
+const zenodoOAuthRow = computed(() =>
+  flags.value.find((row) => row.key === "zenodoOAuth"),
+);
+
+const zenodoTokenRow = computed(() =>
+  flags.value.find((row) => row.key === "zenodoToken"),
+);
 
 type Draft = { enabled: boolean; message: string };
 
@@ -60,12 +78,76 @@ const newlyPausedRows = computed(() =>
   dirtyRows.value.filter((row) => draftFor(row.key).enabled && !row.enabled),
 );
 
+const savedZenodoMode = computed(() =>
+  zenodoModeFor({
+    zenodoOAuth: zenodoOAuthRow.value?.enabled ?? false,
+    zenodoToken: zenodoTokenRow.value?.enabled ?? false,
+  }),
+);
+
+// The Zenodo card writes one message, saved on both switches.
+const zenodoMessage = computed({
+  get: () => draftFor("zenodoOAuth").message,
+  set: (message: string) => {
+    for (const key of ZENODO_SIGN_IN_KEYS) draftFor(key).message = message;
+  },
+});
+
+const zenodoMode = computed<ZenodoMode>({
+  get: () =>
+    zenodoModeFor({
+      zenodoOAuth: draftFor("zenodoOAuth").enabled,
+      zenodoToken: draftFor("zenodoToken").enabled,
+    }),
+  set: (mode) => {
+    if (mode === zenodoMode.value) return;
+
+    const switches = zenodoSwitchesFor(mode);
+    const backToSaved = mode === savedZenodoMode.value;
+
+    // A message written for one mode rarely fits another, so a new mode
+    // starts from the default and going back restores what was saved.
+    for (const key of ZENODO_SIGN_IN_KEYS) {
+      const saved = flags.value.find((row) => row.key === key);
+
+      draftFor(key).enabled = switches[key];
+      draftFor(key).message = backToSaved ? (saved?.message ?? "") : "";
+    }
+  },
+});
+
+const zenodoDirty = computed(() =>
+  dirtyRows.value.some((row) => isZenodoSignInKey(row.key)),
+);
+
 const saving = ref(false);
 const confirmOpen = ref(false);
 
 function labelFor(key: string) {
   return MAINTENANCE_LABELS[key as MaintenanceKey] ?? key;
 }
+
+function zenodoLabel(mode: ZenodoMode) {
+  return `Zenodo set to ${ZENODO_MODE_LABELS[mode]}`;
+}
+
+// Lists changes the way the panel shows them, so the two Zenodo switches read
+// as one change to the Zenodo card.
+function changeLabels(rows: AdminMaintenanceRow[]) {
+  const labels = rows
+    .filter((row) => !isZenodoSignInKey(row.key))
+    .map((row) => labelFor(row.key));
+
+  if (rows.some((row) => isZenodoSignInKey(row.key))) {
+    labels.push(zenodoLabel(zenodoMode.value));
+  }
+
+  return labels;
+}
+
+const dirtyLabels = computed(() => changeLabels(dirtyRows.value));
+
+const newlyPausedLabels = computed(() => changeLabels(newlyPausedRows.value));
 
 function requestSave() {
   if (!isDirty.value || saving.value) return;
@@ -91,30 +173,30 @@ async function save() {
     message: draftFor(row.key).message,
   }));
 
+  // Read now, the refresh below reseeds the drafts
+  const zenodoChange = zenodoDirty.value ? zenodoMode.value : null;
+
   try {
     await $fetch("/api/admin/maintenance", {
       method: "PUT",
       body: { flags: payload },
     });
 
-    const paused = payload.filter((flag) => flag.enabled).map((f) => f.key);
-    const resumed = payload.filter((flag) => !flag.enabled).map((f) => f.key);
-    const summary = [
-      paused.length > 0 ? `Paused ${paused.map(labelFor).join(", ")}` : "",
-      resumed.length > 0 ? `resumed ${resumed.map(labelFor).join(", ")}` : "",
-    ]
-      .filter(Boolean)
-      .join(". Now ");
+    const lines = [
+      ...payload
+        .filter((flag) => !isZenodoSignInKey(flag.key))
+        .map(
+          (flag) =>
+            `${labelFor(flag.key)} ${flag.enabled ? "is now paused" : "is live again"}`,
+        ),
+      ...(zenodoChange ? [zenodoLabel(zenodoChange)] : []),
+    ];
 
     toast.add({
       title:
-        payload.length === 1
-          ? `${labelFor(payload[0]!.key)} ${
-              payload[0]!.enabled ? "is now paused" : "is live again"
-            }`
-          : `${payload.length} workflows updated`,
-      description: payload.length === 1 ? undefined : summary,
-      color: paused.length > 0 ? "warning" : "success",
+        lines.length === 1 ? lines[0] : `${lines.length} workflows updated`,
+      description: lines.length === 1 ? undefined : `${lines.join(". ")}.`,
+      color: payload.some((flag) => flag.enabled) ? "warning" : "success",
     });
 
     await Promise.all([refreshMaintenance(), refreshPublicMaintenance()]);
@@ -158,11 +240,11 @@ function previewMessage(row: AdminMaintenanceRow) {
         class="border-default bg-elevated/40 flex flex-wrap items-center gap-3 rounded-lg border p-3"
       >
         <p v-if="isDirty" class="text-sm font-medium">
-          {{ dirtyRows.length }} unsaved
-          {{ dirtyRows.length === 1 ? "change" : "changes" }}:
+          {{ dirtyLabels.length }} unsaved
+          {{ dirtyLabels.length === 1 ? "change" : "changes" }}:
 
           <span class="text-muted font-normal">
-            {{ dirtyRows.map((row) => labelFor(row.key)).join(", ") }}
+            {{ dirtyLabels.join(", ") }}
           </span>
         </p>
 
@@ -190,7 +272,7 @@ function previewMessage(row: AdminMaintenanceRow) {
 
       <div class="grid gap-4 lg:grid-cols-2">
         <UCard
-          v-for="row in flags"
+          v-for="row in standaloneFlags"
           :key="row.key"
           :class="rowIsDirty(row) ? 'ring-primary ring-2' : ''"
         >
@@ -280,6 +362,16 @@ function previewMessage(row: AdminMaintenanceRow) {
             </dl>
           </div>
         </UCard>
+
+        <AdminMaintenanceZenodoCard
+          v-if="zenodoOAuthRow && zenodoTokenRow"
+          v-model:mode="zenodoMode"
+          v-model:message="zenodoMessage"
+          :oauth-row="zenodoOAuthRow"
+          :token-row="zenodoTokenRow"
+          :dirty="zenodoDirty"
+          class="lg:col-span-2"
+        />
       </div>
     </template>
 
@@ -290,8 +382,8 @@ function previewMessage(row: AdminMaintenanceRow) {
     >
       <template #body>
         <ul class="list-inside list-disc space-y-1 text-sm">
-          <li v-for="row in newlyPausedRows" :key="row.key">
-            {{ labelFor(row.key) }}
+          <li v-for="label in newlyPausedLabels" :key="label">
+            {{ label }}
           </li>
         </ul>
       </template>
@@ -308,9 +400,9 @@ function previewMessage(row: AdminMaintenanceRow) {
           <UButton
             color="warning"
             :label="
-              newlyPausedRows.length === 1
+              newlyPausedLabels.length === 1
                 ? 'Pause workflow'
-                : `Pause ${newlyPausedRows.length} workflows`
+                : `Pause ${newlyPausedLabels.length} workflows`
             "
             :loading="saving"
             @click="save"
