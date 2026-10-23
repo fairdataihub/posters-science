@@ -51,9 +51,12 @@ export async function updateBulkPosterSubmissionJob(
 }
 
 export async function deleteBulkPosterSubmissionJob(jobId: string) {
-  return $fetch<{ success: true }>(`/api/bulk-poster-submissions/${jobId}`, {
-    method: "DELETE",
-  });
+  return $fetch<{ success: true; keptPublishedPosterCount: number }>(
+    `/api/bulk-poster-submissions/${jobId}`,
+    {
+      method: "DELETE",
+    },
+  );
 }
 
 export async function deleteBulkStagedPoster(jobId: string, filePath: string) {

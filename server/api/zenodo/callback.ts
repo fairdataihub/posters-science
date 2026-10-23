@@ -22,6 +22,10 @@ export default defineEventHandler(async (event) => {
     });
   }
 
+  const bulkImportReturn =
+    typeof state === "string" && state.startsWith("bulk-import:")
+      ? state.slice("bulk-import:".length)
+      : null;
   const posterId = state;
   const {
     zenodoClientId: clientId,
@@ -60,9 +64,20 @@ export default defineEventHandler(async (event) => {
       errorBody,
     );
 
+    if (bulkImportReturn) {
+      const params = new URLSearchParams({
+        jobId: bulkImportReturn,
+        bulkWizardStep: "publish",
+      });
+      return sendRedirect(
+        event,
+        `/zenodo-auth-error?${params.toString()}`,
+      );
+    }
+
     return sendRedirect(
       event,
-      `/zenodo-auth-error?posterId=${encodeURIComponent(posterId)}`,
+      `/zenodo-auth-error?posterId=${encodeURIComponent(String(state))}`,
     );
   }
 
@@ -89,6 +104,14 @@ export default defineEventHandler(async (event) => {
     },
   });
 
-  // Redirect back to the review page with zenodo pre-selected
+  if (bulkImportReturn) {
+    const params = new URLSearchParams({
+      jobId: bulkImportReturn,
+      bulkWizardStep: "publish",
+      repository: "zenodo",
+    });
+    return sendRedirect(event, `/share/new-bulk?${params.toString()}`);
+  }
+
   return sendRedirect(event, `/share/${posterId}/publish?repository=zenodo`);
 });

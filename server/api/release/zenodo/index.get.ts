@@ -4,13 +4,19 @@ const config = useRuntimeConfig();
 
 const payloadSchema = z.object({
   posterId: z.string(),
+  bulkJobId: z.string().optional(),
 });
 
 export default defineEventHandler(async (event) => {
   const session = await requireUserSession(event);
   // Read query parameters for GET requests
   const query = getQuery(event);
-  const { posterId } = payloadSchema.parse(query as Record<string, unknown>);
+  const { posterId, bulkJobId } = payloadSchema.parse(
+    query as Record<string, unknown>,
+  );
+  const oauthState = bulkJobId?.trim()
+    ? `bulk-import:${bulkJobId.trim()}`
+    : posterId;
 
   const { user } = session;
   const userId = user.id;
@@ -147,7 +153,7 @@ export default defineEventHandler(async (event) => {
     response_type: "code",
     client_id: config.zenodoClientId,
     redirect_uri: config.zenodoRedirectUri,
-    state: posterId,
+    state: oauthState,
     scope: "deposit:write deposit:actions",
   });
 
@@ -156,7 +162,7 @@ export default defineEventHandler(async (event) => {
   console.log(`[Zenodo] Authorize URL: ${zenodoLoginURL}`);
 
   try {
-    const { zenodoToken, message, existingDepositions } =
+    const { zenodoToken, message, existingDepositions, zenodoAccount } =
       await validateZenodoToken(userId);
 
     return {
@@ -164,6 +170,7 @@ export default defineEventHandler(async (event) => {
       zenodoToken,
       message,
       existingDepositions,
+      zenodoAccount,
       linkedDepositionId,
       linkedDeposition,
       suggestedLicense,

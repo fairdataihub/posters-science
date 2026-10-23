@@ -1,4 +1,5 @@
 import { buildPosterJson } from "./buildPosterJson";
+import { ensureThumbnailServicePosterPath } from "./posterObjectPath";
 import { toZenodoRelatedIdentifiers } from "./zenodoVocabulary";
 import { isValidOrcidChecksum, validateOrcidExists } from "#shared/utils/orcid";
 import isoLanguages from "#shared/data/iso-639-1.json";
@@ -174,6 +175,63 @@ export type ZenodoUserRecord = {
   versionIndex?: number;
 };
 
+export type ZenodoAccountInfo = {
+  id: string;
+  username: string;
+  fullName?: string;
+  email?: string;
+  affiliations?: string;
+  profileUrl?: string;
+};
+
+async function fetchZenodoAccountInfo(
+  accessToken: string,
+): Promise<ZenodoAccountInfo | null> {
+  const res = await fetch(`${config.zenodoApiEndpoint}/users?size=10`, {
+    headers: rdmHeaders(accessToken),
+  });
+
+  if (!res.ok) {
+    console.warn(
+      `[Zenodo] Could not load account info (${res.status})`,
+    );
+    return null;
+  }
+
+  const body = await res.json().catch(() => null);
+  const hits =
+    (body as { hits?: { hits?: Record<string, unknown>[] } })?.hits?.hits ?? [];
+
+  const current = hits.find(
+    (entry) => entry?.is_current_user === true,
+  ) as {
+    id?: string | number;
+    username?: string;
+    email?: string;
+    profile?: { full_name?: string; affiliations?: string };
+  } | undefined;
+
+  const username = current?.username?.trim();
+  if (!username) return null;
+
+  const fullName = current.profile?.full_name?.trim();
+  const affiliations = current.profile?.affiliations?.trim();
+  const email =
+    typeof current.email === "string" && current.email.includes("@")
+      ? current.email
+      : undefined;
+  const zenodoBase = config.zenodoEndpoint.replace(/\/$/, "");
+
+  return {
+    id: String(current.id ?? username),
+    username,
+    ...(fullName && { fullName }),
+    ...(email && { email }),
+    ...(affiliations && { affiliations }),
+    profileUrl: `${zenodoBase}/${username}`,
+  };
+}
+
 // Maps an InvenioRDM /user/records search body to the shape of the publish UI
 function parseUserRecords(body: unknown): ZenodoUserRecord[] {
   const hits = (body as { hits?: { hits?: RdmRecord[] } })?.hits?.hits;
@@ -318,6 +376,11 @@ export async function validateZenodoToken(
 
   console.log("[Zenodo] Validation result: Zenodo token is valid");
 
+  const latestToken = await getZenodoToken(userId);
+  const zenodoAccount = latestToken?.accessToken
+    ? await fetchZenodoAccountInfo(latestToken.accessToken)
+    : null;
+
   // The token is genuinely valid and stays that way until expiresAt, so it is
   // reported valid either way. refreshRejected only says it can no longer be
   // extended, which is a warning about that date, not about right now.
@@ -327,6 +390,7 @@ export async function validateZenodoToken(
     existingDepositions,
     refreshRejected: refresh.refreshRejected,
     expiresAt: tokenRecord.expiresAt,
+    zenodoAccount,
   };
 }
 
@@ -700,6 +764,12 @@ export async function getOrCreateThumbnail(
       error: "Poster file not found while preparing its thumbnail",
     };
   }
+
+  const resolvedPath = await ensureThumbnailServicePosterPath(posterId, filePath);
+  if (!resolvedPath.ok) {
+    return { success: false as const, error: resolvedPath.error };
+  }
+  filePath = resolvedPath.filePath;
 
   if (!config.posterExtractionApi) {
     return {

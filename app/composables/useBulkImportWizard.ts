@@ -9,12 +9,15 @@ export type BulkImportWizardStepCompletion = {
   upload: MaybeRefOrGetter<boolean>;
   extraction: MaybeRefOrGetter<boolean>;
   conference: MaybeRefOrGetter<boolean>;
+  license: MaybeRefOrGetter<boolean>;
   /** All submission rows ready to import. */
   submit: MaybeRefOrGetter<boolean>;
   /** Batch submitted to the extraction pipeline. */
   review: MaybeRefOrGetter<boolean>;
   /** At least one poster finished extraction (poster.json preview available). */
   preview: MaybeRefOrGetter<boolean>;
+  /** Repository submit step (same as preview gate). */
+  publish: MaybeRefOrGetter<boolean>;
 };
 
 function stepIndex(step: BulkImportWizardStep) {
@@ -68,12 +71,16 @@ export function useBulkImportWizard(
         return readCompletion(completion.extraction);
       case "conference":
         return readCompletion(completion.conference);
+      case "license":
+        return readCompletion(completion.license);
       case "submit":
         return readCompletion(completion.submit);
       case "review":
         return readCompletion(completion.review);
       case "preview":
         return readCompletion(completion.preview);
+      case "publish":
+        return readCompletion(completion.publish);
     }
   }
 
