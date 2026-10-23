@@ -180,6 +180,37 @@ export default defineEventHandler(async (event) => {
   const imageCaptions = data.imageCaptions ?? [];
   const domain = data.domain ?? "Other";
 
+  const posterMetadataPayload = {
+    doi: data.doi ?? null,
+    identifiers,
+    creators,
+    publisher,
+    publicationYear,
+    subjects,
+    language,
+    relatedIdentifiers,
+    size,
+    format,
+    version,
+    license,
+    fundingReferences,
+    conferenceName,
+    conferenceLocation,
+    conferenceUri,
+    conferenceIdentifier,
+    conferenceIdentifierType,
+    conferenceYear,
+    conferenceStartDate,
+    conferenceEndDate,
+    conferenceAcronym,
+    conferenceSeries,
+    dates,
+    posterContent,
+    tableCaptions,
+    imageCaptions,
+    domain,
+  };
+
   const updatedPoster = await prisma.poster.update({
     where: {
       id: posterId,
@@ -187,36 +218,12 @@ export default defineEventHandler(async (event) => {
     data: {
       title: posterTitle,
       description: posterDescription,
+      // Upload creates the poster before extraction writes metadata; upsert so the
+      // first save from /share/:id works without a prior PosterMetadata row.
       posterMetadata: {
-        update: {
-          doi: data.doi ?? null,
-          identifiers,
-          creators,
-          publisher,
-          publicationYear,
-          subjects,
-          language,
-          relatedIdentifiers,
-          size,
-          format,
-          version,
-          license,
-          fundingReferences,
-          conferenceName,
-          conferenceLocation,
-          conferenceUri,
-          conferenceIdentifier,
-          conferenceIdentifierType,
-          conferenceYear,
-          conferenceStartDate,
-          conferenceEndDate,
-          conferenceAcronym,
-          conferenceSeries,
-          dates,
-          posterContent,
-          tableCaptions,
-          imageCaptions,
-          domain,
+        upsert: {
+          create: posterMetadataPayload,
+          update: posterMetadataPayload,
         },
       },
     },

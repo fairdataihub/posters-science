@@ -3,9 +3,14 @@ import {
   bulkImportJobPrefix,
 } from "~~/server/utils/bulkImportBunnyPaths";
 import { deleteBunnyBulkImportJobFolder } from "~~/server/utils/bulkImportBunnyDelete";
+import {
+  posterIdsFromBulkSubmissionSummary,
+  posterIdsWithActiveExtractionJob,
+} from "~~/server/utils/bulkImportDashboard";
+import { deleteUserDraftPoster } from "~~/server/utils/deleteUserDraftPoster";
 import { getBulkPosterSubmissionJobRepository } from "~~/server/utils/bulkPosterSubmissionJobs";
 
-const DELETABLE_BULK_JOB_STATUSES = new Set(["draft", "failed"]);
+const DELETABLE_BULK_JOB_STATUSES = new Set(["draft", "failed", "processing"]);
 
 export default defineEventHandler(async (event) => {
   const session = await requireDbUserSession(event);
@@ -32,8 +37,44 @@ export default defineEventHandler(async (event) => {
     throw createError({
       statusCode: 409,
       statusMessage:
-        "Only draft or failed bulk imports can be deleted. Wait for processing to finish or contact support.",
+        "This bulk import cannot be deleted. Wait for processing to finish or contact support.",
     });
+  }
+
+  const linkedPosterIds = posterIdsFromBulkSubmissionSummary(
+    job.submissionSummary,
+  );
+
+  if (job.status === "processing") {
+    const activePosterIds =
+      await posterIdsWithActiveExtractionJob(linkedPosterIds);
+
+    if (activePosterIds.size > 0) {
+      throw createError({
+        statusCode: 409,
+        statusMessage:
+          "This bulk import cannot be deleted while metadata extraction is still running.",
+      });
+    }
+  }
+
+  let keptPublishedPosterCount = 0;
+
+  for (const posterId of linkedPosterIds) {
+    const result = await deleteUserDraftPoster(session.user.id, posterId);
+
+    if (result.reason === "published" || result.reason === "zenodo_published") {
+      keptPublishedPosterCount += 1;
+      continue;
+    }
+
+    if (result.reason === "version_extraction_active") {
+      throw createError({
+        statusCode: 409,
+        statusMessage:
+          "This bulk import cannot be deleted while metadata extraction is still running.",
+      });
+    }
   }
 
   const config = useRuntimeConfig();
@@ -52,5 +93,5 @@ export default defineEventHandler(async (event) => {
 
   await repository.deleteForUser(jobId, session.user.id);
 
-  return { success: true };
+  return { success: true, keptPublishedPosterCount };
 });

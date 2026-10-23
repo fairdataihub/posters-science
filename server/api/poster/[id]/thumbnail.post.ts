@@ -1,3 +1,4 @@
+import { ensureThumbnailServicePosterPath } from "../../../utils/posterObjectPath";
 import { copyThumbnailToPublicZone } from "../../../utils/zenodo";
 
 export default defineEventHandler(async (event) => {
@@ -46,7 +47,19 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  const { id: extractionJobId, filePath } = poster.extractionJob;
+  const { id: extractionJobId, filePath: rawFilePath } = poster.extractionJob;
+
+  const resolvedPath = await ensureThumbnailServicePosterPath(
+    posterId,
+    rawFilePath,
+  );
+  if (!resolvedPath.ok) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: resolvedPath.error,
+    });
+  }
+  const filePath = resolvedPath.filePath;
 
   const config = useRuntimeConfig();
   const { posterExtractionApi } = config;

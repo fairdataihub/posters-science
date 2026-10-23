@@ -54,6 +54,7 @@ import {
 import { shareNewBulkPath } from "~/utils/sharePaths";
 import BulkImportMetadataReview from "~/components/conferences/BulkImportMetadataReview.vue";
 import BulkImportPosterJsonPreview from "~/components/conferences/BulkImportPosterJsonPreview.vue";
+import BulkImportPublishStep from "~/components/conferences/BulkImportPublishStep.vue";
 
 const router = useRouter();
 const route = useRoute();
@@ -317,12 +318,6 @@ const uniformLicenseSelectItems = computed(() =>
   })),
 );
 
-const selectedUniformLicenseOption = computed(() => {
-  const value = uniformLicense.value.trim();
-  if (!value) return undefined;
-  return uniformLicenseOptions.value.find((option) => option.value === value);
-});
-
 const submissionRows = ref<BulkImportSubmissionRow[]>([]);
 const submissionLoading = ref(false);
 
@@ -366,15 +361,19 @@ const conferenceForm = reactive<BulkImportConferenceFormState>(
 );
 const conferenceStepAttempted = ref(false);
 const conferenceStepSaving = ref(false);
+const licenseStepAttempted = ref(false);
+const licenseStepSaving = ref(false);
 
 const showConferenceIdentifierDetails = computed(
   () => conferenceForm.conferenceIdentifier.trim().length > 0,
 );
 
-const conferenceStepComplete = computed(
-  () =>
-    bulkImportConferenceFormValid(conferenceForm) &&
-    Boolean(uniformLicense.value.trim()),
+const conferenceStepComplete = computed(() =>
+  bulkImportConferenceFormValid(conferenceForm),
+);
+
+const licenseStepComplete = computed(() =>
+  Boolean(uniformLicense.value.trim()),
 );
 
 watch(
@@ -439,8 +438,12 @@ const conferenceLocationError = computed(() =>
   ),
 );
 
-const conferenceLicenseError = computed(() =>
-  conferenceFieldError(!uniformLicense.value.trim(), "License is required"),
+function licenseFieldError(condition: boolean, message: string) {
+  return licenseStepAttempted.value && condition ? message : undefined;
+}
+
+const licenseSelectError = computed(() =>
+  licenseFieldError(!uniformLicense.value.trim(), "License is required"),
 );
 
 async function mergeJobSubmissionSummary(
@@ -485,9 +488,11 @@ const {
     upload: uploadStepComplete,
     extraction: extractionStepComplete,
     conference: conferenceStepComplete,
+    license: licenseStepComplete,
     submit: canProceedFromReview,
     review: batchImportFinished,
     preview: batchHasCompletedExtractions,
+    publish: batchHasCompletedExtractions,
   },
   {
     initialJobId: props.initialJobId,
@@ -525,11 +530,14 @@ watch(
   },
 );
 
-/** Hide poster list until job + Bunny sync finish (avoids stale rows on resume). */
+/** Block step UI until a resumed job is fully hydrated (including extraction status). */
+const wizardResumePending = computed(
+  () => Boolean(props.initialJobId) && !resumeWizardHydrated.value,
+);
+
 const posterStorageListLoading = computed(
   () =>
     Boolean(props.resumeLoading) ||
-    resumeJobLoading.value ||
     stagedPostersLoading.value ||
     (Boolean(props.initialJobId) && !resumeWizardHydrated.value),
 );
@@ -583,9 +591,11 @@ function applyJobSnapshot(job: BulkPosterSubmissionJob) {
   if (
     step === "extraction" ||
     step === "conference" ||
+    step === "license" ||
     step === "submit" ||
     step === "review" ||
-    step === "preview"
+    step === "preview" ||
+    step === "publish"
   ) {
     extractionStepAcknowledged.value = true;
   }
@@ -594,19 +604,49 @@ function applyJobSnapshot(job: BulkPosterSubmissionJob) {
   applyBatchStateFromJob(job);
 }
 
+function shouldHydrateExtractionStatuses(job: BulkPosterSubmissionJob): boolean {
+  const summary = job.submissionSummary as BulkImportSubmissionSummary | null;
+  const created = summary?.createdPosters ?? [];
+  if (created.length === 0) return false;
+  return (
+    job.status === "processing" ||
+    job.status === "completed" ||
+    job.status === "failed"
+  );
+}
+
+function isExtractionProgressWizardStep(step: BulkImportWizardStep): boolean {
+  return (
+    step === "submit" ||
+    step === "review" ||
+    step === "preview" ||
+    step === "publish"
+  );
+}
+
+async function loadBatchExtractionStatusesFromItems() {
+  if (!batchItems.value.some((item) => item.extractionJobId)) return;
+
+  if (!batchExtractionStatusesLoading.value) {
+    batchExtractionStatusesLoading.value = true;
+  }
+
+  try {
+    await refreshBatchExtractionStatuses();
+    scheduleBatchExtractionPolling();
+  } finally {
+    batchExtractionStatusesLoading.value = false;
+  }
+}
+
 async function hydrateListsAfterResume(step: BulkImportWizardStep) {
-  if (
-    step === "upload" ||
-    step === "extraction" ||
-    step === "conference" ||
-    step === "submit"
-  ) {
+  if (step === "upload" || step === "extraction" || step === "submit") {
     await refreshStagedPostersFromStorage();
   }
   if (step === "submit") {
     await enterSubmitStep();
-  } else if (step === "review" || step === "preview") {
-    await syncSubmitStepBatchProgress();
+  } else if (isExtractionProgressWizardStep(step)) {
+    await loadBatchExtractionStatusesFromItems();
   }
 }
 
@@ -619,13 +659,19 @@ async function ensureResumeJobLoaded() {
 
   try {
     const job = await getBulkPosterSubmissionJob(id);
-    applyJobSnapshot(job);
-
     const step =
       normalizeBulkImportWizardStep(job.wizardStep) ??
       resolveResumeWizardStep();
-    await hydrateListsAfterResume(step);
 
+    if (
+      shouldHydrateExtractionStatuses(job) &&
+      isExtractionProgressWizardStep(step)
+    ) {
+      batchExtractionStatusesLoading.value = true;
+    }
+
+    applyJobSnapshot(job);
+    await hydrateListsAfterResume(step);
     resumeWizardHydrated.value = true;
 
     const path = shareNewBulkPath({ jobId: job.id });
@@ -636,6 +682,7 @@ async function ensureResumeJobLoaded() {
     resumeWizardHydrated.value = true;
   } finally {
     resumeJobLoading.value = false;
+    batchExtractionStatusesLoading.value = false;
   }
 }
 
@@ -737,20 +784,24 @@ async function refreshStagedPostersFromStorage() {
   }
 }
 
-function goToStep(step: BulkImportWizardStep) {
+async function navigateToWizardStep(step: BulkImportWizardStep) {
+  await goToStep(step);
+}
+
+async function goToStep(step: BulkImportWizardStep) {
   const moved = goToWizardStep(step, {
     beforeEnter: (target) => {
       if (target === "upload") {
         void refreshStagedPostersFromStorage();
-      }
-      if (target === "submit") {
-        void enterSubmitStep();
       }
     },
   });
 
   if (moved) {
     void persistWizardStep(step);
+    if (step === "submit") {
+      await enterSubmitStep();
+    }
   }
 }
 
@@ -761,10 +812,15 @@ watch(
       void refreshStagedPostersFromStorage();
     }
     // Submit step refresh is handled by onEnterSubmitStep to avoid duplicate polls.
-    if (step === "review" || step === "preview") {
+    if (step === "review" || step === "preview" || step === "publish") {
       void syncSubmitStepBatchProgress();
     }
-    if (step !== "submit" && step !== "review" && step !== "preview") {
+    if (
+      step !== "submit" &&
+      step !== "review" &&
+      step !== "preview" &&
+      step !== "publish"
+    ) {
       stopBatchExtractionPolling();
     }
   },
@@ -1029,6 +1085,7 @@ async function removeStagedPoster(poster: BulkImportStagedPoster) {
 }
 
 const batchImportRunning = ref(false);
+const batchExtractionStatusesLoading = ref(false);
 const BULK_BATCH_EXTRACTION_POLL_MS = 3000;
 let batchExtractionPollTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -1040,10 +1097,10 @@ type BulkExtractionJobStatusResponse = {
 
 const batchProgress = computed(() => {
   if (batchItems.value.length === 0) return 0;
-  const done = batchItems.value.filter(
-    (item) => item.status === "completed" || item.status === "failed",
+  const completed = batchItems.value.filter(
+    (item) => item.status === "completed",
   ).length;
-  return Math.round((done / batchItems.value.length) * 100);
+  return Math.round((completed / batchItems.value.length) * 100);
 });
 
 const batchCompletedCount = computed(
@@ -1204,7 +1261,8 @@ function scheduleBatchExtractionPolling() {
   if (
     (currentStep.value !== "submit" &&
       currentStep.value !== "review" &&
-      currentStep.value !== "preview") ||
+      currentStep.value !== "preview" &&
+      currentStep.value !== "publish") ||
     !batchImportFinished.value ||
     !batchExtractionPollPending()
   ) {
@@ -1219,8 +1277,7 @@ function scheduleBatchExtractionPolling() {
 
 async function syncSubmitStepBatchProgress() {
   if (!batchImportFinished.value || batchItems.value.length === 0) return;
-  await refreshBatchExtractionStatuses();
-  scheduleBatchExtractionPolling();
+  await loadBatchExtractionStatusesFromItems();
 }
 
 const batchProgressColumns: ColumnDef<BulkImportBatchItem>[] = [
@@ -1233,46 +1290,26 @@ const batchFailedColumns: ColumnDef<BulkImportBatchItem>[] = [
   { id: "batchFailedActions", header: "", enableSorting: false },
 ];
 
-const expectedBatchCount = computed(
-  () => submissionRows.value.filter((row) => row.status === "ready").length,
-);
-
-const submitStepBanner = computed(() => {
+const submitStepIntro = computed(() => {
   if (batchImportRunning.value) {
-    return {
-      color: "info" as const,
-      icon: "i-lucide-loader-circle",
-      title: "Submitting batch",
-      description: "Creating posters and extraction jobs…",
-    };
+    return "Please wait while we submit your posters…";
   }
   if (!batchImportFinished.value) {
-    return {
-      color: "info" as const,
-      icon: "i-lucide-info",
-      title: "Ready to submit",
-      description: `${expectedBatchCount.value} poster(s) will be sent to the extraction pipeline. Files are already in storage; submit creates a poster and extraction job for each file.`,
-    };
+    return "Submit the batch to start extracting metadata from each poster file.";
   }
   if (hasUnsubmittedStagedPosters.value) {
-    return {
-      color: "warning" as const,
-      icon: "i-lucide-file-plus",
-      title: "New posters added",
-      description:
-        "Submit again to send new files to the extraction pipeline. Posters already submitted keep their progress below.",
-    };
+    return "You added new poster files. Submit again to include them; posters already in progress continue below.";
   }
-  const progressSummary =
-    batchStillExtractingCount.value > 0
-      ? `${batchCompletedCount.value} of ${batchItems.value.length} completed${batchFailedCount.value ? ` · ${batchFailedCount.value} failed` : ""} · ${batchStillExtractingCount.value} still extracting.`
-      : `${batchCompletedCount.value} completed${batchFailedCount.value ? ` · ${batchFailedCount.value} failed` : ""}.`;
-  return {
-    color: "success" as const,
-    icon: "i-lucide-circle-check",
-    title: "Batch submitted",
-    description: progressSummary,
-  };
+  if (
+    batchStillExtractingCount.value > 0 ||
+    batchInProgressItems.value.length > 0
+  ) {
+    return "Please wait while we extract metadata from your posters.";
+  }
+  if (batchFailedCount.value > 0) {
+    return "Some posters could not be extracted. Retry failed items below or continue when the rest are ready.";
+  }
+  return "Extraction is complete. Continue when you are ready to review metadata.";
 });
 
 function batchStatusLabel(status: BulkImportBatchItemStatus) {
@@ -1366,8 +1403,7 @@ function rebuildBatchItemsFromJobAndStaged(
       filePath: poster.filePath,
       posterId: poster.posterId,
       extractionJobId: poster.extractionJobId,
-      status:
-        sameJob && prev ? prev.status : ("waitingInQueue" as const),
+      status: sameJob && prev ? prev.status : ("waitingInQueue" as const),
       error: sameJob && prev ? prev.error : undefined,
     };
   });
@@ -1405,28 +1441,43 @@ async function enterSubmitStep() {
 }
 
 async function onEnterSubmitStep() {
+  let job: BulkPosterSubmissionJob | null = null;
+
   if (jobId.value) {
     try {
-      const job = await getBulkPosterSubmissionJob(jobId.value);
-      rebuildBatchItemsFromJobAndStaged(
-        job.submissionSummary as BulkImportSubmissionSummary | null,
-      );
+      job = await getBulkPosterSubmissionJob(jobId.value);
     } catch {
       // Keep current batch items if refresh fails.
     }
   }
+
+  if (job) {
+    if (shouldHydrateExtractionStatuses(job)) {
+      batchExtractionStatusesLoading.value = true;
+    }
+    applyBatchStateFromJob(job);
+  }
+
   if (!batchImportFinished.value) {
     await refreshSubmissionRows();
   }
 
-  if (batchImportRunning.value) return;
+  if (batchImportRunning.value) {
+    batchExtractionStatusesLoading.value = false;
+    return;
+  }
 
   if (hasUnsubmittedStagedPosters.value && canProceedFromReview.value) {
+    batchExtractionStatusesLoading.value = false;
     void startImport();
     return;
   }
 
-  await syncSubmitStepBatchProgress();
+  if (batchImportFinished.value) {
+    await loadBatchExtractionStatusesFromItems();
+  } else {
+    batchExtractionStatusesLoading.value = false;
+  }
 }
 
 function applyBatchStateFromJob(job: BulkPosterSubmissionJob) {
@@ -1494,33 +1545,22 @@ async function continueToConference() {
   }
 }
 
-async function continueToSubmit() {
+async function continueToLicense() {
   conferenceStepAttempted.value = true;
   if (!conferenceStepComplete.value) return;
 
   const conference = bulkImportConferenceFromForm(conferenceForm);
-  const license = uniformLicense.value.trim();
-  if (!conference || !license || !jobId.value) {
-    goToStep("submit");
-    await refreshSubmissionRows();
+  if (!conference || !jobId.value) {
+    goToStep("license");
     return;
   }
 
   conferenceStepSaving.value = true;
 
   try {
-    await mergeJobSubmissionSummary({
-      conference,
-      uniformLicense: license,
-      licenseSpreadsheetRows: buildSpreadsheetRowsForUniformLicense(
-        stagedPosterFileNames.value,
-        license,
-      ),
-    });
+    await mergeJobSubmissionSummary({ conference });
     void persistWizardStep("conference");
-    goToStep("submit");
-    await refreshSubmissionRows();
-    await applyBatchLicenseAndConferenceToPosters();
+    goToStep("license");
   } catch (error) {
     toast.add({
       title: "Could not save conference information",
@@ -1530,6 +1570,43 @@ async function continueToSubmit() {
     });
   } finally {
     conferenceStepSaving.value = false;
+  }
+}
+
+async function continueToSubmit() {
+  licenseStepAttempted.value = true;
+  if (!licenseStepComplete.value) return;
+
+  const license = uniformLicense.value.trim();
+  if (!license || !jobId.value) {
+    await goToStep("submit");
+    await refreshSubmissionRows();
+    return;
+  }
+
+  licenseStepSaving.value = true;
+
+  try {
+    await mergeJobSubmissionSummary({
+      uniformLicense: license,
+      licenseSpreadsheetRows: buildSpreadsheetRowsForUniformLicense(
+        stagedPosterFileNames.value,
+        license,
+      ),
+    });
+    void persistWizardStep("license");
+    await goToStep("submit");
+    await refreshSubmissionRows();
+    await applyBatchLicenseAndConferenceToPosters();
+  } catch (error) {
+    toast.add({
+      title: "Could not save license",
+      description:
+        fetchErrorDescription(error) ?? "Try again before continuing.",
+      color: "error",
+    });
+  } finally {
+    licenseStepSaving.value = false;
   }
 }
 
@@ -1544,6 +1621,13 @@ function continueToViewMetadata() {
   if (!batchHasCompletedExtractions.value) return;
   if (goToStep("preview")) {
     void persistWizardStep("preview");
+  }
+}
+
+function continueToPublishStep() {
+  if (!batchHasCompletedExtractions.value) return;
+  if (goToStep("publish")) {
+    void persistWizardStep("publish");
   }
 }
 
@@ -1630,11 +1714,11 @@ async function startImport() {
 
     const result = await submitBulkPosterSubmissionJob(jobId.value);
     batchImportFinished.value = true;
+    batchExtractionStatusesLoading.value = true;
     rebuildBatchItemsFromJobAndStaged(
       result.job.submissionSummary as BulkImportSubmissionSummary | null,
     );
-    await refreshBatchExtractionStatuses();
-    scheduleBatchExtractionPolling();
+    await loadBatchExtractionStatusesFromItems();
     const addedCount = result.posters.length;
     toast.add({
       title: addedCount > 0 ? "Posters submitted" : "Nothing new to submit",
@@ -1689,7 +1773,7 @@ async function startImport() {
                 "
                 :aria-current="stepIsActive(step.id) ? 'step' : undefined"
                 :disabled="!canGoToStep(step.id)"
-                @click="goToStep(step.id)"
+                @click="navigateToWizardStep(step.id)"
               >
                 <span
                   class="flex size-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold"
@@ -1718,7 +1802,6 @@ async function startImport() {
                   >
                     {{ step.label }}
                   </p>
-                  <p class="text-muted text-xs">{{ step.description }}</p>
                 </div>
               </button>
             </li>
@@ -1728,19 +1811,24 @@ async function startImport() {
     </template>
 
     <div class="flex flex-col gap-8">
-      <p
-        v-if="resumeLoading || resumeJobLoading"
-        class="text-muted text-center text-sm"
+      <div
+        v-if="wizardResumePending"
+        class="flex items-center justify-center py-16"
         aria-live="polite"
+        aria-busy="true"
+        aria-label="Loading"
       >
-        Loading your import…
-      </p>
+        <UIcon
+          name="i-lucide-loader-circle"
+          class="size-10 animate-spin text-primary"
+        />
+      </div>
 
-      <template v-if="currentStep === 'setup'">
+      <template v-else-if="currentStep === 'setup'">
         <div class="space-y-4">
           <div>
             <h3 class="text-base font-semibold">
-              Step {{ currentStepNumber }}: Name
+              Step {{ currentStepNumber }}: Batch name
             </h3>
             <p class="text-muted mt-1 text-sm">
               {{ currentStepTask }}
@@ -1748,13 +1836,13 @@ async function startImport() {
           </div>
 
           <UFormField
-            label="Import name"
+            label="Batch name"
             required
             :hint="`${BULK_IMPORT_NAME_MIN_LENGTH}–${BULK_IMPORT_NAME_MAX_LENGTH} characters`"
           >
             <UInput
               v-model="importName"
-              placeholder="e.g. Spring 2026 poster batch"
+              placeholder="e.g. Posters from the 2026 International Research Conference"
               :maxlength="BULK_IMPORT_NAME_MAX_LENGTH"
               autocomplete="off"
             />
@@ -1810,9 +1898,11 @@ async function startImport() {
               ref="posterFileUploadRef"
               hide-file-list
               multiple
+              title="Upload all posters for this batch"
+              description="Drag and drop every poster file here, or click to browse."
               :accept="POSTER_FILE_ACCEPT"
               :validate-file="validatePosterUploadFile"
-              :hint="`${POSTER_ONLY_HINT} Files upload as soon as you add them.`"
+              :hint="`${POSTER_ONLY_HINT}. Files upload as soon as you add them.`"
               @on-change="onPosterFilesSelected"
               @on-reject="onPosterFilesRejected"
             >
@@ -2114,28 +2204,6 @@ async function startImport() {
             </UFormField>
 
             <UFormField
-              label="License for all posters"
-              required
-              :error="conferenceLicenseError"
-            >
-              <div class="space-y-2">
-                <USelectMenu
-                  v-model="uniformLicense"
-                  :items="uniformLicenseSelectItems"
-                  value-key="value"
-                  searchable
-                  :search-input="{
-                    placeholder: 'Search licenses…',
-                    icon: 'i-lucide-search',
-                  }"
-                  placeholder="Choose a license…"
-                  class="w-full"
-                  :virtualize="true"
-                />
-              </div>
-            </UFormField>
-
-            <UFormField
               v-if="conferenceForm.conferenceAttendance === 'In-person'"
               label="Conference location"
               required
@@ -2235,6 +2303,60 @@ async function startImport() {
             label="Save and Continue"
             :disabled="!conferenceStepComplete"
             :loading="conferenceStepSaving"
+            @click="continueToLicense"
+          />
+        </div>
+      </template>
+
+      <template v-else-if="currentStep === 'license'">
+        <div class="space-y-4">
+          <div>
+            <h3 class="text-base font-semibold">
+              Step {{ currentStepNumber }}: License information
+            </h3>
+            <p class="text-muted mt-1 text-sm">
+              {{ currentStepTask }}
+            </p>
+          </div>
+
+          <UFormField
+            label="License for all posters"
+            required
+            :error="licenseSelectError"
+          >
+            <USelectMenu
+              v-model="uniformLicense"
+              :items="uniformLicenseSelectItems"
+              value-key="value"
+              searchable
+              :search-input="{
+                placeholder: 'Search licenses…',
+                icon: 'i-lucide-search',
+              }"
+              placeholder="Choose a license…"
+              class="w-full"
+              :virtualize="true"
+            />
+          </UFormField>
+        </div>
+
+        <div
+          class="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-6 dark:border-gray-800"
+        >
+          <UButton
+            color="neutral"
+            variant="ghost"
+            icon="i-lucide-arrow-left"
+            label="Back"
+            @click="goToStep('conference')"
+          />
+          <UButton
+            color="primary"
+            icon="i-lucide-arrow-right"
+            trailing
+            label="Save and Continue"
+            :disabled="!licenseStepComplete"
+            :loading="licenseStepSaving"
             @click="continueToSubmit"
           />
         </div>
@@ -2247,19 +2369,28 @@ async function startImport() {
               Step {{ currentStepNumber }}: Submit posters
             </h3>
             <p class="text-muted mt-1 text-sm">
-              {{ currentStepTask }}
+              {{ submitStepIntro }}
             </p>
           </div>
 
-          <UAlert
-            v-if="submitStepBanner"
-            :color="submitStepBanner.color"
-            variant="soft"
-            :icon="submitStepBanner.icon"
-            :title="submitStepBanner.title"
-            :description="submitStepBanner.description"
-          />
+          <div
+            v-if="batchExtractionStatusesLoading"
+            class="flex items-center justify-center py-12"
+            aria-live="polite"
+            aria-busy="true"
+            aria-label="Loading"
+          >
+            <UIcon
+              name="i-lucide-loader-circle"
+              class="size-10 animate-spin text-primary"
+            />
+          </div>
 
+          <template
+            v-else-if="
+              batchImportFinished && batchItems.some((item) => item.extractionJobId)
+            "
+          >
           <div v-if="batchItems.length > 0" class="space-y-2">
             <div class="flex items-center justify-between text-sm">
               <span class="text-muted">Overall progress</span>
@@ -2296,9 +2427,7 @@ async function startImport() {
                   </template>
 
                   <template #batchProgressRow-cell="{ row }">
-                    <div
-                      class="flex w-full items-center justify-between gap-4"
-                    >
+                    <div class="flex w-full items-center justify-between gap-4">
                       <span
                         class="line-clamp-2 min-w-0 flex-1 text-left text-sm font-medium"
                         :title="row.original.fileName"
@@ -2383,6 +2512,7 @@ async function startImport() {
               </div>
             </div>
           </div>
+          </template>
         </div>
 
         <div
@@ -2394,7 +2524,7 @@ async function startImport() {
             icon="i-lucide-arrow-left"
             label="Back"
             :disabled="batchImportRunning"
-            @click="goToStep('conference')"
+            @click="goToStep('license')"
           />
 
           <UButton
@@ -2495,11 +2625,54 @@ async function startImport() {
             @click="goToStep('review')"
           />
 
+          <div class="flex flex-wrap items-center gap-2">
+            <UButton
+              color="neutral"
+              variant="outline"
+              icon="i-lucide-layout-dashboard"
+              label="Go to dashboard"
+              to="/dashboard"
+            />
+
+            <UButton
+              color="primary"
+              icon="i-lucide-arrow-right"
+              trailing
+              label="Continue to submit"
+              :disabled="!batchHasCompletedExtractions"
+              @click="continueToPublishStep"
+            />
+          </div>
+        </div>
+      </template>
+
+      <template v-else-if="currentStep === 'publish'">
+        <div class="space-y-4">
+          <div>
+            <h3 class="text-base font-semibold">
+              Step {{ currentStepNumber }}: Submit
+            </h3>
+            <p class="text-muted mt-1 text-sm">
+              {{ currentStepTask }}
+            </p>
+          </div>
+
+          <BulkImportPublishStep
+            :items="batchItems"
+            :bulk-job-id="jobId"
+            :uniform-license="uniformLicense"
+          />
+        </div>
+
+        <div
+          class="flex flex-wrap items-center gap-3 border-t border-gray-100 pt-6 dark:border-gray-800"
+        >
           <UButton
-            color="primary"
-            icon="i-lucide-layout-dashboard"
-            label="Go to dashboard"
-            to="/dashboard"
+            color="neutral"
+            variant="ghost"
+            icon="i-lucide-arrow-left"
+            label="Back"
+            @click="goToStep('preview')"
           />
         </div>
       </template>

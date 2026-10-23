@@ -14,6 +14,10 @@ interface FileUploadProps {
   accept?: string;
   /** Returns a reason the file is rejected, or null when it is allowed. */
   validateFile?: (file: File) => string | null;
+  /** Primary line in the drop zone. */
+  title?: string;
+  /** Secondary line (drag/drop instruction). */
+  description?: string;
   /** Helper text under the drop zone, such as accepted types and size limit. */
   hint?: string;
   /** When true, selected files are not listed inside the drop zone (show them elsewhere). */
@@ -26,6 +30,8 @@ const props = withDefaults(defineProps<FileUploadProps>(), {
   multiple: false,
   accept: undefined,
   validateFile: undefined,
+  title: "Upload file",
+  description: "Drag or drop your files here or click to upload",
   hint: undefined,
   hideFileList: false,
   hideRejections: false,
@@ -151,13 +157,13 @@ defineExpose({ clearFiles });
           <p
             class="relative z-20 font-sans text-base font-bold text-neutral-700 dark:text-neutral-300"
           >
-            Upload file
+            {{ title }}
           </p>
 
           <p
-            class="relative z-20 mt-2 font-sans text-base font-normal text-neutral-400 dark:text-neutral-400"
+            class="relative z-20 mt-2 max-w-lg text-center font-sans text-base font-normal text-neutral-400 dark:text-neutral-400"
           >
-            Drag or drop your files here or click to upload
+            {{ description }}
           </p>
 
           <p

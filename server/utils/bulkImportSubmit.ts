@@ -170,7 +170,6 @@ export async function submitBulkPosterSubmissionJob(
           description: "",
           imageUrl: "",
           status: "draft",
-          automated: true,
           posterMetadata: {
             create: metadataCreate,
           },

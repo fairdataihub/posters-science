@@ -9,6 +9,7 @@ import {
 import { LICENSE_OPTIONS } from "~/utils/poster_schema";
 import { normalizeDoi, validateDoi } from "~/utils/doi";
 import { shareNewBulkPath } from "~/utils/sharePaths";
+import { deleteBulkPosterSubmissionJob } from "~/utils/bulkPosterSubmissionJobClient";
 import type {
   DashboardBulkSubmission,
   DashboardInProgressFeedEntry,
@@ -710,10 +711,52 @@ async function refreshPosterList() {
   }
 }
 
-async function onBulkDraftDeleted() {
+async function refreshDashboardFeed() {
   await refresh();
   if (data.value) {
     applyDashboardFeed(data.value);
+  }
+}
+
+const bulkToDelete = ref<DashboardBulkSubmission | null>(null);
+const bulkDeleteModalOpen = ref(false);
+const isDeletingBulk = ref(false);
+
+function openDeleteBulkModal(bulk: DashboardBulkSubmission) {
+  bulkToDelete.value = bulk;
+  bulkDeleteModalOpen.value = true;
+}
+
+async function deleteBulkImport() {
+  if (!bulkToDelete.value) return;
+
+  isDeletingBulk.value = true;
+
+  try {
+    const result = await deleteBulkPosterSubmissionJob(bulkToDelete.value.id);
+
+    const kept = result.keptPublishedPosterCount ?? 0;
+    toast.add({
+      title: "Bulk import deleted",
+      description:
+        kept > 0
+          ? `Draft posters were removed. ${kept === 1 ? "One published poster" : `${kept} published posters`} from this batch remain on your dashboard.`
+          : "Your bulk import and its draft posters have been removed.",
+      color: "success",
+    });
+
+    bulkDeleteModalOpen.value = false;
+    bulkToDelete.value = null;
+    await refreshDashboardFeed();
+  } catch (err) {
+    console.error(err);
+    toast.add({
+      title: "Error",
+      description: "There was a problem deleting this bulk import.",
+      color: "error",
+    });
+  } finally {
+    isDeletingBulk.value = false;
   }
 }
 
@@ -1621,7 +1664,7 @@ function posterMenuItems(poster: Poster) {
           <DashboardBulkSubmissionCard
             v-if="item.type === 'bulk'"
             :bulk="item.bulk"
-            @deleted="onBulkDraftDeleted"
+            @delete="openDeleteBulkModal"
           />
 
           <template v-else>
@@ -2437,6 +2480,42 @@ function posterMenuItems(poster: Poster) {
           </UButton>
 
           <UButton color="error" :loading="isDeleting" @click="deletePoster">
+            Delete
+          </UButton>
+        </div>
+      </template>
+    </UModal>
+
+    <UModal v-model:open="bulkDeleteModalOpen" title="Delete bulk import">
+      <template #body>
+        <p class="text-sm">
+          Are you sure you want to delete
+          <span class="font-medium">{{
+            bulkToDelete?.name || "this bulk import"
+          }}</span
+          >?
+          <template v-if="bulkToDelete?.status === 'processing'">
+            Staged files and draft posters from this import will be removed.
+          </template>
+          <template v-else>
+            Staged poster files for this import will be removed.
+          </template>
+          Posters you already published to Zenodo stay on your dashboard. This
+          cannot be undone.
+        </p>
+      </template>
+
+      <template #footer>
+        <div class="flex justify-end gap-3">
+          <UButton variant="outline" @click="bulkDeleteModalOpen = false">
+            Cancel
+          </UButton>
+
+          <UButton
+            color="error"
+            :loading="isDeletingBulk"
+            @click="deleteBulkImport"
+          >
             Delete
           </UButton>
         </div>
