@@ -41,6 +41,7 @@ jobs:
       NUXT_ZENODO_API_ENDPOINT: ${{ secrets.NUXT_ZENODO_API_ENDPOINT }}
       NUXT_ZENODO_REDIRECT_URI: ${{ secrets.NUXT_ZENODO_REDIRECT_URI }}
       NUXT_ZENODO_CLIENT_SECRET: ${{ secrets.NUXT_ZENODO_CLIENT_SECRET }}
+      NUXT_ZENODO_TOKEN_ENCRYPTION_KEY: ${{ secrets.NUXT_ZENODO_TOKEN_ENCRYPTION_KEY }}
       NUXT_BUNNY_PRIVATE_STORAGE: ${{ secrets.NUXT_BUNNY_PRIVATE_STORAGE }}
       NUXT_BUNNY_PRIVATE_STORAGE_KEY: ${{ secrets.NUXT_BUNNY_PRIVATE_STORAGE_KEY }}
       NUXT_BUNNY_PUBLIC_STORAGE: ${{ secrets.NUXT_BUNNY_PUBLIC_STORAGE }}
@@ -62,7 +63,7 @@ jobs:
       # Step 2: Setup Ruby environment for Kamal deployment tool
       - uses: ruby/setup-ruby@v1
         with:
-          ruby-version: 3.3.1
+          ruby-version: "3.3"
           bundler-cache: true # Cache Ruby dependencies for faster builds
 
       # Step 3: Install Kamal deployment tool

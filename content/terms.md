@@ -13,6 +13,9 @@ For the purposes of these Terms:
 - **"User", "you"** means any individual or entity that accesses or uses the Platform.
 - **"Poster Record"** means a poster submission consisting of metadata, a poster.json file, and a link to the poster archived on an external repository.
 - **"Contributor"** means a User who submits a poster to the Platform.
+- **"Auto-Indexed Poster Record"** means a Poster Record that the Platform discovered and added automatically from an external repository, rather than one submitted by a Contributor.
+- **"Claim"** means a statement, made by a User through the Platform, that they are one of the authors of an Auto-Indexed Poster Record. A User who makes a Claim is a **"Claimant"**.
+- **"Public Profile"** means an optional page, which a User chooses to make visible, that shows information about that User and the Poster Records they have submitted or claimed.
 
 ## 2. Eligibility and Accounts
 
@@ -31,6 +34,7 @@ Posters.science is designed to make scientific posters more findable, accessible
 - Enables researchers to submit posters by uploading a PDF or image, reviewing AI-extracted metadata, and archiving the poster on Zenodo;
 - Automatically discovers and indexes poster records from external repositories using [PosterSentry](https://huggingface.co/fairdataihub/poster-sentry), an AI-powered verification model;
 - Generates a standardized `poster.json` file for each poster record, making posters machine-actionable and FAIR-compliant;
+- Allows authors to claim Auto-Indexed Poster Records and to list the posters they have submitted and claimed on an optional Public Profile;
 - Provides a browsable and searchable catalog of scientific poster records; and
 - Aligns with FAIR data principles to improve the long-term visibility and impact of scientific posters.
 
@@ -45,6 +49,22 @@ All poster records on the Platform are publicly discoverable. Each record includ
 ### 4.2 Attribution and Citation
 
 You agree to follow any citation or attribution instructions associated with a poster record, including citing DOIs or other identifiers provided on the poster record page.
+
+### 4.3 Claiming Auto-Indexed Poster Records
+
+If you claim an Auto-Indexed Poster Record, you represent that you are one of its authors. You agree and understand that:
+
+- You will only claim poster records that you authored or co-authored;
+- Claims are not verified when they are made. We may review any Claim, and we may remove a Claim at any time and without notice, including in response to a report from another User;
+- A Claim lists the poster record on your dashboard and, if you have one, your Public Profile. It does not transfer ownership of the poster record, give you the right to edit its metadata, or change the original poster, its license, or its record in the external repository;
+- Other authors may also claim the same poster record; and
+- You may remove your Claim at any time.
+
+If you believe a poster record has been claimed by someone who is not one of its authors, or you would like an Auto-Indexed Poster Record corrected or removed, please contact us using the details in Section 15.
+
+### 4.4 Public Profiles
+
+You may choose to make your profile public. A Public Profile can be viewed by anyone and shows your name, affiliation, ORCID iD if you add one, short biography, the poster records you have submitted or claimed, and, if you choose to show them, the poster records you have liked. Your email address is not shown. You are responsible for the information you add to your Public Profile, and you may make it private again at any time. We may hide or remove Public Profile content that violates these Terms.
 
 ## 5. Contributor Responsibilities
 
@@ -65,7 +85,8 @@ You agree not to use the Platform or Services to:
 - Upload or distribute malware, malicious code, or content that could harm systems or data;
 - Attempt to gain unauthorized access to the Platform or other users' accounts;
 - Interfere with or disrupt the normal operation of the Platform, including through excessive automated requests or scraping beyond what is reasonably necessary for research purposes;
-- Misrepresent your identity, affiliation, or the origin of submitted content; or
+- Misrepresent your identity, affiliation, or the origin of submitted content;
+- Claim poster records you did not author, or use Claims or a Public Profile to impersonate another person; or
 - Use the Platform in any way that could harm other users, contributors, or the scientific community.
 
 ## 7. Intellectual Property
@@ -91,6 +112,7 @@ We aim to provide a reliable service, but the Platform may experience downtime, 
 - The Platform and all poster records are provided "as is" and "as available" without warranties of any kind, whether express or implied.
 - We do not guarantee the completeness, accuracy, or suitability of any poster record or metadata for a particular purpose.
 - Automated metadata extraction is AI-assisted and may contain errors. Contributors are responsible for reviewing and correcting metadata before submission.
+- Auto-Indexed Poster Records are discovered automatically, and their metadata comes from the external repository they were found in. Claims and Public Profiles reflect information provided by Users, and we do not verify that a Claimant is an author of the poster records they claim.
 - To the fullest extent permitted by law, we disclaim all warranties, including implied warranties of merchantability, fitness for a particular purpose, and non-infringement.
 
 ## 11. Limitation of Liability

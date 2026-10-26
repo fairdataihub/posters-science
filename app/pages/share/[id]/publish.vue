@@ -57,18 +57,32 @@ useSeoMeta({
 });
 
 const zenodoLoginUrl = ref("");
+const zenodoTokenSignIn = ref(false);
+const zenodoNewTokenUrl = ref("");
 const zenodoTokenExists = ref(false);
 const zenodoLoading = ref(true);
 const zenodoConfigError = ref(false);
 
+// Personal access token form, offered unless the zenodoToken maintenance
+// switch is on.
+const zenodoPersonalToken = ref("");
+const zenodoTokenConnecting = ref(false);
+const zenodoTokenError = ref("");
+
 // Repository selection state
 type Repository = "zenodo" | "figshare" | "download" | null;
 
-const { isActive: isMaintenanceActive } = useMaintenance();
-const zenodoPaused = computed(() => isMaintenanceActive("zenodo"));
+const { messageFor: maintenanceMessageFor, zenodo: zenodoMaintenance } =
+  useMaintenance();
+// Zenodo is off when an admin pauses both ways of connecting. That also stops
+// users who are already connected from publishing.
+const zenodoPaused = computed(() => zenodoMaintenance.value.off !== null);
+const zenodoOAuthPausedMessage = computed(() =>
+  maintenanceMessageFor("zenodoOAuth"),
+);
 
 // Check for repository query param (e.g., after Zenodo OAuth redirect).
-// "zenodo" is accepted here but dropped below while Zenodo is paused, so a user
+// "zenodo" is accepted here but dropped below while Zenodo is off, so a user
 // returning from OAuth mid pause lands back on the picker.
 const queryRepo = useRoute().query.repository;
 const requestedRepository: Repository =
@@ -365,6 +379,7 @@ const {
   data: zenodoData,
   pending: zenodoPending,
   error: zenodoFetchError,
+  refresh: refreshZenodoStatus,
 } = useFetch("/api/release/zenodo", {
   headers: useRequestHeaders(["cookie"]),
   method: "GET",
@@ -390,8 +405,10 @@ watch(
     }
     console.log("Zenodo fetch data:", data);
     zenodoLoginUrl.value = data?.zenodoLoginURL ?? "";
+    zenodoTokenSignIn.value = data?.zenodoTokenSignIn ?? false;
+    zenodoNewTokenUrl.value = data?.zenodoNewTokenUrl ?? "";
     zenodoTokenExists.value = data?.zenodoToken ?? false;
-    zenodoConfigError.value = !data?.zenodoLoginURL;
+    zenodoConfigError.value = !data?.zenodoConfigured;
     existingDepositions.value = (data?.existingDepositions ??
       []) as typeof existingDepositions.value;
     linkedDepositionId.value = data?.linkedDepositionId;
@@ -415,10 +432,49 @@ function handleZenodoSignIn() {
   window.location.href = zenodoLoginUrl.value;
 }
 
+async function handleZenodoTokenConnect() {
+  if (!zenodoPersonalToken.value.trim() || zenodoTokenConnecting.value) return;
+
+  zenodoTokenConnecting.value = true;
+  zenodoTokenError.value = "";
+
+  try {
+    await $fetch("/api/zenodo/token", {
+      method: "POST",
+      body: { token: zenodoPersonalToken.value },
+    });
+
+    // Cleared as soon as it is stored so the page holds no copy of it.
+    zenodoPersonalToken.value = "";
+    window.umami?.track("zenodo_token_connected", { posterId: id });
+
+    // Reload the status so the record list for new versions is filled in.
+    zenodoLoading.value = true;
+    await refreshZenodoStatus();
+  } catch (error) {
+    const { statusCode, statusMessage } = parseApiError(error);
+
+    zenodoTokenError.value =
+      statusMessage ?? "Could not connect to Zenodo. Please try again.";
+    window.umami?.track("zenodo_token_failed", {
+      posterId: id,
+      status: statusCode ?? 0,
+    });
+  } finally {
+    zenodoTokenConnecting.value = false;
+  }
+}
+
 async function handleZenodoDisconnect() {
   try {
     await $fetch("/api/zenodo/disconnect", { method: "POST" });
     zenodoTokenExists.value = false;
+    toast.add({
+      title: "Disconnected from Zenodo",
+      description:
+        "To revoke access completely, also delete the token in your Zenodo account settings under Applications.",
+      color: "info",
+    });
   } catch (error) {
     toast.add({
       title: "Error disconnecting from Zenodo",
@@ -427,8 +483,8 @@ async function handleZenodoDisconnect() {
   }
 }
 
-// If an admin pauses Zenodo while this page is open, drop the user back to the
-// picker rather than leaving them in a flow that can no longer complete.
+// If an admin turns Zenodo off while this page is open, drop the user back to
+// the picker rather than leaving them in a flow that can no longer complete.
 watch(zenodoPaused, (paused) => {
   if (paused && selectedRepository.value === "zenodo") {
     selectedRepository.value = null;
@@ -707,38 +763,153 @@ async function handleArchive() {
       <!-- Loading state while fetching Zenodo token status -->
       <UiSpinner v-if="zenodoLoading" class="py-8" />
 
-      <!-- Not signed in -->
+      <!-- Zenodo is not set up on this server -->
+      <UAlert
+        v-else-if="zenodoConfigError"
+        color="error"
+        variant="subtle"
+        icon="i-lucide-circle-x"
+        title="Zenodo publishing isn't available right now"
+        description="Please try again later, or download your files instead."
+      />
+
+      <!-- Not connected. OAuth sign-in and personal access tokens each have a
+           maintenance switch (zenodoOAuth, zenodoToken), so either one can be
+           offered on its own. -->
       <template v-else-if="!zenodoTokenExists">
-        <p class="mb-4 text-sm">
-          If you don't have a Zenodo account already, please create one first at
-          <ULink
-            to="https://zenodo.org"
-            target="_blank"
-            class="text-primary underline"
-          >
-            zenodo.org</ULink
-          >
-          before continuing.
-        </p>
-
-        <UAlert
-          color="warning"
-          variant="subtle"
-          icon="i-lucide-triangle-alert"
-          class="mb-4"
-          title="Zenodo sign-in may require more than one attempt"
-          description="There is a known issue where Zenodo authentication can occasionally fail on the first try. We are currently working with the Zenodo team to resolve this. If you are redirected to an error page, use your browser's Back button to return to the Zenodo authorization page and approve access again. It typically resolves after one or two attempts."
-        />
-
-        <div class="flex items-center justify-between">
-          <p class="text-muted text-sm">
-            Ready to archive on Zenodo? Sign in to get started.
+        <!-- OAuth sign-in -->
+        <template v-if="zenodoLoginUrl">
+          <p class="mb-4 text-sm">
+            If you don't have a Zenodo account already, please create one first
+            at
+            <ULink
+              to="https://zenodo.org"
+              target="_blank"
+              class="text-primary underline"
+            >
+              zenodo.org</ULink
+            >
+            before continuing.
           </p>
 
-          <UButton color="primary" size="lg" @click="handleZenodoSignIn">
-            Sign in to Zenodo
-          </UButton>
+          <UAlert
+            color="warning"
+            variant="subtle"
+            icon="i-lucide-triangle-alert"
+            class="mb-4"
+            title="Zenodo sign-in may require more than one attempt"
+            description="There is a known issue where Zenodo authentication can occasionally fail on the first try. We are currently working with the Zenodo team to resolve this. If you are redirected to an error page, use your browser's Back button to return to the Zenodo authorization page and approve access again. It typically resolves after one or two attempts."
+          />
+
+          <div class="flex items-center justify-between">
+            <p class="text-muted text-sm">
+              Ready to archive on Zenodo? Sign in to get started.
+            </p>
+
+            <UButton color="primary" size="lg" @click="handleZenodoSignIn">
+              Sign in to Zenodo
+            </UButton>
+          </div>
+        </template>
+
+        <!-- Personal access token -->
+        <div
+          v-if="zenodoTokenSignIn"
+          :class="zenodoLoginUrl ? 'border-default mt-6 border-t pt-6' : ''"
+        >
+          <p v-if="zenodoLoginUrl" class="mb-4 text-sm font-medium">
+            Or connect with a personal access token
+          </p>
+
+          <p v-else class="mb-4 text-sm">
+            {{ zenodoOAuthPausedMessage }}
+            Connect your Zenodo account with a personal access token.
+          </p>
+
+          <ol class="mb-5 list-inside list-decimal space-y-2 text-sm">
+            <li>
+              Sign in to Zenodo, or create a free account first if you don't
+              have one.
+            </li>
+
+            <li>
+              Open the
+              <ULink
+                :to="zenodoNewTokenUrl"
+                target="_blank"
+                class="text-primary underline"
+                >new personal access token page</ULink
+              >
+              (Account settings, then Applications, then New token).
+            </li>
+
+            <li>
+              Give it a name like <strong>Posters.science</strong>
+              and tick both
+              <strong>deposit:write</strong>
+              and
+              <strong>deposit:actions</strong>. You can leave user:email
+              unticked.
+            </li>
+
+            <li>
+              Click <strong>Create</strong>, then copy the token and paste it
+              below. Zenodo only shows it once.
+            </li>
+          </ol>
+
+          <form @submit.prevent="handleZenodoTokenConnect">
+            <UFormField
+              label="Personal access token"
+              name="zenodoPersonalToken"
+              :error="zenodoTokenError || false"
+            >
+              <div class="flex flex-col gap-3 sm:flex-row">
+                <UInput
+                  v-model="zenodoPersonalToken"
+                  type="password"
+                  autocomplete="off"
+                  spellcheck="false"
+                  data-1p-ignore
+                  data-lpignore="true"
+                  placeholder="Paste your token"
+                  class="w-full sm:max-w-md"
+                  :disabled="zenodoTokenConnecting"
+                />
+
+                <UButton
+                  type="submit"
+                  color="primary"
+                  :loading="zenodoTokenConnecting"
+                  :disabled="!zenodoPersonalToken.trim()"
+                >
+                  Connect to Zenodo
+                </UButton>
+              </div>
+            </UFormField>
+          </form>
+
+          <p class="text-muted mt-4 text-xs">
+            We check the token with Zenodo, store it encrypted, and only use it
+            to publish the posters you choose. You can disconnect at any time,
+            and deleting the token on Zenodo revokes our access completely.
+          </p>
         </div>
+
+        <!-- Neither way of connecting is available. Pausing both switches
+             turns Zenodo off and disables it in the picker, so this shows
+             when tokens are paused and OAuth is not configured. -->
+        <UAlert
+          v-if="!zenodoLoginUrl && !zenodoTokenSignIn"
+          color="warning"
+          variant="subtle"
+          icon="material-symbols:build"
+          title="Connecting to Zenodo is paused"
+          :description="
+            maintenanceMessageFor('zenodoToken') ||
+            'Please try again later, or download your files instead.'
+          "
+        />
       </template>
 
       <!-- Signed in -->
@@ -861,7 +1032,7 @@ async function handleArchive() {
               size="sm"
               @click="handleZenodoDisconnect"
             >
-              Sign out
+              Disconnect
             </UButton>
           </div>
 

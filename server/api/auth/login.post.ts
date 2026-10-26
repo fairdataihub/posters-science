@@ -51,8 +51,10 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  // Check if the password matches
-  if (!(await compare(body.data.password, user.password))) {
+  // Check if the password matches. An account created through ORCID has no
+  // password yet, and gets the same answer as a wrong one so this endpoint
+  // never reveals how an account signs in.
+  if (!user.password || !(await compare(body.data.password, user.password))) {
     throw createError({
       statusCode: 401,
       statusMessage: "Invalid email address or password",
@@ -77,21 +79,7 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  // Create a new session for the user
-  const userData = {
-    id: user.id,
-    emailAddress: user.emailAddress,
-    emailVerified: user.emailVerified,
-    familyName: user.familyName,
-    givenName: user.givenName,
-    role: user.role,
-  };
-
-  await setUserSession(event, {
-    loggedInAt: new Date(),
-    user: userData,
-    userSessionField: "",
-  });
+  await createUserSession(event, user);
 
   return sendRedirect(event, "/dashboard");
 });

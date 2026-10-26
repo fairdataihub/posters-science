@@ -36,6 +36,7 @@ const actionLabels: Record<string, string> = {
   UPDATE_USER_ROLE: "Updated role",
   UPDATE_MAINTENANCE: "Updated maintenance",
   RETRY_EXTRACTION_JOB: "Retried extraction",
+  REVOKE_CLAIM: "Revoked claim",
 };
 
 const actionItems = [
@@ -57,7 +58,9 @@ const columns: ColumnDef<AdminAuditLogRow>[] = [
 ];
 
 function actionColor(action: string) {
-  if (action.startsWith("DELETE")) return "error" as const;
+  if (action.startsWith("DELETE") || action.startsWith("REVOKE")) {
+    return "error" as const;
+  }
   if (action === "UPDATE_MAINTENANCE") return "warning" as const;
   if (action.startsWith("UPDATE")) return "warning" as const;
 

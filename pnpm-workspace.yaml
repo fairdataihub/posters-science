@@ -13,3 +13,12 @@ allowBuilds:
 minimumReleaseAge: 7200
 blockExoticSubdeps: true
 minimumReleaseAgeStrict: true # tracked in https://github.com/pnpm/pnpm/issues/11238
+
+# Keep h3 out of pnpm's hidden hoist (node_modules/.pnpm/node_modules). Nuxt
+# modules such as @nuxt/content and @nuxt/icon import h3 without declaring it,
+# and the hidden hoist otherwise exposes the h3 2.0 rc that Vite devtools
+# depends on. In dev that breaks their server routes (/terms and /privacy 404,
+# icon requests fail). With h3 excluded they resolve the root h3 1.x instead.
+hoistPattern:
+  - "*"
+  - "!h3"

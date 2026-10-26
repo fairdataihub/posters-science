@@ -1027,37 +1027,12 @@ const tabItems = [
           </div>
 
           <div class="flex flex-col gap-4">
-            <UCard>
-              <template #header>
-                <h3 class="text-lg font-semibold">Authors</h3>
-              </template>
-
-              <div class="space-y-3">
-                <div
-                  v-for="(author, index) in poster.authors"
-                  :key="index"
-                  class="border-l-4 border-blue-500 pl-3"
-                >
-                  <p class="font-medium">
-                    {{ author.givenName }} {{ author.familyName }}
-                  </p>
-
-                  <p
-                    v-if="author.affiliation"
-                    class="text-sm text-gray-600 dark:text-gray-400"
-                  >
-                    {{ author.affiliation }}
-                  </p>
-
-                  <p
-                    v-if="author.orcid"
-                    class="text-xs text-gray-500 dark:text-gray-400"
-                  >
-                    ORCID: {{ author.orcid }}
-                  </p>
-                </div>
-              </div>
-            </UCard>
+            <DiscoverAuthorsCard
+              :poster-id="poster.id"
+              :authors="poster.authors"
+              :claimable="api?.claimable ?? false"
+              :claimed="api?.claimed ?? false"
+            />
 
             <UCard>
               <template #header>

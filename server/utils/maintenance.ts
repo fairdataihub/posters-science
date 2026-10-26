@@ -1,6 +1,7 @@
 import {
   isMaintenanceKey,
   resolveMaintenanceMessage,
+  resolveZenodoMaintenance,
   type ActiveMaintenance,
   type MaintenanceKey,
 } from "#shared/utils/maintenance";
@@ -35,6 +36,7 @@ export async function getActiveMaintenance(): Promise<ActiveMaintenance[]> {
       {
         key: row.key,
         message: resolveMaintenanceMessage(row.key, row.message),
+        usesDefaultMessage: !row.message.trim(),
         since: row.enabledAt?.toISOString() ?? null,
       },
     ];
@@ -64,6 +66,23 @@ export async function assertNotInMaintenance(key: MaintenanceKey) {
       statusCode: 503,
       statusMessage: match.message,
       data: { maintenance: key, message: match.message },
+    });
+  }
+}
+
+/**
+ * Throws 503 while Zenodo is off, which is when both Zenodo sign-in switches
+ * are paused (see resolveZenodoMaintenance). Guards publishing as well as
+ * connecting, so users who are already connected are stopped too.
+ */
+export async function assertZenodoNotOff() {
+  const { off } = resolveZenodoMaintenance(await getActiveMaintenance());
+
+  if (off) {
+    throw createError({
+      statusCode: 503,
+      statusMessage: off.message,
+      data: { maintenance: "zenodo", message: off.message },
     });
   }
 }

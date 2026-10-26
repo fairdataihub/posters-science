@@ -53,6 +53,9 @@ importers:
       dayjs:
         specifier: 1.11.21
         version: 1.11.21
+      h3:
+        specifier: 1.15.11
+        version: 1.15.11
       marked:
         specifier: 18.0.4
         version: 18.0.4
@@ -4654,6 +4657,7 @@ packages:
   eslint@9.36.0:
     resolution: {integrity: sha512-hB4FIzXovouYzwzECDcUkJ4OcfOEkXTv2zRY6B9bkwjx/cprAq0uvm1nl7zvQ0/TsUk0zQiN4uPfJpB9m+rPMQ==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+    deprecated: This version is no longer supported. Please see https://eslint.org/version-support for other options.
     hasBin: true
     peerDependencies:
       jiti: '*'

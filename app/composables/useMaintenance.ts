@@ -1,6 +1,7 @@
-import type {
-  ActiveMaintenance,
-  MaintenanceKey,
+import {
+  resolveZenodoMaintenance,
+  type ActiveMaintenance,
+  type MaintenanceKey,
 } from "#shared/utils/maintenance";
 
 /**
@@ -22,5 +23,9 @@ export function useMaintenance() {
 
   const messageFor = (key: MaintenanceKey) => entryFor(key)?.message ?? "";
 
-  return { active, entryFor, isActive, messageFor, refresh, status };
+  // The two Zenodo sign-in switches read as one mode, and Zenodo is off when
+  // both are paused.
+  const zenodo = computed(() => resolveZenodoMaintenance(active.value));
+
+  return { active, entryFor, isActive, messageFor, zenodo, refresh, status };
 }
