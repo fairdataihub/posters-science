@@ -35,8 +35,9 @@ model User {
   role String @default("user") // user | admin
 
   // Public profile. Opt-in, so a profile stays private until the user turns
-  // it on. profileId is the stable part of /profile/<name>-<profileId> and is
-  // only assigned the first time the profile is made public.
+  // it on. profileId is the whole profile address, /profile/<profileId>, and
+  // never changes. It is assigned the first time the profile is made public
+  // or the owner opens /profile/me.
   profilePublic    Boolean @default(false)
   profileId        String? @unique
   affiliation      String  @default("")
