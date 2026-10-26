@@ -1,5 +1,6 @@
 <script setup lang="ts">
 const feedbackOpen = useState("feedbackOpen", () => false);
+const { openSharePostersChooser } = useSharePostersChooser();
 
 const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Posters.science")}&description=${encodeURIComponent("The best way to discover and share scientific posters")}&app=posters-science&org=fairdataihub`;
 
@@ -19,11 +20,11 @@ const links = ref([
     trailingIcon: "ic:outline-saved-search",
   },
   {
-    label: "Share a Poster",
-    to: "/share/new",
+    label: "Share Posters",
     size: "xl" as const,
     trailingIcon: "line-md:file-upload",
     variant: "outline" as const,
+    onClick: openSharePostersChooser,
   },
 ]);
 </script>
@@ -137,13 +138,13 @@ const links = ref([
             class="align-center mt-6 block justify-center space-y-4 text-center"
           >
             <UButton
-              to="/share/new"
               variant="outline"
               size="xl"
               trailing-icon="line-md:file-upload"
               class="self-start"
+              @click="openSharePostersChooser"
             >
-              Share Poster
+              Share Posters
             </UButton>
           </div>
         </div>

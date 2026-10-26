@@ -1,7 +1,7 @@
 import archiver from "archiver";
 import { Readable } from "node:stream";
 import { sendStream, setHeader } from "h3";
-import { buildPosterJson } from "../../../utils/buildPosterJson";
+import { appendPosterDownloadPackage } from "../../../utils/posterDownloadPackage";
 
 export default defineEventHandler(async (event) => {
   const session = await requireUserSession(event);
@@ -60,44 +60,20 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  const fileUrl = `${bunnyPrivateStorage}/${extractionJob.filePath}`;
-  const fileResponse = await fetch(fileUrl, {
-    headers: {
-      AccessKey: bunnyPrivateStorageKey,
-      "Content-Type": "application/octet-stream",
-    },
-  });
+  // PDFs are already compressed - level 1 avoids wasting CPU for no size gain
+  const archive = archiver("zip", { zlib: { level: 1 } });
 
-  if (!fileResponse.ok || !fileResponse.body) {
+  try {
+    await appendPosterDownloadPackage(archive, poster, {
+      bunnyPrivateStorage,
+      bunnyPrivateStorageKey,
+    });
+  } catch {
     throw createError({
       statusCode: 500,
       statusMessage: "Failed to fetch file from storage",
     });
   }
-
-  // Build poster.json
-  const meta = poster.posterMetadata;
-  const posterJson = meta
-    ? buildPosterJson(meta, {
-        title: poster.title,
-        description: poster.description,
-      })
-    : { title: poster.title, description: poster.description };
-  const posterJsonBuffer = Buffer.from(
-    JSON.stringify(posterJson, null, 2),
-    "utf-8",
-  );
-
-  // PDFs are already compressed - level 1 avoids wasting CPU for no size gain
-  const archive = archiver("zip", { zlib: { level: 1 } });
-
-  archive.append(posterJsonBuffer, { name: "poster.json" });
-
-  const nodeStream = Readable.fromWeb(
-    fileResponse.body as Parameters<typeof Readable.fromWeb>[0],
-  );
-  const zipEntryName = extractionJob.fileName || "poster.pdf";
-  archive.append(nodeStream, { name: zipEntryName });
 
   // Mark as downloaded so the dashboard prompts the user to add publication metadata
   await prisma.poster.update({

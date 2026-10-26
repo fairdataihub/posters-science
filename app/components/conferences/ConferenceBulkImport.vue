@@ -228,6 +228,9 @@ const posterRowStatus = ref<
   Record<string, { status: "uploading" | "error"; error?: string }>
 >({});
 const activePosterUploads = ref(0);
+const posterUploadQueueTotal = ref(0);
+const posterUploadQueueFinished = ref(0);
+const currentPosterFileUploadPercent = ref(0);
 const stagedPosterDeletePath = ref<string | null>(null);
 const deleteAllPostersModalOpen = ref(false);
 const deleteAllPostersLoading = ref(false);
@@ -236,6 +239,49 @@ const resumeWizardHydrated = ref(false);
 const resumeJobLoading = ref(false);
 
 const posterUploadRunning = computed(() => activePosterUploads.value > 0);
+
+const posterUploadProgressVisible = computed(
+  () => posterUploadQueueTotal.value > 0,
+);
+
+const posterUploadOverallPercent = computed(() => {
+  const total = posterUploadQueueTotal.value;
+  if (total === 0) return 0;
+
+  const completed = posterUploadQueueFinished.value;
+  const currentFileFraction = posterUploadRunning.value
+    ? currentPosterFileUploadPercent.value / 100
+    : 0;
+
+  return Math.min(
+    100,
+    Math.round(((completed + currentFileFraction) / total) * 100),
+  );
+});
+
+const posterUploadProgressLabel = computed(() => {
+  const total = posterUploadQueueTotal.value;
+  if (total === 0) return "";
+
+  const completed = posterUploadQueueFinished.value;
+  const inFlight = posterUploadRunning.value ? 1 : 0;
+  const currentFile = Math.min(completed + inFlight, total);
+
+  return `${currentFile} of ${total} file${total === 1 ? "" : "s"}`;
+});
+
+function resetPosterUploadProgressIfIdle() {
+  if (activePosterUploads.value > 0) return;
+
+  if (
+    posterUploadQueueTotal.value > 0 &&
+    posterUploadQueueFinished.value >= posterUploadQueueTotal.value
+  ) {
+    posterUploadQueueTotal.value = 0;
+    posterUploadQueueFinished.value = 0;
+    currentPosterFileUploadPercent.value = 0;
+  }
+}
 
 const stagedPosterFileNames = computed(() =>
   stagedPosters.value.map((poster) => poster.fileName),
@@ -302,9 +348,16 @@ async function onPosterFilesSelected(files: File[]) {
   const batch = [...files];
   posterFileUploadRef.value?.clearFiles();
 
+  posterUploadQueueTotal.value += batch.length;
+
   for (const file of batch) {
+    currentPosterFileUploadPercent.value = 0;
     await uploadPosterFileImmediately(file);
+    posterUploadQueueFinished.value += 1;
+    currentPosterFileUploadPercent.value = 0;
   }
+
+  resetPosterUploadProgressIfIdle();
 }
 
 const uniformLicense = ref<string>("");
@@ -1000,7 +1053,11 @@ async function uploadPosterFileImmediately(file: File) {
   activePosterUploads.value += 1;
 
   try {
-    const response = await uploadBulkPosterSubmissionFile(jobId.value, file);
+    const response = await uploadBulkPosterSubmissionFile(jobId.value, file, {
+      onUploadProgress: (percent) => {
+        currentPosterFileUploadPercent.value = percent;
+      },
+    });
     stagedPosters.value = response.job.stagedPosters ?? stagedPosters.value;
     clearPosterRowStatus(file.name);
     void persistWizardStep("upload");
@@ -1018,6 +1075,7 @@ async function uploadPosterFileImmediately(file: File) {
     };
   } finally {
     activePosterUploads.value = Math.max(0, activePosterUploads.value - 1);
+    resetPosterUploadProgressIfIdle();
   }
 }
 
@@ -1910,6 +1968,23 @@ async function startImport() {
             </UiFileUpload>
 
             <div
+              v-if="posterUploadProgressVisible"
+              class="space-y-1.5"
+              aria-live="polite"
+              aria-busy="true"
+            >
+              <div class="flex items-center justify-between gap-2 text-sm">
+                <span class="text-muted">Uploading posters</span>
+                <span class="font-medium tabular-nums">
+                  {{ posterUploadProgressLabel }}
+                  ·
+                  {{ posterUploadOverallPercent }}%
+                </span>
+              </div>
+              <UProgress :model-value="posterUploadOverallPercent" size="sm" />
+            </div>
+
+            <div
               v-if="posterStorageListLoading || posterListRows.length > 0"
               class="space-y-2"
             >
@@ -1962,22 +2037,15 @@ async function startImport() {
                     </span>
                     <div class="flex shrink-0 items-center gap-1">
                       <UBadge
-                        :color="
-                          row.status === 'stored'
-                            ? 'success'
-                            : row.status === 'uploading'
-                              ? 'info'
-                              : 'error'
-                        "
+                        v-if="row.status !== 'stored'"
+                        :color="row.status === 'uploading' ? 'info' : 'error'"
                         variant="soft"
                         size="xs"
                       >
                         {{
-                          row.status === "stored"
-                            ? "Stored"
-                            : row.status === "uploading"
-                              ? "Uploading…"
-                              : (row.error ?? "Failed")
+                          row.status === "uploading"
+                            ? "Uploading…"
+                            : (row.error ?? "Failed")
                         }}
                       </UBadge>
                       <UButton

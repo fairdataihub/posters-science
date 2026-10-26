@@ -20,10 +20,39 @@ function isRetrying(item: BulkImportBatchItem) {
   );
 }
 
+type ReviewPoster = PosterResponse & {
+  imageUrl?: string;
+  status?: string;
+};
+
+const toast = useToast();
+
 const selectedPosterId = ref<number | null>(null);
-const posterLoading = ref(false);
-const posterError = ref<string | null>(null);
-const poster = ref<PosterResponse | null>(null);
+const posterCache = ref<Record<number, ReviewPoster>>({});
+const posterErrors = ref<Record<number, string>>({});
+const fetchingPosterIds = ref<Set<number>>(new Set());
+const thumbnailCacheBustById = ref<Record<number, number>>({});
+const regeneratingPreview = ref(false);
+
+const posterInFlight = new Map<number, Promise<void>>();
+
+const poster = computed(() => {
+  const id = selectedPosterId.value;
+  if (id == null) return null;
+  return posterCache.value[id] ?? null;
+});
+
+const posterError = computed(() => {
+  const id = selectedPosterId.value;
+  if (id == null) return null;
+  return posterErrors.value[id] ?? null;
+});
+
+const posterLoading = computed(() => {
+  const id = selectedPosterId.value;
+  if (id == null) return false;
+  return fetchingPosterIds.value.has(id) && posterCache.value[id] == null;
+});
 
 const reviewableItems = computed(() =>
   props.items.filter(
@@ -41,12 +70,63 @@ const failedItems = computed(() =>
   props.items.filter((item) => item.status === "failed"),
 );
 
+function patchPosterCache(posterId: number, data: ReviewPoster) {
+  posterCache.value = { ...posterCache.value, [posterId]: data };
+}
+
+function preloadPosterPreview(data: ReviewPoster) {
+  if (!data.imageUrl?.trim()) return;
+
+  const url =
+    data.status === "published"
+      ? data.imageUrl
+      : `/api/poster/${data.id}/thumbnail`;
+
+  const img = new Image();
+  img.decoding = "async";
+  img.src = url;
+}
+
+async function ensurePosterInCache(posterId: number) {
+  if (posterCache.value[posterId]) return;
+
+  const existing = posterInFlight.get(posterId);
+  if (existing) return existing;
+
+  const promise = (async () => {
+    fetchingPosterIds.value = new Set([
+      ...fetchingPosterIds.value,
+      posterId,
+    ]);
+
+    try {
+      const data = await $fetch<ReviewPoster>(`/api/poster/${posterId}`);
+      patchPosterCache(posterId, data);
+      preloadPosterPreview(data);
+      const { [posterId]: _removed, ...rest } = posterErrors.value;
+      posterErrors.value = rest;
+    } catch {
+      posterErrors.value = {
+        ...posterErrors.value,
+        [posterId]: "Could not load extracted metadata for this poster.",
+      };
+    } finally {
+      const next = new Set(fetchingPosterIds.value);
+      next.delete(posterId);
+      fetchingPosterIds.value = next;
+      posterInFlight.delete(posterId);
+    }
+  })();
+
+  posterInFlight.set(posterId, promise);
+  return promise;
+}
+
 watch(
   reviewableItems,
   (items) => {
     if (items.length === 0) {
       selectedPosterId.value = null;
-      poster.value = null;
       return;
     }
     if (
@@ -54,30 +134,20 @@ watch(
       !items.some((item) => item.posterId === selectedPosterId.value)
     ) {
       selectedPosterId.value = items[0]!.posterId!;
-      void loadPoster(items[0]!.posterId!);
+    }
+    for (const item of items) {
+      if (item.posterId != null) {
+        void ensurePosterInCache(item.posterId);
+      }
     }
   },
   { immediate: true },
 );
 
-async function loadPoster(posterId: number) {
-  selectedPosterId.value = posterId;
-  posterLoading.value = true;
-  posterError.value = null;
-  poster.value = null;
-
-  try {
-    poster.value = await $fetch<PosterResponse>(`/api/poster/${posterId}`);
-  } catch {
-    posterError.value = "Could not load extracted metadata for this poster.";
-  } finally {
-    posterLoading.value = false;
-  }
-}
-
 function selectPoster(posterId: number) {
-  if (posterId === selectedPosterId.value && poster.value) return;
-  void loadPoster(posterId);
+  if (posterId === selectedPosterId.value) return;
+  selectedPosterId.value = posterId;
+  void ensurePosterInCache(posterId);
 }
 
 const meta = computed(() => poster.value?.posterMetadata ?? null);
@@ -154,6 +224,82 @@ const editMetadataPath = computed(() => {
     bulkWizardStep: "review",
   });
 });
+
+const posterPreviewSrc = computed(() => {
+  if (!poster.value?.imageUrl?.trim()) return "";
+
+  const bustMs = thumbnailCacheBustById.value[poster.value.id];
+  const bust = bustMs ? `?t=${bustMs}` : "";
+
+  if (poster.value.status === "published") {
+    return `${poster.value.imageUrl}${bust}`;
+  }
+
+  return `/api/poster/${poster.value.id}/thumbnail${bust}`;
+});
+
+const posterPreviewMissing = computed(() => {
+  if (!poster.value?.imageUrl?.trim()) {
+    const job = poster.value?.extractionJob;
+    return Boolean(
+      !job ||
+        job.completed ||
+        job.status === "completed" ||
+        job.status === "failed",
+    );
+  }
+  return false;
+});
+
+async function regeneratePreview() {
+  if (!poster.value) return;
+
+  regeneratingPreview.value = true;
+  try {
+    const response = await $fetch<{
+      success: boolean;
+      queued?: boolean;
+      imageUrl?: string | null;
+    }>(`/api/poster/${poster.value.id}/thumbnail`, { method: "POST" });
+
+    const posterId = poster.value.id;
+
+    if (response.imageUrl) {
+      patchPosterCache(posterId, {
+        ...poster.value,
+        imageUrl: response.imageUrl,
+      });
+      thumbnailCacheBustById.value = {
+        ...thumbnailCacheBustById.value,
+        [posterId]: Date.now(),
+      };
+      toast.add({
+        title: "Preview updated",
+        color: "success",
+      });
+      return;
+    }
+
+    if (response.queued) {
+      toast.add({
+        title: "Generating preview",
+        description: "The thumbnail will appear here when it is ready.",
+        color: "info",
+      });
+      return;
+    }
+
+    await ensurePosterInCache(posterId);
+  } catch {
+    toast.add({
+      title: "Could not generate preview",
+      description: "Try again in a moment.",
+      color: "error",
+    });
+  } finally {
+    regeneratingPreview.value = false;
+  }
+}
 </script>
 
 <template>
@@ -226,7 +372,7 @@ const editMetadataPath = computed(() => {
         </button>
       </nav>
 
-      <div class="border-default space-y-4 rounded-lg border p-4">
+      <div class="border-default relative min-h-[12rem] space-y-4 rounded-lg border p-4">
         <div
           v-if="posterLoading"
           class="flex items-center justify-center gap-2 py-8"
@@ -246,40 +392,87 @@ const editMetadataPath = computed(() => {
         />
 
         <template v-else-if="poster">
-          <div class="flex flex-wrap items-start justify-between gap-2">
-            <h4 class="text-base font-semibold leading-snug">
-              {{ displayTitle }}
-            </h4>
-            <UButton
-              v-if="editMetadataPath"
-              color="primary"
-              variant="soft"
-              size="sm"
-              icon="i-lucide-pencil-line"
-              label="Edit metadata"
-              :to="editMetadataPath"
-            />
-          </div>
+          <div class="min-w-0 space-y-4">
+            <div class="flex flex-wrap items-start justify-between gap-2">
+              <h4 class="text-base font-semibold leading-snug">
+                {{ displayTitle }}
+              </h4>
+              <UButton
+                v-if="editMetadataPath"
+                color="primary"
+                variant="soft"
+                size="sm"
+                icon="i-lucide-pencil-line"
+                label="Edit metadata"
+                :to="editMetadataPath"
+              />
+            </div>
 
-          <div v-if="creators.length > 0">
-            <p class="text-muted text-xs font-medium uppercase tracking-wide">
-              Contributors
-            </p>
-            <p class="mt-1 text-sm">{{ creators.join(", ") }}</p>
-          </div>
-          <p v-else class="text-muted text-sm">No contributors extracted yet.</p>
-
-          <div>
-            <p class="text-muted text-xs font-medium uppercase tracking-wide">
-              Summary
-            </p>
-            <p
-              v-if="displaySummary"
-              class="mt-1 line-clamp-6 text-sm whitespace-pre-wrap"
+            <div
+              class="border-default flex aspect-video max-h-[min(55vh,22rem)] w-full items-center justify-center overflow-hidden rounded-lg border bg-gray-50 dark:bg-gray-900/50"
             >
-              {{ displaySummary }}
+              <img
+                v-if="posterPreviewSrc"
+                :src="posterPreviewSrc"
+                :alt="displayTitle"
+                decoding="async"
+                class="max-h-full max-w-full object-contain"
+              />
+              <div
+                v-else-if="posterPreviewMissing"
+                class="flex flex-col items-center gap-2 p-4 text-center"
+              >
+                <UIcon
+                  name="i-lucide-image-off"
+                  class="size-8 text-gray-400 dark:text-gray-500"
+                />
+                <span class="text-muted text-xs">Preview unavailable</span>
+                <UButton
+                  size="xs"
+                  color="neutral"
+                  variant="subtle"
+                  icon="i-lucide-refresh-cw"
+                  label="Generate"
+                  :loading="regeneratingPreview"
+                  @click="regeneratePreview"
+                />
+              </div>
+              <div
+                v-else
+                class="flex flex-col items-center gap-2 p-4 text-center"
+              >
+                <UIcon
+                  name="i-lucide-loader-circle"
+                  class="size-8 animate-spin text-primary"
+                />
+                <span class="text-muted text-xs">Generating preview…</span>
+              </div>
+            </div>
+
+            <div v-if="creators.length > 0">
+              <p class="text-muted text-xs font-medium uppercase tracking-wide">
+                Contributors
+              </p>
+              <p class="mt-1 text-sm">{{ creators.join(", ") }}</p>
+            </div>
+            <p v-else class="text-muted text-sm">
+              No contributors extracted yet.
             </p>
-            <p v-else class="text-muted mt-1 text-sm">No summary extracted yet.</p>
+
+            <div>
+              <p class="text-muted text-xs font-medium uppercase tracking-wide">
+                Summary
+              </p>
+              <p
+                v-if="displaySummary"
+                class="mt-1 line-clamp-6 text-sm whitespace-pre-wrap"
+              >
+                {{ displaySummary }}
+              </p>
+              <p v-else class="text-muted mt-1 text-sm">
+                No summary extracted yet.
+              </p>
+            </div>
           </div>
         </template>
       </div>
