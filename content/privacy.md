@@ -32,7 +32,7 @@ Posters.science uses cookies strictly to keep you logged in and remember your pr
 
 We may share information in the following situations:
 
-- **Your public profile:** your profile is private unless you make it public. A public profile can be seen by anyone with the link, and search engines may list it. It shows your name, affiliation, short biography, the posters you shared, the poster records you claimed and, if you choose, the posters you liked. It never shows your email address. While your profile is public, others may save or share what it shows, and making it private later does not remove those copies.
+- **Your public profile:** your profile is private unless you make it public. A public profile can be seen by anyone with the link, and search engines may list it. It shows your name, affiliation, ORCID iD if you add one, short biography, the posters you shared, the poster records you claimed and, if you choose, the posters you liked. It never shows your email address. While your profile is public, others may save or share what it shows, and making it private later does not remove those copies.
 - **Team members:** with members of the FAIR Data Innovations Hub team as needed to operate and improve the platform.
 - **Service providers:** with trusted third-party vendors that provide infrastructure or related services (for example, cloud hosting) under appropriate agreements.
 - **Zenodo:** when you submit a poster, your poster file and metadata are archived on Zenodo in accordance with Zenodo's own terms and privacy policy.

@@ -64,7 +64,7 @@ If you believe a poster record has been claimed by someone who is not one of its
 
 ### 4.4 Public Profiles
 
-You may choose to make your profile public. A Public Profile can be viewed by anyone and shows your name, affiliation, short biography, the poster records you have submitted or claimed, and, if you choose to show them, the poster records you have liked. Your email address is not shown. You are responsible for the information you add to your Public Profile, and you may make it private again at any time. We may hide or remove Public Profile content that violates these Terms.
+You may choose to make your profile public. A Public Profile can be viewed by anyone and shows your name, affiliation, ORCID iD if you add one, short biography, the poster records you have submitted or claimed, and, if you choose to show them, the poster records you have liked. Your email address is not shown. You are responsible for the information you add to your Public Profile, and you may make it private again at any time. We may hide or remove Public Profile content that violates these Terms.
 
 ## 5. Contributor Responsibilities
 

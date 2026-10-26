@@ -145,7 +145,11 @@ We sometimes retire (tombstone) a poster record, for example when it's a duplica
 
 ### What is a public profile?
 
-An optional page that lists the posters you have shared and claimed, along with your name, affiliation and a short bio. Visitors can filter your posters to show only the ones you shared yourself or only the ones you claimed. Anyone with the link can see it, and it gives you one place to point people to your posters. Your email address is never shown.
+An optional page that lists the posters you have shared and claimed, along with your name, affiliation, ORCID iD and a short bio. Visitors can filter your posters to show only the ones you shared yourself or only the ones you claimed. Anyone with the link can see it, and it gives you one place to point people to your posters. Your email address is never shown.
+
+### Why aren't my drafts on my public profile?
+
+Your profile only lists published posters. Drafts and posters you are still preparing stay private in the **In progress** tab of your [dashboard](/dashboard), and they appear on your profile once you publish them.
 
 ### How do I make my profile public or private?
 
@@ -170,6 +174,10 @@ Select **Forgot your password?** on the [sign-in page](/login) and we'll email y
 ### How do I change my name, affiliation or bio?
 
 Edit them on your [Settings page](/profile).
+
+### How do I add my ORCID iD?
+
+Enter it in the **ORCID iD** field on your [Settings page](/profile). You can paste the 16-digit iD or your orcid.org link. We check that the iD exists on ORCID, then show it on your public profile with a link to your ORCID record.
 
 ### How do I delete my account?
 

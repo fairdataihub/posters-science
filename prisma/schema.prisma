@@ -43,6 +43,9 @@ model User {
   bio              String  @default("")
   // Opt-in: show the posters this user liked on their public profile.
   profileShowLikes Boolean @default(false)
+  // ORCID iD the user typed in on their settings page, stored bare
+  // (0000-0002-1825-0097) or "" when unset.
+  orcid            String  @default("")
 
   created DateTime @default(now())
   updated DateTime @updatedAt
