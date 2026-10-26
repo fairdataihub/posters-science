@@ -4,6 +4,7 @@ import type { NavigationMenuItem } from "@nuxt/ui";
 const { clear, user } = useUserSession();
 const feedbackOpen = useState("feedbackOpen", () => false);
 const mobileMenuOpen = ref(false);
+const { openSharePostersChooser } = useSharePostersChooser();
 
 const route = useRoute();
 
@@ -12,81 +13,15 @@ function openFeedback() {
   feedbackOpen.value = true;
 }
 
+function openSharePostersModal() {
+  mobileMenuOpen.value = false;
+  openSharePostersChooser();
+}
+
 const logout = async () => {
   clear();
   await navigateTo("/");
 };
-
-const postersNavChildren = [
-  {
-    label: "Share a Poster",
-    description: "Upload and publish your research poster.",
-    icon: "line-md:file-upload",
-    to: "/share/new",
-  },
-  {
-    label: "Share Posters in bulk",
-    description: "Name a batch and import many posters with license metadata.",
-    icon: "material-symbols:library-add",
-    to: "/share/new-bulk",
-  },
-  {
-    label: "Browse Posters",
-    description: "Browse and discover scientific posters.",
-    icon: "material-symbols:saved-search",
-    to: "/discover",
-  },
-] as const;
-
-const conferencesNavChildren = [
-  {
-    label: "Conference management",
-    description:
-      "Register a conference on Posters.Science. View pending registrations, manage conferences you organize, and import participant posters after acceptance.",
-    icon: "material-symbols:event-available",
-    to: "/conferences/management",
-  },
-  {
-    label: "Browse Conferences",
-    description:
-      "Browse supported conferences and submit a poster to a conference.",
-    icon: "material-symbols:saved-search",
-    to: "/conferences",
-  },
-] as const;
-
-type NavDropdownMenu = {
-  label: string;
-  contentWidth: string;
-  children: readonly {
-    label: string;
-    description: string;
-    icon: string;
-    to: string;
-  }[];
-};
-
-const desktopNavDropdowns: NavDropdownMenu[] = [
-  {
-    label: "Posters",
-    contentWidth: "w-72",
-    children: postersNavChildren,
-  },
-  {
-    label: "Conferences",
-    contentWidth: "w-96",
-    children: conferencesNavChildren,
-  },
-];
-
-function desktopNavLinkClass(active: boolean) {
-  return [
-    "group relative inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors before:absolute before:inset-x-px before:inset-y-0 before:-z-10 before:rounded-md",
-    active
-      ? "text-primary before:bg-elevated"
-      : "text-muted hover:text-highlighted hover:before:bg-elevated/50",
-  ];
-}
 
 const headerItems = computed<NavigationMenuItem[]>(() => [
   {
@@ -95,16 +30,14 @@ const headerItems = computed<NavigationMenuItem[]>(() => [
     active: route.path.startsWith("/dashboard"),
   },
   {
-    label: "Posters",
-    value: "posters",
-    type: "trigger",
-    children: [...postersNavChildren],
+    label: "Find Posters",
+    to: "/discover",
+    active: route.path.startsWith("/discover"),
   },
   {
-    label: "Conferences",
-    value: "conferences",
-    type: "trigger",
-    children: [...conferencesNavChildren],
+    label: "Share Posters",
+    active: route.path.startsWith("/share"),
+    onSelect: openSharePostersModal,
   },
   {
     label: "Documentation",
@@ -210,8 +143,7 @@ const footerItems: NavigationMenuItem[] = [
       v-model:open="mobileMenuOpen"
       :ui="{
         left: 'lg:flex-none',
-        center: 'flex-1 justify-center overflow-visible',
-        container: 'overflow-visible',
+        center: 'flex-1 justify-center',
         right: 'lg:flex-none',
       }"
     >
@@ -221,70 +153,7 @@ const footerItems: NavigationMenuItem[] = [
         </NuxtLink>
       </template>
 
-      <nav class="hidden items-center gap-1.5 lg:flex">
-        <ULink
-          to="/dashboard"
-          :class="desktopNavLinkClass(route.path.startsWith('/dashboard'))"
-        >
-          Dashboard
-        </ULink>
-
-        <UPopover
-          v-for="dropdown in desktopNavDropdowns"
-          :key="dropdown.label"
-          arrow
-          mode="hover"
-          :content="{ side: 'bottom', align: 'start', sideOffset: 6 }"
-          :ui="{ content: `${dropdown.contentWidth} p-0 z-50` }"
-        >
-          <button type="button" :class="desktopNavLinkClass(false)">
-            {{ dropdown.label }}
-            <UIcon
-              name="i-lucide-chevron-down"
-              class="size-5 shrink-0 opacity-70"
-            />
-          </button>
-
-          <template #content>
-            <ul class="flex flex-col gap-1 p-2">
-              <li v-for="child in dropdown.children" :key="child.to">
-                <ULink
-                  :to="child.to"
-                  class="group hover:bg-elevated/50 flex items-start gap-2 rounded-md px-3 py-2 text-sm transition-colors"
-                >
-                  <UIcon
-                    :name="child.icon"
-                    class="text-dimmed group-hover:text-default size-5 shrink-0"
-                  />
-                  <span class="min-w-0">
-                    <span class="text-highlighted block font-medium">
-                      {{ child.label }}
-                    </span>
-                    <span class="text-muted text-balance whitespace-normal">
-                      {{ child.description }}
-                    </span>
-                  </span>
-                </ULink>
-              </li>
-            </ul>
-          </template>
-        </UPopover>
-
-        <ULink
-          to="https://docs.posters.science"
-          target="_blank"
-          :class="desktopNavLinkClass(false)"
-        >
-          Documentation
-        </ULink>
-
-        <ULink
-          to="/metrics"
-          :class="desktopNavLinkClass(route.path.startsWith('/metrics'))"
-        >
-          Metrics
-        </ULink>
-      </nav>
+      <UNavigationMenu :items="headerItems" />
 
       <template #right>
         <UButton
@@ -357,7 +226,6 @@ const footerItems: NavigationMenuItem[] = [
           :items="headerItems"
           orientation="vertical"
           class="w-full"
-          :ui="{ childLinkDescription: 'text-balance whitespace-normal' }"
         />
 
         <USeparator />
@@ -455,6 +323,8 @@ const footerItems: NavigationMenuItem[] = [
         </template>
       </UButton>
     </div>
+
+    <SharePostersChooserModal />
 
     <UModal
       v-model:open="feedbackOpen"

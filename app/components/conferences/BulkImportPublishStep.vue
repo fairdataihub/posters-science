@@ -158,44 +158,73 @@ async function downloadRow(row: PublishRow) {
   }
 }
 
+async function downloadBulkZip() {
+  if (!props.bulkJobId) {
+    throw new Error("Bulk import job is not available.");
+  }
+
+  const response = await fetch(
+    `/api/bulk-poster-submissions/${props.bulkJobId}/download`,
+    {
+      method: "GET",
+      credentials: "include",
+    },
+  );
+
+  if (!response.ok) {
+    const text = await response.text();
+    let message = `Request failed (${response.status})`;
+    try {
+      const json = JSON.parse(text) as {
+        message?: string;
+        statusMessage?: string;
+      };
+      message = json.statusMessage ?? json.message ?? message;
+    } catch {
+      if (text) message = text.slice(0, 120);
+    }
+    throw new Error(message);
+  }
+
+  const blob = await response.blob();
+  const disposition = response.headers.get("Content-Disposition");
+  const filenameMatch = disposition?.match(/filename="?([^";\n]+)"?/);
+  const filename = filenameMatch?.[1] ?? "bulk-import-posters.zip";
+
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  URL.revokeObjectURL(url);
+}
+
 async function downloadAllLocally() {
   if (batchDownloadingAll.value) return;
 
   batchDownloadingAll.value = true;
-  let succeeded = 0;
-  let failed = 0;
 
-  for (const row of rows.value) {
-    if (row.item.posterId == null) continue;
-    try {
-      await downloadPosterPackage(row.item.posterId);
-      succeeded += 1;
-      await new Promise((resolve) => setTimeout(resolve, 400));
-    } catch {
-      failed += 1;
-    }
-  }
-
-  batchDownloadingAll.value = false;
-
-  if (failed === 0 && succeeded > 0) {
+  try {
+    await downloadBulkZip();
     toast.add({
-      title: "Downloads started",
-      description: `Started ${succeeded} download(s). Check your browser if a file was blocked.`,
+      title: "Download started",
+      description:
+        "Your batch is in one ZIP file with a folder per poster (poster.json + PDF).",
       color: "success",
     });
-  } else if (succeeded > 0) {
-    toast.add({
-      title: "Some downloads failed",
-      description: `${succeeded} started, ${failed} failed.`,
-      color: "warning",
-    });
-  } else {
+  } catch (error) {
     toast.add({
       title: "Download failed",
-      description: "Could not download poster packages.",
+      description:
+        error instanceof Error
+          ? error.message
+          : "Could not download poster packages.",
       color: "error",
     });
+  } finally {
+    batchDownloadingAll.value = false;
   }
 }
 
@@ -747,7 +776,7 @@ watch(
           :disabled="!batchDownloadAcknowledged"
           @click="downloadAllLocally"
         >
-          Download all poster packages
+          Download all as one ZIP
         </UButton>
       </div>
 

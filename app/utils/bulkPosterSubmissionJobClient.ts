@@ -105,18 +105,69 @@ export async function submitBulkPosterSubmissionJob(jobId: string) {
   );
 }
 
-export async function uploadBulkPosterSubmissionFile(jobId: string, file: File) {
+export type BulkPosterSubmissionUploadResponse = {
+  role: "poster";
+  fileName: string;
+  filePath: string;
+  job: BulkPosterSubmissionJob;
+};
+
+function xhrUploadErrorMessage(xhr: XMLHttpRequest): string {
+  try {
+    const json = JSON.parse(xhr.responseText) as {
+      statusMessage?: string;
+      message?: string;
+    };
+    return json.statusMessage ?? json.message ?? `Request failed (${xhr.status})`;
+  } catch {
+    const text = xhr.responseText?.trim();
+    return text ? text.slice(0, 120) : `Request failed (${xhr.status})`;
+  }
+}
+
+export async function uploadBulkPosterSubmissionFile(
+  jobId: string,
+  file: File,
+  options?: {
+    onUploadProgress?: (percent: number) => void;
+  },
+): Promise<BulkPosterSubmissionUploadResponse> {
   const formData = new FormData();
   formData.append("file", file);
   formData.append("role", "poster");
 
-  return $fetch<{
-    role: "poster";
-    fileName: string;
-    filePath: string;
-    job: BulkPosterSubmissionJob;
-  }>(`/api/bulk-poster-submissions/${jobId}/upload`, {
-    method: "POST",
-    body: formData,
+  return await new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `/api/bulk-poster-submissions/${jobId}/upload`);
+    xhr.withCredentials = true;
+
+    xhr.upload.addEventListener("progress", (event) => {
+      if (!event.lengthComputable) return;
+      const percent = Math.round((event.loaded / event.total) * 100);
+      options?.onUploadProgress?.(percent);
+    });
+
+    xhr.addEventListener("load", () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText) as BulkPosterSubmissionUploadResponse);
+        } catch {
+          reject(new Error("Upload succeeded but the response was invalid."));
+        }
+        return;
+      }
+
+      reject(new Error(xhrUploadErrorMessage(xhr)));
+    });
+
+    xhr.addEventListener("error", () => {
+      reject(new Error("Upload failed due to a network error."));
+    });
+
+    xhr.addEventListener("abort", () => {
+      reject(new Error("Upload was cancelled."));
+    });
+
+    xhr.send(formData);
   });
 }
