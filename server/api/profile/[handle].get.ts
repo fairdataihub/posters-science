@@ -69,6 +69,7 @@ export default defineEventHandler(async (event) => {
       familyName: true,
       affiliation: true,
       bio: true,
+      orcid: true,
       profileShowLikes: true,
       created: true,
       linkedAccounts: {
@@ -139,7 +140,8 @@ export default defineEventHandler(async (event) => {
     bio: user.bio,
     // Same avatar the owner sees on their /profile settings page.
     avatarUrl: `https://api.dicebear.com/9.x/thumbs/svg?seed=${user.id}`,
-    orcid: user.linkedAccounts[0]?.providerAccountId ?? null,
+    // An iD linked through ORCID sign-in wins over one typed in Settings.
+    orcid: user.linkedAccounts[0]?.providerAccountId ?? (user.orcid || null),
     memberSince: user.created,
     isOwner,
     isPublic: user.profilePublic,

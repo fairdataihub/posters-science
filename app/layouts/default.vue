@@ -79,6 +79,11 @@ const profileDropdownItems = computed(() => [
       type: "label",
     },
     {
+      icon: "material-symbols:dashboard",
+      label: "Dashboard",
+      to: "/dashboard",
+    },
+    {
       // Your own profile page, public or private.
       icon: "material-symbols:account-circle",
       label: "Profile",

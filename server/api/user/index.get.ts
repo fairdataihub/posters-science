@@ -23,6 +23,7 @@ export default defineEventHandler(async (event) => {
       profileId: true,
       affiliation: true,
       bio: true,
+      orcid: true,
       created: true,
       updated: true,
       // Read only to derive hasPassword below, never returned.

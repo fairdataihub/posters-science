@@ -59,14 +59,6 @@ const posterCountLabel = computed(() => {
   return `${count} ${count === 1 ? "poster" : "posters"}`;
 });
 
-const orcidUrl = computed(() => {
-  const orcid = profile.value?.orcid;
-
-  if (!orcid) return "";
-
-  return orcid.startsWith("http") ? orcid : `https://orcid.org/${orcid}`;
-});
-
 // The tab lives in the query string, like the filters, so it survives a
 // reload and can be shared.
 const showLikes = computed(() => profile.value?.likedPosters != null);
@@ -209,7 +201,8 @@ useSeoMeta({
               label: 'Settings',
               to: '/profile',
               color: 'neutral',
-              variant: 'ghost',
+              variant: 'outline',
+              icon: 'i-heroicons-cog-6-tooth',
             },
           ]"
         />
@@ -251,15 +244,10 @@ useSeoMeta({
               </div>
 
               <div class="flex flex-wrap items-center gap-2">
-                <ULink v-if="profile.orcid" :to="orcidUrl" target="_blank">
-                  <UBadge
-                    color="success"
-                    variant="subtle"
-                    icon="simple-icons:orcid"
-                  >
-                    {{ profile.orcid.replace("https://orcid.org/", "") }}
-                  </UBadge>
-                </ULink>
+                <ProfileOrcidBadge
+                  v-if="profile.orcid"
+                  :orcid="profile.orcid"
+                />
 
                 <UBadge color="neutral" variant="subtle">
                   {{ posterCountLabel }}
@@ -277,6 +265,38 @@ useSeoMeta({
         </UCard>
 
         <section class="space-y-6">
+          <div
+            v-if="profile.isOwner"
+            class="border-default bg-default flex flex-col gap-4 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between"
+          >
+            <div class="flex items-start gap-3">
+              <UIcon
+                name="i-lucide-layout-dashboard"
+                class="text-primary mt-0.5 size-5 shrink-0"
+              />
+
+              <div>
+                <p class="text-sm font-medium">Looking for your drafts?</p>
+
+                <p class="text-muted text-sm">
+                  Drafts and posters you are still preparing stay private on
+                  your dashboard. They are added here once they are published.
+                  Only you can see this note.
+                </p>
+              </div>
+            </div>
+
+            <UButton
+              to="/dashboard"
+              size="sm"
+              color="neutral"
+              variant="outline"
+              trailing-icon="i-heroicons-arrow-right"
+              label="Go to dashboard"
+              class="shrink-0 self-start sm:self-auto"
+            />
+          </div>
+
           <UTabs
             v-model="activeTab"
             :items="tabItems"

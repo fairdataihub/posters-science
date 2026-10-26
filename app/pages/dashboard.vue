@@ -208,6 +208,16 @@ const isSaving = ref(false);
 const doiError = ref("");
 const toast = useToast();
 
+// The public profile lists what's published here, so the header points to it.
+// Lazy so it never holds up the poster list.
+const { data: profileSettings } = useFetch("/api/user", { lazy: true });
+
+const profileListing = computed(() =>
+  profileSettings.value?.profileShowLikes
+    ? "the posters you published, claimed and liked"
+    : "the posters you published and claimed",
+);
+
 // Removing a claim on an auto-indexed poster
 const removeClaimTarget = ref<Poster | null>(null);
 const removeClaimOpen = computed({
@@ -1557,7 +1567,30 @@ function posterMenuItems(poster: Poster) {
     >
       <template #description>
         <div class="flex w-full items-center justify-between gap-4">
-          <span>Keep track of all your submitted posters.</span>
+          <span>
+            Keep track of all your submitted posters.
+            <template
+              v-if="
+                profileSettings?.profilePublic && profileSettings.profilePath
+              "
+            >
+              Your
+              <ULink
+                :to="profileSettings.profilePath"
+                class="text-primary underline"
+                >public profile</ULink
+              >
+              shows {{ profileListing }}.
+            </template>
+
+            <template v-else-if="profileSettings">
+              Make your
+              <ULink to="/profile" class="text-primary underline"
+                >profile public</ULink
+              >
+              to share {{ profileListing }}.
+            </template>
+          </span>
 
           <div class="flex flex-wrap items-center justify-end gap-3">
             <USwitch

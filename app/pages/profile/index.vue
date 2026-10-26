@@ -6,6 +6,8 @@ import {
   PROFILE_AFFILIATION_MAX,
   PROFILE_BIO_MAX,
 } from "#shared/utils/profile";
+import { isValidOrcidChecksum, orcidUrl } from "#shared/utils/orcid";
+import { normalizeOrcid } from "#shared/utils/discoverSearch";
 
 definePageMeta({
   middleware: ["auth"],
@@ -169,6 +171,14 @@ const schema = z.object({
     .string()
     .trim()
     .max(PROFILE_BIO_MAX, `Must be at most ${PROFILE_BIO_MAX} characters`),
+  // Format and checksum only. The server also checks ORCID has a record of it.
+  orcid: z
+    .string()
+    .trim()
+    .refine(
+      (value) => !value || isValidOrcidChecksum(value),
+      "Enter a valid ORCID iD, such as 0000-0002-1825-0097 or its orcid.org link",
+    ),
 });
 
 type Schema = z.output<typeof schema>;
@@ -178,7 +188,26 @@ const state = reactive<Schema>({
   familyName: "",
   affiliation: "",
   bio: "",
+  orcid: "",
 });
+
+// Unset rather than "", which UFormField
+// would read as `error: true` and outline the field without a message.
+const orcidServerError = ref<string>();
+
+watch(
+  () => state.orcid,
+  () => {
+    orcidServerError.value = undefined;
+  },
+);
+
+// Link to the record for the iD in the field, so the user can check it's theirs.
+const orcidRecordUrl = computed(() =>
+  isValidOrcidChecksum(state.orcid)
+    ? orcidUrl(normalizeOrcid(state.orcid))
+    : "",
+);
 
 watch(
   () => userData.value,
@@ -188,6 +217,7 @@ watch(
       state.familyName = u.familyName ?? "";
       state.affiliation = u.affiliation ?? "";
       state.bio = u.bio ?? "";
+      state.orcid = u.orcid ?? "";
     }
   },
   { immediate: true },
@@ -264,12 +294,30 @@ const publicProfileUrl = computed(() => {
   return path ? `${requestUrl.origin}${path}` : "";
 });
 
+async function copyProfileLink() {
+  try {
+    await navigator.clipboard.writeText(publicProfileUrl.value);
+    toast.add({
+      title: "Profile link copied",
+      color: "success",
+      icon: "i-heroicons-check-circle",
+    });
+  } catch {
+    toast.add({
+      title: "Could not copy the link",
+      color: "error",
+      icon: "i-heroicons-exclamation-circle",
+    });
+  }
+}
+
 async function onSubmit(event: FormSubmitEvent<Schema>) {
   const body = {
     givenName: event.data.givenName,
     familyName: event.data.familyName,
     affiliation: event.data.affiliation,
     bio: event.data.bio,
+    orcid: event.data.orcid,
   };
 
   loading.value = true;
@@ -285,8 +333,14 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
       icon: "i-heroicons-check-circle",
     });
   } catch (err: unknown) {
-    const message =
-      parseApiError(err).statusMessage ?? "Failed to update profile";
+    const { statusMessage, reason } = parseApiError(err);
+    const message = statusMessage ?? "Failed to update profile";
+
+    // A bad or unknown ORCID iD belongs under its field.
+    if (reason?.startsWith("orcid_")) {
+      orcidServerError.value = message;
+    }
+
     toast.add({
       title: "Update failed",
       description: message,
@@ -361,47 +415,73 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
               <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
                 {{
                   userData?.profilePublic
-                    ? "Anyone with the link can see your name, affiliation, bio and the posters you have published and claimed. Your email address is never shown."
-                    : "Make your profile public to share a page listing the posters you have published and claimed, with your name, affiliation and bio. Your email address is never shown."
+                    ? "Anyone with the link can see your name, affiliation, ORCID iD, bio and the posters you have published and claimed. Drafts stay private on your dashboard, and your email address is never shown."
+                    : "Make your profile public to share a page listing the posters you have published and claimed, with your name, affiliation, ORCID iD and bio. Drafts stay private on your dashboard, and your email address is never shown."
                 }}
               </p>
 
-              <div
-                v-if="userData?.profilePublic && userData?.profilePath"
-                class="mt-4 flex flex-wrap items-center gap-3"
-              >
-                <code
-                  class="rounded bg-gray-100 px-2 py-1 text-sm break-all dark:bg-gray-800"
+              <template v-if="userData?.profilePublic">
+                <div
+                  v-if="userData.profilePath"
+                  class="mt-4 flex flex-wrap items-center gap-2"
                 >
-                  {{ publicProfileUrl }}
-                </code>
+                  <code
+                    class="rounded bg-gray-100 px-2 py-1 text-sm break-all dark:bg-gray-800"
+                  >
+                    {{ publicProfileUrl }}
+                  </code>
 
-                <UButton
-                  :to="userData.profilePath"
-                  size="sm"
-                  color="neutral"
-                  variant="subtle"
-                  icon="i-heroicons-arrow-top-right-on-square"
+                  <UButton
+                    size="sm"
+                    color="neutral"
+                    variant="outline"
+                    icon="i-lucide-link"
+                    @click="copyProfileLink"
+                  >
+                    Copy link
+                  </UButton>
+
+                  <UButton
+                    :to="userData.profilePath"
+                    size="sm"
+                    color="neutral"
+                    variant="outline"
+                    icon="i-heroicons-arrow-top-right-on-square"
+                  >
+                    View public profile
+                  </UButton>
+                </div>
+
+                <USeparator class="my-4" />
+
+                <div
+                  class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
                 >
-                  View public profile
-                </UButton>
-              </div>
+                  <div>
+                    <p class="text-sm font-medium">Make your profile private</p>
 
-              <div class="mt-4">
-                <UButton
-                  v-if="userData?.profilePublic"
-                  size="sm"
-                  color="neutral"
-                  variant="outline"
-                  icon="i-heroicons-lock-closed"
-                  :loading="publicSaving"
-                  @click="setProfilePublic(false)"
-                >
-                  Make profile private
-                </UButton>
+                    <p class="text-muted text-sm">
+                      Only you will see it. Anyone else who opens your link gets
+                      a not found page until you make it public again.
+                    </p>
+                  </div>
 
+                  <UButton
+                    size="sm"
+                    color="warning"
+                    variant="subtle"
+                    icon="i-heroicons-lock-closed"
+                    class="shrink-0 self-start sm:self-auto"
+                    :loading="publicSaving"
+                    @click="setProfilePublic(false)"
+                  >
+                    Make profile private
+                  </UButton>
+                </div>
+              </template>
+
+              <div v-else class="mt-4 flex flex-wrap items-center gap-2">
                 <UButton
-                  v-else
                   size="sm"
                   color="primary"
                   icon="i-heroicons-globe-alt"
@@ -412,13 +492,11 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
                 </UButton>
 
                 <UButton
-                  v-if="!userData?.profilePublic"
                   to="/profile/me"
                   size="sm"
                   color="neutral"
-                  variant="ghost"
+                  variant="outline"
                   icon="i-heroicons-eye"
-                  class="ml-2"
                 >
                   Preview your profile
                 </UButton>
@@ -480,6 +558,58 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
                       :maxlength="PROFILE_AFFILIATION_MAX"
                       class="w-full"
                     />
+                  </UFormField>
+
+                  <!-- Checked as the user types, not only after leaving the
+                       field, so a bad iD gets its message while the focus
+                       ring would otherwise look like an error border. -->
+                  <UFormField
+                    v-slot="{ error }"
+                    label="ORCID iD"
+                    name="orcid"
+                    class="md:col-span-2"
+                    help="Shown on your public profile with a link to your ORCID record."
+                    :error="orcidServerError"
+                    eager-validation
+                    :validate-on-input-delay="500"
+                  >
+                    <UInput
+                      v-model="state.orcid"
+                      type="text"
+                      placeholder="0000-0002-1825-0097"
+                      autocomplete="off"
+                      spellcheck="false"
+                      class="w-full max-w-sm"
+                      :ui="{ trailing: 'pe-1' }"
+                    >
+                      <template #leading>
+                        <UIcon
+                          name="i-simple-icons-orcid"
+                          class="size-5 text-[#A6CE39]"
+                        />
+                      </template>
+
+                      <template v-if="error" #trailing>
+                        <UIcon
+                          name="i-heroicons-exclamation-circle"
+                          class="text-error me-1.5 size-5"
+                        />
+                      </template>
+
+                      <template v-else-if="orcidRecordUrl" #trailing>
+                        <UTooltip text="Open this iD on orcid.org">
+                          <UButton
+                            :to="orcidRecordUrl"
+                            target="_blank"
+                            color="neutral"
+                            variant="link"
+                            size="sm"
+                            icon="i-heroicons-arrow-top-right-on-square"
+                            aria-label="Open this iD on orcid.org"
+                          />
+                        </UTooltip>
+                      </template>
+                    </UInput>
                   </UFormField>
 
                   <UFormField
