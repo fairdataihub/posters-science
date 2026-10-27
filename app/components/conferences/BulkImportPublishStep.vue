@@ -6,6 +6,7 @@ import {
   zenodoPublicationDoiForPoster,
   zenodoPublicationUrlForPoster,
 } from "~/utils/zenodoPublicationUrl";
+import { parseApiError } from "~/utils/apiError";
 import ZenodoAccountStatus, {
   type ZenodoAccountDisplay,
 } from "~/components/share/ZenodoAccountStatus.vue";
@@ -19,46 +20,37 @@ const props = defineProps<{
 const toast = useToast();
 const route = useRoute();
 
-const ZENODO_DISABLED = false;
+type Repository = "zenodo" | "figshare" | "download" | null;
 
-type Repository =
-  | "zenodo"
-  | "zenodo-simulated"
-  | "figshare"
-  | "download"
-  | null;
+const { messageFor: maintenanceMessageFor, zenodo: zenodoMaintenance } =
+  useMaintenance();
+const zenodoPaused = computed(() => zenodoMaintenance.value.off !== null);
+const zenodoOAuthPausedMessage = computed(() =>
+  maintenanceMessageFor("zenodoOAuth"),
+);
 
 const queryRepo = route.query.repository;
 const requestedRepository: Repository =
   queryRepo === "zenodo" ||
-  queryRepo === "zenodo-simulated" ||
   queryRepo === "figshare" ||
   queryRepo === "download"
     ? queryRepo
     : null;
 
 const selectedRepository = ref<Repository>(
-  requestedRepository === "zenodo" && ZENODO_DISABLED
+  requestedRepository === "zenodo" && zenodoPaused.value
     ? null
     : requestedRepository,
 );
 
-const repositories = [
+const repositories = computed(() => [
   {
     id: "zenodo" as const,
     name: "Zenodo",
     icon: "i-simple-icons-zenodo",
     description: "General-purpose open repository",
-    enabled: !ZENODO_DISABLED,
-    unavailable: ZENODO_DISABLED,
-  },
-  {
-    id: "zenodo-simulated" as const,
-    name: "Zenodo (Simulated)",
-    icon: "i-simple-icons-zenodo",
-    description: "Preview-only flow for beta testing",
-    enabled: true,
-    hidden: true,
+    enabled: !zenodoPaused.value,
+    unavailable: zenodoPaused.value,
   },
   {
     id: "figshare" as const,
@@ -66,6 +58,7 @@ const repositories = [
     icon: "i-simple-icons-figshare",
     description: "Research data repository",
     enabled: false,
+    unavailable: false,
   },
   {
     id: "download" as const,
@@ -73,14 +66,17 @@ const repositories = [
     icon: "i-lucide-download",
     description: "Download files to your computer to share on another platform",
     enabled: true,
+    unavailable: false,
   },
-];
+]);
 
-const visibleRepositories = computed(() =>
-  repositories.filter((repo) => !repo.hidden),
-);
+watch(zenodoPaused, (paused) => {
+  if (paused && selectedRepository.value === "zenodo") {
+    selectedRepository.value = null;
+  }
+});
 
-function selectRepository(repo: (typeof repositories)[number]) {
+function selectRepository(repo: (typeof repositories.value)[number]) {
   if (!repo.enabled) return;
   selectedRepository.value = repo.id;
 }
@@ -269,11 +265,16 @@ const batchPublishing = ref(false);
 const batchStoppedEarly = ref(false);
 
 const zenodoLoginUrl = ref("");
+const zenodoTokenSignIn = ref(false);
+const zenodoNewTokenUrl = ref("");
 const zenodoTokenExists = ref(false);
 const zenodoLoading = ref(true);
 const zenodoConfigError = ref(false);
 const zenodoAccount = ref<ZenodoAccountDisplay | null>(null);
 const zenodoDisconnecting = ref(false);
+const zenodoPersonalToken = ref("");
+const zenodoTokenConnecting = ref(false);
+const zenodoTokenError = ref("");
 
 const zenodoContextPosterId = computed(() => {
   const first = completedItems.value[0]?.posterId;
@@ -302,6 +303,7 @@ function rowIsOnZenodo(row: PublishRow) {
 
 function canPublishRow(row: PublishRow) {
   return (
+    !zenodoPaused.value &&
     !rowIsOnZenodo(row) &&
     row.status !== "publishing" &&
     !batchPublishing.value &&
@@ -316,6 +318,15 @@ async function publishSingle(row: PublishRow) {
       title: "License required",
       description:
         "Go back to the license step and choose a license for this batch.",
+      color: "warning",
+    });
+    return;
+  }
+
+  if (zenodoPaused.value) {
+    toast.add({
+      title: "Zenodo is paused",
+      description: "Publishing is temporarily unavailable. Try again later.",
       color: "warning",
     });
     return;
@@ -416,8 +427,10 @@ watch(
       return;
     }
     zenodoLoginUrl.value = data?.zenodoLoginURL ?? "";
+    zenodoTokenSignIn.value = data?.zenodoTokenSignIn ?? false;
+    zenodoNewTokenUrl.value = data?.zenodoNewTokenUrl ?? "";
     zenodoTokenExists.value = data?.zenodoToken ?? false;
-    zenodoConfigError.value = !data?.zenodoLoginURL;
+    zenodoConfigError.value = !data?.zenodoConfigured;
     zenodoAccount.value = data?.zenodoAccount ?? null;
     zenodoLoading.value = false;
   },
@@ -427,6 +440,35 @@ watch(
 function handleZenodoSignIn() {
   if (!zenodoLoginUrl.value) return;
   window.location.href = zenodoLoginUrl.value;
+}
+
+async function handleZenodoTokenConnect() {
+  if (!zenodoPersonalToken.value.trim() || zenodoTokenConnecting.value) return;
+
+  zenodoTokenConnecting.value = true;
+  zenodoTokenError.value = "";
+
+  try {
+    await $fetch("/api/zenodo/token", {
+      method: "POST",
+      body: { token: zenodoPersonalToken.value },
+    });
+
+    zenodoPersonalToken.value = "";
+    zenodoLoading.value = true;
+    await refreshZenodoStatus();
+    toast.add({
+      title: "Zenodo connected",
+      description: "You can publish posters in this batch.",
+      color: "success",
+    });
+  } catch (error) {
+    const { statusMessage } = parseApiError(error);
+    zenodoTokenError.value =
+      statusMessage ?? "Could not connect to Zenodo. Please try again.";
+  } finally {
+    zenodoTokenConnecting.value = false;
+  }
 }
 
 async function handleZenodoDisconnect() {
@@ -527,6 +569,15 @@ async function publishAllToZenodo() {
     return;
   }
 
+  if (zenodoPaused.value) {
+    toast.add({
+      title: "Zenodo is paused",
+      description: "Publishing is temporarily unavailable. Try again later.",
+      color: "warning",
+    });
+    return;
+  }
+
   if (!zenodoTokenExists.value) {
     toast.add({
       title: "Sign in to Zenodo",
@@ -574,7 +625,7 @@ const returnedFromZenodoOAuth = computed(
 watch(
   returnedFromZenodoOAuth,
   (fromZenodo) => {
-    if (fromZenodo) {
+    if (fromZenodo && !zenodoPaused.value) {
       selectedRepository.value = "zenodo";
       if (zenodoTokenExists.value && !batchPublishing.value) {
         toast.add({
@@ -600,6 +651,8 @@ watch(
     </div>
 
     <template v-else>
+      <MaintenanceNotice maintenance-key="zenodo" />
+
       <UAlert
         v-if="!licenseForPublish"
         color="warning"
@@ -617,19 +670,9 @@ watch(
           following options:
         </p>
 
-        <UAlert
-          v-if="ZENODO_DISABLED"
-          color="warning"
-          variant="subtle"
-          icon="i-lucide-triangle-alert"
-          class="mb-6"
-          title="Zenodo submissions are temporarily unavailable"
-          description="We are currently experiencing issues with the Zenodo publishing workflow and are actively working on a fix. Submitting to Zenodo is paused for now, so please check back later. In the meantime, you can download your poster files and metadata to archive them elsewhere."
-        />
-
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <UButton
-            v-for="repo in visibleRepositories"
+            v-for="repo in repositories"
             :key="repo.id"
             :disabled="!repo.enabled"
             class="border-default hover:border-primary flex flex-col items-center gap-3 rounded-xl border-2 p-6 transition-all"
@@ -682,43 +725,145 @@ watch(
 
         <UiSpinner v-if="zenodoLoading" class="py-8" />
 
+        <UAlert
+          v-else-if="zenodoConfigError"
+          color="error"
+          variant="subtle"
+          icon="i-lucide-circle-x"
+          title="Zenodo publishing isn't available right now"
+          description="Please try again later, or download your files instead."
+        />
+
         <template v-else-if="!zenodoTokenExists">
-          <p class="mb-4 text-sm">
-            If you don't have a Zenodo account already, please create one first
-            at
-            <ULink
-              to="https://zenodo.org"
-              target="_blank"
-              class="text-primary underline"
-            >
-              zenodo.org</ULink
-            >
-            before continuing.
-          </p>
-
-          <UAlert
-            color="warning"
-            variant="subtle"
-            icon="i-lucide-triangle-alert"
-            class="mb-4"
-            title="Zenodo sign-in may require more than one attempt"
-            description="There is a known issue where Zenodo authentication can occasionally fail on the first try. We are currently working with the Zenodo team to resolve this. If you are redirected to an error page, use your browser's Back button to return to the Zenodo authorization page and approve access again. It typically resolves after one or two attempts."
-          />
-
-          <div class="flex flex-wrap items-center justify-between gap-4">
-            <p class="text-muted text-sm">
-              Ready to archive on Zenodo? Sign in to get started.
+          <template v-if="zenodoLoginUrl">
+            <p class="mb-4 text-sm">
+              If you don't have a Zenodo account already, please create one
+              first at
+              <ULink
+                to="https://zenodo.org"
+                target="_blank"
+                class="text-primary underline"
+              >
+                zenodo.org</ULink
+              >
+              before continuing.
             </p>
 
-            <UButton
-              color="primary"
-              size="lg"
-              :disabled="!zenodoLoginUrl || zenodoConfigError"
-              @click="handleZenodoSignIn"
-            >
-              Sign in to Zenodo
-            </UButton>
+            <UAlert
+              color="warning"
+              variant="subtle"
+              icon="i-lucide-triangle-alert"
+              class="mb-4"
+              title="Zenodo sign-in may require more than one attempt"
+              description="There is a known issue where Zenodo authentication can occasionally fail on the first try. We are currently working with the Zenodo team to resolve this. If you are redirected to an error page, use your browser's Back button to return to the Zenodo authorization page and approve access again. It typically resolves after one or two attempts."
+            />
+
+            <div class="flex flex-wrap items-center justify-between gap-4">
+              <p class="text-muted text-sm">
+                Ready to archive on Zenodo? Sign in to get started.
+              </p>
+
+              <UButton color="primary" size="lg" @click="handleZenodoSignIn">
+                Sign in to Zenodo
+              </UButton>
+            </div>
+          </template>
+
+          <div
+            v-if="zenodoTokenSignIn"
+            :class="zenodoLoginUrl ? 'border-default mt-6 border-t pt-6' : ''"
+          >
+            <p v-if="zenodoLoginUrl" class="mb-4 text-sm font-medium">
+              Or connect with a personal access token
+            </p>
+
+            <p v-else class="mb-4 text-sm">
+              {{ zenodoOAuthPausedMessage }}
+              Connect your Zenodo account with a personal access token.
+            </p>
+
+            <ol class="mb-5 list-inside list-decimal space-y-2 text-sm">
+              <li>
+                Sign in to Zenodo, or create a free account first if you don't
+                have one.
+              </li>
+
+              <li>
+                Open the
+                <ULink
+                  :to="zenodoNewTokenUrl"
+                  target="_blank"
+                  class="text-primary underline"
+                  >new personal access token page</ULink
+                >
+                (Account settings, then Applications, then New token).
+              </li>
+
+              <li>
+                Give it a name like <strong>Posters.science</strong>
+                and tick both
+                <strong>deposit:write</strong>
+                and
+                <strong>deposit:actions</strong>. You can leave user:email
+                unticked.
+              </li>
+
+              <li>
+                Click <strong>Create</strong>, then copy the token and paste it
+                below. Zenodo only shows it once.
+              </li>
+            </ol>
+
+            <form @submit.prevent="handleZenodoTokenConnect">
+              <UFormField
+                label="Personal access token"
+                name="zenodoPersonalToken"
+                :error="zenodoTokenError || false"
+              >
+                <div class="flex flex-col gap-3 sm:flex-row">
+                  <UInput
+                    v-model="zenodoPersonalToken"
+                    type="password"
+                    autocomplete="off"
+                    spellcheck="false"
+                    data-1p-ignore
+                    data-lpignore="true"
+                    placeholder="Paste your token"
+                    class="w-full sm:max-w-md"
+                    :disabled="zenodoTokenConnecting"
+                  />
+
+                  <UButton
+                    type="submit"
+                    color="primary"
+                    :loading="zenodoTokenConnecting"
+                    :disabled="!zenodoPersonalToken.trim()"
+                  >
+                    Connect to Zenodo
+                  </UButton>
+                </div>
+              </UFormField>
+            </form>
+
+            <p class="text-muted mt-4 text-xs">
+              We check the token with Zenodo, store it encrypted, and only use
+              it to publish the posters you choose. You can disconnect at any
+              time, and deleting the token on Zenodo revokes our access
+              completely.
+            </p>
           </div>
+
+          <UAlert
+            v-if="!zenodoLoginUrl && !zenodoTokenSignIn"
+            color="warning"
+            variant="subtle"
+            icon="material-symbols:build"
+            title="Connecting to Zenodo is paused"
+            :description="
+              maintenanceMessageFor('zenodoToken') ||
+              'Please try again later, or download your files instead.'
+            "
+          />
         </template>
 
         <template v-else>
@@ -736,7 +881,7 @@ watch(
               icon="i-lucide-upload-cloud"
               label="Publish all to Zenodo"
               :loading="batchPublishing"
-              :disabled="!licenseForPublish || allPublished"
+              :disabled="zenodoPaused || !licenseForPublish || allPublished"
               @click="publishAllToZenodo"
             />
             <span v-if="allPublished" class="text-success text-sm font-medium">
