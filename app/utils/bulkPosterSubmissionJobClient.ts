@@ -105,6 +105,19 @@ export async function submitBulkPosterSubmissionJob(jobId: string) {
   );
 }
 
+export type DiscardFailedBulkExtractionsResult = {
+  job: BulkPosterSubmissionJob;
+  removedCount: number;
+  removedFileNames: string[];
+};
+
+export async function discardFailedBulkExtractions(jobId: string) {
+  return $fetch<DiscardFailedBulkExtractionsResult>(
+    `/api/bulk-poster-submissions/${jobId}/discard-failed`,
+    { method: "POST" },
+  );
+}
+
 export type BulkPosterSubmissionUploadResponse = {
   role: "poster";
   fileName: string;

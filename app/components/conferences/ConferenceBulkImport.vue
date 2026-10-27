@@ -50,6 +50,7 @@ import {
   uploadBulkPosterSubmissionFile,
   submitBulkPosterSubmissionJob,
   applyBulkSubmissionMetadataToPosters,
+  discardFailedBulkExtractions,
 } from "~/utils/bulkPosterSubmissionJobClient";
 import { shareNewBulkPath } from "~/utils/sharePaths";
 import BulkImportMetadataReview from "~/components/conferences/BulkImportMetadataReview.vue";
@@ -234,6 +235,7 @@ const currentPosterFileUploadPercent = ref(0);
 const stagedPosterDeletePath = ref<string | null>(null);
 const deleteAllPostersModalOpen = ref(false);
 const deleteAllPostersLoading = ref(false);
+const discardFailedConfirmOpen = ref(false);
 const stagedPostersLoading = ref(false);
 const resumeWizardHydrated = ref(false);
 const resumeJobLoading = ref(false);
@@ -838,6 +840,19 @@ async function refreshStagedPostersFromStorage() {
 }
 
 async function navigateToWizardStep(step: BulkImportWizardStep) {
+  if (
+    step === "review" &&
+    batchImportFinished.value &&
+    batchExtractionsInProgress.value
+  ) {
+    toast.add({
+      title: "Extraction still in progress",
+      description:
+        "Wait until every poster has finished or failed before reviewing metadata.",
+      color: "warning",
+    });
+    return;
+  }
   await goToStep(step);
 }
 
@@ -1033,6 +1048,7 @@ async function uploadPosterFileImmediately(file: File) {
         existing.filePath,
       );
       stagedPosters.value = job.stagedPosters ?? [];
+      applyBatchStateFromJob(job);
       clearPosterRowStatus(file.name);
     } catch (error) {
       toast.add({
@@ -1100,6 +1116,7 @@ async function removeAllStagedPosters() {
   try {
     const { job } = await deleteAllBulkStagedPosters(jobId.value);
     stagedPosters.value = job.stagedPosters ?? [];
+    applyBatchStateFromJob(job);
     posterRowStatus.value = {};
     deleteAllPostersModalOpen.value = false;
     toast.add({
@@ -1128,6 +1145,7 @@ async function removeStagedPoster(poster: BulkImportStagedPoster) {
   try {
     const { job } = await deleteBulkStagedPoster(jobId.value, poster.filePath);
     stagedPosters.value = job.stagedPosters ?? [];
+    applyBatchStateFromJob(job);
     clearPosterRowStatus(poster.fileName);
   } catch (error) {
     toast.add({
@@ -1182,6 +1200,10 @@ const batchStillExtractingCount = computed(
     batchItems.value.filter(
       (item) => item.status !== "completed" && item.status !== "failed",
     ).length,
+);
+
+const batchExtractionsInProgress = computed(
+  () => batchStillExtractingCount.value > 0,
 );
 
 function batchStatusFromExtractionJob(
@@ -1358,10 +1380,7 @@ const submitStepIntro = computed(() => {
   if (hasUnsubmittedStagedPosters.value) {
     return "You added new poster files. Submit again to include them; posters already in progress continue below.";
   }
-  if (
-    batchStillExtractingCount.value > 0 ||
-    batchInProgressItems.value.length > 0
-  ) {
+  if (batchExtractionsInProgress.value) {
     return "Please wait while we extract metadata from your posters.";
   }
   if (batchFailedCount.value > 0) {
@@ -1668,8 +1687,58 @@ async function continueToSubmit() {
   }
 }
 
-function continueToReviewMetadata() {
+const continueToReviewSaving = ref(false);
+
+function requestContinueToReviewMetadata() {
   if (!batchImportFinished.value) return;
+  if (batchExtractionsInProgress.value) return;
+  if (jobId.value && batchFailedCount.value > 0) {
+    discardFailedConfirmOpen.value = true;
+    return;
+  }
+  void finishContinueToReviewMetadata();
+}
+
+async function finishContinueToReviewMetadata() {
+  if (
+    !batchImportFinished.value ||
+    continueToReviewSaving.value ||
+    batchExtractionsInProgress.value
+  ) {
+    return;
+  }
+
+  if (jobId.value && batchFailedCount.value > 0) {
+    continueToReviewSaving.value = true;
+    try {
+      const result = await discardFailedBulkExtractions(jobId.value);
+      stagedPosters.value = result.job.stagedPosters ?? [];
+      applyBatchStateFromJob(result.job);
+      discardFailedConfirmOpen.value = false;
+      if (result.removedCount > 0) {
+        toast.add({
+          title: "Removed failed posters",
+          description:
+            result.removedCount === 1
+              ? `${result.removedFileNames[0] ?? "One poster"} was removed from this batch.`
+              : `${result.removedCount} poster(s) that failed extraction were removed from this batch.`,
+          color: "neutral",
+        });
+      }
+    } catch (error) {
+      toast.add({
+        title: "Could not remove failed posters",
+        description:
+          fetchErrorDescription(error) ??
+          "Try again or retry failed extractions before continuing.",
+        color: "error",
+      });
+      return;
+    } finally {
+      continueToReviewSaving.value = false;
+    }
+  }
+
   if (goToStep("review")) {
     void persistWizardStep("review");
   }
@@ -1695,7 +1764,7 @@ function onSubmitStepContinue() {
     return;
   }
   if (batchImportFinished.value) {
-    continueToReviewMetadata();
+    requestContinueToReviewMetadata();
     return;
   }
   void startImport();
@@ -2608,10 +2677,14 @@ async function startImport() {
             "
             :disabled="
               batchImportRunning ||
+              continueToReviewSaving ||
+              (batchImportFinished &&
+                !hasUnsubmittedStagedPosters &&
+                batchExtractionsInProgress) ||
               (!batchImportFinished &&
                 (!canProceedFromReview || submissionLoading))
             "
-            :loading="batchImportRunning"
+            :loading="batchImportRunning || continueToReviewSaving"
             @click="onSubmitStepContinue"
           />
         </div>
@@ -2746,6 +2819,65 @@ async function startImport() {
       </template>
     </div>
   </UCard>
+
+  <UModal
+    v-model:open="discardFailedConfirmOpen"
+    title="Remove failed posters?"
+    class="max-w-md"
+  >
+    <template #body>
+      <p class="text-sm">
+        <template v-if="batchFailedCount === 1">
+          One poster could not be extracted. Continuing will permanently remove
+          it from this batch, including its stored file and draft record.
+        </template>
+        <template v-else>
+          {{ batchFailedCount }} posters could not be extracted. Continuing will
+          permanently remove them from this batch, including their stored files
+          and draft records.
+        </template>
+      </p>
+
+      <ul
+        class="border-default divide-default mt-4 max-h-48 divide-y overflow-y-auto rounded-md border text-sm"
+      >
+        <li
+          v-for="item in batchFailedItems"
+          :key="item.id"
+          class="px-3 py-2"
+        >
+          <span class="font-medium">{{ item.fileName }}</span>
+          <p
+            v-if="item.error"
+            class="text-muted mt-0.5 text-xs"
+            :title="item.error"
+          >
+            {{ item.error }}
+          </p>
+        </li>
+      </ul>
+
+      <p class="text-muted mt-3 text-sm">
+        To try again instead, cancel and use Retry on the submit step.
+      </p>
+    </template>
+
+    <template #footer>
+      <UButton
+        color="neutral"
+        variant="outline"
+        label="Cancel"
+        :disabled="continueToReviewSaving"
+        @click="discardFailedConfirmOpen = false"
+      />
+      <UButton
+        color="warning"
+        label="Remove and continue"
+        :loading="continueToReviewSaving"
+        @click="finishContinueToReviewMetadata"
+      />
+    </template>
+  </UModal>
 
   <UModal
     v-model:open="deleteAllPostersModalOpen"

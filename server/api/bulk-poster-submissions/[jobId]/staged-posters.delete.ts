@@ -1,3 +1,4 @@
+import type { BulkImportSubmissionSummary } from "#shared/types/bulkImportLicenses";
 import {
   bulkImportFolderExtension,
   bulkImportPostersPrefix,
@@ -5,6 +6,7 @@ import {
 } from "~~/server/utils/bulkImportBunnyPaths";
 import { deleteBunnyPosterObjectFolder } from "~~/server/utils/bulkImportBunnyDelete";
 import { listBunnyStorageObjects } from "~~/server/utils/bunnyStorageList";
+import { removePostersFromBulkImportJob } from "~~/server/utils/bulkImportRemovePoster";
 import { getBulkPosterSubmissionJobRepository } from "~~/server/utils/bulkPosterSubmissionJobs";
 
 function posterFolderPathFromObjectPath(objectPath: string) {
@@ -34,6 +36,33 @@ export default defineEventHandler(async (event) => {
     });
   }
 
+  const summary = (job.submissionSummary ?? {}) as BulkImportSubmissionSummary;
+  const created = summary.createdPosters ?? [];
+  const staged = job.stagedPosters ?? [];
+
+  const specs = [
+    ...created.map((entry) => ({ posterId: entry.posterId })),
+    ...staged
+      .filter(
+        (poster) =>
+          !created.some((entry) => entry.filePath === poster.filePath),
+      )
+      .map((poster) => ({ filePath: poster.filePath })),
+  ];
+
+  let jobAfterRemoval = job;
+  let removedFromJob = 0;
+
+  if (specs.length > 0) {
+    const removalResult = await removePostersFromBulkImportJob(
+      session.user.id,
+      jobId,
+      specs,
+    );
+    jobAfterRemoval = removalResult.job;
+    removedFromJob = removalResult.removedCount;
+  }
+
   const config = useRuntimeConfig();
   const { bunnyPrivateStorage, bunnyPrivateStorageKey } = config;
   const siteEnv = config.siteEnv || config.public.siteEnv;
@@ -41,17 +70,7 @@ export default defineEventHandler(async (event) => {
   const postersPrefix = bulkImportPostersPrefix(folderExtension, jobId);
   const postersListPrefix = postersPrefix.replace(/\/$/, "");
 
-  const samplePathByFolder = new Map<string, string>();
-
-  for (const poster of job.stagedPosters ?? []) {
-    if (
-      !isBulkImportPosterObjectPath(poster.filePath, folderExtension, jobId)
-    ) {
-      continue;
-    }
-    const folder = posterFolderPathFromObjectPath(poster.filePath);
-    if (folder) samplePathByFolder.set(folder, poster.filePath);
-  }
+  let deletedCount = removedFromJob;
 
   if (bunnyPrivateStorage && bunnyPrivateStorageKey) {
     const storedObjects = await listBunnyStorageObjects(
@@ -67,25 +86,29 @@ export default defineEventHandler(async (event) => {
         continue;
       }
       const folder = posterFolderPathFromObjectPath(object.path);
-      if (folder && !samplePathByFolder.has(folder)) {
-        samplePathByFolder.set(folder, object.path);
-      }
-    }
+      if (!folder) continue;
 
-    for (const filePath of samplePathByFolder.values()) {
       await deleteBunnyPosterObjectFolder({
         bunnyPrivateStorage,
         bunnyPrivateStorageKey,
-        filePath,
+        filePath: object.path,
       });
+      deletedCount += 1;
     }
   }
 
-  const deletedCount = samplePathByFolder.size;
+  const summaryAfterRemoval = (jobAfterRemoval.submissionSummary ??
+    {}) as BulkImportSubmissionSummary;
 
   const updated = await repository.updateForUser(jobId, session.user.id, {
     stagedPosters: [],
     posterCount: 0,
+    submissionSummary: {
+      ...summaryAfterRemoval,
+      createdPosters: [],
+      createdPosterIds: [],
+      licenseSpreadsheetRows: [],
+    },
   });
 
   return { job: updated, deletedCount };
