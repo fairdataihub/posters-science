@@ -1,4 +1,4 @@
-import iso6391 from "../../../shared/data/iso-639-1.json";
+import iso6391 from "#shared/data/iso-639-1.json";
 import {
   canonicalizeOrg,
   isFunderExcluded,

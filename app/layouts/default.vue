@@ -8,6 +8,19 @@ const { openSharePostersChooser } = useSharePostersChooser();
 
 const route = useRoute();
 
+const scienceArticleUrl =
+  "https://www.science.org/content/article/conference-posters-could-garner-wider-audience-thanks-new-online-platform";
+
+const scienceBannerActions = [
+  {
+    label: "Read the article",
+    to: scienceArticleUrl,
+    target: "_blank",
+    trailingIcon: "heroicons:arrow-right",
+    class: "hidden bg-white text-pink-700 hover:bg-pink-50 sm:inline-flex",
+  },
+];
+
 function openFeedback() {
   mobileMenuOpen.value = false;
   feedbackOpen.value = true;
@@ -72,14 +85,25 @@ const profileDropdownItems = computed(() => [
       type: "label",
     },
     {
+      icon: "material-symbols:dashboard",
+      label: "Dashboard",
+      to: "/dashboard",
+    },
+    {
+      // Your own profile page, public or private.
       icon: "material-symbols:account-circle",
       label: "Profile",
-      to: "/profile",
+      to: "/profile/me",
     },
     {
       icon: "material-symbols:star",
       label: "Liked posters",
       to: "/liked",
+    },
+    {
+      icon: "material-symbols:settings",
+      label: "Settings",
+      to: "/profile",
     },
     ...(user?.value?.role === "admin"
       ? [
@@ -104,12 +128,17 @@ const mobileProfileNavItems = computed<NavigationMenuItem[]>(() => [
   {
     icon: "material-symbols:account-circle",
     label: "Profile",
-    to: "/profile",
+    to: "/profile/me",
   },
   {
     icon: "material-symbols:star",
     label: "Liked posters",
     to: "/liked",
+  },
+  {
+    icon: "material-symbols:settings",
+    label: "Settings",
+    to: "/profile",
   },
   {
     icon: "majesticons:logout",
@@ -138,6 +167,36 @@ const footerItems: NavigationMenuItem[] = [
 <template>
   <div class="relative">
     <!-- <UiAuroraBackground class="absolute inset-0 -z-10 h-full" /> -->
+
+    <!-- Press announcement. The id remembers a close, so change it to show a new one. -->
+    <UBanner
+      v-if="route.path === '/'"
+      id="science-article-2026-10"
+      icon="lucide:party-popper"
+      :to="scienceArticleUrl"
+      target="_blank"
+      :actions="scienceBannerActions"
+      close
+      :ui="{
+        root: 'bg-gradient-to-r from-pink-600 to-fuchsia-600',
+        icon: 'text-white',
+        title: 'text-white',
+        close: 'text-white hover:bg-white/15',
+      }"
+    >
+      <template #title>
+        <span class="md:hidden">We're in Science Magazine!</span>
+
+        <Icon
+          name="heroicons:arrow-right"
+          class="ml-1 inline-block size-4 align-[-3px] sm:hidden"
+        />
+
+        <span class="hidden md:inline">
+          Big news: Posters.science is featured in Science Magazine!
+        </span>
+      </template>
+    </UBanner>
 
     <UHeader
       v-model:open="mobileMenuOpen"
@@ -288,9 +347,23 @@ const footerItems: NavigationMenuItem[] = [
 
     <UFooter>
       <template #left>
-        <p class="text-muted text-sm">
-          Copyright © {{ new Date().getFullYear() }}
-        </p>
+        <div
+          class="text-muted flex flex-wrap items-center gap-x-4 gap-y-1 text-sm"
+        >
+          <p>Copyright © {{ new Date().getFullYear() }}</p>
+
+          <NuxtLink to="/faq" class="hover:text-default transition-colors">
+            FAQ
+          </NuxtLink>
+
+          <NuxtLink to="/terms" class="hover:text-default transition-colors">
+            Terms of Use
+          </NuxtLink>
+
+          <NuxtLink to="/privacy" class="hover:text-default transition-colors">
+            Privacy Policy
+          </NuxtLink>
+        </div>
       </template>
 
       <UNavigationMenu :items="footerItems" variant="link" color="primary" />

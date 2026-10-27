@@ -7,7 +7,7 @@ import {
   posterFileRejectionReason,
 } from "#shared/utils/posterFile";
 import { LICENSE_OPTIONS } from "~/utils/poster_schema";
-import { normalizeDoi, validateDoi } from "~/utils/doi";
+import { normalizeDoi, validateDoi } from "#shared/utils/doi";
 import { shareNewBulkPath } from "~/utils/sharePaths";
 import { deleteBulkPosterSubmissionJob } from "~/utils/bulkPosterSubmissionJobClient";
 import type {
@@ -65,6 +65,10 @@ type Poster = {
     description: string;
     extractionJob?: ExtractionJobSummary | null;
   } | null;
+  // An auto-indexed poster the user claimed as an author. Listed with their
+  // own published posters but read-only, since the user doesn't own it.
+  claimed: boolean;
+  claimedAt: Date | null;
 };
 
 type ExtractionJobSummary = {
@@ -269,6 +273,61 @@ const modalPublisher = ref("");
 const isSaving = ref(false);
 const doiError = ref("");
 const toast = useToast();
+
+// The public profile lists what's published here, so the header points to it.
+// Lazy so it never holds up the poster list.
+const { data: profileSettings } = useFetch("/api/user", { lazy: true });
+
+const profileListing = computed(() =>
+  profileSettings.value?.profileShowLikes
+    ? "the posters you published, claimed and liked"
+    : "the posters you published and claimed",
+);
+
+// Removing a claim on an auto-indexed poster
+const removeClaimTarget = ref<Poster | null>(null);
+const removeClaimOpen = computed({
+  get: () => removeClaimTarget.value !== null,
+  set: (open) => {
+    if (!open) removeClaimTarget.value = null;
+  },
+});
+const removingClaim = ref(false);
+
+async function confirmRemoveClaim() {
+  const poster = removeClaimTarget.value;
+  if (!poster || removingClaim.value) return;
+
+  removingClaim.value = true;
+
+  try {
+    await $fetch(`/api/poster/${poster.rootPosterId}/claim`, {
+      method: "DELETE",
+    });
+
+    posters.value = posters.value.filter(
+      (row) => !(row.claimed && row.rootPosterId === poster.rootPosterId),
+    );
+    removeClaimTarget.value = null;
+    toast.add({
+      title: "Claim removed",
+      description: "The poster is no longer linked to your account.",
+      color: "success",
+    });
+  } catch (error) {
+    const message =
+      (error as { data?: { statusMessage?: string } })?.data?.statusMessage ||
+      "There was a problem removing your claim.";
+
+    toast.add({
+      title: "Could not remove claim",
+      description: message,
+      color: "error",
+    });
+  } finally {
+    removingClaim.value = false;
+  }
+}
 const tombstoneModalOpen = ref(false);
 const tombstonedPoster = ref<Poster | null>(null);
 
@@ -282,6 +341,10 @@ const versionError = ref("");
 const versionPollingError = ref("");
 const retryingVersionExtraction = ref(false);
 const retryingVersionThumbnail = ref(false);
+
+const { isActive: isMaintenanceActive } = useMaintenance();
+const extractionPaused = computed(() => isMaintenanceActive("extraction"));
+const versioningPaused = computed(() => isMaintenanceActive("versioning"));
 const deleteVersionModalOpen = ref(false);
 const deletingVersionDraft = ref(false);
 const pollingVersionJobId = ref<string | null>(null);
@@ -533,6 +596,10 @@ function versionActionDisabled(poster: Poster) {
 }
 
 function versionActionTooltip(poster: Poster) {
+  // The button stays enabled so the panel can explain the pause in full.
+  if (versioningPaused.value) {
+    return "Editing published posters is paused. Open the panel for details.";
+  }
   if (isVersionPreparing(poster.activeVersionDraft)) {
     return "Open the edit panel to view preparation progress.";
   }
@@ -1447,7 +1514,7 @@ const getImage = (poster: Poster) => {
 // itself succeeded. Surface it once the job is settled so the card is not
 // nagging about a preview that is simply still being made.
 function posterPreviewMissing(poster: Poster) {
-  if (poster.imageUrl || poster.tombstone) return false;
+  if (poster.claimed || poster.imageUrl || poster.tombstone) return false;
 
   const job = poster.extractionJob;
 
@@ -1633,7 +1700,30 @@ function posterMenuItems(poster: Poster) {
     >
       <template #description>
         <div class="flex w-full items-center justify-between gap-4">
-          <span>Keep track of all your submitted posters.</span>
+          <span>
+            Keep track of all your submitted posters.
+            <template
+              v-if="
+                profileSettings?.profilePublic && profileSettings.profilePath
+              "
+            >
+              Your
+              <ULink
+                :to="profileSettings.profilePath"
+                class="text-primary underline"
+                >public profile</ULink
+              >
+              shows {{ profileListing }}.
+            </template>
+
+            <template v-else-if="profileSettings">
+              Make your
+              <ULink to="/profile" class="text-primary underline"
+                >profile public</ULink
+              >
+              to share {{ profileListing }}.
+            </template>
+          </span>
 
           <div class="flex flex-wrap items-center justify-end gap-3">
             <USwitch
@@ -1648,6 +1738,10 @@ function posterMenuItems(poster: Poster) {
         </div>
       </template>
     </UPageHeader>
+
+    <MaintenanceNotice maintenance-key="extraction" />
+
+    <MaintenanceNotice maintenance-key="zenodo" />
 
     <UTabs
       v-model="activeDashboardTab"
@@ -1738,6 +1832,41 @@ function posterMenuItems(poster: Poster) {
                       :icon="posterStatusPresentation(poster).icon"
                     >
                       {{ posterStatusPresentation(poster).label }}
+                    </UBadge>
+
+                    <UTooltip
+                      v-if="poster.claimed"
+                      text="You claimed this poster. Only its original publisher can edit it."
+                    >
+                      <UBadge
+                        color="info"
+                        variant="soft"
+                        size="sm"
+                        icon="i-heroicons-hand-raised"
+                        class="cursor-help"
+                      >
+                        Claimed
+                      </UBadge>
+                    </UTooltip>
+
+                    <UBadge
+                      v-if="poster.automated"
+                      color="primary"
+                      variant="soft"
+                      size="sm"
+                      icon="i-lucide-sparkles"
+                    >
+                      Auto-indexed
+                    </UBadge>
+
+                    <UBadge
+                      v-if="poster.claimed"
+                      color="neutral"
+                      variant="soft"
+                      size="sm"
+                      icon="i-lucide-user-check"
+                    >
+                      Author
                     </UBadge>
 
                     <!-- FEATURE FLAG (versioning) -->
@@ -1837,7 +1966,16 @@ function posterMenuItems(poster: Poster) {
                   <div
                     class="text-muted flex items-center gap-2 max-md:flex-col max-md:items-start max-md:gap-1"
                   >
-                    <span class="flex items-center gap-1">
+                    <span
+                      v-if="poster.claimedAt"
+                      class="flex items-center gap-1"
+                    >
+                      <Icon name="heroicons:hand-raised" class="h-3 w-3" />
+                      Claimed
+                      {{ dayjs(poster.claimedAt).format("MMMM D, YYYY") }}
+                    </span>
+
+                    <span v-else class="flex items-center gap-1">
                       <Icon name="heroicons:calendar-days" class="h-3 w-3" />
                       Created {{ dayjs(poster.created).format("MMMM D, YYYY") }}
                     </span>
@@ -1868,6 +2006,16 @@ function posterMenuItems(poster: Poster) {
                         icon="i-lucide-eye"
                         size="xs"
                         @click="openPoster(poster)"
+                      />
+
+                      <UButton
+                        v-if="poster.claimed"
+                        color="neutral"
+                        variant="ghost"
+                        label="Remove claim"
+                        icon="i-lucide-x"
+                        size="xs"
+                        @click="removeClaimTarget = poster"
                       />
 
                       <!-- FEATURE FLAG (versioning) -->
@@ -2088,6 +2236,31 @@ function posterMenuItems(poster: Poster) {
       </NuxtLink>
     </div>
 
+    <UModal
+      v-model:open="removeClaimOpen"
+      title="Remove this claim?"
+      description="The poster will no longer appear on your dashboard or profile. You can claim it again from its page."
+    >
+      <template #footer="{ close }">
+        <div class="flex w-full items-center justify-between gap-3">
+          <UButton
+            color="neutral"
+            variant="subtle"
+            label="Cancel"
+            @click="close"
+          />
+
+          <UButton
+            color="error"
+            label="Remove claim"
+            icon="i-lucide-x"
+            :loading="removingClaim"
+            @click="confirmRemoveClaim"
+          />
+        </div>
+      </template>
+    </UModal>
+
     <!-- Delete draft modal -->
     <USlideover
       v-model:open="versionModalOpen"
@@ -2108,6 +2281,13 @@ function posterMenuItems(poster: Poster) {
           class="flex min-h-full flex-col"
         >
           <div class="space-y-5">
+            <MaintenanceNotice maintenance-key="versioning" />
+
+            <MaintenanceNotice
+              v-if="versionMetadataMode === 'extract'"
+              maintenance-key="extraction"
+            />
+
             <p class="text-muted text-sm">
               Select what you would like to change for
               <span class="text-highlighted font-medium">{{
@@ -2275,6 +2455,7 @@ function posterMenuItems(poster: Poster) {
             variant="soft"
             icon="i-lucide-refresh-cw"
             :loading="retryingVersionThumbnail"
+            :disabled="extractionPaused"
             @click="retryVersionThumbnail"
           >
             Retry Poster Preview
@@ -2345,6 +2526,10 @@ function posterMenuItems(poster: Poster) {
           <UButton
             color="primary"
             :loading="creatingVersion"
+            :disabled="
+              versioningPaused ||
+              (extractionPaused && versionMetadataMode === 'extract')
+            "
             @click="createVersion"
           >
             Continue
@@ -2386,6 +2571,7 @@ function posterMenuItems(poster: Poster) {
               color="primary"
               icon="i-lucide-refresh-cw"
               :loading="retryingVersionExtraction"
+              :disabled="extractionPaused"
               @click="retryVersionExtraction"
             >
               Retry Extraction
@@ -2410,6 +2596,17 @@ function posterMenuItems(poster: Poster) {
             tombstonedPoster?.tombedReason?.trim() || 'No reason was provided.'
           "
         />
+
+        <p class="text-muted mt-4 text-sm">
+          Only the Posters.science team can restore a tombstoned poster. If you
+          have questions or concerns,
+          <ULink
+            to="https://tally.so/r/XxEBYP"
+            target="_blank"
+            class="text-primary underline"
+            >contact us</ULink
+          >.
+        </p>
       </template>
     </UModal>
 

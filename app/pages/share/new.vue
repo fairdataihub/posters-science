@@ -23,6 +23,9 @@ useSeoMeta({
 const { siteEnv } = useRuntimeConfig().public;
 const toast = useToast();
 
+const { isActive: isMaintenanceActive } = useMaintenance();
+const uploadsPaused = computed(() => isMaintenanceActive("extraction"));
+
 const status = ref(0);
 const isUploading = ref(false);
 const selectedFiles = ref<File[]>([]);
@@ -278,6 +281,8 @@ onUnmounted(() => {
       <UiSpinner :loading="status === 2 || isUploading" overlay subtle>
         <UCard>
           <div class="space-y-6">
+            <MaintenanceNotice maintenance-key="extraction" />
+
             <UiFileUpload
               :accept="POSTER_FILE_ACCEPT"
               :validate-file="validatePosterFile"
@@ -343,7 +348,7 @@ onUnmounted(() => {
 
           <template #footer>
             <UButton
-              :disabled="isUploading || !hasValidFile"
+              :disabled="isUploading || !hasValidFile || uploadsPaused"
               class="flex w-full justify-center"
               variant="outline"
               icon="i-heroicons-cloud-arrow-up-solid"

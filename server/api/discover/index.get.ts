@@ -1,4 +1,9 @@
+import type { Prisma } from "#shared/generated/client";
+import { parseDiscoverSearch } from "#shared/utils/discoverSearch";
+import { escapeLike } from "#shared/utils/searchQuery";
+
 import { canonicalizeOrg, normalizeLicense } from "../../utils/canonicalize";
+import { buildDiscoverSearchFilter } from "../../utils/discoverSearch";
 
 // Filters arrive as repeated query params (?institution=a&institution=b), so
 // h3's getQuery yields a string (single value) or string[] (repeated). Each
@@ -42,24 +47,10 @@ export default defineEventHandler(async (event) => {
   const skip = (pageNum - 1) * limitNum;
   markStep("query-parse");
 
-  const searchFilter = search
-    ? {
-        OR: [
-          {
-            title: {
-              contains: String(search),
-              mode: "insensitive" as const,
-            },
-          },
-          {
-            description: {
-              contains: String(search),
-              mode: "insensitive" as const,
-            },
-          },
-        ],
-      }
-    : {};
+  const searchFilter = await buildDiscoverSearchFilter(
+    parseDiscoverSearch(typeof search === "string" ? search : ""),
+  );
+  if (searchFilter.ids?.length === 0) return EMPTY_RESPONSE;
   markStep("search-filter");
 
   const sortByStr = String(sortBy || "Newest First");
@@ -90,7 +81,12 @@ export default defineEventHandler(async (event) => {
 
   const isFigshare = {
     OR: [
-      { imageUrl: { contains: "/figshare_", mode: "insensitive" as const } },
+      {
+        imageUrl: {
+          contains: escapeLike("/figshare_"),
+          mode: "insensitive" as const,
+        },
+      },
       {
         posterMetadata: {
           doi: { startsWith: "10.6084/", mode: "insensitive" as const },
@@ -99,15 +95,15 @@ export default defineEventHandler(async (event) => {
     ],
   };
 
-  const sourceConditions: Record<string, unknown>[] = [];
+  const sourceConditions: Prisma.PosterWhereInput[] = [];
   if (sourceValues.includes("figshare")) sourceConditions.push(isFigshare);
   if (sourceValues.includes("zenodo"))
     sourceConditions.push({ automated: true, NOT: isFigshare });
   if (sourceValues.includes("user_submitted"))
     sourceConditions.push({ automated: false });
 
-  const sourceFilter =
-    sourceConditions.length > 0 ? { OR: sourceConditions } : {};
+  const sourceFilter: Prisma.PosterWhereInput | null =
+    sourceConditions.length > 0 ? { OR: sourceConditions } : null;
   markStep("source-filter");
 
   // ---- New metadata filters ------------------------------------------------
@@ -127,7 +123,7 @@ export default defineEventHandler(async (event) => {
   );
   const funderCanonicalValues = parseList(funder);
 
-  const metadataWhere: Record<string, unknown> = {};
+  const metadataWhere: Prisma.PosterMetadataWhereInput = {};
 
   if (languageValues.length > 0) {
     metadataWhere.language = { in: languageValues };
@@ -221,34 +217,38 @@ export default defineEventHandler(async (event) => {
   }
   markStep("funder-filter");
 
-  // Intersect JSON-derived poster ID sets when both filters are active.
-  let idFilter: { in: number[] } | undefined;
-  if (institutionPosterIds !== null && funderPosterIds !== null) {
-    const funderSet = new Set(funderPosterIds);
-    const intersection = institutionPosterIds.filter((id) => funderSet.has(id));
-    if (intersection.length === 0) return EMPTY_RESPONSE;
-    idFilter = { in: intersection };
-  } else if (institutionPosterIds !== null) {
-    idFilter = { in: institutionPosterIds };
-  } else if (funderPosterIds !== null) {
-    idFilter = { in: funderPosterIds };
+  // Intersect every JSON-derived poster ID set that is active.
+  const idSets = [
+    searchFilter.ids,
+    institutionPosterIds,
+    funderPosterIds,
+  ].filter((ids): ids is number[] => ids !== null);
+
+  let idFilter: number[] | null = null;
+  for (const ids of idSets) {
+    if (idFilter === null) {
+      idFilter = ids;
+      continue;
+    }
+    const allowed = new Set(ids);
+    idFilter = idFilter.filter((id) => allowed.has(id));
   }
+  if (idFilter !== null && idFilter.length === 0) return EMPTY_RESPONSE;
 
-  const metadataFilter =
-    Object.keys(metadataWhere).length > 0
-      ? { posterMetadata: { is: metadataWhere } }
-      : {};
+  // Conditions are collected into AND because the search and source filters
+  // each bring their own OR, which would overwrite each other in a flat object.
+  const conditions: Prisma.PosterWhereInput[] = [...searchFilter.where];
+  if (sourceFilter) conditions.push(sourceFilter);
+  if (Object.keys(metadataWhere).length > 0) {
+    conditions.push({ posterMetadata: { is: metadataWhere } });
+  }
+  if (idFilter !== null) conditions.push({ id: { in: idFilter } });
 
-  const idClause = idFilter ? { id: idFilter } : {};
-
-  const whereClause = {
+  const whereClause: Prisma.PosterWhereInput = {
     status: "published",
     tombstone: false,
     isLatestVersion: true,
-    ...searchFilter,
-    ...sourceFilter,
-    ...metadataFilter,
-    ...idClause,
+    ...(conditions.length > 0 && { AND: conditions }),
   };
 
   const rawPosters =

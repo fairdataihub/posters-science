@@ -86,21 +86,22 @@ export default defineEventHandler(async (event) => {
   const { access_token, refresh_token, expires_in } =
     await oauthTokenResponse.json();
 
-  // Upsert the token in the database
+  // Upsert the token in the database, encrypted at rest
+  const storedToken = {
+    tokenType: "oauth",
+    accessToken: encryptZenodoToken(access_token, userId, "accessToken"),
+    refreshToken: encryptZenodoToken(refresh_token, userId, "refreshToken"),
+    expiresAt: new Date(Date.now() + expires_in * 1000),
+  };
+
   await prisma.zenodoToken.upsert({
     where: {
       userId,
     },
-    update: {
-      accessToken: access_token,
-      refreshToken: refresh_token,
-      expiresAt: new Date(Date.now() + expires_in * 1000),
-    },
+    update: storedToken,
     create: {
       userId,
-      accessToken: access_token,
-      refreshToken: refresh_token,
-      expiresAt: new Date(Date.now() + expires_in * 1000),
+      ...storedToken,
     },
   });
 

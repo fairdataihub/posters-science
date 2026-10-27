@@ -16,15 +16,21 @@ export function isValidOrcidChecksum(value: string): boolean {
 }
 
 // Checks whether an ORCID ID actually exists in the ORCID public registry.
-// Returns true on network failure so callers are never blocked by connectivity issues.
+// Only a 404 counts as missing. Network failures, timeouts and ORCID outages
+// return true so callers are never blocked by connectivity issues.
 export async function validateOrcidExists(orcidId: string): Promise<boolean> {
   try {
     const res = await fetch(`https://pub.orcid.org/v3.0/${orcidId}`, {
       headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(8000),
     });
 
-    return res.ok;
+    return res.status !== 404;
   } catch {
     return true;
   }
+}
+
+export function orcidUrl(orcid: string): string {
+  return `https://orcid.org/${orcid}`;
 }

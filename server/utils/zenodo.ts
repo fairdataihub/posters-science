@@ -143,9 +143,85 @@ async function getZenodoToken(userId: string) {
     return null;
   }
 
+  const accessToken = decryptZenodoToken(
+    tokenRecord.accessToken,
+    userId,
+    "accessToken",
+  );
+
+  // An unreadable token is treated as no connection, so the user is asked to
+  // connect again and the new token overwrites this row.
+  if (!accessToken) {
+    console.error(
+      "[Zenodo] Stored token could not be decrypted, treating it as not connected",
+    );
+
+    return null;
+  }
+
   console.log("[Zenodo] Stored token found");
 
-  return tokenRecord;
+  return {
+    ...tokenRecord,
+    accessToken,
+    refreshToken: tokenRecord.refreshToken
+      ? decryptZenodoToken(tokenRecord.refreshToken, userId, "refreshToken")
+      : null,
+  };
+}
+
+/**
+ * Encrypts tokens stored in plain text before encryption was added. A row is
+ * only rewritten while it still holds the values read here, so a token saved
+ * in the meantime is never overwritten. Returns how many rows were encrypted.
+ */
+export async function encryptLegacyZenodoTokens() {
+  if (!isZenodoTokenEncryptionConfigured()) {
+    console.warn(
+      "[Zenodo] Skipping stored token encryption, no encryption key is set",
+    );
+
+    return 0;
+  }
+
+  const prefix = ENCRYPTED_ZENODO_TOKEN_PREFIX;
+  const rows = await prisma.zenodoToken.findMany({
+    where: {
+      OR: [
+        { accessToken: { not: { startsWith: prefix } } },
+        { refreshToken: { not: { startsWith: prefix } } },
+      ],
+    },
+    select: { userId: true, accessToken: true, refreshToken: true },
+  });
+
+  let encrypted = 0;
+
+  for (const row of rows) {
+    const { userId, accessToken, refreshToken } = row;
+    const { count } = await prisma.zenodoToken.updateMany({
+      where: { userId, accessToken, refreshToken },
+      data: {
+        accessToken: accessToken.startsWith(prefix)
+          ? accessToken
+          : encryptZenodoToken(accessToken, userId, "accessToken"),
+        refreshToken:
+          refreshToken && !refreshToken.startsWith(prefix)
+            ? encryptZenodoToken(refreshToken, userId, "refreshToken")
+            : refreshToken,
+      },
+    });
+
+    encrypted += count;
+  }
+
+  if (encrypted > 0) {
+    console.log(
+      `[Zenodo] Encrypted ${encrypted} stored token rows written before encryption was added`,
+    );
+  }
+
+  return encrypted;
 }
 
 function zenodoAuthHeader(zenodoToken: string) {
@@ -318,10 +394,15 @@ export async function validateZenodoToken(
 
   if (probe.status === 401 || probe.status === 403) {
     // Drop it so the UI offers a reconnect.
-    const message =
+    let message =
       probe.status === 403
         ? "Zenodo rejected this connection (403). Sign in to Zenodo again to continue."
         : "Zenodo token is invalid or expired";
+
+    if (tokenRecord.tokenType === "personal") {
+      message =
+        "Zenodo no longer accepts your personal access token. It may have been deleted on Zenodo. Create a new token and connect again.";
+    }
 
     console.log(
       `[Zenodo] Token rejected (status: ${probe.status}), deleting token`,
@@ -363,14 +444,21 @@ export async function validateZenodoToken(
     );
   }
 
-  // Token valid so refresh it to extend the session.
-  console.log("[Zenodo] Token valid, refreshing to extend session");
+  let refreshRejected = false;
 
-  const refresh = await refreshZenodoToken(
-    userId,
-    tokenRecord.refreshToken,
-    tokenRecord.expiresAt,
-  );
+  // Personal access tokens never expire, so only OAuth tokens are refreshed.
+  if (tokenRecord.tokenType === "oauth" && tokenRecord.refreshToken) {
+    // Token valid so refresh it to extend the session.
+    console.log("[Zenodo] Token valid, refreshing to extend session");
+
+    const refresh = await refreshZenodoToken(
+      userId,
+      tokenRecord.refreshToken,
+      tokenRecord.expiresAt,
+    );
+
+    refreshRejected = refresh.refreshRejected;
+  }
 
   zenodoToken = true;
 
@@ -388,10 +476,82 @@ export async function validateZenodoToken(
     zenodoToken,
     message: "Zenodo token is valid",
     existingDepositions,
-    refreshRejected: refresh.refreshRejected,
+    refreshRejected,
     expiresAt: tokenRecord.expiresAt,
     zenodoAccount,
   };
+}
+
+export type PersonalTokenResult = "connected" | "rejected" | "unavailable";
+
+/**
+ * Checks a personal access token the user pasted in and stores it, encrypted,
+ * once Zenodo accepts it. It uses the same probe as validateZenodoToken, so a
+ * token that connects here passes the checks before every publish too. The
+ * token itself is never logged.
+ */
+export async function connectZenodoPersonalToken(
+  userId: string,
+  token: string,
+): Promise<PersonalTokenResult> {
+  const query = new URLSearchParams({ size: "1", page: "1" });
+  let probe: Response;
+
+  try {
+    probe = await fetch(
+      `${config.zenodoApiEndpoint}/user/records?${query.toString()}`,
+      {
+        headers: rdmHeaders(token),
+        signal: AbortSignal.timeout(15_000),
+      },
+    );
+  } catch (error) {
+    console.warn(
+      `[Zenodo] Personal token check could not reach Zenodo (${error instanceof Error ? error.name : "unknown error"})`,
+    );
+
+    return "unavailable";
+  }
+
+  if (probe.status === 401 || probe.status === 403) {
+    console.log(
+      `[Zenodo] Personal token rejected (status: ${probe.status}), not stored`,
+    );
+
+    return "rejected";
+  }
+
+  if (!probe.ok) {
+    console.warn(
+      `[Zenodo] Personal token check failed (status: ${probe.status}), not stored`,
+    );
+
+    return "unavailable";
+  }
+
+  const accessToken = encryptZenodoToken(token, userId, "accessToken");
+
+  // Replaces any earlier connection, OAuth or personal.
+  await prisma.zenodoToken.upsert({
+    where: { userId },
+    update: {
+      tokenType: "personal",
+      accessToken,
+      refreshToken: null,
+      expiresAt: null,
+    },
+    create: {
+      userId,
+      tokenType: "personal",
+      accessToken,
+      refreshToken: null,
+      expiresAt: null,
+    },
+  });
+
+  console.log("[Zenodo] Personal token accepted and stored");
+
+  return "connected";
 }
 
 async function refreshZenodoToken(
@@ -424,8 +584,8 @@ async function refreshZenodoToken(
     await prisma.zenodoToken.update({
       where: { userId },
       data: {
-        accessToken: access_token,
-        refreshToken: refresh_token,
+        accessToken: encryptZenodoToken(access_token, userId, "accessToken"),
+        refreshToken: encryptZenodoToken(refresh_token, userId, "refreshToken"),
         expiresAt: new Date(Date.now() + expires_in * 1000),
       },
     });
@@ -2365,13 +2525,6 @@ function buildRdmCreators(
   });
 }
 
-// Sandbox 500s on publish when metadata.dates is present; production is fine,
-// so withhold dates on sandbox only. Details in buildFullRdmPayload.
-const ZENODO_SANDBOX_DROPS_DATES = /sandbox/i.test(
-  config.zenodoApiEndpoint ?? "",
-);
-const SEND_DATES_TO_ZENODO = !ZENODO_SANDBOX_DROPS_DATES;
-
 type RdmExtras = {
   skipRorIds?: boolean;
   skipFunderIds?: boolean;
@@ -2488,14 +2641,9 @@ function buildFullRdmPayload(
       ...(additionalDescriptions.length > 0 && {
         additional_descriptions: additionalDescriptions,
       }),
-      // SANDBOX WORKAROUND (2026-09-24): sandbox accepts dates on the draft but
-      // 500s on publish. Our payload is spec-correct and production is fine, so
-      // this is their regression: records published with
-      // dates on 09-21 and replaying those same payloads on 09-24 failed.
-      ...(SEND_DATES_TO_ZENODO &&
-        options?.presentedDates?.length && {
-          dates: options.presentedDates,
-        }),
+      ...(options?.presentedDates?.length && {
+        dates: options.presentedDates,
+      }),
       ...((meta.version as string | null | undefined) && {
         version: meta.version as string,
       }),

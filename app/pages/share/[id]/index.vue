@@ -21,7 +21,7 @@ import {
   isCanonicalSchemeUri,
   extractOrcidId,
   validateOrcidExists,
-} from "@/utils/poster_schema";
+} from "~/utils/poster_schema";
 import {
   type CalendarDate,
   getLocalTimeZone,

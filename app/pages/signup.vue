@@ -74,8 +74,8 @@ const showPassword = ref(false);
 
 const schema = z.object({
   emailAddress: z.string().email(),
-  familyName: z.string(),
-  givenName: z.string(),
+  familyName: z.string().trim().min(1, "Enter your last name"),
+  givenName: z.string().trim().min(1, "Enter your first name"),
   password: z
     .string()
     .trim()
@@ -192,11 +192,11 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
         class="mt-6 space-y-4"
         @submit="onSubmit"
       >
-        <UFormField label="Given or First Name" name="givenName">
+        <UFormField label="Given or First Name" name="givenName" required>
           <UInput v-model="state.givenName" type="text" />
         </UFormField>
 
-        <UFormField label="Family or Last Name" name="familyName">
+        <UFormField label="Family or Last Name" name="familyName" required>
           <UInput v-model="state.familyName" type="text" />
         </UFormField>
 

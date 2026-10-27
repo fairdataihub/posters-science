@@ -1,6 +1,14 @@
 <script setup lang="ts">
 import dayjs from "dayjs";
 
+import {
+  DISCOVER_SEARCH_FIELD_LABELS,
+  discoverHighlightTerms,
+  parseDiscoverSearch,
+  withoutDiscoverClause,
+  withoutDiscoverFreeText,
+} from "#shared/utils/discoverSearch";
+
 const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Discover Posters - Posters.science")}&description=${encodeURIComponent("Find and explore scientific posters on a variety of topics.")}&app=posters-science&org=fairdataihub`;
 
 useSeoMeta({
@@ -172,6 +180,17 @@ function triggerSearch() {
   committedSearch.value = searchQuery.value.trim();
   page.value = 1;
 }
+
+function applySearch(value: string) {
+  searchQuery.value = value;
+  triggerSearch();
+}
+
+const parsedSearch = computed(() => parseDiscoverSearch(committedSearch.value));
+
+const highlightTerms = computed(() =>
+  discoverHighlightTerms(parsedSearch.value),
+);
 
 watch(sortBy, () => {
   page.value = 1;
@@ -345,10 +364,33 @@ const activeFilters = computed<ActiveFilter[]>(() => {
   return out;
 });
 
+const searchBadges = computed<ActiveFilter[]>(() => {
+  const parsed = parsedSearch.value;
+  const out: ActiveFilter[] = parsed.clauses.map(({ field, term }, index) => ({
+    key: `search:${index}`,
+    label: `${DISCOVER_SEARCH_FIELD_LABELS[field]}: ${term}`,
+    onRemove: () => applySearch(withoutDiscoverClause(parsed, index)),
+  }));
+
+  if (parsed.freeText) {
+    out.push({
+      key: "search:text",
+      label: `Search: ${parsed.freeText}`,
+      onRemove: () => applySearch(withoutDiscoverFreeText(parsed)),
+    });
+  }
+
+  return out;
+});
+
 const activeFilterCount = computed(() => activeFilters.value.length);
 const hasActiveFilters = computed(() => activeFilterCount.value > 0);
+const hasActiveBadges = computed(
+  () => hasActiveFilters.value || searchBadges.value.length > 0,
+);
 
 function clearAllFilters() {
+  if (committedSearch.value) applySearch("");
   sourceFilterValue.value = [];
   languageFilterValue.value = [];
   licenseFilterValue.value = [];
@@ -486,22 +528,11 @@ function clearAllFilters() {
           </div>
         </div>
 
-        <div class="flex items-center gap-2 pb-4">
-          <UInput
-            v-model="searchQuery"
-            placeholder="Search posters by title, description, or keywords..."
-            icon="i-lucide-search"
-            @keydown.enter="triggerSearch"
-          />
-
-          <UButton
-            color="primary"
-            variant="outline"
-            label="Search Posters"
-            icon="i-lucide-search"
-            @click="triggerSearch"
-          />
-        </div>
+        <DiscoverSearchBar
+          v-model="searchQuery"
+          :committed="committedSearch"
+          @submit="triggerSearch"
+        />
 
         <div class="flex items-center justify-between pb-4">
           <div>
@@ -523,13 +554,13 @@ function clearAllFilters() {
         </div>
 
         <div
-          v-if="hasActiveFilters"
+          v-if="hasActiveBadges"
           class="flex flex-wrap items-center gap-2 pb-4"
         >
           <span class="text-sm text-gray-500">Active filters:</span>
 
           <UBadge
-            v-for="filter in activeFilters"
+            v-for="filter in [...searchBadges, ...activeFilters]"
             :key="filter.key"
             color="primary"
             variant="subtle"
@@ -591,11 +622,17 @@ function clearAllFilters() {
                   <div class="relative flex flex-col justify-between gap-2 p-2">
                     <div class="flex flex-col gap-3">
                       <h3 class="line-clamp-2 text-lg font-semibold">
-                        {{ poster.title }}
+                        <SearchHighlight
+                          :text="poster.title"
+                          :term="highlightTerms.title"
+                        />
                       </h3>
 
                       <p class="line-clamp-3 text-sm leading-relaxed">
-                        {{ poster.description }}
+                        <SearchHighlight
+                          :text="poster.description"
+                          :term="highlightTerms.description"
+                        />
                       </p>
 
                       <div class="flex flex-wrap gap-1">
@@ -606,7 +643,10 @@ function clearAllFilters() {
                           variant="soft"
                           class="capitalize"
                         >
-                          {{ tag }}
+                          <SearchHighlight
+                            :text="tag"
+                            :term="highlightTerms.keyword"
+                          />
                         </UBadge>
 
                         <UBadge
