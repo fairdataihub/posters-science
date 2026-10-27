@@ -142,6 +142,9 @@ export default defineNuxtConfig({
     zenodoRedirectUri: "",
     zenodoApiEndpoint: "",
     zenodoEndpoint: "",
+    // 32 random bytes as base64, used to encrypt stored Zenodo tokens.
+    // NUXT_ZENODO_TOKEN_ENCRYPTION_KEY. Changing it disconnects every user.
+    zenodoTokenEncryptionKey: "",
     posterExtractionApi: "",
     bunnyPrivateStorage: "",
     bunnyPrivateStorageKey: "",

@@ -37,6 +37,8 @@ export default defineEventHandler(async (event) => {
   assertVersioningEnabled();
 
   const session = await requireUserSession(event);
+
+  await assertNotInMaintenance("versioning");
   const { id } = event.context.params as { id: string };
   const requestedId = Number.parseInt(id, 10);
 
@@ -197,6 +199,12 @@ export default defineEventHandler(async (event) => {
       statusCode: 400,
       statusMessage: "Metadata extraction requires a newly uploaded file",
     });
+  }
+
+  // A copied-metadata draft never reaches the extraction worker, so it stays
+  // available while extraction is paused.
+  if (metadataMode === "extract") {
+    await assertNotInMaintenance("extraction");
   }
 
   const config = useRuntimeConfig(event);

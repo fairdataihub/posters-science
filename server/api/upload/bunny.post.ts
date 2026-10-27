@@ -9,6 +9,8 @@ import {
 export default defineEventHandler(async (event) => {
   await requireUserSession(event);
 
+  await assertNotInMaintenance("extraction");
+
   const config = useRuntimeConfig();
 
   const session = await getUserSession(event);

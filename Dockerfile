@@ -20,9 +20,10 @@ RUN pnpm install --frozen-lockfile \
   && pnpm prisma:generate \
   && pnpm store prune
 
-# Copy source files and build
+# Copy source files and build. Bundling the Nitro server needs more than
+# Node's default heap of about 4 GB, so the build may use up to 8 GB.
 COPY . .
-RUN pnpm run build
+RUN NODE_OPTIONS=--max-old-space-size=8192 pnpm run build
 
 # Production stage
 FROM node:22-alpine

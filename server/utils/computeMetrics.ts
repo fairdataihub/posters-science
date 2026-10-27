@@ -1,5 +1,5 @@
-import type { PrismaClient } from "../../shared/generated/client";
-import iso6391 from "../../shared/data/iso-639-1.json";
+import type { PrismaClient } from "#shared/generated/client";
+import iso6391 from "#shared/data/iso-639-1.json";
 import {
   NULL_CONFERENCE,
   canonicalizeOrg,

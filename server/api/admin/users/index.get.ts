@@ -1,3 +1,5 @@
+import { userSearchWhere } from "../../../utils/adminUserSearch";
+
 export default defineEventHandler(async (event) => {
   await requireAdminSession(event);
 
@@ -6,20 +8,16 @@ export default defineEventHandler(async (event) => {
   const limit = Math.min(100, Math.max(1, Number(query.limit) || 25));
   const search = (query.search as string | undefined)?.trim() || "";
   const role = (query.role as string | undefined) || "";
+  const verified = (query.verified as string | undefined) || "";
 
   const where = {
-    ...(search
-      ? {
-          OR: [
-            {
-              emailAddress: { contains: search, mode: "insensitive" as const },
-            },
-            { givenName: { contains: search, mode: "insensitive" as const } },
-            { familyName: { contains: search, mode: "insensitive" as const } },
-          ],
-        }
-      : {}),
+    ...(search ? userSearchWhere(search) : {}),
     ...(role ? { role } : {}),
+    ...(verified === "true"
+      ? { emailVerified: true }
+      : verified === "false"
+        ? { emailVerified: false }
+        : {}),
   };
 
   const [users, total] = await Promise.all([

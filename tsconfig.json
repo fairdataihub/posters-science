@@ -1,4 +1,10 @@
 {
   // https://nuxt.com/docs/guide/concepts/typescript
-  "extends": "./.nuxt/tsconfig.json"
+  "extends": "./.nuxt/tsconfig.json",
+  "compilerOptions": {
+    // shared/utils and app/utils import each other with an explicit .ts
+    // extension so the same modules can also be run directly under
+    // `node --experimental-strip-types`, which requires it.
+    "allowImportingTsExtensions": true
+  }
 }

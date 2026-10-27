@@ -22,8 +22,10 @@ model User {
   givenName  String @default("") // first name
   familyName String @default("") // last name
 
-  emailAddress String @unique
-  password     String
+  emailAddress String  @unique
+  // Null for accounts created through an OAuth provider such as ORCID. Such a
+  // user can still set one later through forgot password or the profile page.
+  password     String?
 
   emailVerified                 Boolean   @default(false)
   emailVerifiedAt               DateTime?
@@ -32,12 +34,29 @@ model User {
 
   role String @default("user") // user | admin
 
+  // Public profile. Opt-in, so a profile stays private until the user turns
+  // it on. profileId is the whole profile address, /profile/<profileId>, and
+  // never changes. It is assigned the first time the profile is made public
+  // or the owner opens /profile/me.
+  profilePublic    Boolean @default(false)
+  profileId        String? @unique
+  affiliation      String  @default("")
+  bio              String  @default("")
+  // Opt-in: show the posters this user liked on their public profile.
+  profileShowLikes Boolean @default(false)
+  // ORCID iD the user typed in on their settings page, stored bare
+  // (0000-0002-1825-0097) or "" when unset.
+  orcid            String  @default("")
+
   created DateTime @default(now())
   updated DateTime @updatedAt
   Poster  Poster[]
 
   ZenodoToken       ZenodoToken?
   ZenodoDepositions ZenodoDeposition[]
+
+  linkedAccounts LinkedAccount[]
+  posterClaims   PosterClaim[]
 
   likes Like[] @relation("UserLikes")
 
@@ -47,6 +66,7 @@ model User {
   adminAuditLogs AdminAuditLog[] @relation("AdminActions")
 
   bulkSubmissions BulkSubmission[]
+  maintenanceFlagUpdates MaintenanceFlag[] @relation("MaintenanceFlagUpdates")
 
   @@index([emailAddress])
 }
@@ -129,6 +149,8 @@ model Poster {
 
   likes Like[] @relation("PosterLikes")
 
+  claims PosterClaim[]
+
   @@unique([versionRootId, versionSequence])
   @@index([versionRootId, status])
   @@index([status, tombstone, isLatestVersion])
@@ -196,15 +218,65 @@ model Like {
   @@id([userId, posterId])
 }
 
+// An external identity the user has proven they own, used to sign in and,
+// later, to verify poster claims. One row per provider per user, and a given
+// provider identity (an ORCID iD, say) can belong to only one account.
+model LinkedAccount {
+  id String @id @default(cuid(2))
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+
+  provider          String // orcid
+  providerAccountId String // the ORCID iD, e.g. 0000-0002-1825-0097
+
+  linkedAt DateTime @default(now())
+  updated  DateTime @updatedAt
+
+  @@unique([provider, providerAccountId])
+  @@unique([userId, provider])
+}
+
+// A user saying "I am an author of this poster". Claims are approved as soon
+// as they are made, are not tied to a creator name, and only grant the author
+// role: the poster shows on the user's profile and dashboard, but ownership
+// (Poster.userId), editing and publishing are unchanged. Any number of users
+// can claim the same poster. An admin can revoke a claim, which deletes the row.
+model PosterClaim {
+  id String @id @default(cuid(2))
+
+  // Always the version root, so one claim covers every version of the poster.
+  poster   Poster @relation(fields: [posterId], references: [id], onDelete: Cascade)
+  posterId Int
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+
+  role String @default("author") // author for now; manager comes later
+
+  created DateTime @default(now())
+
+  @@unique([posterId, userId])
+  @@index([userId])
+}
+
 model ZenodoToken {
   id String @id @default(cuid(2))
 
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId String @unique
 
+  // oauth: issued by the Zenodo OAuth flow, expires and comes with a refresh
+  // token. personal: a personal access token the user pasted in, which never
+  // expires and has no refresh token.
+  tokenType String @default("oauth") // oauth | personal
+
+  // Both tokens are encrypted at rest (server/utils/zenodoTokenCrypto.ts).
+  // Rows written before encryption was added still hold plain text and are
+  // read as is.
   accessToken  String
-  refreshToken String
-  expiresAt    DateTime
+  refreshToken String?
+  expiresAt    DateTime?
 
   created DateTime @default(now())
   updated DateTime @updatedAt
@@ -318,4 +390,22 @@ model ExtractionJob {
   updated DateTime @updatedAt
 
   @@index([status])
+}
+
+model MaintenanceFlag {
+  // One row per pausable workflow. A missing row means the workflow is live.
+  // Keys are defined in shared/utils/maintenance.ts.
+  key     String  @id
+  enabled Boolean @default(false)
+  message String  @default("") // Admin authored copy shown to users while paused
+
+  enabledAt DateTime? // When the flag was most recently switched on
+
+  updatedBy   User?   @relation("MaintenanceFlagUpdates", fields: [updatedById], references: [id])
+  updatedById String?
+
+  created DateTime @default(now())
+  updated DateTime @updatedAt
+
+  @@index([enabled])
 }
