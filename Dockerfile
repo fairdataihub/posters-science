@@ -1,5 +1,5 @@
 # Build stage
-FROM node:22-alpine AS builder
+FROM node:22.23.4-alpine AS builder
 
 # Use alpine-based image and install only necessary dependencies
 RUN apk add --no-cache openssl
@@ -26,7 +26,7 @@ COPY . .
 RUN NODE_OPTIONS=--max-old-space-size=8192 pnpm run build
 
 # Production stage
-FROM node:22-alpine
+FROM node:22.23.4-alpine
 
 LABEL maintainer="FAIR Data Innovations Hub <contact@fairdataihub.org>" \
   description="A platform for disseminating research posters."
