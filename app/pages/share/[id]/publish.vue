@@ -78,15 +78,21 @@ const zenodoTokenError = ref("");
 // When a maintenance switch pauses one, the other shows without tabs.
 type ZenodoSignInMethod = "oauth" | "token";
 
+// Personal tokens come first because Zenodo's OAuth keeps failing
+// (zenodo/zenodo-rdm#1484).
 const zenodoSignInTabs = [
-  { label: "Sign in with Zenodo", icon: "i-lucide-log-in", value: "oauth" },
   {
-    label: "Personal access token",
+    label: "Connect with a personal token",
     icon: "i-lucide-key-round",
     value: "token",
   },
+  {
+    label: "Connect with email and password",
+    icon: "i-lucide-log-in",
+    value: "oauth",
+  },
 ];
-const zenodoSignInTab = ref<ZenodoSignInMethod>("oauth");
+const zenodoSignInTab = ref<ZenodoSignInMethod>("token");
 const zenodoSignInMethod = computed<ZenodoSignInMethod | null>(() => {
   if (zenodoLoginUrl.value && zenodoTokenSignIn.value) {
     return zenodoSignInTab.value;
@@ -847,17 +853,30 @@ async function handleArchive() {
            offered on its own. -->
       <template v-else-if="!zenodoTokenExists">
         <!-- Applies to both ways of connecting -->
-        <p v-if="zenodoSignInMethod" class="mb-5 text-sm">
-          If you don't have a Zenodo account already, please create one first at
-          <ULink
-            to="https://zenodo.org"
-            target="_blank"
-            class="text-primary underline"
-          >
-            zenodo.org</ULink
-          >
-          before continuing.
-        </p>
+        <template v-if="zenodoSignInMethod">
+          <p class="mb-4 text-sm">
+            If you don't have a Zenodo account already, please create one first
+            at
+            <ULink
+              to="https://zenodo.org"
+              target="_blank"
+              class="text-primary underline"
+            >
+              zenodo.org</ULink
+            >
+            before continuing.
+          </p>
+
+          <p class="mb-5 text-sm">
+            To archive your poster on Zenodo, you will first need to connect
+            your Zenodo account with Posters.science
+            {{
+              zenodoLoginUrl && zenodoTokenSignIn
+                ? "using one of the two options below:"
+                : "using the option below:"
+            }}
+          </p>
+        </template>
 
         <UTabs
           v-if="zenodoLoginUrl && zenodoTokenSignIn"
@@ -869,43 +888,45 @@ async function handleArchive() {
 
         <!-- OAuth sign-in -->
         <template v-if="zenodoSignInMethod === 'oauth'">
+          <h4 class="mb-4 text-sm font-semibold">
+            Connect your Zenodo account with your email and password
+          </h4>
+
           <UAlert
             color="warning"
             variant="subtle"
             icon="i-lucide-triangle-alert"
-            class="mb-4"
-            title="Zenodo sign-in may require more than one attempt"
+            class="mb-5"
+            title="Zenodo sign-in with email and password may require more than one attempt and may fail completely"
           >
             <template #description>
-              There is a known issue where Zenodo authentication can
-              occasionally fail. Zenodo is of this
+              There is a known issue where Zenodo authentication with your email
+              and password (OAuth) can fail. We have reported this to the Zenodo
+              team through this
               <ULink
                 to="https://github.com/zenodo/zenodo-rdm/issues/1484"
                 target="_blank"
                 class="text-primary underline"
-                >issue</ULink
-              >
-              and we are working with the Zenodo team to resolve it.
-              <template v-if="zenodoTokenSignIn">
-                If it keeps failing we recommend to use the
-                <strong>Personal access token</strong> option instead.
-              </template>
+                >GitHub issue</ULink
+              >.{{
+                zenodoTokenSignIn
+                  ? " In the meantime, we highly recommend using the option to sign in with a personal access token."
+                  : ""
+              }}
             </template>
           </UAlert>
 
-          <div class="flex items-center justify-between">
-            <p class="text-muted text-sm">
-              Ready to archive on Zenodo? Sign in to get started.
-            </p>
-
-            <UButton color="primary" size="lg" @click="handleZenodoSignIn">
-              Sign in to Zenodo
-            </UButton>
-          </div>
+          <UButton color="primary" size="lg" @click="handleZenodoSignIn">
+            Sign in to Zenodo
+          </UButton>
         </template>
 
         <!-- Personal access token -->
         <div v-else-if="zenodoSignInMethod === 'token'">
+          <h4 class="mb-4 text-sm font-semibold">
+            Connect your Zenodo account with a personal access token
+          </h4>
+
           <UAlert
             v-if="zenodoPersonalTokenExpired"
             color="warning"
@@ -916,10 +937,9 @@ async function handleArchive() {
             description="We delete personal access tokens from Posters.science one hour after they are connected. Create a new token on Zenodo and connect again to continue."
           />
 
-          <!-- The paused message is empty whenever OAuth is offered -->
-          <p class="mb-4 text-sm">
+          <!-- Empty whenever OAuth is offered -->
+          <p v-if="zenodoOAuthPausedMessage" class="mb-4 text-sm">
             {{ zenodoOAuthPausedMessage }}
-            Connect your Zenodo account with a personal access token.
           </p>
 
           <ol class="mb-5 list-inside list-decimal space-y-2 text-sm">
@@ -951,29 +971,7 @@ async function handleArchive() {
             </li>
           </ol>
 
-          <UAlert
-            color="info"
-            variant="subtle"
-            icon="i-lucide-clock"
-            class="mb-5"
-            title="We keep your token for one hour at most"
-          >
-            <template #description>
-              We check the token with Zenodo, store it encrypted and only use it
-              to publish the posters you choose. We delete it from
-              Posters.science one hour after you connect, or sooner if you
-              disconnect. The token stays active on Zenodo until you delete it
-              there. To delete it, open
-              <ULink
-                :to="zenodoTokensUrl"
-                target="_blank"
-                class="text-primary underline"
-                >Applications in your Zenodo account settings</ULink
-              >, select the token under Personal access tokens and click Delete.
-            </template>
-          </UAlert>
-
-          <form @submit.prevent="handleZenodoTokenConnect">
+          <form class="mb-5" @submit.prevent="handleZenodoTokenConnect">
             <UFormField
               label="Personal access token"
               name="zenodoPersonalToken"
@@ -1003,6 +1001,27 @@ async function handleArchive() {
               </div>
             </UFormField>
           </form>
+
+          <UAlert
+            color="info"
+            variant="subtle"
+            icon="i-lucide-clock"
+            title="We keep your token for one hour at most"
+          >
+            <template #description>
+              We check the token with Zenodo, store it encrypted and only use it
+              to publish the posters you choose. We delete it from
+              Posters.science one hour after you connect or sooner if you
+              disconnect. The token stays active on Zenodo until you delete it
+              there. To delete it, open
+              <ULink
+                :to="zenodoTokensUrl"
+                target="_blank"
+                class="text-primary underline"
+                >Applications in your Zenodo account settings</ULink
+              >, select the token under Personal access tokens and click Delete.
+            </template>
+          </UAlert>
         </div>
 
         <!-- Neither way of connecting is available. Pausing both switches
