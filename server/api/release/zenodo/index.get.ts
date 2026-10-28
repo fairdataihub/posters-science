@@ -184,8 +184,14 @@ export default defineEventHandler(async (event) => {
   const zenodoTokensUrl = `${config.zenodoEndpoint}/account/settings/applications/`;
 
   try {
-    const { zenodoToken, message, existingDepositions, expiresAt, tokenType } =
-      await validateZenodoToken(userId);
+    const {
+      zenodoToken,
+      message,
+      existingDepositions,
+      expiresAt,
+      tokenType,
+      personalTokenExpired,
+    } = await validateZenodoToken(userId);
 
     return {
       zenodoConfigured: true,
@@ -197,6 +203,8 @@ export default defineEventHandler(async (event) => {
       // When we delete a connected personal access token, so the page can say so
       zenodoPersonalTokenExpiresAt:
         zenodoToken && tokenType === "personal" ? expiresAt : null,
+      // True when this request deleted the user's expired personal token
+      zenodoPersonalTokenExpired: personalTokenExpired ?? false,
       message,
       existingDepositions,
       linkedDepositionId,
