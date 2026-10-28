@@ -62,6 +62,9 @@ const zenodoNewTokenUrl = ref("");
 const zenodoTokensUrl = ref("");
 const zenodoTokenExists = ref(false);
 const zenodoPersonalTokenExpiresAt = ref<string | null>(null);
+// Set once a connected personal token passes its hour, to say why the user
+// has to connect again
+const zenodoPersonalTokenExpired = ref(false);
 const zenodoLoading = ref(true);
 const zenodoConfigError = ref(false);
 
@@ -445,6 +448,9 @@ watch(
     zenodoTokenExists.value = data?.zenodoToken ?? false;
     zenodoPersonalTokenExpiresAt.value =
       data?.zenodoPersonalTokenExpiresAt ?? null;
+    zenodoPersonalTokenExpired.value =
+      data?.zenodoPersonalTokenExpired ?? false;
+    if (zenodoPersonalTokenExpired.value) zenodoSignInTab.value = "token";
     zenodoConfigError.value = !data?.zenodoConfigured;
     existingDepositions.value = (data?.existingDepositions ??
       []) as typeof existingDepositions.value;
@@ -463,6 +469,31 @@ watch(
     zenodoLoading.value = false;
   },
 );
+
+// The server deletes a personal token an hour after it is connected, usually
+// before the user comes back, so a page left open drops back to the connect
+// form at that time and says why. A publish already running keeps going, since
+// the server read the token when it started.
+let personalTokenExpiryTimer: ReturnType<typeof setTimeout> | undefined;
+
+watch(zenodoPersonalTokenExpiresAt, (expiresAt) => {
+  clearTimeout(personalTokenExpiryTimer);
+  if (!expiresAt) return;
+
+  personalTokenExpiryTimer = setTimeout(
+    () => {
+      if (isArchiving.value) return;
+
+      zenodoTokenExists.value = false;
+      zenodoPersonalTokenExpiresAt.value = null;
+      zenodoPersonalTokenExpired.value = true;
+      zenodoSignInTab.value = "token";
+    },
+    Math.max(0, new Date(expiresAt).getTime() - Date.now()),
+  );
+});
+
+onBeforeUnmount(() => clearTimeout(personalTokenExpiryTimer));
 
 // Zenodo sign-in handler
 function handleZenodoSignIn() {
@@ -506,6 +537,7 @@ async function handleZenodoDisconnect() {
   try {
     await $fetch("/api/zenodo/disconnect", { method: "POST" });
     zenodoTokenExists.value = false;
+    zenodoPersonalTokenExpiresAt.value = null;
     toast.add({
       title: "Disconnected from Zenodo",
       description:
@@ -874,6 +906,16 @@ async function handleArchive() {
 
         <!-- Personal access token -->
         <div v-else-if="zenodoSignInMethod === 'token'">
+          <UAlert
+            v-if="zenodoPersonalTokenExpired"
+            color="warning"
+            variant="subtle"
+            icon="i-lucide-clock"
+            class="mb-4"
+            title="Your personal access token was deleted"
+            description="We delete personal access tokens from Posters.science one hour after they are connected. Create a new token on Zenodo and connect again to continue."
+          />
+
           <!-- The paused message is empty whenever OAuth is offered -->
           <p class="mb-4 text-sm">
             {{ zenodoOAuthPausedMessage }}
