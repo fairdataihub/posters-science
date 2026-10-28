@@ -2,7 +2,7 @@ version: 2
 updates:
   # Propose Node base image bumps (security releases) for the Dockerfile.
   # When merging one, bump node-version in the deploy and metrics workflows
-  # to the same version.
+  # and node in mise.toml to the same version.
   - package-ecosystem: docker
     directory: /
     target-branch: staging
