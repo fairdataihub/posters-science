@@ -51,7 +51,7 @@ const previewMessage = computed(
 );
 
 const PREVIEW_NOTES: Record<ZenodoMode, string> = {
-  live: "No notice. The publish page offers the Sign in to Zenodo button with the personal access token form below it.",
+  live: "No notice. The publish page offers the Sign in to Zenodo button and the personal access token form as two tabs.",
   oauthPaused:
     "Shown on the publish page in place of the Sign in to Zenodo button, followed by the steps to create a token. Users who are already connected are not affected.",
   tokenPaused:

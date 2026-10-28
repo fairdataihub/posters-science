@@ -126,7 +126,41 @@ async function getZenodoErrorMessage(
   return `${operation}: ${response.status} ${response.statusText}${summary ? ` - ${summary}` : ""}`;
 }
 
+// Deletes the user's personal access token once it is over an hour old. The
+// expiry is part of the filter because a reconnect rewrites this same row with
+// a later expiry, so a connection made in the meantime is never removed.
+async function deleteExpiredZenodoPersonalToken(userId: string) {
+  const { count } = await prisma.zenodoToken.deleteMany({
+    where: { userId, tokenType: "personal", expiresAt: { lte: new Date() } },
+  });
+
+  if (count > 0) {
+    console.log("[Zenodo] Personal token is over an hour old, deleted it");
+  }
+}
+
+// The token to send to Zenodo. A personal token past its hour is refused even
+// before the purge plugin deletes it.
 async function getZenodoToken(userId: string) {
+  const tokenRecord = await findZenodoToken(userId);
+
+  if (
+    tokenRecord?.tokenType === "personal" &&
+    tokenRecord.expiresAt &&
+    tokenRecord.expiresAt <= new Date()
+  ) {
+    await deleteExpiredZenodoPersonalToken(userId);
+
+    return null;
+  }
+
+  return tokenRecord;
+}
+
+// The stored token, decrypted, whether or not it has expired.
+// validateZenodoToken reads it this way to tell the user why they need to
+// connect again.
+async function findZenodoToken(userId: string) {
   // User ids stay out of the logs; poster and record ids are enough to trace a
   // publication and are not personal identifiers.
   console.log("[Zenodo] Looking up stored token");
@@ -290,7 +324,8 @@ export async function validateZenodoToken(
 
   let zenodoToken = false;
   let existingDepositions: ZenodoUserRecord[] = [];
-  const tokenRecord = await getZenodoToken(userId);
+  // Expired tokens are handled below, so the user is told why
+  const tokenRecord = await findZenodoToken(userId);
 
   if (!tokenRecord) {
     console.log("[Zenodo] No Zenodo token stored for this user");
@@ -305,6 +340,22 @@ export async function validateZenodoToken(
   }
 
   if (tokenRecord.expiresAt && tokenRecord.expiresAt <= new Date()) {
+    // A personal token past its hour is deleted rather than kept for a
+    // reconnect.
+    if (tokenRecord.tokenType === "personal") {
+      await deleteExpiredZenodoPersonalToken(userId);
+
+      return {
+        zenodoToken,
+        message:
+          "We deleted your personal access token because it was connected over an hour ago. Create a new token on Zenodo and connect again.",
+        existingDepositions,
+        refreshRejected: false,
+        expiresAt: tokenRecord.expiresAt,
+        personalTokenExpired: true,
+      };
+    }
+
     console.log("[Zenodo] Stored token has expired, reconnect needed");
 
     return {
@@ -388,7 +439,8 @@ export async function validateZenodoToken(
 
   let refreshRejected = false;
 
-  // Personal access tokens never expire, so only OAuth tokens are refreshed.
+  // Personal access tokens have no refresh token, so only OAuth tokens are
+  // refreshed.
   if (tokenRecord.tokenType === "oauth" && tokenRecord.refreshToken) {
     // Token valid so refresh it to extend the session.
     console.log("[Zenodo] Token valid, refreshing to extend session");
@@ -415,7 +467,43 @@ export async function validateZenodoToken(
     existingDepositions,
     refreshRejected,
     expiresAt: tokenRecord.expiresAt,
+    tokenType: tokenRecord.tokenType,
   };
+}
+
+// A personal access token is deleted an hour after it is connected. Zenodo
+// tokens do not expire on their own, so this limits how long a token that can
+// publish to the user's account sits in our database.
+export const ZENODO_PERSONAL_TOKEN_LIFETIME_MS = 60 * 60 * 1000;
+
+/**
+ * Deletes every personal access token older than an hour, including ones the
+ * user never comes back for. Rows without expiresAt were connected before
+ * personal tokens expired, or by the previous version during a deploy, so
+ * their age comes from `updated`, the time the token was connected.
+ */
+export async function purgeExpiredZenodoPersonalTokens() {
+  const now = new Date();
+  const { count } = await prisma.zenodoToken.deleteMany({
+    where: {
+      tokenType: "personal",
+      OR: [
+        { expiresAt: { lte: now } },
+        {
+          expiresAt: null,
+          updated: {
+            lte: new Date(now.getTime() - ZENODO_PERSONAL_TOKEN_LIFETIME_MS),
+          },
+        },
+      ],
+    },
+  });
+
+  if (count > 0) {
+    console.log(`[Zenodo] Deleted ${count} expired personal access token(s)`);
+  }
+
+  return count;
 }
 
 export type PersonalTokenResult = "connected" | "rejected" | "unavailable";
@@ -466,6 +554,7 @@ export async function connectZenodoPersonalToken(
   }
 
   const accessToken = encryptZenodoToken(token, userId, "accessToken");
+  const expiresAt = new Date(Date.now() + ZENODO_PERSONAL_TOKEN_LIFETIME_MS);
 
   // Replaces any earlier connection, OAuth or personal.
   await prisma.zenodoToken.upsert({
@@ -474,14 +563,14 @@ export async function connectZenodoPersonalToken(
       tokenType: "personal",
       accessToken,
       refreshToken: null,
-      expiresAt: null,
+      expiresAt,
     },
     create: {
       userId,
       tokenType: "personal",
       accessToken,
       refreshToken: null,
-      expiresAt: null,
+      expiresAt,
     },
   });
 

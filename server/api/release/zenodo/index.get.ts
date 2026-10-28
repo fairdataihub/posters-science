@@ -136,6 +136,7 @@ export default defineEventHandler(async (event) => {
       zenodoLoginURL: null,
       zenodoTokenSignIn: false,
       zenodoNewTokenUrl: null,
+      zenodoTokensUrl: null,
       zenodoToken: false,
       message: "Zenodo integration is not configured",
       existingDepositions: [],
@@ -179,17 +180,31 @@ export default defineEventHandler(async (event) => {
   // Points at sandbox or production to match the API the token will be used
   // with, since a token from one is rejected by the other.
   const zenodoNewTokenUrl = `${config.zenodoEndpoint}/account/settings/applications/tokens/new/`;
+  // Where the user deletes a personal access token on Zenodo
+  const zenodoTokensUrl = `${config.zenodoEndpoint}/account/settings/applications/`;
 
   try {
-    const { zenodoToken, message, existingDepositions } =
-      await validateZenodoToken(userId);
+    const {
+      zenodoToken,
+      message,
+      existingDepositions,
+      expiresAt,
+      tokenType,
+      personalTokenExpired,
+    } = await validateZenodoToken(userId);
 
     return {
       zenodoConfigured: true,
       zenodoLoginURL,
       zenodoTokenSignIn,
       zenodoNewTokenUrl,
+      zenodoTokensUrl,
       zenodoToken,
+      // When we delete a connected personal access token, so the page can say so
+      zenodoPersonalTokenExpiresAt:
+        zenodoToken && tokenType === "personal" ? expiresAt : null,
+      // True when this request deleted the user's expired personal token
+      zenodoPersonalTokenExpired: personalTokenExpired ?? false,
       message,
       existingDepositions,
       linkedDepositionId,
@@ -207,6 +222,7 @@ export default defineEventHandler(async (event) => {
       zenodoLoginURL,
       zenodoTokenSignIn,
       zenodoNewTokenUrl,
+      zenodoTokensUrl,
       zenodoToken: false,
       message: "Error connecting to Zenodo",
       existingDepositions: [],
