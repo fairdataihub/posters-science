@@ -12,6 +12,7 @@ import {
   BULK_IMPORT_CONFERENCE_ATTENDANCE_OPTIONS,
   bulkImportConferenceFormValid,
   bulkImportConferenceFromForm,
+  conferenceYearSelectOptions,
   emptyBulkImportConferenceForm,
   type BulkImportConferenceFormState,
 } from "#shared/types/bulkImportConference";
@@ -54,6 +55,7 @@ import {
 } from "~/utils/bulkPosterSubmissionJobClient";
 import { shareNewBulkPath } from "~/utils/sharePaths";
 import BulkImportMetadataReview from "~/components/conferences/BulkImportMetadataReview.vue";
+import BulkImportSpreadsheetStep from "~/components/conferences/BulkImportSpreadsheetStep.vue";
 import BulkImportPosterJsonPreview from "~/components/conferences/BulkImportPosterJsonPreview.vue";
 import BulkImportPublishStep from "~/components/conferences/BulkImportPublishStep.vue";
 
@@ -117,19 +119,9 @@ const orcidRorAutomationChoice = ref<OrcidRorAutomationChoice | undefined>(
 const orcidRorAutomationItems: {
   label: string;
   value: OrcidRorAutomationChoice;
-  description: string;
 }[] = [
-  {
-    label: "Yes",
-    value: "yes",
-    description:
-      "Look up ORCID and ROR identifiers for creators and affiliations when we extract or import metadata.",
-  },
-  {
-    label: "No",
-    value: "no",
-    description: "Do not run automated ORCID or ROR lookups for this batch.",
-  },
+  { label: "Yes", value: "yes" },
+  { label: "No", value: "no" },
 ];
 
 const reviewEmbargoChoice = ref<BulkImportReviewEmbargoChoice | undefined>(
@@ -139,20 +131,9 @@ const reviewEmbargoChoice = ref<BulkImportReviewEmbargoChoice | undefined>(
 const reviewEmbargoItems: {
   label: string;
   value: BulkImportReviewEmbargoChoice;
-  description: string;
 }[] = [
-  {
-    label: "Yes",
-    value: "yes",
-    description:
-      "Embargo posters for 30 days while we host a spreadsheet of posters and extractions on Posters.science for you to review and edit before anything is submitted to Zenodo.",
-  },
-  {
-    label: "No",
-    value: "no",
-    description:
-      "Submit to Zenodo as soon as each poster passes review in this import (when that flow is connected).",
-  },
+  { label: "Yes", value: "yes" },
+  { label: "No", value: "no" },
 ];
 
 function isExtractionLevelSelected(value: BulkSubmissionExtractionMethod) {
@@ -198,7 +179,7 @@ const validatePosterFile = (file: File) =>
 function validatePosterUploadFile(file: File): string | null {
   const lower = file.name.toLowerCase();
   if (lower.endsWith(".zip")) {
-    return "Upload poster PDFs or images individually — ZIP bundles are not used in this step.";
+    return "Upload poster PDFs or images individually. ZIP bundles are not used in this step.";
   }
   return validatePosterFile(file);
 }
@@ -401,10 +382,7 @@ const canProceedFromReview = computed(() => {
   return submissionRows.value.every((row) => row.status === "ready");
 });
 
-const conferenceYearOptions = Array.from(
-  { length: 12 },
-  (_, index) => new Date().getFullYear() - 2 + index,
-).map((year) => ({ label: String(year), value: year }));
+const conferenceYearOptions = conferenceYearSelectOptions();
 
 const conferenceIdentifierTypeOptions = identifierTypes.map((entry) => ({
   label: entry.label,
@@ -516,6 +494,7 @@ async function mergeJobSubmissionSummary(
 
 /** Declared before wizard composable (step completion reads batch state). */
 const batchItems = ref<BulkImportBatchItem[]>([]);
+const metadataRefreshKey = ref(0);
 const batchImportFinished = ref(false);
 const batchHasCompletedExtractions = computed(() =>
   batchItems.value.some((item) => item.status === "completed"),
@@ -659,7 +638,9 @@ function applyJobSnapshot(job: BulkPosterSubmissionJob) {
   applyBatchStateFromJob(job);
 }
 
-function shouldHydrateExtractionStatuses(job: BulkPosterSubmissionJob): boolean {
+function shouldHydrateExtractionStatuses(
+  job: BulkPosterSubmissionJob,
+): boolean {
   const summary = job.submissionSummary as BulkImportSubmissionSummary | null;
   const created = summary?.createdPosters ?? [];
   if (created.length === 0) return false;
@@ -841,6 +822,22 @@ async function refreshStagedPostersFromStorage() {
 
 async function navigateToWizardStep(step: BulkImportWizardStep) {
   if (
+    hasUnsubmittedStagedPosters.value &&
+    (step === "review" ||
+      step === "preview" ||
+      step === "publish")
+  ) {
+    toast.add({
+      title: "Extract new posters first",
+      description:
+        "You added poster files after the last extraction run. Open the AI metadata extraction step to process them.",
+      color: "warning",
+    });
+    await goToStep("submit");
+    return;
+  }
+
+  if (
     step === "review" &&
     batchImportFinished.value &&
     batchExtractionsInProgress.value
@@ -848,7 +845,7 @@ async function navigateToWizardStep(step: BulkImportWizardStep) {
     toast.add({
       title: "Extraction still in progress",
       description:
-        "Wait until every poster has finished or failed before reviewing metadata.",
+        "Wait until every poster has finished or failed before opening supplementary metadata.",
       color: "warning",
     });
     return;
@@ -880,7 +877,11 @@ watch(
       void refreshStagedPostersFromStorage();
     }
     // Submit step refresh is handled by onEnterSubmitStep to avoid duplicate polls.
-    if (step === "review" || step === "preview" || step === "publish") {
+    if (
+      step === "review" ||
+      step === "preview" ||
+      step === "publish"
+    ) {
       void syncSubmitStepBatchProgress();
     }
     if (
@@ -1075,6 +1076,10 @@ async function uploadPosterFileImmediately(file: File) {
       },
     });
     stagedPosters.value = response.job.stagedPosters ?? stagedPosters.value;
+    if (batchImportFinished.value) {
+      applyBatchStateFromJob(response.job);
+      await refreshSubmissionRows();
+    }
     clearPosterRowStatus(file.name);
     void persistWizardStep("upload");
   } catch (error) {
@@ -1277,6 +1282,10 @@ function stopBatchExtractionPolling() {
   }
 }
 
+function onMetadataWorkbookImported() {
+  metadataRefreshKey.value += 1;
+}
+
 function batchExtractionPollPending() {
   return batchItems.value.some(
     (item) => item.status !== "completed" && item.status !== "failed",
@@ -1372,27 +1381,27 @@ const batchFailedColumns: ColumnDef<BulkImportBatchItem>[] = [
 
 const submitStepIntro = computed(() => {
   if (batchImportRunning.value) {
-    return "Please wait while we submit your posters…";
+    return "Starting metadata extraction for your posters…";
   }
   if (!batchImportFinished.value) {
-    return "Submit the batch to start extracting metadata from each poster file.";
+    return "Continue below to run AI metadata extraction on each poster file in this batch.";
   }
   if (hasUnsubmittedStagedPosters.value) {
-    return "You added new poster files. Submit again to include them; posters already in progress continue below.";
+    return "You added new poster files. Start extraction for them below; posters already in progress continue in the list.";
   }
   if (batchExtractionsInProgress.value) {
-    return "Please wait while we extract metadata from your posters.";
+    return "Wait until all posters have had their metadata extracted. You can leave this page and come back later if you are submitting a large batch.";
   }
   if (batchFailedCount.value > 0) {
-    return "Some posters could not be extracted. Retry failed items below or continue when the rest are ready.";
+    return "Some posters could not be extracted. Retry failed items below, or choose Save and Continue when the rest are ready. You will be asked to remove any posters that could not be extracted from the pipeline.";
   }
-  return "Extraction is complete. Continue when you are ready to review metadata.";
+  return "Extraction is complete. Continue when you are ready to add supplementary metadata.";
 });
 
 function batchStatusLabel(status: BulkImportBatchItemStatus) {
   switch (status) {
     case "queued":
-      return "Awaiting submit";
+      return "Queued for extraction";
     case "uploading":
       return "Uploading";
     case "waitingInQueue":
@@ -1511,9 +1520,7 @@ const hasUnsubmittedStagedPosters = computed(() =>
 );
 
 async function enterSubmitStep() {
-  if (!batchImportFinished.value || hasUnsubmittedStagedPosters.value) {
-    await refreshStagedPostersFromStorage();
-  }
+  await refreshStagedPostersFromStorage();
   await onEnterSubmitStep();
 }
 
@@ -1535,9 +1542,7 @@ async function onEnterSubmitStep() {
     applyBatchStateFromJob(job);
   }
 
-  if (!batchImportFinished.value) {
-    await refreshSubmissionRows();
-  }
+  await refreshSubmissionRows();
 
   if (batchImportRunning.value) {
     batchExtractionStatusesLoading.value = false;
@@ -1546,7 +1551,7 @@ async function onEnterSubmitStep() {
 
   if (hasUnsubmittedStagedPosters.value && canProceedFromReview.value) {
     batchExtractionStatusesLoading.value = false;
-    void startImport();
+    await startImport();
     return;
   }
 
@@ -1874,7 +1879,21 @@ async function startImport() {
   <UCard class="flex flex-col" :ui="{ header: 'overflow-visible' }">
     <template #header>
       <div class="flex flex-col gap-4 overflow-visible">
-        <h2 class="text-lg font-semibold">{{ headerTitle }}</h2>
+        <div class="flex items-center justify-between gap-3">
+          <h2 class="min-w-0 truncate text-lg font-semibold">
+            {{ headerTitle }}
+          </h2>
+
+          <UButton
+            to="/dashboard"
+            color="neutral"
+            variant="outline"
+            size="sm"
+            icon="i-lucide-arrow-left"
+            label="Exit to dashboard"
+            class="shrink-0"
+          />
+        </div>
 
         <nav
           aria-label="Bulk import progress"
@@ -1947,7 +1966,7 @@ async function startImport() {
       >
         <UIcon
           name="i-lucide-loader-circle"
-          class="size-10 animate-spin text-primary"
+          class="text-primary size-10 animate-spin"
         />
       </div>
 
@@ -1981,7 +2000,7 @@ async function startImport() {
         >
           <UButton
             color="neutral"
-            variant="ghost"
+            variant="subtle"
             icon="i-lucide-arrow-left"
             label="Back"
             to="/dashboard"
@@ -2145,7 +2164,7 @@ async function startImport() {
         >
           <UButton
             color="neutral"
-            variant="ghost"
+            variant="subtle"
             icon="i-lucide-arrow-left"
             label="Back"
             @click="goToStep('setup')"
@@ -2175,7 +2194,11 @@ async function startImport() {
             </p>
           </div>
 
-          <UFormField label="Extraction level" required>
+          <UFormField
+            label="How much metadata should we auto-fill?"
+            required
+            description="Every poster file is still processed by AI. This choice controls how much of the extraction we copy into your batch."
+          >
             <div class="space-y-3">
               <label
                 v-for="option in BULK_EXTRACTION_LEVEL_OPTIONS"
@@ -2226,14 +2249,13 @@ async function startImport() {
           <UFormField
             label="Automate ORCID and ROR lookups"
             required
-            hint="Choose whether we should look up ORCID and ROR identifiers for creators and affiliations in this batch."
+            description="Choose whether we should look up ORCID and ROR identifiers for creators and affiliations in this batch."
           >
             <URadioGroup
               v-model="orcidRorAutomationChoice"
               :items="orcidRorAutomationItems"
               value-key="value"
               label-key="label"
-              description-key="description"
               :ui="{ fieldset: 'gap-3', item: 'items-start' }"
             />
           </UFormField>
@@ -2241,14 +2263,13 @@ async function startImport() {
           <UFormField
             label="30-day embargo before Zenodo submission"
             required
-            hint="Choose whether posters stay on Posters.science for a 30-day review period with an editable spreadsheet before Zenodo publish."
+            description="Choose whether posters stay on Posters.science for a 30-day review period with an editable spreadsheet before Zenodo publish."
           >
             <URadioGroup
               v-model="reviewEmbargoChoice"
               :items="reviewEmbargoItems"
               value-key="value"
               label-key="label"
-              description-key="description"
               :ui="{ fieldset: 'gap-3', item: 'items-start' }"
             />
           </UFormField>
@@ -2259,7 +2280,7 @@ async function startImport() {
         >
           <UButton
             color="neutral"
-            variant="ghost"
+            variant="subtle"
             icon="i-lucide-arrow-left"
             label="Back"
             @click="goToStep('upload')"
@@ -2292,11 +2313,10 @@ async function startImport() {
             metadata schema and are optional.
           </p>
 
-          <div class="grid gap-4 sm:grid-cols-2">
+          <div class="space-y-4">
             <UFormField
               label="Conference name"
               required
-              class="sm:col-span-2"
               :error="conferenceNameError"
             >
               <UInput
@@ -2344,7 +2364,6 @@ async function startImport() {
               v-if="conferenceForm.conferenceAttendance === 'In-person'"
               label="Conference location"
               required
-              class="sm:col-span-2"
               :error="conferenceLocationError"
             >
               <UInput
@@ -2354,23 +2373,25 @@ async function startImport() {
               />
             </UFormField>
 
-            <UFormField label="Conference start date">
-              <UInput
-                v-model="conferenceForm.conferenceStartDate"
-                type="date"
-                class="w-full"
-              />
-            </UFormField>
+            <div class="grid gap-4 sm:grid-cols-2">
+              <UFormField label="Conference start date">
+                <UInput
+                  v-model="conferenceForm.conferenceStartDate"
+                  type="date"
+                  class="w-full"
+                />
+              </UFormField>
 
-            <UFormField label="Conference end date">
-              <UInput
-                v-model="conferenceForm.conferenceEndDate"
-                type="date"
-                class="w-full"
-              />
-            </UFormField>
+              <UFormField label="Conference end date">
+                <UInput
+                  v-model="conferenceForm.conferenceEndDate"
+                  type="date"
+                  class="w-full"
+                />
+              </UFormField>
+            </div>
 
-            <UFormField label="Conference website" class="sm:col-span-2">
+            <UFormField label="Conference website">
               <UInput
                 v-model="conferenceForm.conferenceUri"
                 type="url"
@@ -2379,7 +2400,7 @@ async function startImport() {
               />
             </UFormField>
 
-            <UFormField label="Conference identifier" class="sm:col-span-2">
+            <UFormField label="Conference identifier">
               <UInput
                 v-model="conferenceForm.conferenceIdentifier"
                 placeholder="Optional external identifier"
@@ -2413,7 +2434,7 @@ async function startImport() {
               </UFormField>
             </template>
 
-            <UFormField label="Conference series" class="sm:col-span-2">
+            <UFormField label="Conference series">
               <UInput
                 v-model="conferenceForm.conferenceSeries"
                 placeholder="Optional series name"
@@ -2428,7 +2449,7 @@ async function startImport() {
         >
           <UButton
             color="neutral"
-            variant="ghost"
+            variant="subtle"
             icon="i-lucide-arrow-left"
             label="Back"
             @click="goToStep('extraction')"
@@ -2482,7 +2503,7 @@ async function startImport() {
         >
           <UButton
             color="neutral"
-            variant="ghost"
+            variant="subtle"
             icon="i-lucide-arrow-left"
             label="Back"
             @click="goToStep('conference')"
@@ -2503,7 +2524,7 @@ async function startImport() {
         <div class="space-y-4">
           <div>
             <h3 class="text-base font-semibold">
-              Step {{ currentStepNumber }}: Submit posters
+              Step {{ currentStepNumber }}: AI metadata extraction
             </h3>
             <p class="text-muted mt-1 text-sm">
               {{ submitStepIntro }}
@@ -2519,136 +2540,142 @@ async function startImport() {
           >
             <UIcon
               name="i-lucide-loader-circle"
-              class="size-10 animate-spin text-primary"
+              class="text-primary size-10 animate-spin"
             />
           </div>
 
           <template
             v-else-if="
-              batchImportFinished && batchItems.some((item) => item.extractionJobId)
+              batchImportFinished &&
+              batchItems.some((item) => item.extractionJobId)
             "
           >
-          <div v-if="batchItems.length > 0" class="space-y-2">
-            <div class="flex items-center justify-between text-sm">
-              <span class="text-muted">Overall progress</span>
-              <span class="font-medium">{{ batchProgress }}%</span>
+            <div v-if="batchItems.length > 0" class="space-y-2">
+              <div class="flex items-center justify-between text-sm">
+                <span class="text-muted">Overall progress</span>
+                <span class="font-medium">{{ batchProgress }}%</span>
+              </div>
+              <UProgress :model-value="batchProgress" size="sm" />
             </div>
-            <UProgress :model-value="batchProgress" size="sm" />
-          </div>
 
-          <div
-            v-if="
-              batchInProgressItems.length > 0 || batchFailedItems.length > 0
-            "
-            class="flex flex-col gap-4 lg:flex-row lg:items-start"
-          >
             <div
-              v-if="batchInProgressItems.length > 0"
-              class="flex min-w-0 flex-1 flex-col gap-2"
+              v-if="
+                batchInProgressItems.length > 0 || batchFailedItems.length > 0
+              "
+              class="flex flex-col gap-4 lg:flex-row lg:items-start"
             >
-              <h4 class="text-sm font-semibold">Extraction progress</h4>
               <div
-                class="border-default max-h-[1000px] overflow-auto rounded-lg border"
+                v-if="batchInProgressItems.length > 0"
+                class="flex min-w-0 flex-1 flex-col gap-2"
               >
-                <UTable
-                  :data="batchInProgressItems"
-                  :columns="batchProgressColumns"
+                <h4 class="text-sm font-semibold">Extraction progress</h4>
+                <div
+                  class="border-default max-h-[1000px] overflow-auto rounded-lg border"
                 >
-                  <template #batchProgressRow-header>
-                    <div
-                      class="flex w-full items-center justify-between gap-4 pe-1"
-                    >
-                      <span>Poster file</span>
-                      <span class="text-muted font-medium">Progress</span>
-                    </div>
-                  </template>
+                  <UTable
+                    :data="batchInProgressItems"
+                    :columns="batchProgressColumns"
+                  >
+                    <template #batchProgressRow-header>
+                      <div
+                        class="flex w-full items-center justify-between gap-4 pe-1"
+                      >
+                        <span>Poster file</span>
+                        <span class="text-muted font-medium">Progress</span>
+                      </div>
+                    </template>
 
-                  <template #batchProgressRow-cell="{ row }">
-                    <div class="flex w-full items-center justify-between gap-4">
+                    <template #batchProgressRow-cell="{ row }">
+                      <div
+                        class="flex w-full items-center justify-between gap-4"
+                      >
+                        <span
+                          class="line-clamp-2 min-w-0 flex-1 text-left text-sm font-medium"
+                          :title="row.original.fileName"
+                        >
+                          {{ row.original.fileName }}
+                        </span>
+                        <UBadge
+                          class="shrink-0"
+                          :color="batchStatusColor(row.original.status)"
+                          variant="solid"
+                          size="xs"
+                          :icon="batchStatusIcon(row.original.status)"
+                        >
+                          {{ batchStatusLabel(row.original.status) }}
+                        </UBadge>
+                      </div>
+                    </template>
+                  </UTable>
+                </div>
+              </div>
+
+              <div
+                v-if="batchFailedItems.length > 0"
+                class="flex min-w-0 flex-1 flex-col gap-2"
+              >
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                  <h4 class="text-sm font-semibold">
+                    Failed extractions ({{ batchFailedItems.length }})
+                  </h4>
+                  <UButton
+                    size="sm"
+                    color="neutral"
+                    variant="outline"
+                    icon="i-lucide-rotate-ccw"
+                    label="Retry all failed"
+                    :disabled="
+                      !batchFailedItems.some((item) => item.extractionJobId)
+                    "
+                    :loading="batchRetryingAnyFailed"
+                    @click="retryAllFailedBatchExtractions"
+                  />
+                </div>
+
+                <div
+                  class="border-default max-h-[1000px] overflow-auto rounded-lg border"
+                >
+                  <UTable
+                    :data="batchFailedItems"
+                    :columns="batchFailedColumns"
+                  >
+                    <template #fileName-cell="{ row }">
                       <span
-                        class="line-clamp-2 min-w-0 flex-1 text-left text-sm font-medium"
+                        class="line-clamp-2 max-w-md text-sm font-medium"
                         :title="row.original.fileName"
                       >
                         {{ row.original.fileName }}
                       </span>
-                      <UBadge
-                        class="shrink-0"
-                        :color="batchStatusColor(row.original.status)"
-                        variant="solid"
-                        size="xs"
-                        :icon="batchStatusIcon(row.original.status)"
+                    </template>
+
+                    <template #batchError-cell="{ row }">
+                      <p
+                        class="text-muted text-xs whitespace-pre-wrap"
+                        :title="row.original.error ?? undefined"
                       >
-                        {{ batchStatusLabel(row.original.status) }}
-                      </UBadge>
-                    </div>
-                  </template>
-                </UTable>
+                        {{
+                          row.original.error?.trim() ||
+                          "Extraction failed with no error message."
+                        }}
+                      </p>
+                    </template>
+
+                    <template #batchFailedActions-cell="{ row }">
+                      <UButton
+                        v-if="row.original.extractionJobId"
+                        size="xs"
+                        color="neutral"
+                        variant="outline"
+                        icon="i-lucide-rotate-ccw"
+                        label="Retry"
+                        :loading="isBatchExtractionRetrying(row.original)"
+                        @click="retryBatchExtraction(row.original)"
+                      />
+                    </template>
+                  </UTable>
+                </div>
               </div>
             </div>
-
-            <div
-              v-if="batchFailedItems.length > 0"
-              class="flex min-w-0 flex-1 flex-col gap-2"
-            >
-              <div class="flex flex-wrap items-center justify-between gap-2">
-                <h4 class="text-sm font-semibold">
-                  Failed extractions ({{ batchFailedItems.length }})
-                </h4>
-                <UButton
-                  size="sm"
-                  color="neutral"
-                  variant="outline"
-                  icon="i-lucide-rotate-ccw"
-                  label="Retry all failed"
-                  :disabled="
-                    !batchFailedItems.some((item) => item.extractionJobId)
-                  "
-                  :loading="batchRetryingAnyFailed"
-                  @click="retryAllFailedBatchExtractions"
-                />
-              </div>
-
-              <div
-                class="border-default max-h-[1000px] overflow-auto rounded-lg border"
-              >
-                <UTable :data="batchFailedItems" :columns="batchFailedColumns">
-                  <template #fileName-cell="{ row }">
-                    <span
-                      class="line-clamp-2 max-w-md text-sm font-medium"
-                      :title="row.original.fileName"
-                    >
-                      {{ row.original.fileName }}
-                    </span>
-                  </template>
-
-                  <template #batchError-cell="{ row }">
-                    <p
-                      class="text-muted text-xs whitespace-pre-wrap"
-                      :title="row.original.error ?? undefined"
-                    >
-                      {{
-                        row.original.error?.trim() ||
-                        "Extraction failed with no error message."
-                      }}
-                    </p>
-                  </template>
-
-                  <template #batchFailedActions-cell="{ row }">
-                    <UButton
-                      v-if="row.original.extractionJobId"
-                      size="xs"
-                      color="neutral"
-                      variant="outline"
-                      icon="i-lucide-rotate-ccw"
-                      label="Retry"
-                      :loading="isBatchExtractionRetrying(row.original)"
-                      @click="retryBatchExtraction(row.original)"
-                    />
-                  </template>
-                </UTable>
-              </div>
-            </div>
-          </div>
           </template>
         </div>
 
@@ -2657,7 +2684,7 @@ async function startImport() {
         >
           <UButton
             color="neutral"
-            variant="ghost"
+            variant="subtle"
             icon="i-lucide-arrow-left"
             label="Back"
             :disabled="batchImportRunning"
@@ -2668,13 +2695,7 @@ async function startImport() {
             color="primary"
             icon="i-lucide-arrow-right"
             trailing
-            :label="
-              hasUnsubmittedStagedPosters
-                ? 'Submit new posters'
-                : batchImportFinished
-                  ? 'Continue to review metadata'
-                  : 'Submit batch'
-            "
+            label="Save and Continue"
             :disabled="
               batchImportRunning ||
               continueToReviewSaving ||
@@ -2694,19 +2715,48 @@ async function startImport() {
         <div class="space-y-4">
           <div>
             <h3 class="text-base font-semibold">
-              Step {{ currentStepNumber }}: Review metadata
+              Step {{ currentStepNumber }}: Supplementary metadata
             </h3>
             <p class="text-muted mt-1 text-sm">
               {{ currentStepTask }}
             </p>
           </div>
 
-          <BulkImportMetadataReview
-            :items="batchItems"
-            :bulk-import-job-id="jobId"
-            :retrying-job-ids="batchRetryingJobIds"
-            @retry="retryBatchExtraction"
-          />
+          <div class="space-y-4" aria-labelledby="bulk-workbook-heading">
+            <h4 id="bulk-workbook-heading" class="text-base font-semibold">
+              Batch metadata workbook
+            </h4>
+            <BulkImportSpreadsheetStep
+              :bulk-job-id="jobId"
+              :completed-poster-count="batchCompletedCount"
+              :extraction-method="extractionMethod"
+              @imported="onMetadataWorkbookImported"
+            />
+          </div>
+
+          <div
+            class="border-default space-y-4 border-t pt-8"
+            aria-labelledby="bulk-poster-previews-heading"
+          >
+            <div>
+              <h4 id="bulk-poster-previews-heading" class="text-base font-semibold">
+                Poster previews
+              </h4>
+              <p class="text-muted mt-1 text-sm">
+                Use the interface below to preview each poster in this batch while
+                you work in the workbook.
+              </p>
+            </div>
+
+            <BulkImportMetadataReview
+              :items="batchItems"
+              :bulk-import-job-id="jobId"
+              :extraction-method="extractionMethod"
+              :metadata-refresh-key="metadataRefreshKey"
+              :retrying-job-ids="batchRetryingJobIds"
+              @retry="retryBatchExtraction"
+            />
+          </div>
         </div>
 
         <div
@@ -2714,30 +2764,20 @@ async function startImport() {
         >
           <UButton
             color="neutral"
-            variant="ghost"
+            variant="subtle"
             icon="i-lucide-arrow-left"
             label="Back"
             @click="goToStep('submit')"
           />
 
-          <div class="flex flex-wrap items-center gap-2">
-            <UButton
-              color="neutral"
-              variant="outline"
-              icon="i-lucide-layout-dashboard"
-              label="Go to dashboard"
-              to="/dashboard"
-            />
-
-            <UButton
-              color="primary"
-              icon="i-lucide-arrow-right"
-              trailing
-              label="Continue to view metadata"
-              :disabled="!batchHasCompletedExtractions"
-              @click="continueToViewMetadata"
-            />
-          </div>
+          <UButton
+            color="primary"
+            icon="i-lucide-arrow-right"
+            trailing
+            label="Save and Continue"
+            :disabled="!batchHasCompletedExtractions"
+            @click="continueToViewMetadata"
+          />
         </div>
       </template>
 
@@ -2760,30 +2800,20 @@ async function startImport() {
         >
           <UButton
             color="neutral"
-            variant="ghost"
+            variant="subtle"
             icon="i-lucide-arrow-left"
             label="Back"
             @click="goToStep('review')"
           />
 
-          <div class="flex flex-wrap items-center gap-2">
-            <UButton
-              color="neutral"
-              variant="outline"
-              icon="i-lucide-layout-dashboard"
-              label="Go to dashboard"
-              to="/dashboard"
-            />
-
-            <UButton
-              color="primary"
-              icon="i-lucide-arrow-right"
-              trailing
-              label="Continue to submit"
-              :disabled="!batchHasCompletedExtractions"
-              @click="continueToPublishStep"
-            />
-          </div>
+          <UButton
+            color="primary"
+            icon="i-lucide-arrow-right"
+            trailing
+            label="Save and Continue"
+            :disabled="!batchHasCompletedExtractions"
+            @click="continueToPublishStep"
+          />
         </div>
       </template>
 
@@ -2810,7 +2840,7 @@ async function startImport() {
         >
           <UButton
             color="neutral"
-            variant="ghost"
+            variant="subtle"
             icon="i-lucide-arrow-left"
             label="Back"
             @click="goToStep('preview')"
@@ -2841,11 +2871,7 @@ async function startImport() {
       <ul
         class="border-default divide-default mt-4 max-h-48 divide-y overflow-y-auto rounded-md border text-sm"
       >
-        <li
-          v-for="item in batchFailedItems"
-          :key="item.id"
-          class="px-3 py-2"
-        >
+        <li v-for="item in batchFailedItems" :key="item.id" class="px-3 py-2">
           <span class="font-medium">{{ item.fileName }}</span>
           <p
             v-if="item.error"
@@ -2858,7 +2884,7 @@ async function startImport() {
       </ul>
 
       <p class="text-muted mt-3 text-sm">
-        To try again instead, cancel and use Retry on the submit step.
+        To try again instead, cancel and click the Retry all failed button.
       </p>
     </template>
 

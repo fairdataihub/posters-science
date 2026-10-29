@@ -17,17 +17,18 @@ export type BulkExtractionLevelOption = {
 export const BULK_EXTRACTION_LEVEL_OPTIONS: BulkExtractionLevelOption[] = [
   {
     value: "minimal",
-    label: "Minimal",
-    accuracyNote: "95% accuracy threshold",
+    label: "High confidence only",
+    accuracyNote: "95% confidence threshold",
     description:
-      "Fill in poster details only when extraction meets a 95% accuracy threshold. Spreadsheet values you provide are never overwritten.",
+      "Pre-fill only fields the model is very sure about. You can add more on the supplementary metadata step using the batch workbook.",
   },
   {
     value: "full",
-    label: "Full",
-    accuracyNote: "75% accuracy threshold",
+    label: "Extract everything we can",
+    accuracyNote: "75% confidence threshold",
+    badge: "Recommended",
     description:
-      "Extract poster details from each file. Fields below a 75% accuracy threshold are flagged for review.",
+      "Pre-fill as much metadata as possible from each PDF. This is the most automated option. Lower-confidence fields are included and should be reviewed before publish.",
   },
 ];
 

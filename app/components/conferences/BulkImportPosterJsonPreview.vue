@@ -104,7 +104,7 @@ async function openPosterJsonPreview(item: BulkImportBatchItem) {
       v-if="completedItems.length === 0"
       class="text-muted rounded-lg border border-dashed px-4 py-8 text-center text-sm"
     >
-      No completed extractions yet. Finish extraction on the submit step, then
+      No completed extractions yet. Finish extraction on the AI metadata extraction step, then
       return here to preview poster.json for each poster.
     </div>
 

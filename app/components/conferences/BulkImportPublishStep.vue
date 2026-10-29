@@ -646,7 +646,7 @@ watch(
       v-if="completedItems.length === 0"
       class="text-muted rounded-lg border border-dashed px-4 py-8 text-center text-sm"
     >
-      No completed extractions yet. Finish extraction and review metadata before
+      No completed extractions yet. Finish extraction and supplementary metadata before
       submitting to a repository.
     </div>
 

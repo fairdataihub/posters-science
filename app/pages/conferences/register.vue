@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import identifierTypes from "@/assets/data/identifier-types.json";
+import { conferenceYearSelectOptions } from "#shared/types/bulkImportConference";
 
 definePageMeta({
   middleware: ["auth"],
@@ -28,11 +29,7 @@ const CONFERENCE_FORMAT_OPTIONS: { label: string; value: ConferenceFormat }[] =
     { label: "Hybrid", value: "Hybrid" },
   ];
 
-const currentYear = new Date().getFullYear();
-const conferenceYearOptions = Array.from(
-  { length: currentYear + 1 - 2000 + 1 },
-  (_, index) => currentYear + 1 - index,
-).map((year) => ({ label: String(year), value: year }));
+const conferenceYearOptions = conferenceYearSelectOptions();
 
 const conferenceIdentifierTypeOptions = identifierTypes.map((entry) => ({
   label: entry.label,

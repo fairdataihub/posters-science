@@ -33,6 +33,7 @@ import {
   shareBulkImportReturnFromQuery,
   shareNewBulkPath,
 } from "~/utils/sharePaths";
+import { conferenceYearSelectOptions } from "#shared/types/bulkImportConference";
 
 type FundingReference = StrictFormSchema["fundingReferences"][number];
 
@@ -585,11 +586,7 @@ function clearPresentedDate() {
   }
 }
 
-const currentYear = new Date().getFullYear();
-const conferenceYearOptions = Array.from(
-  { length: currentYear + 1 - 2000 + 1 },
-  (_, i) => currentYear + 1 - i,
-).map((y) => ({ label: String(y), value: y }));
+const conferenceYearOptions = conferenceYearSelectOptions();
 
 /** Extract a year from text (e.g. "ARVO 2025" or "Conference 25") for auto-fill. */
 function yearFromText(text: string): number | undefined {

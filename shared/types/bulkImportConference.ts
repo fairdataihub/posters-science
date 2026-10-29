@@ -1,5 +1,21 @@
 export type BulkImportConferenceAttendance = "In-person" | "Online";
 
+/** Matches bulk import validation (stricter than poster.json 1000–9999). */
+export const CONFERENCE_YEAR_MIN = 1900;
+export const CONFERENCE_YEAR_MAX = 2100;
+
+/** Latest year shown in conference year dropdowns (today + this many years). */
+export const CONFERENCE_YEAR_SELECT_YEARS_AHEAD = 2;
+
+export function conferenceYearSelectOptions(referenceDate = new Date()) {
+  const currentYear = referenceDate.getFullYear();
+  const maxYear = currentYear + CONFERENCE_YEAR_SELECT_YEARS_AHEAD;
+  return Array.from(
+    { length: maxYear - CONFERENCE_YEAR_MIN + 1 },
+    (_, index) => maxYear - index,
+  ).map((year) => ({ label: String(year), value: year }));
+}
+
 export const BULK_IMPORT_CONFERENCE_ATTENDANCE_OPTIONS: {
   label: string;
   value: BulkImportConferenceAttendance;
@@ -67,7 +83,9 @@ export function bulkImportConferenceFormValid(
   const name = form.conferenceName.trim();
   const year = form.conferenceYear;
   if (!name) return false;
-  if (year == null || year < 1900 || year > 2100) return false;
+  if (year == null || year < CONFERENCE_YEAR_MIN || year > CONFERENCE_YEAR_MAX) {
+    return false;
+  }
   if (form.conferenceIdentifier.trim() && !form.conferenceIdentifierType.trim()) {
     return false;
   }
