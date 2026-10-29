@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import type { BulkImportBatchItem } from "#shared/types/conferenceBulkImport";
+import type { BulkSubmissionExtractionMethod } from "#shared/types/bulkSubmission";
 import type { PosterResponse } from "@/utils/poster_schema";
 import { sharePosterEditPath } from "~/utils/sharePaths";
 
 const props = defineProps<{
   items: BulkImportBatchItem[];
   bulkImportJobId: string | null;
+  extractionMethod: BulkSubmissionExtractionMethod;
+  metadataRefreshKey?: number;
   retryingJobIds?: Set<string>;
 }>();
 
@@ -121,6 +124,19 @@ async function ensurePosterInCache(posterId: number) {
   posterInFlight.set(posterId, promise);
   return promise;
 }
+
+watch(
+  () => props.metadataRefreshKey,
+  () => {
+    posterCache.value = {};
+    posterErrors.value = {};
+    for (const item of reviewableItems.value) {
+      if (item.posterId != null) {
+        void ensurePosterInCache(item.posterId);
+      }
+    }
+  },
+);
 
 watch(
   reviewableItems,
@@ -305,6 +321,15 @@ async function regeneratePreview() {
 <template>
   <div class="space-y-4">
     <UAlert
+      v-if="props.extractionMethod === 'minimal'"
+      color="neutral"
+      variant="soft"
+      icon="i-lucide-filter"
+      title="High-confidence auto-fill only"
+      description="Only high-confidence extracted fields are stored for this batch (title, authors, figure/table captions, plus batch conference and license). Lower-confidence fields were omitted. You can add them in the editor if needed."
+    />
+
+    <UAlert
       v-if="pendingItems.length > 0"
       color="info"
       variant="soft"
@@ -456,7 +481,7 @@ async function regeneratePreview() {
               <p class="mt-1 text-sm">{{ creators.join(", ") }}</p>
             </div>
             <p v-else class="text-muted text-sm">
-              No contributors extracted yet.
+              No contributors were able to be extracted.
             </p>
 
             <div>

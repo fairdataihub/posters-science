@@ -98,6 +98,22 @@ export async function applyBulkSubmissionMetadataToPosters(
   );
 }
 
+export async function importBulkReviewMetadataWorkbook(
+  jobId: string,
+  file: File,
+) {
+  const formData = new FormData();
+  formData.append("workbook", file, file.name);
+
+  return $fetch<import("#shared/types/bulkReviewWorkbookImport").BulkReviewWorkbookImportResult>(
+    `/api/bulk-poster-submissions/${jobId}/metadata-workbook`,
+    {
+      method: "POST",
+      body: formData,
+    },
+  );
+}
+
 export async function submitBulkPosterSubmissionJob(jobId: string) {
   return $fetch<BulkPosterSubmissionSubmitResult>(
     `/api/bulk-poster-submissions/${jobId}/submit`,

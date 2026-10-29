@@ -19,6 +19,9 @@ export type DeprecatedBulkImportWizardStep = never;
 /** @deprecated Old jobs used a combined metadata step; resume at `conference`. */
 export type LegacyBulkImportLicenseWizardStep = "metadata";
 
+/** @deprecated Spreadsheet step merged into `review` (supplementary metadata). */
+export type LegacyBulkImportSpreadsheetWizardStep = "spreadsheet";
+
 export type BulkImportWizardStepDefinition = {
   id: BulkImportWizardStep;
   label: string;
@@ -30,7 +33,7 @@ export const BULK_IMPORT_WIZARD_STEPS: BulkImportWizardStepDefinition[] = [
   {
     id: "setup",
     label: "Batch name",
-    task: "Specify a name for your batch of posters. This name will appear in your dashboard so you can easily return to it later.",
+    task: "Choose a name for your batch of posters. This name will apear in your dashboard so you can easily return to it later.",
   },
   {
     id: "upload",
@@ -40,7 +43,7 @@ export const BULK_IMPORT_WIZARD_STEPS: BulkImportWizardStepDefinition[] = [
   {
     id: "extraction",
     label: "Poster details",
-    task: "Choose extraction settings, ORCID/ROR lookups, and whether to embargo posters for on-site review before Zenodo.",
+    task: "Choose how much metadata we auto-fill from each poster PDF, whether to run ORCID/ROR lookups, and whether to use a 30-day on-site review period before Zenodo.",
   },
   {
     id: "conference",
@@ -54,13 +57,13 @@ export const BULK_IMPORT_WIZARD_STEPS: BulkImportWizardStepDefinition[] = [
   },
   {
     id: "submit",
-    label: "Submit posters",
-    task: "Submit your posters so we can extract metadata from each file.",
+    label: "AI metadata extraction",
+    task: "Wait until all posters have had their metadata extracted. You can leave this page and come back later for large batches.",
   },
   {
     id: "review",
-    label: "Review metadata",
-    task: "Review extracted metadata for each poster, then open the full editor to correct anything before publishing.",
+    label: "Supplementary metadata",
+    task: "Download and import the batch workbook to add or correct metadata. Use the poster previews below as reference while you work.",
   },
   {
     id: "preview",
@@ -83,6 +86,7 @@ export function normalizeBulkImportWizardStep(
   if (!step) return undefined;
   if (step === "assets") return "upload";
   if (step === "metadata") return "conference";
+  if (step === "spreadsheet") return "review";
   if (
     step === "setup" ||
     step === "upload" ||

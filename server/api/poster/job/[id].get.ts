@@ -1,4 +1,8 @@
 import { normalizeVersionRelatedIdentifiers } from "../../../utils/posterVersions";
+import {
+  findBulkSubmissionJobForPoster,
+  gateBulkExtractedPosterMetadata,
+} from "~~/server/utils/bulkExtractionMetadataGate";
 
 export default defineEventHandler(async (event) => {
   const session = await requireUserSession(event);
@@ -25,6 +29,17 @@ export default defineEventHandler(async (event) => {
       statusCode: 404,
       statusMessage: "Job not found",
     });
+  }
+
+  if (job.completed && job.posterId) {
+    const bulkJob = await findBulkSubmissionJobForPoster(user.id, job.posterId);
+    if (bulkJob) {
+      await gateBulkExtractedPosterMetadata(
+        user.id,
+        job.posterId,
+        bulkJob.extractionMethod,
+      );
+    }
   }
 
   // Inject the default posters.science related identifier once extraction completes,

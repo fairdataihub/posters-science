@@ -76,7 +76,7 @@ const status = computed(() => statusPresentation());
 const description = computed(() => {
   const count = props.bulk.posterCount ?? 0;
   const staged =
-    count === 1 ? "1 file staged" : `${count} files staged`;
+    count === 1 ? "1 poster staged" : `${count} posters staged`;
 
   const extraction = bulkExtractionLevelLabel(props.bulk.extractionMethod);
   if (extraction) {

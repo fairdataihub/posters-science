@@ -20,6 +20,9 @@ export const CONFERENCE_BULK_IMPORT_LICENSE_METADATA_BASENAME =
 export const BULK_IMPORT_LICENSE_TEMPLATE_RELATIVE_PATH =
   "public/bulk-submission-templates/license.xlsx";
 
+/** Multi-sheet metadata review workbook (see shared/bulkReviewWorkbookManifest.ts). */
+export { BULK_IMPORT_METADATA_REVIEW_TEMPLATE_RELATIVE_PATH } from "#shared/bulkReviewWorkbookManifest";
+
 export const BULK_IMPORT_LICENSES_SHEET_NAME = "Licenses";
 
 /** Column headers on the Licenses sheet in bulk-submission-templates/license.xlsx */

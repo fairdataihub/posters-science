@@ -25,7 +25,8 @@
     "test:dummy": "npx tsx scripts/create-dummy-posters.ts",
     "scripts:add:posters": "npx tsx scripts/add-extracted-posters.ts",
     "scripts:generate-db-snapshot": "npx tsx scripts/generate-db-snapshot.ts",
-    "metrics:snapshot": "npx tsx scripts/compute-metrics-snapshot.ts"
+    "metrics:snapshot": "npx tsx scripts/compute-metrics-snapshot.ts",
+    "scripts:generate-bulk-review-template": "npx tsx scripts/generate-bulk-review-workbook-template.ts"
   },
   "dependencies": {
     "@inspira-ui/plugins": "0.0.2",

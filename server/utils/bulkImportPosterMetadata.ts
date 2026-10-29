@@ -4,27 +4,45 @@ import type { BulkImportConferenceMetadata } from "#shared/types/bulkImportConfe
 import type { BulkImportSubmissionSummary } from "#shared/types/bulkImportLicenses";
 import prisma from "~~/server/utils/prisma";
 import { getBulkPosterSubmissionJobRepository } from "~~/server/utils/bulkPosterSubmissionJobs";
+import { gateBulkExtractedPosterMetadataForJobPoster } from "~~/server/utils/bulkExtractionMetadataGate";
 
 function optionalString(value: string | undefined) {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
 }
 
+const OPTIONAL_BULK_CONFERENCE_FIELDS: {
+  source: keyof BulkImportConferenceMetadata;
+  target: keyof Prisma.PosterMetadataUpdateInput;
+}[] = [
+  { source: "conferenceLocation", target: "conferenceLocation" },
+  { source: "conferenceUri", target: "conferenceUri" },
+  { source: "conferenceIdentifier", target: "conferenceIdentifier" },
+  {
+    source: "conferenceIdentifierType",
+    target: "conferenceIdentifierType",
+  },
+  { source: "conferenceStartDate", target: "conferenceStartDate" },
+  { source: "conferenceEndDate", target: "conferenceEndDate" },
+  { source: "conferenceAcronym", target: "conferenceAcronym" },
+  { source: "conferenceSeries", target: "conferenceSeries" },
+];
+
 export function conferenceToPosterMetadataFields(
   conference: BulkImportConferenceMetadata,
 ): Prisma.PosterMetadataUpdateInput {
-  return {
+  const data: Prisma.PosterMetadataUpdateInput = {
     conferenceName: conference.conferenceName,
     conferenceYear: conference.conferenceYear,
-    conferenceLocation: optionalString(conference.conferenceLocation),
-    conferenceUri: optionalString(conference.conferenceUri),
-    conferenceIdentifier: optionalString(conference.conferenceIdentifier),
-    conferenceIdentifierType: optionalString(conference.conferenceIdentifierType),
-    conferenceStartDate: optionalString(conference.conferenceStartDate),
-    conferenceEndDate: optionalString(conference.conferenceEndDate),
-    conferenceAcronym: optionalString(conference.conferenceAcronym),
-    conferenceSeries: optionalString(conference.conferenceSeries),
   };
+
+  for (const { source, target } of OPTIONAL_BULK_CONFERENCE_FIELDS) {
+    if (source in conference) {
+      data[target] = optionalString(conference[source]);
+    }
+  }
+
+  return data;
 }
 
 export function posterMetadataCreateFromBulkSubmissionSummary(
@@ -142,6 +160,13 @@ export async function applyBulkSubmissionMetadataToPosters(
         data: { posterId: id, ...createData },
       });
     }
+
+    await gateBulkExtractedPosterMetadataForJobPoster(
+      userId,
+      id,
+      job.extractionMethod,
+    );
+
     updatedPosterIds.push(id);
   }
 
