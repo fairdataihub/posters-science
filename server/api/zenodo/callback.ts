@@ -45,13 +45,16 @@ export default defineEventHandler(async (event) => {
     client_secret: clientSecret,
   });
 
-  const oauthTokenResponse = await fetch(`${zenodoEndpoint}/oauth/token`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
+  const oauthTokenResponse = await zenodoFetch(
+    `${zenodoEndpoint}/oauth/token`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: urlEncoded.toString(),
     },
-    body: urlEncoded.toString(),
-  });
+  );
 
   if (!oauthTokenResponse.ok) {
     const errorBody = await oauthTokenResponse.text();
