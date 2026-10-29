@@ -12,8 +12,9 @@ import {
   BULK_IMPORT_CONFERENCE_ATTENDANCE_OPTIONS,
   bulkImportConferenceFormValid,
   bulkImportConferenceFromForm,
-  conferenceYearSelectOptions,
+  conferenceDateRangeFieldErrors,
   emptyBulkImportConferenceForm,
+  syncConferenceYearFromStartDate,
   type BulkImportConferenceFormState,
 } from "#shared/types/bulkImportConference";
 import type { BulkImportSubmissionSummary } from "#shared/types/bulkImportLicenses";
@@ -382,8 +383,6 @@ const canProceedFromReview = computed(() => {
   return submissionRows.value.every((row) => row.status === "ready");
 });
 
-const conferenceYearOptions = conferenceYearSelectOptions();
-
 const conferenceIdentifierTypeOptions = identifierTypes.map((entry) => ({
   label: entry.label,
   value: entry.value,
@@ -428,6 +427,13 @@ watch(
   },
 );
 
+watch(
+  () => conferenceForm.conferenceStartDate,
+  () => {
+    syncConferenceYearFromStartDate(conferenceForm);
+  },
+);
+
 function conferenceFieldError(condition: boolean, message: string) {
   return conferenceStepAttempted.value && condition ? message : undefined;
 }
@@ -439,12 +445,21 @@ const conferenceNameError = computed(() =>
   ),
 );
 
-const conferenceYearError = computed(() =>
-  conferenceFieldError(
-    conferenceForm.conferenceYear == null,
-    "Conference year is required",
-  ),
-);
+const conferenceStartDateError = computed(() => {
+  if (!conferenceStepAttempted.value) return undefined;
+  return conferenceDateRangeFieldErrors(
+    conferenceForm.conferenceStartDate,
+    conferenceForm.conferenceEndDate,
+  ).start;
+});
+
+const conferenceEndDateError = computed(() => {
+  if (!conferenceStepAttempted.value) return undefined;
+  return conferenceDateRangeFieldErrors(
+    conferenceForm.conferenceStartDate,
+    conferenceForm.conferenceEndDate,
+  ).end;
+});
 
 const conferenceIdentifierTypeError = computed(() =>
   conferenceFieldError(
@@ -2309,8 +2324,9 @@ async function startImport() {
           </div>
 
           <p class="text-muted text-sm">
-            Conference name and year are required. Other fields match the poster
-            metadata schema and are optional.
+            Conference name, format, and start date are required. The conference
+            year is set from the start date. Other fields match the poster metadata
+            schema and are optional.
           </p>
 
           <div class="space-y-4">
@@ -2331,19 +2347,6 @@ async function startImport() {
                 v-model="conferenceForm.conferenceAcronym"
                 placeholder="e.g. EARC"
                 class="w-full"
-              />
-            </UFormField>
-
-            <UFormField
-              label="Conference year"
-              required
-              :error="conferenceYearError"
-            >
-              <USelect
-                v-model="conferenceForm.conferenceYear"
-                class="w-full"
-                :items="conferenceYearOptions"
-                placeholder="Select a year"
               />
             </UFormField>
 
@@ -2374,7 +2377,11 @@ async function startImport() {
             </UFormField>
 
             <div class="grid gap-4 sm:grid-cols-2">
-              <UFormField label="Conference start date">
+              <UFormField
+                label="Conference start date"
+                required
+                :error="conferenceStartDateError"
+              >
                 <UInput
                   v-model="conferenceForm.conferenceStartDate"
                   type="date"
@@ -2382,7 +2389,7 @@ async function startImport() {
                 />
               </UFormField>
 
-              <UFormField label="Conference end date">
+              <UFormField label="Conference end date" :error="conferenceEndDateError">
                 <UInput
                   v-model="conferenceForm.conferenceEndDate"
                   type="date"

@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import identifierTypes from "@/assets/data/identifier-types.json";
-import { conferenceYearSelectOptions } from "#shared/types/bulkImportConference";
+import {
+  conferenceDateRangeFieldErrors,
+  conferenceYearFromStartDate,
+} from "#shared/types/bulkImportConference";
 
 definePageMeta({
   middleware: ["auth"],
@@ -28,8 +31,6 @@ const CONFERENCE_FORMAT_OPTIONS: { label: string; value: ConferenceFormat }[] =
     { label: "Online", value: "Online" },
     { label: "Hybrid", value: "Hybrid" },
   ];
-
-const conferenceYearOptions = conferenceYearSelectOptions();
 
 const conferenceIdentifierTypeOptions = identifierTypes.map((entry) => ({
   label: entry.label,
@@ -144,6 +145,13 @@ watch(participantPosterChoice, (choice) => {
 });
 
 watch(
+  () => conference.conferenceStartDate,
+  (start) => {
+    conference.conferenceYear = conferenceYearFromStartDate(start);
+  },
+);
+
+watch(
   () => conference.conferenceFormat,
   (format) => {
     if (format === "Online") {
@@ -164,9 +172,14 @@ watch(
 
 function conferenceFieldsValid() {
   if (!conference.conferenceName.trim()) return false;
-  if (conference.conferenceYear == null) return false;
   if (!conference.conferenceStartDate) return false;
   if (!conference.conferenceEndDate) return false;
+  const rangeErrors = conferenceDateRangeFieldErrors(
+    conference.conferenceStartDate,
+    conference.conferenceEndDate,
+    { requireEnd: true },
+  );
+  if (rangeErrors.start || rangeErrors.end) return false;
   if (!conference.conferenceFormat) return false;
 
   if (
@@ -211,17 +224,23 @@ const conferenceNameError = computed(() =>
   fieldError(!conference.conferenceName.trim(), "Conference name is required"),
 );
 
-const conferenceYearError = computed(() =>
-  fieldError(conference.conferenceYear == null, "Conference year is required"),
-);
+const conferenceStartDateError = computed(() => {
+  if (!submitAttempted.value) return undefined;
+  return conferenceDateRangeFieldErrors(
+    conference.conferenceStartDate,
+    conference.conferenceEndDate,
+    { requireEnd: true },
+  ).start;
+});
 
-const conferenceStartDateError = computed(() =>
-  fieldError(!conference.conferenceStartDate, "Start date is required"),
-);
-
-const conferenceEndDateError = computed(() =>
-  fieldError(!conference.conferenceEndDate, "End date is required"),
-);
+const conferenceEndDateError = computed(() => {
+  if (!submitAttempted.value) return undefined;
+  return conferenceDateRangeFieldErrors(
+    conference.conferenceStartDate,
+    conference.conferenceEndDate,
+    { requireEnd: true },
+  ).end;
+});
 
 const conferenceFormatError = computed(() =>
   fieldError(!conference.conferenceFormat, "Conference format is required"),
@@ -321,21 +340,6 @@ function submitRegistration() {
                 name="conferenceAcronym"
                 placeholder="e.g. EARC"
                 class="w-full"
-              />
-            </UFormField>
-
-            <UFormField
-              label="Conference year"
-              name="conferenceYear"
-              required
-              :error="conferenceYearError"
-            >
-              <USelect
-                v-model="conference.conferenceYear"
-                name="conferenceYear"
-                class="w-full"
-                :items="conferenceYearOptions"
-                placeholder="Select a year"
               />
             </UFormField>
 
