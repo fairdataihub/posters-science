@@ -1,4 +1,4 @@
-import { discardFailedBulkExtractions } from "~~/server/utils/bulkImportDiscardFailed";
+import { discardFailedBulkExtractions } from "~~/server/utils/bulkImportRemovePoster";
 
 export default defineEventHandler(async (event) => {
   const session = await requireDbUserSession(event);
