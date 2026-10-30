@@ -15,7 +15,7 @@ export type BulkReviewPosterContentKind = "section" | "figure" | "table";
 export type BulkReviewWorkbookPrefillPolicy = {
   /** Extraction tiers whose values are copied from poster metadata into the workbook */
   extractedTiers: readonly BulkReviewFieldTier[];
-  /** Emit related-identifier and funding rows on Links & funding */
+  /** Emit related rows on Related resources and funding rows on Funding */
   includeLinksAndFunding: boolean;
   /** Which poster content kinds get rows (sections are lower-confidence body text) */
   posterContentKinds: readonly BulkReviewPosterContentKind[];
@@ -47,6 +47,9 @@ export const BULK_REVIEW_WORKBOOK_BATCH_FILL_KEYS = new Set<string>([
   "conference_location",
   "conference_acronym",
   "conference_uri",
+  "conference_identifier",
+  "conference_identifier_type",
+  "conference_series",
   "conference_start_date",
   "conference_end_date",
   "presented_date",
@@ -60,13 +63,23 @@ export function bulkReviewPosterContentColumnTier(
   fillKey: string,
   contentKind: BulkReviewPosterContentKind,
 ): BulkReviewFieldTier {
-  if (fillKey === "title") return "full";
-  if (fillKey === "body") {
+  if (
+    fillKey === "section_title" ||
+    fillKey === "title" ||
+    fillKey === "item_id"
+  ) {
+    if (fillKey === "item_id") return "optional";
+    return "full";
+  }
+  if (
+    fillKey === "section_content" ||
+    fillKey === "body" ||
+    fillKey === "caption"
+  ) {
     if (contentKind === "figure") return "minimal";
     if (contentKind === "table") return "near_exact";
     return "full";
   }
-  if (fillKey === "item_id") return "optional";
   return "system";
 }
 
@@ -146,6 +159,9 @@ export function bulkReviewShouldPersistExtractedField(
     if (
       fillKey === "body" ||
       fillKey === "title" ||
+      fillKey === "section_title" ||
+      fillKey === "section_content" ||
+      fillKey === "caption" ||
       fillKey === "item_id"
     ) {
       const effectiveTier = bulkReviewPosterContentColumnTier(
@@ -173,7 +189,7 @@ export function bulkReviewShouldPersistPosterCaption(
 ): boolean {
   const policy = getBulkReviewWorkbookPrefillPolicy(extractionMethod);
   if (!policy.posterContentKinds.includes(contentKind)) return false;
-  return bulkReviewShouldPersistExtractedField(extractionMethod, "body", {
+  return bulkReviewShouldPersistExtractedField(extractionMethod, "caption", {
     contentKind,
   });
 }
@@ -198,6 +214,12 @@ export function bulkReviewWorkbookConferenceCellsFromBatch(
     { source: "conferenceLocation", fillKey: "conference_location" },
     { source: "conferenceAcronym", fillKey: "conference_acronym" },
     { source: "conferenceUri", fillKey: "conference_uri" },
+    { source: "conferenceIdentifier", fillKey: "conference_identifier" },
+    {
+      source: "conferenceIdentifierType",
+      fillKey: "conference_identifier_type",
+    },
+    { source: "conferenceSeries", fillKey: "conference_series" },
     { source: "conferenceStartDate", fillKey: "conference_start_date" },
     { source: "conferenceEndDate", fillKey: "conference_end_date" },
   ];

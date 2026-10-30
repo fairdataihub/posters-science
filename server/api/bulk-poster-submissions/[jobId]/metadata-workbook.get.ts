@@ -1,6 +1,7 @@
 import { orderedBulkImportPosterEntries } from "~~/server/utils/bulkImportOrderedPosters";
 import { buildBulkReviewWorkbookBuffer } from "~~/server/utils/bulkReviewWorkbookFill";
 import { applyBulkSubmissionMetadataToPosters } from "~~/server/utils/bulkImportPosterMetadata";
+import { ensurePostersScienceDiscoverRelatedIdentifier } from "~~/server/utils/postersScienceDiscoverRelatedIdentifier";
 import { getBulkPosterSubmissionJobRepository } from "~~/server/utils/bulkPosterSubmissionJobs";
 import { normalizeBulkSubmissionExtractionMethod } from "#shared/types/bulkSubmission";
 import type { BulkImportSubmissionSummary } from "#shared/types/bulkImportLicenses";
@@ -57,6 +58,24 @@ export default defineEventHandler(async (event) => {
   }
 
   const posterIds = ordered.map((entry) => entry.posterId);
+
+  const config = useRuntimeConfig(event);
+  const siteEnv = config.siteEnv || config.public.siteEnv;
+
+  const completedJobs = await prisma.extractionJob.findMany({
+    where: {
+      posterId: { in: posterIds },
+      completed: true,
+    },
+    select: { posterId: true },
+  });
+  for (const row of completedJobs) {
+    if (row.posterId != null) {
+      await ensurePostersScienceDiscoverRelatedIdentifier(row.posterId, {
+        siteEnv,
+      });
+    }
+  }
 
   const posters = await prisma.poster.findMany({
     where: {

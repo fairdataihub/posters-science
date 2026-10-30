@@ -8,6 +8,8 @@ import {
 } from "~/utils/zenodoPublicationUrl";
 import ZenodoConnectPanel from "~/components/share/ZenodoConnectPanel.vue";
 import { useZenodoReleaseConnection } from "~/composables/useZenodoReleaseConnection";
+import type { BulkSubmissionCompletionResponse } from "#shared/types/bulkSubmissionCompletion";
+import { shareBulkCompletionPath } from "~/utils/sharePaths";
 
 const props = defineProps<{
   items: BulkImportBatchItem[];
@@ -25,9 +27,7 @@ const zenodoPaused = computed(() => zenodoMaintenance.value.off !== null);
 
 const queryRepo = route.query.repository;
 const requestedRepository: Repository =
-  queryRepo === "zenodo" ||
-  queryRepo === "figshare" ||
-  queryRepo === "download"
+  queryRepo === "zenodo" || queryRepo === "figshare" || queryRepo === "download"
     ? queryRepo
     : null;
 
@@ -257,6 +257,7 @@ const completedItems = computed(() =>
 const rows = ref<PublishRow[]>([]);
 const batchPublishing = ref(false);
 const batchStoppedEarly = ref(false);
+const batchCompletionSyncing = ref(false);
 
 const zenodoContextPosterId = computed(() => {
   const first = completedItems.value[0]?.posterId;
@@ -375,14 +376,10 @@ async function hydrateRowTitleAndStatus(row: PublishRow, posterId: number) {
     const metaTitle = poster.posterMetadata?.titles?.[0] as
       | { title?: string }
       | undefined;
-    const title =
-      metaTitle?.title?.trim() ||
-      poster.title?.trim() ||
-      row.title;
+    const title = metaTitle?.title?.trim() || poster.title?.trim() || row.title;
     const recordUrl = zenodoPublicationUrlForPoster(poster);
     const doi = zenodoPublicationDoiForPoster(poster);
-    const alreadyOnZenodo =
-      poster.status === "published" && Boolean(recordUrl);
+    const alreadyOnZenodo = poster.status === "published" && Boolean(recordUrl);
 
     patchRow(row.item.id, {
       title,
@@ -432,7 +429,9 @@ async function publishRow(row: PublishRow) {
     let doi: string | undefined;
     if (!recordUrl) {
       try {
-        const poster = await $fetch<PosterWithZenodo>(`/api/poster/${posterId}`);
+        const poster = await $fetch<PosterWithZenodo>(
+          `/api/poster/${posterId}`,
+        );
         recordUrl = zenodoPublicationUrlForPoster(poster);
         doi = zenodoPublicationDoiForPoster(poster);
       } catch {
@@ -448,6 +447,7 @@ async function publishRow(row: PublishRow) {
       ...(doi && { doi }),
       error: undefined,
     });
+    await syncBatchCompletionIfReady();
     return;
   }
 
@@ -504,6 +504,8 @@ async function publishAllToZenodo() {
 
   batchPublishing.value = false;
 
+  await syncBatchCompletionIfReady();
+
   if (allPublished.value) {
     toast.add({
       title: "Batch published",
@@ -516,6 +518,27 @@ async function publishAllToZenodo() {
       description: `${publishedCount.value} published, ${failedCount.value} failed. Fix issues and run again for the rest.`,
       color: "warning",
     });
+  }
+}
+
+async function syncBatchCompletionIfReady() {
+  if (!props.bulkJobId || batchCompletionSyncing.value) return;
+  if (!allPublished.value) return;
+
+  batchCompletionSyncing.value = true;
+
+  try {
+    const completion = await $fetch<BulkSubmissionCompletionResponse>(
+      `/api/bulk-poster-submissions/${props.bulkJobId}/completion`,
+    );
+
+    if (completion.completedAt) {
+      await navigateTo(shareBulkCompletionPath(props.bulkJobId));
+    }
+  } catch {
+    // Job may not be marked complete yet; user can refresh from the dashboard.
+  } finally {
+    batchCompletionSyncing.value = false;
   }
 }
 
@@ -547,8 +570,8 @@ watch(
       v-if="completedItems.length === 0"
       class="text-muted rounded-lg border border-dashed px-4 py-8 text-center text-sm"
     >
-      No completed extractions yet. Finish extraction and supplementary metadata before
-      submitting to a repository.
+      No completed extractions yet. Finish extraction and supplementary metadata
+      before submitting to a repository.
     </div>
 
     <template v-else>
@@ -578,7 +601,9 @@ watch(
             :disabled="!repo.enabled"
             class="border-default hover:border-primary flex flex-col items-center gap-3 rounded-xl border-2 p-6 transition-all"
             :class="[
-              selectedRepository === repo.id ? 'border-primary bg-primary/5' : '',
+              selectedRepository === repo.id
+                ? 'border-primary bg-primary/5'
+                : '',
               !repo.enabled && 'cursor-not-allowed opacity-50',
             ]"
             color="primary"
@@ -589,7 +614,9 @@ watch(
 
             <span class="font-medium">{{ repo.name }}</span>
 
-            <span class="text-muted text-center text-xs">{{ repo.description }}</span>
+            <span class="text-muted text-center text-xs">{{
+              repo.description
+            }}</span>
 
             <UBadge v-if="repo.unavailable" color="warning" variant="subtle">
               Temporarily Unavailable
@@ -656,7 +683,7 @@ watch(
           variant="subtle"
           icon="i-lucide-info"
           title="Heads up: poster.json will be incomplete"
-          description="Each downloaded poster.json may have blank identifier, license, and publisher fields until you publish or update metadata on Posters.science."
+          description="Each downloaded poster.json may have blank identifier and publisher fields until you publish or update metadata on Posters.science."
         />
 
         <UCheckbox
@@ -678,7 +705,9 @@ watch(
 
       <div class="border-default overflow-hidden rounded-xl border">
         <table class="w-full text-left text-sm">
-          <thead class="border-default border-b bg-gray-50/80 dark:bg-gray-900/40">
+          <thead
+            class="border-default border-b bg-gray-50/80 dark:bg-gray-900/40"
+          >
             <tr>
               <th class="px-4 py-3 font-medium">Poster</th>
               <th class="px-4 py-3 font-medium">{{ actionColumnLabel }}</th>
@@ -690,13 +719,12 @@ watch(
                 <span class="line-clamp-2 font-medium" :title="row.title">
                   {{ row.title }}
                 </span>
-                <span class="text-muted block text-xs">{{ row.item.fileName }}</span>
+                <span class="text-muted block text-xs">{{
+                  row.item.fileName
+                }}</span>
               </td>
               <td class="px-4 py-3">
-                <p
-                  v-if="!selectedRepository"
-                  class="text-muted text-sm"
-                >
+                <p v-if="!selectedRepository" class="text-muted text-sm">
                   Select a repository above
                 </p>
 

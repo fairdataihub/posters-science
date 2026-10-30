@@ -4,6 +4,7 @@ import ConferenceBulkImport from "~/components/conferences/ConferenceBulkImport.
 import { normalizeBulkImportWizardStep } from "#shared/types/bulkImportWizard";
 import {
   SHARE_BULK_IMPORT_STEP_QUERY,
+  shareBulkCompletionPath,
   shareNewBulkPath,
 } from "~/utils/sharePaths";
 
@@ -44,6 +45,16 @@ const initialWizardStep = computed(
   () =>
     wizardStepFromQuery.value ??
     normalizeBulkImportWizardStep(resumeJob.value?.wizardStep),
+);
+
+watch(
+  () => resumeJob.value?.status,
+  (status) => {
+    if (status === "completed" && jobIdFromQuery.value) {
+      void navigateTo(shareBulkCompletionPath(jobIdFromQuery.value));
+    }
+  },
+  { immediate: true },
 );
 
 const bulkBreadcrumbTo = computed(() =>

@@ -12,6 +12,7 @@ export type DashboardBulkSubmission = {
   hasActiveExtraction?: boolean;
   createdAt: string;
   updatedAt: string;
+  completedAt?: string | null;
 };
 
 export type DashboardInProgressFeedEntry =
@@ -29,6 +30,8 @@ export type DashboardInProgressFeedEntry =
 export type DashboardPosterFeedResponse = {
   posters: unknown[];
   bulkSubmissions: DashboardBulkSubmission[];
+  /** Bulk imports finished on Zenodo (all batch posters published). */
+  completedBulkSubmissions?: DashboardBulkSubmission[];
   /** Posters (non-published) and bulk imports interleaved, newest first. */
   inProgressFeed: DashboardInProgressFeedEntry[];
 };

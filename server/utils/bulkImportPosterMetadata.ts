@@ -5,6 +5,7 @@ import type { BulkImportSubmissionSummary } from "#shared/types/bulkImportLicens
 import prisma from "~~/server/utils/prisma";
 import { getBulkPosterSubmissionJobRepository } from "~~/server/utils/bulkPosterSubmissionJobs";
 import { gateBulkExtractedPosterMetadataForJobPoster } from "~~/server/utils/bulkExtractionMetadataGate";
+import { ensurePostersScienceDiscoverRelatedIdentifier } from "~~/server/utils/postersScienceDiscoverRelatedIdentifier";
 
 function optionalString(value: string | undefined) {
   const trimmed = value?.trim();
@@ -144,7 +145,11 @@ export async function applyBulkSubmissionMetadataToPosters(
   for (const id of targetIds) {
     const owned = await prisma.poster.findFirst({
       where: { id, userId },
-      select: { id: true, posterMetadata: { select: { posterId: true } } },
+      select: {
+        id: true,
+        posterMetadata: { select: { posterId: true } },
+        extractionJob: { select: { completed: true } },
+      },
     });
     if (!owned) continue;
 
@@ -166,6 +171,12 @@ export async function applyBulkSubmissionMetadataToPosters(
       id,
       job.extractionMethod,
     );
+
+    if (owned.extractionJob?.completed) {
+      const config = useRuntimeConfig();
+      const siteEnv = config.siteEnv || config.public.siteEnv;
+      await ensurePostersScienceDiscoverRelatedIdentifier(id, { siteEnv });
+    }
 
     updatedPosterIds.push(id);
   }

@@ -4,8 +4,20 @@ import type { Poster, PosterMetadata, ExtractionJob } from "@prisma/client";
 import ExcelJS from "exceljs";
 import {
   BULK_IMPORT_METADATA_REVIEW_TEMPLATE_RELATIVE_PATH,
+  BULK_REVIEW_CONTRIBUTOR_AFFILIATION_SLOT_COUNT,
   BULK_REVIEW_WORKBOOK_FIRST_DATA_ROW,
   BULK_REVIEW_WORKBOOK_SHEETS,
+  BULK_REVIEW_WORKBOOK_SHEET_ABOUT,
+  BULK_REVIEW_WORKBOOK_SHEET_ADDITIONAL,
+  BULK_REVIEW_WORKBOOK_SHEET_RELATED_RESOURCES,
+  BULK_REVIEW_WORKBOOK_SHEET_CONFERENCE,
+  BULK_REVIEW_WORKBOOK_SHEET_CREATORS,
+  BULK_REVIEW_WORKBOOK_SHEET_FUNDING,
+  BULK_REVIEW_WORKBOOK_SHEET_IMAGE_CAPTIONS,
+  BULK_REVIEW_WORKBOOK_SHEET_POSTER_CONTENT,
+  BULK_REVIEW_WORKBOOK_SHEET_TABLE_CAPTIONS,
+  contributorAffiliationNameFillKey,
+  contributorAffiliationRorFillKey,
   type BulkReviewWorkbookColumn,
 } from "#shared/bulkReviewWorkbookManifest";
 import {
@@ -19,7 +31,11 @@ import type { BulkImportConferenceMetadata } from "#shared/types/bulkImportConfe
 import type { BulkSubmissionExtractionMethod } from "#shared/types/bulkSubmission";
 import { DEFAULT_BULK_SUBMISSION_EXTRACTION_METHOD } from "#shared/types/bulkSubmission";
 import { applyBulkReviewWorkbookSheetProtection } from "~~/server/utils/bulkReviewWorkbookSheetProtection";
-import { applyBulkReviewWorkbookColumnWidths } from "~~/server/utils/bulkReviewWorkbookColumnLayout";
+import {
+  applyBulkReviewWorkbookColumnWidths,
+  applyBulkReviewWorkbookDataRowLayout,
+  applyBulkReviewWorkbookMetaRows,
+} from "~~/server/utils/bulkReviewWorkbookColumnLayout";
 
 type PosterRow = Poster & {
   posterMetadata: PosterMetadata | null;
@@ -43,6 +59,41 @@ function cellString(value: unknown): string {
     return String(value);
   }
   return "";
+}
+
+function emptyContributorAffiliationCells(): Record<string, string> {
+  const cells: Record<string, string> = {};
+  for (let slot = 1; slot <= BULK_REVIEW_CONTRIBUTOR_AFFILIATION_SLOT_COUNT; slot++) {
+    cells[contributorAffiliationNameFillKey(slot)] = "";
+    cells[contributorAffiliationRorFillKey(slot)] = "";
+  }
+  return cells;
+}
+
+function contributorAffiliationCellsFromList(
+  affiliations: unknown[],
+): Record<string, string> {
+  const cells = emptyContributorAffiliationCells();
+  affiliations.forEach((aff, affIndex) => {
+    const slot = affIndex + 1;
+    if (slot > BULK_REVIEW_CONTRIBUTOR_AFFILIATION_SLOT_COUNT) return;
+
+    if (typeof aff === "string") {
+      const name = aff.trim();
+      if (!name) return;
+      cells[contributorAffiliationNameFillKey(slot)] = name;
+      return;
+    }
+
+    const affObj = asRecord(aff);
+    const affName = cellString(affObj?.name);
+    if (!affName) return;
+    cells[contributorAffiliationNameFillKey(slot)] = affName;
+    cells[contributorAffiliationRorFillKey(slot)] = cellString(
+      affObj?.affiliationIdentifier,
+    );
+  });
+  return cells;
 }
 
 function normalizePosterContent(raw: unknown) {
@@ -87,6 +138,7 @@ function writeRow(
     if (!(col.fillKey in filtered)) return;
     row.getCell(index + 1).value = filtered[col.fillKey] ?? "";
   });
+  applyBulkReviewWorkbookDataRowLayout(row, columns, filtered);
   row.commit();
 }
 
@@ -144,7 +196,7 @@ export async function buildBulkReviewWorkbookBuffer(
   }> = [];
 
   sheetPayloads.push({
-    sheetName: "About the poster",
+    sheetName: BULK_REVIEW_WORKBOOK_SHEET_ABOUT,
     rows: posters.map((poster) => {
       const meta = poster.posterMetadata;
       return {
@@ -158,7 +210,7 @@ export async function buildBulkReviewWorkbookBuffer(
   });
 
   sheetPayloads.push({
-    sheetName: "Conference",
+    sheetName: BULK_REVIEW_WORKBOOK_SHEET_CONFERENCE,
     rows: posters.map((poster) => {
       const meta = poster.posterMetadata;
       return {
@@ -169,6 +221,9 @@ export async function buildBulkReviewWorkbookBuffer(
         conference_location: meta?.conferenceLocation ?? "",
         conference_acronym: meta?.conferenceAcronym ?? "",
         conference_uri: meta?.conferenceUri ?? "",
+        conference_identifier: meta?.conferenceIdentifier ?? "",
+        conference_identifier_type: meta?.conferenceIdentifierType ?? "",
+        conference_series: meta?.conferenceSeries ?? "",
         conference_start_date: meta?.conferenceStartDate ?? "",
         conference_end_date: meta?.conferenceEndDate ?? "",
         presented_date: meta ? presentedStartDateFromMetadata(meta) : "",
@@ -177,111 +232,69 @@ export async function buildBulkReviewWorkbookBuffer(
     }),
   });
 
-  const creatorRows: Record<string, string | number>[] = [];
+  const contributorRows: Record<string, string | number>[] = [];
+
   for (const poster of posters) {
     const meta = poster.posterMetadata;
     if (!meta) continue;
     const creators = asArray(meta.creators) as Array<Record<string, unknown>>;
-    creators.forEach((creator, index) => {
-      const order = index + 1;
+    creators.forEach((creator) => {
       const nameIds = asArray(creator.nameIdentifiers) as Array<
         Record<string, unknown>
       >;
       const firstId = nameIds[0];
-      const baseCreator = {
+      const affiliations = asArray(creator.affiliation);
+      const affiliationCells = contributorAffiliationCellsFromList(affiliations);
+
+      contributorRows.push({
         poster_id: poster.id,
-        file_name: poster.extractionJob?.fileName ?? "",
-        creator_order: order,
-        name_type: cellString(creator.nameType) || "Personal",
         given_name: cellString(creator.givenName),
         family_name: cellString(creator.familyName),
+        name_type: cellString(creator.nameType) || "Personal",
         name_identifier: cellString(firstId?.nameIdentifier),
-        name_identifier_scheme: cellString(firstId?.nameIdentifierScheme),
-      };
-
-      const affiliations = asArray(creator.affiliation);
-      if (affiliations.length === 0) {
-        creatorRows.push({
-          ...baseCreator,
-          affiliation_order: "",
-          affiliation_name: "",
-          affiliation_identifier: "",
-        });
-        return;
-      }
-
-      affiliations.forEach((aff, affIndex) => {
-        if (typeof aff === "string") {
-          creatorRows.push({
-            ...baseCreator,
-            affiliation_order: affIndex + 1,
-            affiliation_name: aff,
-            affiliation_identifier: "",
-          });
-          return;
-        }
-        const affObj = asRecord(aff);
-        creatorRows.push({
-          ...baseCreator,
-          affiliation_order: affIndex + 1,
-          affiliation_name: cellString(affObj?.name),
-          affiliation_identifier: cellString(affObj?.affiliationIdentifier),
-        });
+        ...affiliationCells,
       });
     });
   }
-  sheetPayloads.push({ sheetName: "Creators", rows: creatorRows });
 
   sheetPayloads.push({
-    sheetName: "Additional Information",
-    rows: posters.map((poster) => {
-      const meta = poster.posterMetadata;
-      const content = meta ? normalizePosterContent(meta.posterContent) : null;
-      return {
-        poster_id: poster.id,
-        file_name: poster.extractionJob?.fileName ?? "",
-        submission_abstract: content?.submissionAbstract ?? "",
-        language: meta?.language ?? "",
-        domain: meta?.domain ?? "",
-        license: meta?.license ?? "",
-        version: meta?.version ?? "",
-        doi: meta?.doi ?? "",
-        publisher: meta?.publisher ?? "",
-        publication_year: meta?.publicationYear ?? "",
-      };
-    }),
+    sheetName: BULK_REVIEW_WORKBOOK_SHEET_CREATORS,
+    rows: contributorRows,
   });
 
-  const linksRows: Record<string, string | number>[] = [];
-  const contentRows: Record<string, string | number>[] = [];
+  const additionalRows: Record<string, string | number>[] = [];
+  const relatedRows: Record<string, string | number>[] = [];
+  const fundingRows: Record<string, string | number>[] = [];
+  const sectionRows: Record<string, string | number>[] = [];
+  const tableCaptionRows: Record<string, string | number>[] = [];
+  const imageCaptionRows: Record<string, string | number>[] = [];
 
   for (const poster of posters) {
     const meta = poster.posterMetadata;
-    if (!meta) continue;
     const file_name = posterFileName(poster);
+    const content = meta ? normalizePosterContent(meta.posterContent) : null;
 
-    if (prefillPolicy.includeLinksAndFunding) {
+    additionalRows.push({
+      poster_id: poster.id,
+      file_name,
+      submission_abstract: content?.submissionAbstract ?? "",
+      language: meta?.language ?? "",
+      domain: meta?.domain ?? "",
+    });
+
+    if (prefillPolicy.includeLinksAndFunding && meta) {
       const related = asArray(meta.relatedIdentifiers) as Array<
         Record<string, unknown>
       >;
-      related.forEach((rel, index) => {
-        linksRows.push({
+      related.forEach((rel) => {
+        relatedRows.push({
           poster_id: poster.id,
           file_name,
-          kind: "related",
-          entry_order: index + 1,
           related_identifier: cellString(rel.relatedIdentifier),
           related_identifier_type: cellString(rel.relatedIdentifierType),
           relation_type: cellString(rel.relationType),
           relation_description: cellString(rel.relationTypeInformation),
           resource_type_general: cellString(rel.resourceTypeGeneral),
-          funder_name: "",
-          funder_identifier_type: "",
-          funder_identifier: "",
-          scheme_uri: "",
-          award_number: "",
-          award_title: "",
-          award_uri: "",
         });
       });
 
@@ -289,16 +302,9 @@ export async function buildBulkReviewWorkbookBuffer(
         Record<string, unknown>
       >;
       funding.forEach((fund, index) => {
-        linksRows.push({
+        fundingRows.push({
           poster_id: poster.id,
           file_name,
-          kind: "funding",
-          entry_order: index + 1,
-          related_identifier: "",
-          related_identifier_type: "",
-          relation_type: "",
-          relation_description: "",
-          resource_type_general: "",
           funder_name: cellString(fund.funderName),
           funder_identifier_type: cellString(fund.funderIdentifierType),
           funder_identifier: cellString(fund.funderIdentifier),
@@ -310,63 +316,72 @@ export async function buildBulkReviewWorkbookBuffer(
       });
     }
 
-    const content = normalizePosterContent(meta.posterContent);
-    const allowedKinds = new Set(prefillPolicy.posterContentKinds);
+    if (!meta) continue;
 
-    if (allowedKinds.has("section")) {
-      const sections = asArray(content.sections) as Array<
+    if (prefillPolicy.posterContentKinds.includes("section")) {
+      const sections = asArray(content?.sections) as Array<
         Record<string, unknown>
       >;
       sections.forEach((section, index) => {
-        contentRows.push({
+        sectionRows.push({
           poster_id: poster.id,
           file_name,
-          content_kind: "section",
-          item_order: index + 1,
-          item_id: "",
-          title: cellString(section.sectionTitle),
-          body: cellString(section.sectionContent),
+          section_title: cellString(section.sectionTitle),
+          section_content: cellString(section.sectionContent),
         });
       });
     }
 
-    if (allowedKinds.has("figure")) {
-      const images = asArray(meta.imageCaptions) as Array<
-        Record<string, unknown>
-      >;
-      images.forEach((cap, index) => {
-        contentRows.push({
-          poster_id: poster.id,
-          file_name,
-          content_kind: "figure",
-          item_order: index + 1,
-          item_id: cellString(cap.id),
-          title: "",
-          body: cellString(cap.caption),
-        });
-      });
-    }
-
-    if (allowedKinds.has("table")) {
+    if (prefillPolicy.posterContentKinds.includes("table")) {
       const tables = asArray(meta.tableCaptions) as Array<
         Record<string, unknown>
       >;
       tables.forEach((cap, index) => {
-        contentRows.push({
+        tableCaptionRows.push({
           poster_id: poster.id,
           file_name,
-          content_kind: "table",
-          item_order: index + 1,
           item_id: cellString(cap.id),
-          title: "",
-          body: cellString(cap.caption),
+          caption: cellString(cap.caption),
+        });
+      });
+    }
+
+    if (prefillPolicy.posterContentKinds.includes("figure")) {
+      const images = asArray(meta.imageCaptions) as Array<
+        Record<string, unknown>
+      >;
+      images.forEach((cap, index) => {
+        imageCaptionRows.push({
+          poster_id: poster.id,
+          file_name,
+          item_id: cellString(cap.id),
+          caption: cellString(cap.caption),
         });
       });
     }
   }
 
-  sheetPayloads.push({ sheetName: "Links & funding", rows: linksRows });
-  sheetPayloads.push({ sheetName: "Poster content", rows: contentRows });
+  sheetPayloads.push({
+    sheetName: BULK_REVIEW_WORKBOOK_SHEET_ADDITIONAL,
+    rows: additionalRows,
+  });
+  sheetPayloads.push({
+    sheetName: BULK_REVIEW_WORKBOOK_SHEET_RELATED_RESOURCES,
+    rows: relatedRows,
+  });
+  sheetPayloads.push({ sheetName: BULK_REVIEW_WORKBOOK_SHEET_FUNDING, rows: fundingRows });
+  sheetPayloads.push({
+    sheetName: BULK_REVIEW_WORKBOOK_SHEET_POSTER_CONTENT,
+    rows: sectionRows,
+  });
+  sheetPayloads.push({
+    sheetName: BULK_REVIEW_WORKBOOK_SHEET_TABLE_CAPTIONS,
+    rows: tableCaptionRows,
+  });
+  sheetPayloads.push({
+    sheetName: BULK_REVIEW_WORKBOOK_SHEET_IMAGE_CAPTIONS,
+    rows: imageCaptionRows,
+  });
 
   for (const payload of sheetPayloads) {
     const sheet = workbook.getWorksheet(payload.sheetName);
@@ -375,17 +390,19 @@ export async function buildBulkReviewWorkbookBuffer(
       (def) => def.name === payload.sheetName,
     );
     if (!sheetDef) continue;
+    applyBulkReviewWorkbookMetaRows(sheet, sheetDef.columns);
     clearDataRows(sheet);
     let rowIndex = BULK_REVIEW_WORKBOOK_FIRST_DATA_ROW;
     for (const row of payload.rows) {
-      const contentKindRaw = row.content_kind;
-      const contentKind =
-        typeof contentKindRaw === "string" &&
-        (contentKindRaw === "section" ||
-          contentKindRaw === "figure" ||
-          contentKindRaw === "table")
-          ? contentKindRaw
-          : undefined;
+      let contentKind: BulkReviewPosterContentKind | undefined;
+      if (payload.sheetName === BULK_REVIEW_WORKBOOK_SHEET_POSTER_CONTENT) {
+        contentKind = "section";
+      } else if (payload.sheetName === BULK_REVIEW_WORKBOOK_SHEET_TABLE_CAPTIONS) {
+        contentKind = "table";
+      } else if (payload.sheetName === BULK_REVIEW_WORKBOOK_SHEET_IMAGE_CAPTIONS) {
+        contentKind = "figure";
+      }
+
       writeRow(
         sheet,
         rowIndex,

@@ -1426,6 +1426,11 @@ export async function beginZenodoPublication(
       }),
     ]);
 
+    const { tryMarkBulkSubmissionZenodoComplete } = await import(
+      "~~/server/utils/bulkImportZenodoBatchCompletion"
+    );
+    await tryMarkBulkSubmissionZenodoComplete(userId, poster.id);
+
     return {
       success: true,
       data: {
@@ -2088,6 +2093,11 @@ export async function beginZenodoPublication(
   });
 
   console.log(`[Zenodo] Publication successful [record ${published.recordId}]`);
+
+  const { tryMarkBulkSubmissionZenodoComplete } = await import(
+    "~~/server/utils/bulkImportZenodoBatchCompletion"
+  );
+  await tryMarkBulkSubmissionZenodoComplete(userId, posterInt);
 
   return { success: true, data: published };
 }

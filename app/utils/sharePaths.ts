@@ -54,6 +54,11 @@ export function sharePosterEditPath(
   return { path: `/share/${posterId}`, query };
 }
 
+/** Summary page after every poster in a bulk batch is published. */
+export function shareBulkCompletionPath(jobId: string) {
+  return `/share/bulk/${jobId}/complete`;
+}
+
 export type ShareBulkImportReturnContext = {
   jobId: string;
   wizardStep: BulkImportWizardStep;

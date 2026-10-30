@@ -177,18 +177,6 @@ const displayTitle = computed(() => {
   return poster.value?.title?.trim() || "Untitled poster";
 });
 
-const creators = computed(() => {
-  const raw = meta.value?.creators;
-  if (!Array.isArray(raw)) return [] as string[];
-  return raw
-    .map((entry) => {
-      if (!entry || typeof entry !== "object") return "";
-      const name = (entry as { name?: string }).name?.trim();
-      return name ?? "";
-    })
-    .filter(Boolean);
-});
-
 const displaySummary = computed(() => {
   const descriptions = meta.value?.descriptions;
   if (Array.isArray(descriptions)) {
@@ -316,6 +304,18 @@ async function regeneratePreview() {
     regeneratingPreview.value = false;
   }
 }
+
+const creators = computed(() => {
+  const raw = meta.value?.creators;
+  if (!Array.isArray(raw)) return [] as string[];
+  return raw
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") return "";
+      const name = (entry as { name?: string }).name?.trim();
+      return name ?? "";
+    })
+    .filter(Boolean);
+});
 </script>
 
 <template>
@@ -476,12 +476,17 @@ async function regeneratePreview() {
 
             <div v-if="creators.length > 0">
               <p class="text-muted text-xs font-medium uppercase tracking-wide">
-                Contributors
+                Creators
               </p>
               <p class="mt-1 text-sm">{{ creators.join(", ") }}</p>
+              <p class="text-muted mt-1 text-xs">
+                Add ORCID and affiliations on the Creators sheet in the batch
+                workbook.
+              </p>
             </div>
             <p v-else class="text-muted text-sm">
-              No contributors were able to be extracted.
+              No contributors were extracted. Add them on the Creators sheet in
+              the batch workbook.
             </p>
 
             <div>

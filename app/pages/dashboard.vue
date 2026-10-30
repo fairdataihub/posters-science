@@ -102,6 +102,7 @@ type VersionThumbnailResponse = {
 
 const posters = ref<Poster[]>([]);
 const bulkSubmissions = ref<DashboardBulkSubmission[]>([]);
+const completedBulkSubmissions = ref<DashboardBulkSubmission[]>([]);
 const inProgressFeed = ref<DashboardInProgressFeedEntry[]>([]);
 const showTombstonedPosters = useCookie<boolean>(
   "dashboard-show-tombstoned-posters",
@@ -169,15 +170,26 @@ type ActiveTabListItem =
   | { type: "bulk"; key: string; bulk: DashboardBulkSubmission }
   | { type: "poster"; key: string; poster: Poster };
 
-const activeTabListItems = computed((): ActiveTabListItem[] =>
-  activeDashboardTab.value === "in-progress"
-    ? inProgressDashboardItems.value
-    : publishedPosters.value.map((poster) => ({
-        type: "poster" as const,
-        key: `poster-${poster.id}`,
-        poster,
-      })),
-);
+const activeTabListItems = computed((): ActiveTabListItem[] => {
+  if (activeDashboardTab.value === "in-progress") {
+    return inProgressDashboardItems.value;
+  }
+
+  const completedBulks: ActiveTabListItem[] =
+    completedBulkSubmissions.value.map((bulk) => ({
+      type: "bulk" as const,
+      key: `bulk-${bulk.id}`,
+      bulk,
+    }));
+
+  const published = publishedPosters.value.map((poster) => ({
+    type: "poster" as const,
+    key: `poster-${poster.id}`,
+    poster,
+  }));
+
+  return [...completedBulks, ...published];
+});
 
 const activeTabHasItems = computed(() => activeTabListItems.value.length > 0);
 // FEATURE FLAG (versioning)
@@ -235,12 +247,14 @@ function applyDashboardFeed(feed: DashboardPosterFeedResponse | Poster[]) {
   if (Array.isArray(feed)) {
     posters.value = feed;
     bulkSubmissions.value = [];
+    completedBulkSubmissions.value = [];
     inProgressFeed.value = [];
     return;
   }
 
   posters.value = feed.posters as unknown as Poster[];
   bulkSubmissions.value = feed.bulkSubmissions ?? [];
+  completedBulkSubmissions.value = feed.completedBulkSubmissions ?? [];
   inProgressFeed.value = feed.inProgressFeed ?? [];
 }
 

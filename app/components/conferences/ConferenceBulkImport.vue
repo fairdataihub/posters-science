@@ -54,10 +54,9 @@ import {
   applyBulkSubmissionMetadataToPosters,
   discardFailedBulkExtractions,
 } from "~/utils/bulkPosterSubmissionJobClient";
-import { shareNewBulkPath } from "~/utils/sharePaths";
+import { shareBulkCompletionPath, shareNewBulkPath } from "~/utils/sharePaths";
 import BulkImportMetadataReview from "~/components/conferences/BulkImportMetadataReview.vue";
 import BulkImportSpreadsheetStep from "~/components/conferences/BulkImportSpreadsheetStep.vue";
-import BulkImportPosterJsonPreview from "~/components/conferences/BulkImportPosterJsonPreview.vue";
 import BulkImportPublishStep from "~/components/conferences/BulkImportPublishStep.vue";
 
 const router = useRouter();
@@ -710,6 +709,12 @@ async function ensureResumeJobLoaded() {
 
   try {
     const job = await getBulkPosterSubmissionJob(id);
+
+    if (job.status === "completed") {
+      await navigateTo(shareBulkCompletionPath(job.id));
+      return;
+    }
+
     const step =
       normalizeBulkImportWizardStep(job.wizardStep) ??
       resolveResumeWizardStep();
@@ -2740,30 +2745,6 @@ async function startImport() {
               @imported="onMetadataWorkbookImported"
             />
           </div>
-
-          <div
-            class="border-default space-y-4 border-t pt-8"
-            aria-labelledby="bulk-poster-previews-heading"
-          >
-            <div>
-              <h4 id="bulk-poster-previews-heading" class="text-base font-semibold">
-                Poster previews
-              </h4>
-              <p class="text-muted mt-1 text-sm">
-                Use the interface below to preview each poster in this batch while
-                you work in the workbook.
-              </p>
-            </div>
-
-            <BulkImportMetadataReview
-              :items="batchItems"
-              :bulk-import-job-id="jobId"
-              :extraction-method="extractionMethod"
-              :metadata-refresh-key="metadataRefreshKey"
-              :retrying-job-ids="batchRetryingJobIds"
-              @retry="retryBatchExtraction"
-            />
-          </div>
         </div>
 
         <div
@@ -2792,14 +2773,34 @@ async function startImport() {
         <div class="space-y-4">
           <div>
             <h3 class="text-base font-semibold">
-              Step {{ currentStepNumber }}: View metadata
+              Step {{ currentStepNumber }}: Poster previews
             </h3>
             <p class="text-muted mt-1 text-sm">
               {{ currentStepTask }}
             </p>
           </div>
 
-          <BulkImportPosterJsonPreview :items="batchItems" />
+          <div class="space-y-4" aria-labelledby="bulk-poster-previews-heading">
+            <div>
+              <h4 id="bulk-poster-previews-heading" class="text-base font-semibold">
+                Poster previews
+              </h4>
+              <p class="text-muted mt-1 text-sm">
+                Use the interface below to preview each poster in this batch. Open
+                Edit metadata to change fields in the poster editor, or continue
+                when you are satisfied.
+              </p>
+            </div>
+
+            <BulkImportMetadataReview
+              :items="batchItems"
+              :bulk-import-job-id="jobId"
+              :extraction-method="extractionMethod"
+              :metadata-refresh-key="metadataRefreshKey"
+              :retrying-job-ids="batchRetryingJobIds"
+              @retry="retryBatchExtraction"
+            />
+          </div>
         </div>
 
         <div

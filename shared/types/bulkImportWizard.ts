@@ -10,18 +10,6 @@ export type BulkImportWizardStep =
   | "preview"
   | "publish";
 
-/** @deprecated Jobs saved on the old flow; map to `upload` when resuming. */
-export type LegacyBulkImportWizardStep = "assets";
-
-/** @deprecated Old jobs used `review` before submit was split out; resume as `review`. */
-export type DeprecatedBulkImportWizardStep = never;
-
-/** @deprecated Old jobs used a combined metadata step; resume at `conference`. */
-export type LegacyBulkImportLicenseWizardStep = "metadata";
-
-/** @deprecated Spreadsheet step merged into `review` (supplementary metadata). */
-export type LegacyBulkImportSpreadsheetWizardStep = "spreadsheet";
-
 export type BulkImportWizardStepDefinition = {
   id: BulkImportWizardStep;
   label: string;
@@ -63,12 +51,12 @@ export const BULK_IMPORT_WIZARD_STEPS: BulkImportWizardStepDefinition[] = [
   {
     id: "review",
     label: "Supplementary metadata",
-    task: "Download and import the batch workbook to add or correct metadata. Use the poster previews below as reference while you work.",
+    task: "Optionally download the batch workbook to add or correct metadata in Excel, then import it here. You can skip this and edit posters directly on the next step.",
   },
   {
     id: "preview",
-    label: "View metadata",
-    task: "Preview the poster.json that will accompany each poster file before you publish or download.",
+    label: "Poster previews",
+    task: "Preview each poster in this batch and open Edit metadata to fix fields in the poster editor before you publish.",
   },
   {
     id: "publish",
@@ -80,25 +68,16 @@ export const BULK_IMPORT_WIZARD_STEPS: BulkImportWizardStepDefinition[] = [
 export const BULK_IMPORT_NAME_MIN_LENGTH = 2;
 export const BULK_IMPORT_NAME_MAX_LENGTH = 120;
 
+const BULK_IMPORT_WIZARD_STEP_SET = new Set<string>(
+  BULK_IMPORT_WIZARD_STEPS.map((step) => step.id),
+);
+
 export function normalizeBulkImportWizardStep(
   step: string | undefined | null,
 ): BulkImportWizardStep | undefined {
   if (!step) return undefined;
-  if (step === "assets") return "upload";
-  if (step === "metadata") return "conference";
-  if (step === "spreadsheet") return "review";
-  if (
-    step === "setup" ||
-    step === "upload" ||
-    step === "extraction" ||
-    step === "conference" ||
-    step === "license" ||
-    step === "submit" ||
-    step === "review" ||
-    step === "preview" ||
-    step === "publish"
-  ) {
-    return step;
+  if (BULK_IMPORT_WIZARD_STEP_SET.has(step)) {
+    return step as BulkImportWizardStep;
   }
   return undefined;
 }
