@@ -3,9 +3,9 @@ import type { ColumnDef } from "@tanstack/vue-table";
 import {
   ALLOWED_POSTER_FILE_LABEL,
   MAX_POSTER_FILE_SIZE_LABEL,
-  POSTER_FILE_ACCEPT,
   posterFileRejectionReason,
 } from "#shared/utils/posterFile";
+import { posterUploadBaseName, posterUploadPathHint } from "#shared/utils/bulkPosterUploadFileName";
 import { BULK_EXTRACTION_LEVEL_OPTIONS } from "#shared/types/bulkExtractionLevel";
 import {
   applyBulkImportConferenceToForm,
@@ -20,6 +20,10 @@ import {
 import type { BulkImportSubmissionSummary } from "#shared/types/bulkImportLicenses";
 import {
   DEFAULT_BULK_IMPORT_REVIEW_EMBARGO_DAYS,
+  isBulkImportReviewEmbargoDaysValid,
+  MAX_BULK_IMPORT_REVIEW_EMBARGO_DAYS,
+  MIN_BULK_IMPORT_REVIEW_EMBARGO_DAYS,
+  normalizeBulkImportReviewEmbargoDays,
   type BulkImportReviewEmbargoChoice,
 } from "#shared/types/bulkImportReviewEmbargo";
 import { BULK_IMPORT_ACCEPTABLE_LICENSES } from "#shared/data/bulkImportAcceptableLicenses";
@@ -54,6 +58,13 @@ import {
   applyBulkSubmissionMetadataToPosters,
   discardFailedBulkExtractions,
 } from "~/utils/bulkPosterSubmissionJobClient";
+import {
+  BULK_POSTER_UPLOAD_ACCEPT,
+  expandBulkPosterUploadSelection,
+  MAX_BULK_POSTER_ZIP_BYTES,
+  MAX_BULK_POSTER_ZIP_SIZE_LABEL,
+  readBulkPosterUploadDataTransfer,
+} from "~/utils/bulkPosterUploadExpansion";
 import { shareBulkCompletionPath, shareNewBulkPath } from "~/utils/sharePaths";
 import BulkImportMetadataReview from "~/components/conferences/BulkImportMetadataReview.vue";
 import BulkImportSpreadsheetStep from "~/components/conferences/BulkImportSpreadsheetStep.vue";
@@ -127,6 +138,26 @@ const orcidRorAutomationItems: {
 const reviewEmbargoChoice = ref<BulkImportReviewEmbargoChoice | undefined>(
   undefined,
 );
+const reviewEmbargoDays = ref(DEFAULT_BULK_IMPORT_REVIEW_EMBARGO_DAYS);
+
+const reviewEmbargoDayOptions = computed(() =>
+  Array.from(
+    {
+      length:
+        MAX_BULK_IMPORT_REVIEW_EMBARGO_DAYS -
+        MIN_BULK_IMPORT_REVIEW_EMBARGO_DAYS +
+        1,
+    },
+    (_, index) => {
+      const value =
+        index + MIN_BULK_IMPORT_REVIEW_EMBARGO_DAYS;
+      return {
+        label: value === 1 ? "1 day" : `${value} days`,
+        value,
+      };
+    },
+  ),
+);
 
 const reviewEmbargoItems: {
   label: string;
@@ -167,11 +198,11 @@ watch(
   { immediate: true },
 );
 
-const POSTER_ONLY_HINT = `${ALLOWED_POSTER_FILE_LABEL}, up to ${MAX_POSTER_FILE_SIZE_LABEL} per file`;
+const POSTER_ONLY_HINT = `${ALLOWED_POSTER_FILE_LABEL}, ZIP archives, or folders — up to ${MAX_POSTER_FILE_SIZE_LABEL} per poster file and ${MAX_BULK_POSTER_ZIP_SIZE_LABEL} per ZIP`;
 
 const validatePosterFile = (file: File) =>
   posterFileRejectionReason({
-    name: file.name,
+    name: posterUploadBaseName(posterUploadPathHint(file)),
     type: file.type,
     size: file.size,
   });
@@ -179,9 +210,40 @@ const validatePosterFile = (file: File) =>
 function validatePosterUploadFile(file: File): string | null {
   const lower = file.name.toLowerCase();
   if (lower.endsWith(".zip")) {
-    return "Upload poster PDFs or images individually. ZIP bundles are not used in this step.";
+    if (file.size > MAX_BULK_POSTER_ZIP_BYTES) {
+      return `ZIP is too large. Maximum size is ${MAX_BULK_POSTER_ZIP_SIZE_LABEL}.`;
+    }
+    if (file.size === 0) {
+      return "File is empty. Choose a different file.";
+    }
+    return null;
   }
-  return validatePosterFile(file);
+
+  const rejection = validatePosterFile(file);
+  if (rejection && file.webkitRelativePath) {
+    return null;
+  }
+
+  return rejection;
+}
+
+function notifySkippedBulkPosterUploads(
+  skipped: { name: string; reason: string }[],
+) {
+  if (skipped.length === 0) return;
+
+  const first = skipped[0]!;
+  const extra = skipped.length - 1;
+
+  toast.add({
+    title:
+      skipped.length === 1 ? "File skipped" : `${skipped.length} files skipped`,
+    description:
+      extra > 0
+        ? `${first.name}: ${first.reason} (+${extra} more)`
+        : `${first.name}: ${first.reason}`,
+    color: "warning",
+  });
 }
 
 function onPosterFilesRejected(rejections: { file: File; reason: string }[]) {
@@ -212,6 +274,7 @@ const posterRowStatus = ref<
 const activePosterUploads = ref(0);
 const posterUploadQueueTotal = ref(0);
 const posterUploadQueueFinished = ref(0);
+const posterSelectionExpanding = ref(false);
 const currentPosterFileUploadPercent = ref(0);
 const stagedPosterDeletePath = ref<string | null>(null);
 const deleteAllPostersModalOpen = ref(false);
@@ -221,7 +284,9 @@ const stagedPostersLoading = ref(false);
 const resumeWizardHydrated = ref(false);
 const resumeJobLoading = ref(false);
 
-const posterUploadRunning = computed(() => activePosterUploads.value > 0);
+const posterUploadRunning = computed(
+  () => activePosterUploads.value > 0 || posterSelectionExpanding.value,
+);
 
 const posterUploadProgressVisible = computed(
   () => posterUploadQueueTotal.value > 0,
@@ -331,9 +396,85 @@ async function onPosterFilesSelected(files: File[]) {
   const batch = [...files];
   posterFileUploadRef.value?.clearFiles();
 
-  posterUploadQueueTotal.value += batch.length;
+  posterSelectionExpanding.value = true;
 
-  for (const file of batch) {
+  let posterFiles: File[] = [];
+
+  try {
+    const expanded = await expandBulkPosterUploadSelection(batch);
+    notifySkippedBulkPosterUploads(expanded.skipped);
+    posterFiles = expanded.files;
+  } catch {
+    toast.add({
+      title: "Could not read files",
+      description: "Try again with individual poster files or a smaller ZIP.",
+      color: "error",
+    });
+    return;
+  } finally {
+    posterSelectionExpanding.value = false;
+  }
+
+  if (posterFiles.length === 0) {
+    return;
+  }
+
+  const duplicateEntries: { file: File; existing: BulkImportStagedPoster }[] =
+    [];
+  const filesToUpload: File[] = [];
+
+  for (const file of posterFiles) {
+    const existing = findStagedPosterByFileName(file.name);
+    if (existing) {
+      duplicateEntries.push({ file, existing });
+    } else {
+      filesToUpload.push(file);
+    }
+  }
+
+  if (duplicateEntries.length > 0) {
+    const choice = await askDuplicateReplace(
+      duplicateEntries.map((entry) => entry.file.name),
+    );
+
+    if (choice === "cancel") {
+      return;
+    }
+
+    if (choice === "replace") {
+      try {
+        await Promise.all(
+          duplicateEntries.map((entry) =>
+            deleteBulkStagedPoster(jobId.value!, entry.existing.filePath),
+          ),
+        );
+        const job = await getBulkPosterSubmissionJob(jobId.value!);
+        stagedPosters.value = job.stagedPosters ?? [];
+        applyBatchStateFromJob(job);
+        for (const entry of duplicateEntries) {
+          clearPosterRowStatus(entry.file.name);
+        }
+        filesToUpload.push(...duplicateEntries.map((entry) => entry.file));
+      } catch (error) {
+        toast.add({
+          title: "Could not replace files",
+          description:
+            fetchErrorDescription(error) ??
+            "The existing files could not be removed from storage.",
+          color: "error",
+        });
+        return;
+      }
+    }
+  }
+
+  if (filesToUpload.length === 0) {
+    return;
+  }
+
+  posterUploadQueueTotal.value += filesToUpload.length;
+
+  for (const file of filesToUpload) {
     currentPosterFileUploadPercent.value = 0;
     await uploadPosterFileImmediately(file);
     posterUploadQueueFinished.value += 1;
@@ -368,7 +509,9 @@ const extractionStepAcknowledged = ref(false);
 const extractionStepReady = computed(
   () =>
     orcidRorAutomationChoice.value !== undefined &&
-    reviewEmbargoChoice.value !== undefined,
+    reviewEmbargoChoice.value !== undefined &&
+    (reviewEmbargoChoice.value === "no" ||
+      isBulkImportReviewEmbargoDaysValid(reviewEmbargoDays.value)),
 );
 
 const extractionStepComplete = computed(
@@ -618,10 +761,14 @@ function applyLicenseSummaryFromJob(job: BulkPosterSubmissionJob) {
 
   if (summary?.reviewEmbargoEnabled === true) {
     reviewEmbargoChoice.value = "yes";
+    reviewEmbargoDays.value = normalizeBulkImportReviewEmbargoDays(
+      summary.reviewEmbargoDays,
+    );
   } else if (summary?.reviewEmbargoEnabled === false) {
     reviewEmbargoChoice.value = "no";
   } else {
     reviewEmbargoChoice.value = undefined;
+    reviewEmbargoDays.value = DEFAULT_BULK_IMPORT_REVIEW_EMBARGO_DAYS;
   }
 }
 
@@ -1056,31 +1203,6 @@ async function uploadPosterFileImmediately(file: File) {
       color: "error",
     });
     return;
-  }
-
-  const existing = findStagedPosterByFileName(file.name);
-  if (existing) {
-    const choice = await askDuplicateReplace([file.name]);
-    if (choice === "cancel" || choice === "skip") return;
-
-    try {
-      const { job } = await deleteBulkStagedPoster(
-        jobId.value,
-        existing.filePath,
-      );
-      stagedPosters.value = job.stagedPosters ?? [];
-      applyBatchStateFromJob(job);
-      clearPosterRowStatus(file.name);
-    } catch (error) {
-      toast.add({
-        title: "Could not replace file",
-        description:
-          fetchErrorDescription(error) ??
-          "The existing file could not be removed from storage.",
-        color: "error",
-      });
-      return;
-    }
   }
 
   posterRowStatus.value = {
@@ -1629,7 +1751,7 @@ async function continueToConference() {
       automateOrcidRorLookups: orcidRorAutomationChoice.value === "yes",
       reviewEmbargoEnabled: embargoEnabled,
       reviewEmbargoDays: embargoEnabled
-        ? DEFAULT_BULK_IMPORT_REVIEW_EMBARGO_DAYS
+        ? normalizeBulkImportReviewEmbargoDays(reviewEmbargoDays.value)
         : undefined,
     });
     extractionStepAcknowledged.value = true;
@@ -2064,10 +2186,12 @@ async function startImport() {
               ref="posterFileUploadRef"
               hide-file-list
               multiple
+              enable-directory-picker
               title="Upload all posters for this batch"
-              description="Drag and drop every poster file here, or click to browse."
-              :accept="POSTER_FILE_ACCEPT"
+              description="Drag and drop poster files, a folder, or a ZIP archive here, or click to browse."
+              :accept="BULK_POSTER_UPLOAD_ACCEPT"
               :validate-file="validatePosterUploadFile"
+              :resolve-dropped-files="readBulkPosterUploadDataTransfer"
               :hint="`${POSTER_ONLY_HINT}. Files upload as soon as you add them.`"
               @on-change="onPosterFilesSelected"
               @on-reject="onPosterFilesRejected"
@@ -2281,17 +2405,33 @@ async function startImport() {
           </UFormField>
 
           <UFormField
-            label="30-day embargo before Zenodo submission"
+            label="Embargo before Zenodo submission"
             required
-            description="Choose whether posters stay on Posters.science for a 30-day review period with an editable spreadsheet before Zenodo publish."
+            description="Choose whether posters stay on Posters.science for an on-site review period with an editable spreadsheet before Zenodo publish."
           >
-            <URadioGroup
-              v-model="reviewEmbargoChoice"
-              :items="reviewEmbargoItems"
-              value-key="value"
-              label-key="label"
-              :ui="{ fieldset: 'gap-3', item: 'items-start' }"
-            />
+            <div class="space-y-3">
+              <URadioGroup
+                v-model="reviewEmbargoChoice"
+                :items="reviewEmbargoItems"
+                value-key="value"
+                label-key="label"
+                :ui="{ fieldset: 'gap-3', item: 'items-start' }"
+              />
+
+              <UFormField
+                v-if="reviewEmbargoChoice === 'yes'"
+                label="Review period"
+                :description="`Posters remain editable on Posters.science for this many days before you publish to Zenodo (${MIN_BULK_IMPORT_REVIEW_EMBARGO_DAYS}–${MAX_BULK_IMPORT_REVIEW_EMBARGO_DAYS} days).`"
+              >
+                <USelectMenu
+                  v-model="reviewEmbargoDays"
+                  :items="reviewEmbargoDayOptions"
+                  value-key="value"
+                  label-key="label"
+                  class="max-w-xs"
+                />
+              </UFormField>
+            </div>
           </UFormField>
         </div>
 
@@ -2939,13 +3079,21 @@ async function startImport() {
   <UModal
     v-model:open="duplicateReplaceModalOpen"
     :dismissible="false"
-    title="Replace files already in storage?"
-    description="These poster file names are already saved for this import."
-    class="max-w-md"
+    title="File names already in this import"
+    class="max-w-lg"
   >
     <template #body>
+      <p class="text-muted text-sm">
+        {{
+          duplicateReplaceNames.length === 1
+            ? "1 poster file matches a name already saved for this import."
+            : `${duplicateReplaceNames.length} poster files match names already saved for this import.`
+        }}
+        Choose once for all of them. Other files in your selection will still
+        upload.
+      </p>
       <ul
-        class="border-default divide-default max-h-48 divide-y overflow-y-auto rounded-md border text-sm"
+        class="border-default divide-default mt-3 max-h-60 divide-y overflow-y-auto rounded-md border text-sm"
       >
         <li
           v-for="name in duplicateReplaceNames"
@@ -2957,8 +3105,8 @@ async function startImport() {
         </li>
       </ul>
       <p class="text-muted mt-3 text-sm">
-        Replace removes the stored copy and uploads your newly selected file.
-        Keep existing skips uploading those names.
+        Replace all removes the saved copies and uploads your new files.
+        Keep existing skips uploading these names only.
       </p>
     </template>
 
@@ -2966,18 +3114,24 @@ async function startImport() {
       <UButton
         color="neutral"
         variant="outline"
-        label="Cancel"
+        label="Cancel upload"
         @click="resolveDuplicateReplace('cancel')"
       />
       <UButton
         color="neutral"
         variant="soft"
-        label="Keep existing"
+        :label="
+          duplicateReplaceNames.length === 1
+            ? 'Keep existing'
+            : 'Keep all existing'
+        "
         @click="resolveDuplicateReplace('skip')"
       />
       <UButton
         color="primary"
-        label="Replace"
+        :label="
+          duplicateReplaceNames.length === 1 ? 'Replace' : 'Replace all'
+        "
         @click="resolveDuplicateReplace('replace')"
       />
     </template>

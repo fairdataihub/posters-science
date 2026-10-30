@@ -4,6 +4,10 @@ import type {
   CreateBulkPosterSubmissionJobBody,
   UpdateBulkPosterSubmissionJobBody,
 } from "#shared/types/bulkPosterSubmissionJob";
+import {
+  posterUploadBaseName,
+  posterUploadPathHint,
+} from "#shared/utils/bulkPosterUploadFileName";
 
 /** Client-side API for bulk jobs — keep components on these helpers, not raw paths. */
 export async function listBulkPosterSubmissionJobs() {
@@ -162,7 +166,11 @@ export async function uploadBulkPosterSubmissionFile(
   },
 ): Promise<BulkPosterSubmissionUploadResponse> {
   const formData = new FormData();
-  formData.append("file", file);
+  const stagedFileName =
+    file.name.includes("/") || file.name.includes("\\")
+      ? posterUploadBaseName(posterUploadPathHint(file))
+      : file.name;
+  formData.append("file", file, stagedFileName);
   formData.append("role", "poster");
 
   return await new Promise((resolve, reject) => {

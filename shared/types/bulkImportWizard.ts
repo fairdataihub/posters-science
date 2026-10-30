@@ -31,7 +31,7 @@ export const BULK_IMPORT_WIZARD_STEPS: BulkImportWizardStepDefinition[] = [
   {
     id: "extraction",
     label: "Poster details",
-    task: "Choose how much metadata we auto-fill from each poster PDF, whether to run ORCID/ROR lookups, and whether to use a 30-day on-site review period before Zenodo.",
+    task: "Choose how much metadata we auto-fill from each poster PDF, whether to run ORCID/ROR lookups, and whether to use an on-site review period (1–30 days) before Zenodo.",
   },
   {
     id: "conference",

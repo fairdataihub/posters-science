@@ -47,8 +47,9 @@ function parseStagedPosters(value: unknown): BulkImportStagedPoster[] {
 function filterLicenseSpreadsheetRows(
   rows: unknown[] | undefined,
   removedFileNames: Set<string>,
-) {
-  if (!Array.isArray(rows) || removedFileNames.size === 0) return rows;
+): unknown[] | undefined {
+  if (!Array.isArray(rows)) return undefined;
+  if (removedFileNames.size === 0) return rows;
 
   return rows.filter((row) => {
     if (!row || typeof row !== "object") return true;
@@ -206,11 +207,15 @@ export async function removePostersFromBulkImportJob(
     ...summary,
     createdPosters: remainingCreated,
     createdPosterIds: remainingCreated.map((entry) => entry.posterId),
-    licenseSpreadsheetRows: filterLicenseSpreadsheetRows(
-      summary.licenseSpreadsheetRows,
-      removedFileNames,
-    ),
   };
+
+  const filteredLicenseRows = filterLicenseSpreadsheetRows(
+    summary.licenseSpreadsheetRows,
+    removedFileNames,
+  );
+  if (filteredLicenseRows !== undefined) {
+    nextSummary.licenseSpreadsheetRows = filteredLicenseRows;
+  }
 
   const updated = await repository.updateForUser(jobId, userId, {
     submissionSummary: nextSummary,
