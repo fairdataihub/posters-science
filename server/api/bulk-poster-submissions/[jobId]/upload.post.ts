@@ -2,6 +2,7 @@ import {
   MAX_POSTER_FILE_SIZE_BYTES,
   posterFileRejectionReason,
 } from "#shared/utils/posterFile";
+import { posterUploadBaseName } from "#shared/utils/bulkPosterUploadFileName";
 import type { BulkImportStagedPoster } from "#shared/types/bulkPosterSubmissionJob";
 import {
   bulkImportFolderExtension,
@@ -106,7 +107,7 @@ export default defineEventHandler(async (event) => {
   const folderExtension = bulkImportFolderExtension(siteEnv);
   const uploadedAt = new Date().toISOString();
 
-  const fileName = fileEntry.filename;
+  const fileName = posterUploadBaseName(fileEntry.filename);
   const fileType = fileEntry.type || "application/pdf";
 
   const rejection = posterFileRejectionReason({

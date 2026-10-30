@@ -113,10 +113,14 @@ function buildUpdateData(
     data.posterCount = patch.posterCount;
   }
   if (patch.submissionSummary !== undefined) {
-    data.submissionSummary =
-      patch.submissionSummary === null
-        ? Prisma.JsonNull
-        : (patch.submissionSummary as Prisma.InputJsonValue);
+    if (patch.submissionSummary === null) {
+      data.submissionSummary = Prisma.JsonNull;
+    } else {
+      // Prisma JSON fields reject explicit `undefined` property values.
+      data.submissionSummary = JSON.parse(
+        JSON.stringify(patch.submissionSummary),
+      ) as Prisma.InputJsonValue;
+    }
   }
   if (patch.error !== undefined) {
     data.error = patch.error;

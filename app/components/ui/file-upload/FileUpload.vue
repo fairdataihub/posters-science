@@ -24,6 +24,13 @@ interface FileUploadProps {
   hideFileList?: boolean;
   /** When true, rejected files are not shown inside the drop zone. */
   hideRejections?: boolean;
+  /** When true, show a control to pick a folder (`webkitdirectory`). */
+  enableDirectoryPicker?: boolean;
+  /**
+   * Expand drag-and-drop into individual files (e.g. folders and ZIP archives).
+   * The native `files` list alone cannot represent a dropped directory tree.
+   */
+  resolveDroppedFiles?: (dataTransfer: DataTransfer) => Promise<File[]>;
 }
 
 const props = withDefaults(defineProps<FileUploadProps>(), {
@@ -35,6 +42,8 @@ const props = withDefaults(defineProps<FileUploadProps>(), {
   hint: undefined,
   hideFileList: false,
   hideRejections: false,
+  enableDirectoryPicker: false,
+  resolveDroppedFiles: undefined,
 });
 
 const emit = defineEmits<{
@@ -43,6 +52,8 @@ const emit = defineEmits<{
 }>();
 
 const fileInputRef = ref<HTMLInputElement | null>(null);
+const folderInputRef = ref<HTMLInputElement | null>(null);
+const dropResolving = ref(false);
 const files = ref<File[]>([]);
 const isActive = ref<boolean>(false);
 const rejections = ref<{ name: string; reason: string }[]>([]);
@@ -98,6 +109,11 @@ function handleClick() {
   fileInputRef.value?.click();
 }
 
+function handleFolderClick(event: MouseEvent) {
+  event.stopPropagation();
+  folderInputRef.value?.click();
+}
+
 function handleEnter() {
   isActive.value = true;
 }
@@ -106,16 +122,26 @@ function handleLeave() {
 }
 function handleDrop(e: DragEvent) {
   isActive.value = false;
-  const droppedFiles = e.dataTransfer?.files
-    ? Array.from(e.dataTransfer.files)
-    : [];
-  if (droppedFiles.length) handleFileChange(droppedFiles);
+  if (!e.dataTransfer) return;
+
+  void (async () => {
+    dropResolving.value = true;
+    try {
+      const droppedFiles = props.resolveDroppedFiles
+        ? await props.resolveDroppedFiles(e.dataTransfer!)
+        : [...(e.dataTransfer?.files ?? [])];
+      if (droppedFiles.length) handleFileChange(droppedFiles);
+    } finally {
+      dropResolving.value = false;
+    }
+  })();
 }
 
 function clearFiles() {
   files.value = [];
   rejections.value = [];
   if (fileInputRef.value) fileInputRef.value.value = "";
+  if (folderInputRef.value) folderInputRef.value.value = "";
   emit("onChange", []);
 }
 
@@ -145,6 +171,16 @@ defineExpose({ clearFiles });
           @change="onFileChange"
         />
 
+        <input
+          v-if="enableDirectoryPicker"
+          ref="folderInputRef"
+          type="file"
+          class="hidden"
+          multiple
+          webkitdirectory
+          @change="onFileChange"
+        />
+
         <!-- Grid pattern -->
         <div
           class="pointer-events-none absolute inset-0 mask-[radial-gradient(ellipse_at_center,white,transparent)]"
@@ -171,6 +207,27 @@ defineExpose({ clearFiles });
             class="relative z-20 mt-1 font-sans text-sm font-normal text-neutral-400 dark:text-neutral-500"
           >
             {{ hint }}
+          </p>
+
+          <p
+            v-if="enableDirectoryPicker"
+            class="relative z-30 mt-3 font-sans text-sm text-neutral-500 dark:text-neutral-400"
+          >
+            <button
+              type="button"
+              class="text-primary font-medium underline-offset-2 hover:underline"
+              @click.stop="handleFolderClick"
+            >
+              Select a folder
+            </button>
+            <span> or drop a folder or ZIP here.</span>
+          </p>
+
+          <p
+            v-if="dropResolving"
+            class="relative z-20 mt-2 text-sm text-neutral-500 dark:text-neutral-400"
+          >
+            Reading dropped files…
           </p>
 
           <div
