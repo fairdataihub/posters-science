@@ -26,13 +26,27 @@ export function applyBulkReviewWorkbookSheetProtection(
     BULK_REVIEW_WORKBOOK_FIRST_DATA_ROW + PROTECTED_DATA_ROW_RESERVE - 1,
   );
 
+  const hasLockedColumns = lockedColumnNumbers.size > 0;
+
   for (let rowNumber = BULK_REVIEW_WORKBOOK_FIRST_DATA_ROW; rowNumber <= lastRow; rowNumber++) {
     const row = sheet.getRow(rowNumber);
     for (let colNumber = 1; colNumber <= columns.length; colNumber++) {
-      row.getCell(colNumber).protection = {
-        locked: lockedColumnNumbers.has(colNumber),
+      const cell = row.getCell(colNumber);
+      if (hasLockedColumns) {
+        cell.protection = {
+          locked: lockedColumnNumbers.has(colNumber),
+        };
+      }
+      const col = columns[colNumber - 1];
+      cell.alignment = {
+        vertical: "top",
+        ...(col?.wrapText ? { wrapText: true } : {}),
       };
     }
+  }
+
+  if (!hasLockedColumns) {
+    return;
   }
 
   void sheet.protect("", {

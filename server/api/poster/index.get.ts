@@ -42,35 +42,55 @@ export default defineEventHandler(async (event) => {
   const { user } = session;
   const userId = user.id;
 
-  const [posterRows, bulkSubmissionRows] = await Promise.all([
-    prisma.poster.findMany({
-      include: posterInclude,
-      where: {
-        userId,
-      },
-      orderBy: {
-        updated: "desc",
-      },
-    }),
-    prisma.bulkSubmission.findMany({
-      where: {
-        userId,
-        status: { in: ["draft", "processing", "failed"] },
-      },
-      orderBy: { updated: "desc" },
-      select: {
-        id: true,
-        name: true,
-        wizardStep: true,
-        status: true,
-        extractionMethod: true,
-        posterCount: true,
-        submissionSummary: true,
-        created: true,
-        updated: true,
-      },
-    }),
-  ]);
+  const [posterRows, bulkSubmissionRows, completedBulkSubmissionRows] =
+    await Promise.all([
+      prisma.poster.findMany({
+        include: posterInclude,
+        where: {
+          userId,
+        },
+        orderBy: {
+          updated: "desc",
+        },
+      }),
+      prisma.bulkSubmission.findMany({
+        where: {
+          userId,
+          status: { in: ["draft", "processing", "failed"] },
+        },
+        orderBy: { updated: "desc" },
+        select: {
+          id: true,
+          name: true,
+          wizardStep: true,
+          status: true,
+          extractionMethod: true,
+          posterCount: true,
+          submissionSummary: true,
+          created: true,
+          updated: true,
+        },
+      }),
+      prisma.bulkSubmission.findMany({
+        where: {
+          userId,
+          status: "completed",
+        },
+        orderBy: { completedAt: "desc" },
+        select: {
+          id: true,
+          name: true,
+          wizardStep: true,
+          status: true,
+          extractionMethod: true,
+          posterCount: true,
+          submissionSummary: true,
+          created: true,
+          updated: true,
+          completedAt: true,
+        },
+      }),
+    ]);
 
   const families = new Map<number, typeof posterRows>();
 
@@ -164,7 +184,9 @@ export default defineEventHandler(async (event) => {
   const activeExtractionPosterIds =
     await posterIdsWithActiveExtractionJob(bulkPosterIds);
 
-  const bulkSubmissions = bulkSubmissionRows.map((bulk) => ({
+  const mapBulkSubmissionRow = (
+    bulk: (typeof bulkSubmissionRows)[number] & { completedAt?: Date | null },
+  ) => ({
     id: bulk.id,
     name: bulk.name,
     wizardStep: bulk.wizardStep,
@@ -179,7 +201,14 @@ export default defineEventHandler(async (event) => {
       ),
     createdAt: bulk.created.toISOString(),
     updatedAt: bulk.updated.toISOString(),
-  }));
+    completedAt: bulk.completedAt?.toISOString() ?? null,
+  });
+
+  const bulkSubmissions = bulkSubmissionRows.map(mapBulkSubmissionRow);
+
+  const completedBulkSubmissions = completedBulkSubmissionRows.map(
+    mapBulkSubmissionRow,
+  );
 
   const bulkHiddenPosterIds = posterIdsHiddenByBulkImport(bulkSubmissionRows);
 
@@ -210,6 +239,7 @@ export default defineEventHandler(async (event) => {
   return {
     posters,
     bulkSubmissions,
+    completedBulkSubmissions,
     inProgressFeed,
   };
 });

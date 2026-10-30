@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import dayjs from "dayjs";
-import { bulkExtractionLevelLabel } from "#shared/types/bulkExtractionLevel";
 import type { DashboardBulkSubmission } from "#shared/types/dashboardFeed";
-import { shareNewBulkPath } from "~/utils/sharePaths";
+import { shareBulkCompletionPath, shareNewBulkPath } from "~/utils/sharePaths";
 
 const props = defineProps<{
   bulk: DashboardBulkSubmission;
@@ -49,6 +48,13 @@ const displayTitle = computed(() => {
 const previewSeed = computed(() => `bulk-${props.bulk.id}`);
 
 function statusPresentation() {
+  if (props.bulk.status === "completed") {
+    return {
+      label: "Complete",
+      color: "success" as const,
+      icon: "i-lucide-circle-check",
+    };
+  }
   if (props.bulk.status === "failed") {
     return {
       label: "Needs attention",
@@ -78,15 +84,17 @@ const description = computed(() => {
   const staged =
     count === 1 ? "1 poster staged" : `${count} posters staged`;
 
-  const extraction = bulkExtractionLevelLabel(props.bulk.extractionMethod);
-  if (extraction) {
-    return `${staged} · ${extraction}`;
+  if (props.bulk.status === "completed") {
+    return count === 1
+      ? "1 poster published on Zenodo"
+      : `${count} posters published on Zenodo`;
   }
 
   return staged;
 });
 
 function actionLabel() {
+  if (props.bulk.status === "completed") return "View batch summary";
   if (props.bulk.status === "failed") return "Resolve issue";
   if (props.bulk.status === "processing" && props.bulk.hasActiveExtraction) {
     return "View progress";
@@ -96,6 +104,11 @@ function actionLabel() {
 }
 
 function continueImport() {
+  if (props.bulk.status === "completed") {
+    void navigateTo(shareBulkCompletionPath(props.bulk.id));
+    return;
+  }
+
   void navigateTo(shareNewBulkPath({ jobId: props.bulk.id }));
 }
 </script>
@@ -165,6 +178,17 @@ function continueImport() {
 
             <span
               v-if="
+                bulk.status === 'completed' &&
+                bulk.completedAt
+              "
+              class="flex items-center gap-1 border-l border-gray-100 pl-2 max-md:border-l-0 max-md:pl-0 dark:border-gray-800"
+            >
+              <Icon name="i-lucide-circle-check" class="h-3 w-3" />
+              Completed {{ dayjs(bulk.completedAt).format("MMMM D, YYYY") }}
+            </span>
+
+            <span
+              v-else-if="
                 dayjs(bulk.updatedAt).isAfter(dayjs(bulk.createdAt), 'day')
               "
               class="flex items-center gap-1 border-l border-gray-100 pl-2 max-md:border-l-0 max-md:pl-0 dark:border-gray-800"

@@ -13,12 +13,16 @@ import {
   BULK_REVIEW_WORKBOOK_FIRST_DATA_ROW,
   BULK_REVIEW_WORKBOOK_HEADER_ROW,
   BULK_REVIEW_WORKBOOK_SHEETS,
-  BULK_REVIEW_WORKBOOK_TIER_ROW,
-  bulkReviewWorkbookColumnFillArgb,
   bulkReviewWorkbookRequirementRowLabel,
 } from "../shared/bulkReviewWorkbookManifest.ts";
 import { applyBulkReviewWorkbookSheetProtection } from "../server/utils/bulkReviewWorkbookSheetProtection.ts";
-import { applyBulkReviewWorkbookColumnWidths } from "../server/utils/bulkReviewWorkbookColumnLayout.ts";
+import {
+  applyBulkReviewWorkbookColumnWidths,
+  applyBulkReviewWorkbookDataRowDefaults,
+  applyBulkReviewWorkbookMetaRows,
+} from "../server/utils/bulkReviewWorkbookColumnLayout.ts";
+
+const PROTECTED_DATA_ROW_RESERVE = 2000;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
@@ -41,38 +45,22 @@ function addDataSheet(
 
   const headers = sheetDef.columns.map((col) => col.header);
   sheet.addRow(headers);
+  sheet.addRow(sheetDef.columns.map((col) => col.instruction ?? ""));
   sheet.addRow(
     sheetDef.columns.map((col) => bulkReviewWorkbookRequirementRowLabel(col.tier)),
   );
 
   styleHeaderRow(sheet.getRow(BULK_REVIEW_WORKBOOK_HEADER_ROW));
-  styleHeaderRow(sheet.getRow(BULK_REVIEW_WORKBOOK_TIER_ROW));
-
-  sheetDef.columns.forEach((col, index) => {
-    const column = sheet.getColumn(index + 1);
-    column.eachCell?.({ includeEmpty: true }, (cell, rowNumber) => {
-      if (rowNumber === BULK_REVIEW_WORKBOOK_TIER_ROW) {
-        cell.fill = {
-          type: "pattern",
-          pattern: "solid",
-          fgColor: { argb: bulkReviewWorkbookColumnFillArgb(col.tier) },
-        };
-      }
-    });
-  });
 
   applyBulkReviewWorkbookColumnWidths(sheet, sheetDef.columns);
+  applyBulkReviewWorkbookMetaRows(sheet, sheetDef.columns);
 
-  sheet.getRow(BULK_REVIEW_WORKBOOK_HEADER_ROW).eachCell((cell, colNumber) => {
-    const tier = sheetDef.columns[colNumber - 1]?.tier;
-    if (tier) {
-      cell.fill = {
-        type: "pattern",
-        pattern: "solid",
-        fgColor: { argb: bulkReviewWorkbookColumnFillArgb(tier) },
-      };
-    }
-  });
+  applyBulkReviewWorkbookDataRowDefaults(
+    sheet,
+    sheetDef.columns,
+    BULK_REVIEW_WORKBOOK_FIRST_DATA_ROW,
+    BULK_REVIEW_WORKBOOK_FIRST_DATA_ROW + PROTECTED_DATA_ROW_RESERVE - 1,
+  );
 
   applyBulkReviewWorkbookSheetProtection(sheet, sheetDef.columns);
 
@@ -94,27 +82,27 @@ function addInstructionsSheet(workbook: ExcelJS.Workbook) {
     ],
     [
       "keys",
-      "Join rows with Poster ID. Do not edit Poster ID or File name. You can resize column widths in Excel.",
+      "Join rows with Poster ID. Copy Poster ID and File name when adding rows on child sheets.",
     ],
     [
       "keywords",
-      "On About the poster, use semicolon-separated keywords (e.g. Machine Learning; Diabetes).",
+      "On About the Poster, use semicolon-separated keywords (e.g. Machine Learning; Diabetes).",
     ],
     [
       "creators",
-      "Creators: one row per affiliation; repeat creator columns when an author has multiple affiliations.",
+      "Creators: one row per author with ORCID and Affiliation 1–30 (+ ROR). Additional information: one row per poster (abstract, language, domain). Related resources, Funding, Poster content, Table captions, and Image captions are separate sheets.",
     ],
     [
       "links_and_content",
-      "Links & funding: one block of columns for related resources, one for funding (rows may repeat). Poster content: section title and body text per row.",
+      "Poster content is section title + section content only. Figure and table text goes on Image captions and Table captions.",
     ],
     [
       "data_rows",
-      `Data starts on row ${BULK_REVIEW_WORKBOOK_FIRST_DATA_ROW} on each sheet. Row 1 is the column title; row 2 shows Required or Optional.`,
+      `Data starts on row ${BULK_REVIEW_WORKBOOK_FIRST_DATA_ROW} on each sheet. Row 1 is the column title; row 2 has field instructions (same as the single-poster metadata form); row 3 shows Required or Optional.`,
     ],
     [
       "minimal_vs_full",
-      "Downloaded workbooks prefill cells according to this batch's extraction setting (see prefill_level when you download). Column colors distinguish required (blue) and optional (gray) fields; locked Poster ID and File name columns are gray.",
+      "Downloaded workbooks prefill cells according to this batch's extraction setting (see prefill_level when you download). Column colors distinguish required (blue) and optional (gray) fields. Poster ID and File name are reference columns you can copy when adding rows or moving data between sheets.",
     ],
     ["prefill_level", "Set when you download this template for a batch."],
     ["", ""],

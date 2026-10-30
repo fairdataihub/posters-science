@@ -14,7 +14,7 @@ export type BulkImportWizardStepCompletion = {
   submit: MaybeRefOrGetter<boolean>;
   /** Batch submitted to the extraction pipeline. */
   review: MaybeRefOrGetter<boolean>;
-  /** At least one poster finished extraction (poster.json preview available). */
+  /** At least one poster finished extraction (preview step available). */
   preview: MaybeRefOrGetter<boolean>;
   /** Repository submit step (same as preview gate). */
   publish: MaybeRefOrGetter<boolean>;

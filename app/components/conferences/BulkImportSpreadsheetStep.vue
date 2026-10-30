@@ -17,9 +17,9 @@ const emit = defineEmits<{
 
 const prefillDescription = computed(() => {
   if (props.extractionMethod === "minimal") {
-    return "Download one Excel workbook for this batch. Sheets match the poster editor; only high-confidence extracted fields and batch conference/license values are prefilled. Other columns stay blank for optional edits.";
+    return "Download one Excel workbook aligned with the poster editor: About the Poster, Creators (ORCID + affiliations), Conference, Additional information, Related resources, Funding, Poster content, and caption sheets.";
   }
-  return "Download one Excel workbook for this batch. Each sheet matches a section of the poster editor. All extracted metadata tiers are prefilled where available.";
+  return "Download one Excel workbook for this batch. Sheets match the share UI sections; Creators rows include up to 30 affiliations per author.";
 });
 
 const uploadDisabled = computed(

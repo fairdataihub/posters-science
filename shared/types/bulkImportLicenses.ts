@@ -17,6 +17,8 @@ export type BulkImportSubmissionSummary = {
   /** When true, posters stay in an on-site review spreadsheet for 30 days before Zenodo. */
   reviewEmbargoEnabled?: boolean;
   reviewEmbargoDays?: number;
+  /** ISO timestamp when every batch poster finished Zenodo / platform publish. */
+  zenodoBatchCompletedAt?: string;
   /** Set when the batch is submitted to the extraction pipeline. */
   submittedAt?: string;
   createdPosterIds?: number[];
