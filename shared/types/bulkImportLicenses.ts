@@ -14,9 +14,9 @@ export type BulkImportSubmissionSummary = {
   conference?: BulkImportConferenceMetadata;
   /** When true, run automated ORCID and ROR lookups where possible. */
   automateOrcidRorLookups?: boolean;
-  /** When true, posters stay in an on-site review spreadsheet before Zenodo. */
+  /** When true, Zenodo records use a file embargo for `reviewEmbargoDays`. */
   reviewEmbargoEnabled?: boolean;
-  /** Days for on-site review when `reviewEmbargoEnabled` is true (1–30). */
+  /** File embargo length in days when `reviewEmbargoEnabled` is true (1–30). */
   reviewEmbargoDays?: number;
   /** ISO timestamp when every batch poster finished Zenodo / platform publish. */
   zenodoBatchCompletedAt?: string;

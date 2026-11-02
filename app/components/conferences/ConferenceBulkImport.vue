@@ -18,14 +18,6 @@ import {
   type BulkImportConferenceFormState,
 } from "#shared/types/bulkImportConference";
 import type { BulkImportSubmissionSummary } from "#shared/types/bulkImportLicenses";
-import {
-  DEFAULT_BULK_IMPORT_REVIEW_EMBARGO_DAYS,
-  isBulkImportReviewEmbargoDaysValid,
-  MAX_BULK_IMPORT_REVIEW_EMBARGO_DAYS,
-  MIN_BULK_IMPORT_REVIEW_EMBARGO_DAYS,
-  normalizeBulkImportReviewEmbargoDays,
-  type BulkImportReviewEmbargoChoice,
-} from "#shared/types/bulkImportReviewEmbargo";
 import { BULK_IMPORT_ACCEPTABLE_LICENSES } from "#shared/data/bulkImportAcceptableLicenses";
 import identifierTypes from "@/assets/data/identifier-types.json";
 import type { BulkImportWizardStep } from "#shared/types/bulkImportWizard";
@@ -131,40 +123,14 @@ const orcidRorAutomationItems: {
   label: string;
   value: OrcidRorAutomationChoice;
 }[] = [
-  { label: "Yes", value: "yes" },
-  { label: "No", value: "no" },
-];
-
-const reviewEmbargoChoice = ref<BulkImportReviewEmbargoChoice | undefined>(
-  undefined,
-);
-const reviewEmbargoDays = ref(DEFAULT_BULK_IMPORT_REVIEW_EMBARGO_DAYS);
-
-const reviewEmbargoDayOptions = computed(() =>
-  Array.from(
-    {
-      length:
-        MAX_BULK_IMPORT_REVIEW_EMBARGO_DAYS -
-        MIN_BULK_IMPORT_REVIEW_EMBARGO_DAYS +
-        1,
-    },
-    (_, index) => {
-      const value =
-        index + MIN_BULK_IMPORT_REVIEW_EMBARGO_DAYS;
-      return {
-        label: value === 1 ? "1 day" : `${value} days`,
-        value,
-      };
-    },
-  ),
-);
-
-const reviewEmbargoItems: {
-  label: string;
-  value: BulkImportReviewEmbargoChoice;
-}[] = [
-  { label: "Yes", value: "yes" },
-  { label: "No", value: "no" },
+  {
+    label: "Yes — look up missing ORCID and ROR from names",
+    value: "yes",
+  },
+  {
+    label: "No — do not look up; remove ORCID/ROR from extraction",
+    value: "no",
+  },
 ];
 
 function isExtractionLevelSelected(value: BulkSubmissionExtractionMethod) {
@@ -507,11 +473,7 @@ const canContinueFromUpload = computed(
 const extractionStepAcknowledged = ref(false);
 
 const extractionStepReady = computed(
-  () =>
-    orcidRorAutomationChoice.value !== undefined &&
-    reviewEmbargoChoice.value !== undefined &&
-    (reviewEmbargoChoice.value === "no" ||
-      isBulkImportReviewEmbargoDaysValid(reviewEmbargoDays.value)),
+  () => orcidRorAutomationChoice.value !== undefined,
 );
 
 const extractionStepComplete = computed(
@@ -652,6 +614,26 @@ async function mergeJobSubmissionSummary(
 /** Declared before wizard composable (step completion reads batch state). */
 const batchItems = ref<BulkImportBatchItem[]>([]);
 const metadataRefreshKey = ref(0);
+const bulkMetadataValidation = ref({
+  allValid: false,
+  invalidCount: 0,
+  pending: true,
+});
+
+function onBulkMetadataValidationChange(payload: {
+  allValid: boolean;
+  invalidCount: number;
+  pending: boolean;
+}) {
+  bulkMetadataValidation.value = payload;
+}
+
+const canContinueFromPreviewStep = computed(
+  () =>
+    batchHasCompletedExtractions.value &&
+    bulkMetadataValidation.value.allValid &&
+    !bulkMetadataValidation.value.pending,
+);
 const batchImportFinished = ref(false);
 const batchHasCompletedExtractions = computed(() =>
   batchItems.value.some((item) => item.status === "completed"),
@@ -683,7 +665,7 @@ const {
     submit: canProceedFromReview,
     review: batchImportFinished,
     preview: batchHasCompletedExtractions,
-    publish: batchHasCompletedExtractions,
+    publish: canContinueFromPreviewStep,
   },
   {
     initialJobId: props.initialJobId,
@@ -757,18 +739,6 @@ function applyLicenseSummaryFromJob(job: BulkPosterSubmissionJob) {
     orcidRorAutomationChoice.value = "no";
   } else {
     orcidRorAutomationChoice.value = undefined;
-  }
-
-  if (summary?.reviewEmbargoEnabled === true) {
-    reviewEmbargoChoice.value = "yes";
-    reviewEmbargoDays.value = normalizeBulkImportReviewEmbargoDays(
-      summary.reviewEmbargoDays,
-    );
-  } else if (summary?.reviewEmbargoEnabled === false) {
-    reviewEmbargoChoice.value = "no";
-  } else {
-    reviewEmbargoChoice.value = undefined;
-    reviewEmbargoDays.value = DEFAULT_BULK_IMPORT_REVIEW_EMBARGO_DAYS;
   }
 }
 
@@ -858,13 +828,46 @@ async function ensureResumeJobLoaded() {
     const job = await getBulkPosterSubmissionJob(id);
 
     if (job.status === "completed") {
-      await navigateTo(shareBulkCompletionPath(job.id));
-      return;
+      try {
+        const completion = await $fetch<{
+          awaitingEmbargoRelease?: boolean;
+          completedAt?: string | null;
+        }>(`/api/bulk-poster-submissions/${job.id}/completion`);
+        if (
+          !completion.awaitingEmbargoRelease &&
+          completion.completedAt
+        ) {
+          await navigateTo(shareBulkCompletionPath(job.id));
+          return;
+        }
+      } catch {
+        await navigateTo(shareBulkCompletionPath(job.id));
+        return;
+      }
     }
 
-    const step =
+    let step =
       normalizeBulkImportWizardStep(job.wizardStep) ??
       resolveResumeWizardStep();
+
+    if (job.status !== "completed") {
+      try {
+        const completion = await $fetch<{
+          allPublishedOnPlatform?: boolean;
+          awaitingEmbargoRelease?: boolean;
+        }>(`/api/bulk-poster-submissions/${job.id}/completion`);
+        if (
+          completion.allPublishedOnPlatform &&
+          completion.awaitingEmbargoRelease
+        ) {
+          step = "publish";
+        }
+      } catch {
+        // Keep saved wizard step.
+      }
+    } else {
+      step = "publish";
+    }
 
     if (
       shouldHydrateExtractionStatuses(job) &&
@@ -1021,6 +1024,20 @@ async function navigateToWizardStep(step: BulkImportWizardStep) {
 }
 
 async function goToStep(step: BulkImportWizardStep) {
+  if (step === "publish" && !canContinueFromPreviewStep.value) {
+    if (currentStep.value === "preview") {
+      continueToPublishStep();
+    } else {
+      toast.add({
+        title: "Complete poster previews first",
+        description:
+          "Open the poster previews step and fix required metadata on every poster.",
+        color: "warning",
+      });
+    }
+    return;
+  }
+
   const moved = goToWizardStep(step, {
     beforeEnter: (target) => {
       if (target === "upload") {
@@ -1043,6 +1060,9 @@ watch(
     if (id && step === "upload") {
       void refreshStagedPostersFromStorage();
     }
+    if (step === "preview") {
+      metadataRefreshKey.value += 1;
+    }
     // Submit step refresh is handled by onEnterSubmitStep to avoid duplicate polls.
     if (
       step === "review" ||
@@ -1058,6 +1078,15 @@ watch(
       step !== "publish"
     ) {
       stopBatchExtractionPolling();
+    }
+  },
+);
+
+watch(
+  () => route.fullPath,
+  () => {
+    if (currentStep.value === "preview") {
+      metadataRefreshKey.value += 1;
     }
   },
 );
@@ -1746,13 +1775,8 @@ async function continueToConference() {
     await updateBulkPosterSubmissionJob(jobId.value, {
       extractionMethod: extractionMethod.value,
     });
-    const embargoEnabled = reviewEmbargoChoice.value === "yes";
     await mergeJobSubmissionSummary({
       automateOrcidRorLookups: orcidRorAutomationChoice.value === "yes",
-      reviewEmbargoEnabled: embargoEnabled,
-      reviewEmbargoDays: embargoEnabled
-        ? normalizeBulkImportReviewEmbargoDays(reviewEmbargoDays.value)
-        : undefined,
     });
     extractionStepAcknowledged.value = true;
     void persistWizardStep("extraction");
@@ -1900,6 +1924,29 @@ function continueToViewMetadata() {
 
 function continueToPublishStep() {
   if (!batchHasCompletedExtractions.value) return;
+
+  if (bulkMetadataValidation.value.pending) {
+    toast.add({
+      title: "Checking metadata",
+      description: "Wait until every poster has finished loading.",
+      color: "neutral",
+    });
+    return;
+  }
+
+  if (!bulkMetadataValidation.value.allValid) {
+    const count = bulkMetadataValidation.value.invalidCount;
+    toast.add({
+      title: "Required metadata incomplete",
+      description:
+        count === 1
+          ? "Fix the highlighted poster using Edit metadata, then try again."
+          : `${count} posters still need required fields before you can continue.`,
+      color: "error",
+    });
+    return;
+  }
+
   if (goToStep("publish")) {
     void persistWizardStep("publish");
   }
@@ -2393,7 +2440,7 @@ async function startImport() {
           <UFormField
             label="Automate ORCID and ROR lookups"
             required
-            description="Choose whether we should look up ORCID and ROR identifiers for creators and affiliations in this batch."
+            description="When enabled, we search ORCID and ROR for missing creator and affiliation identifiers after extraction. When disabled, we remove ORCID/ROR values the extractor may have guessed so you can add them manually."
           >
             <URadioGroup
               v-model="orcidRorAutomationChoice"
@@ -2402,36 +2449,6 @@ async function startImport() {
               label-key="label"
               :ui="{ fieldset: 'gap-3', item: 'items-start' }"
             />
-          </UFormField>
-
-          <UFormField
-            label="Embargo before Zenodo submission"
-            required
-            description="Choose whether posters stay on Posters.science for an on-site review period with an editable spreadsheet before Zenodo publish."
-          >
-            <div class="space-y-3">
-              <URadioGroup
-                v-model="reviewEmbargoChoice"
-                :items="reviewEmbargoItems"
-                value-key="value"
-                label-key="label"
-                :ui="{ fieldset: 'gap-3', item: 'items-start' }"
-              />
-
-              <UFormField
-                v-if="reviewEmbargoChoice === 'yes'"
-                label="Review period"
-                :description="`Posters remain editable on Posters.science for this many days before you publish to Zenodo (${MIN_BULK_IMPORT_REVIEW_EMBARGO_DAYS}–${MAX_BULK_IMPORT_REVIEW_EMBARGO_DAYS} days).`"
-              >
-                <USelectMenu
-                  v-model="reviewEmbargoDays"
-                  :items="reviewEmbargoDayOptions"
-                  value-key="value"
-                  label-key="label"
-                  class="max-w-xs"
-                />
-              </UFormField>
-            </div>
           </UFormField>
         </div>
 
@@ -2939,6 +2956,7 @@ async function startImport() {
               :metadata-refresh-key="metadataRefreshKey"
               :retrying-job-ids="batchRetryingJobIds"
               @retry="retryBatchExtraction"
+              @validation-change="onBulkMetadataValidationChange"
             />
           </div>
         </div>
@@ -2959,7 +2977,7 @@ async function startImport() {
             icon="i-lucide-arrow-right"
             trailing
             label="Save and Continue"
-            :disabled="!batchHasCompletedExtractions"
+            :disabled="!canContinueFromPreviewStep"
             @click="continueToPublishStep"
           />
         </div>

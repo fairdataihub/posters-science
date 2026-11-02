@@ -8,6 +8,11 @@ import {
 } from "#shared/utils/posterFile";
 import { LICENSE_OPTIONS } from "~/utils/poster_schema";
 import { normalizeDoi, validateDoi } from "#shared/utils/doi";
+import {
+  formatZenodoFileEmbargoTimeRemaining,
+  formatZenodoFileEmbargoUntilLabel,
+  isZenodoFileEmbargoActive,
+} from "#shared/utils/zenodoFileEmbargoAccess";
 import { shareNewBulkPath } from "~/utils/sharePaths";
 import { deleteBulkPosterSubmissionJob } from "~/utils/bulkPosterSubmissionJobClient";
 import type {
@@ -69,6 +74,8 @@ type Poster = {
   // own published posters but read-only, since the user doesn't own it.
   claimed: boolean;
   claimedAt: Date | null;
+  /** YYYY-MM-DD (UTC) when Zenodo file download embargo ends; null if not embargoed. */
+  zenodoFilesEmbargoUntil: string | null;
 };
 
 type ExtractionJobSummary = {
@@ -104,6 +111,10 @@ const posters = ref<Poster[]>([]);
 const bulkSubmissions = ref<DashboardBulkSubmission[]>([]);
 const completedBulkSubmissions = ref<DashboardBulkSubmission[]>([]);
 const inProgressFeed = ref<DashboardInProgressFeedEntry[]>([]);
+const activeBulkManagedPosterIds = ref<number[]>([]);
+const activeBulkManagedPosterIdSet = computed(
+  () => new Set(activeBulkManagedPosterIds.value),
+);
 const showTombstonedPosters = useCookie<boolean>(
   "dashboard-show-tombstoned-posters",
   {
@@ -113,6 +124,29 @@ const showTombstonedPosters = useCookie<boolean>(
   },
 );
 const expandedPublishedFamilies = ref(new Set<number>());
+
+const embargoClockNow = ref(Date.now());
+let embargoClockInterval: ReturnType<typeof setInterval> | undefined;
+
+function isPosterZenodoEmbargoActive(poster: Poster): boolean {
+  return isZenodoFileEmbargoActive(
+    poster.zenodoFilesEmbargoUntil,
+    new Date(embargoClockNow.value),
+  );
+}
+
+function posterEmbargoTimeRemainingLabel(poster: Poster): string | null {
+  const until = poster.zenodoFilesEmbargoUntil;
+  if (!until || !isPosterZenodoEmbargoActive(poster)) return null;
+  return formatZenodoFileEmbargoTimeRemaining(
+    until,
+    new Date(embargoClockNow.value),
+  );
+}
+
+function posterShowsPublishedDashboardActions(poster: Poster): boolean {
+  return poster.status === "published" && !isPosterZenodoEmbargoActive(poster);
+}
 
 const tombstonedPosterCount = computed(
   () => posters.value.filter((poster) => poster.tombstone).length,
@@ -124,7 +158,8 @@ const tombstoneFilteredPosters = computed(() =>
 );
 const inProgressPosters = computed(() =>
   tombstoneFilteredPosters.value.filter(
-    (poster) => poster.status !== "published",
+    (poster) =>
+      poster.status !== "published" || isPosterZenodoEmbargoActive(poster),
   ),
 );
 
@@ -150,7 +185,11 @@ const inProgressDashboardItems = computed(() => {
 });
 const publishedPosters = computed(() =>
   tombstoneFilteredPosters.value.filter(
-    (poster) => poster.status === "published" && poster.isLatestPublished,
+    (poster) =>
+      poster.status === "published" &&
+      poster.isLatestPublished &&
+      !isPosterZenodoEmbargoActive(poster) &&
+      !activeBulkManagedPosterIdSet.value.has(poster.id),
   ),
 );
 const activeDashboardTab = ref<"in-progress" | "published">("in-progress");
@@ -249,6 +288,7 @@ function applyDashboardFeed(feed: DashboardPosterFeedResponse | Poster[]) {
     bulkSubmissions.value = [];
     completedBulkSubmissions.value = [];
     inProgressFeed.value = [];
+    activeBulkManagedPosterIds.value = [];
     return;
   }
 
@@ -256,6 +296,7 @@ function applyDashboardFeed(feed: DashboardPosterFeedResponse | Poster[]) {
   bulkSubmissions.value = feed.bulkSubmissions ?? [];
   completedBulkSubmissions.value = feed.completedBulkSubmissions ?? [];
   inProgressFeed.value = feed.inProgressFeed ?? [];
+  activeBulkManagedPosterIds.value = feed.activeBulkManagedPosterIds ?? [];
 }
 
 if (data.value) {
@@ -1213,6 +1254,10 @@ async function createVersion() {
 }
 
 onMounted(() => {
+  embargoClockInterval = setInterval(() => {
+    embargoClockNow.value = Date.now();
+  }, 60_000);
+
   // Resume reporting on whichever draft is still preparing, whether it is
   // waiting on extraction or only on its preview image.
   const preparingDraft = posters.value.find((poster) =>
@@ -1227,6 +1272,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   dashboardActive = false;
+  if (embargoClockInterval) clearInterval(embargoClockInterval);
   stopVersionPolling();
   stopVersionClock();
 });
@@ -1561,6 +1607,13 @@ function posterStatusPresentation(poster: Poster) {
       icon: "i-lucide-archive-x",
     };
   }
+  if (isPosterZenodoEmbargoActive(poster)) {
+    return {
+      label: "File embargo",
+      color: "warning" as const,
+      icon: "i-lucide-lock",
+    };
+  }
   if (poster.status === "published") {
     return {
       label: "Published",
@@ -1621,6 +1674,7 @@ function posterStatusPresentation(poster: Poster) {
 }
 
 function inProgressActionLabel(poster: Poster) {
+  if (isPosterZenodoEmbargoActive(poster)) return "View poster";
   if (poster.versionRootId !== null) {
     if (isVersionPreparing(poster)) return "View progress";
     if (isVersionExtractionFailed(poster)) return "Resolve issue";
@@ -1633,6 +1687,10 @@ function inProgressActionLabel(poster: Poster) {
 }
 
 function openInProgressPoster(poster: Poster) {
+  if (isPosterZenodoEmbargoActive(poster)) {
+    openPoster(poster);
+    return;
+  }
   if (poster.status === "downloaded" && poster.versionRootId === null) {
     openPublicationModal(poster);
 
@@ -1699,7 +1757,7 @@ function posterMenuItems(poster: Poster) {
       :links="[
         {
           label: 'Share a Poster',
-          to: '/share/new',
+          to: '/share',
           icon: 'heroicons:plus',
           color: 'primary' as const,
         },
@@ -1995,7 +2053,29 @@ function posterMenuItems(poster: Poster) {
                     </span>
 
                     <span
-                      v-if="poster.publishedAt"
+                      v-if="posterEmbargoTimeRemainingLabel(poster)"
+                      class="flex items-center gap-1 border-l border-gray-100 pl-2 max-md:border-l-0 max-md:pl-0 dark:border-gray-800"
+                    >
+                      <Icon name="i-lucide-lock" class="h-3 w-3" />
+                      {{ posterEmbargoTimeRemainingLabel(poster) }}
+                      <span
+                        v-if="poster.zenodoFilesEmbargoUntil"
+                        class="text-muted"
+                      >
+                        (until
+                        {{
+                          formatZenodoFileEmbargoUntilLabel(
+                            poster.zenodoFilesEmbargoUntil,
+                          )
+                        }}
+                        UTC)
+                      </span>
+                    </span>
+
+                    <span
+                      v-if="
+                        poster.publishedAt && posterShowsPublishedDashboardActions(poster)
+                      "
                       class="flex items-center gap-1 border-l border-gray-100 pl-2 max-md:border-l-0 max-md:pl-0 dark:border-gray-800"
                     >
                       <Icon
@@ -2005,6 +2085,20 @@ function posterMenuItems(poster: Poster) {
                       Published
                       {{ dayjs(poster.publishedAt).format("MMMM D, YYYY") }}
                     </span>
+
+                    <span
+                      v-else-if="
+                        poster.publishedAt && isPosterZenodoEmbargoActive(poster)
+                      "
+                      class="flex items-center gap-1 border-l border-gray-100 pl-2 max-md:border-l-0 max-md:pl-0 dark:border-gray-800"
+                    >
+                      <Icon
+                        name="heroicons:presentation-chart-bar"
+                        class="h-3 w-3"
+                      />
+                      Submitted to Zenodo
+                      {{ dayjs(poster.publishedAt).format("MMMM D, YYYY") }}
+                    </span>
                   </div>
 
                   <div
@@ -2012,7 +2106,7 @@ function posterMenuItems(poster: Poster) {
                     class="flex items-center gap-2 max-md:flex-wrap"
                     @click.stop
                   >
-                    <template v-if="poster.status === 'published'">
+                    <template v-if="posterShowsPublishedDashboardActions(poster)">
                       <UButton
                         color="neutral"
                         variant="subtle"
@@ -2226,7 +2320,7 @@ function posterMenuItems(poster: Poster) {
 
       <NuxtLink
         v-else
-        to="/share/new"
+        to="/share"
         class="group inline-block rounded-2xl px-8 py-6 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800/50"
       >
         <div

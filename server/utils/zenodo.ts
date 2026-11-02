@@ -1,7 +1,15 @@
 import { buildPosterJson } from "./buildPosterJson";
+import { bulkZenodoFileEmbargoDaysForPoster } from "./bulkImportZenodoEmbargo";
 import { ensureThumbnailServicePosterPath } from "./posterObjectPath";
 import { toZenodoRelatedIdentifiers } from "./zenodoVocabulary";
 import { isValidOrcidChecksum, validateOrcidExists } from "#shared/utils/orcid";
+import {
+  zenodoFileEmbargoAccessFromDays,
+  zenodoPublicRdmAccess,
+  type ZenodoRdmAccess,
+  type ZenodoRdmFileEmbargoAccess,
+} from "#shared/utils/zenodoFileEmbargoAccess";
+import { zenodoRecordWebUrl } from "#shared/utils/zenodoRecordWebUrl";
 import isoLanguages from "#shared/data/iso-639-1.json";
 
 const ISO639_1_TO_3: Record<string, string> = Object.fromEntries(
@@ -156,6 +164,14 @@ async function getZenodoToken(userId: string) {
   }
 
   return tokenRecord;
+}
+
+/** Decrypted Zenodo access token for server-side API calls, if connected. */
+export async function getZenodoAccessTokenForApi(
+  userId: string,
+): Promise<string | null> {
+  const tokenRecord = await getZenodoToken(userId);
+  return tokenRecord?.accessToken ?? null;
 }
 
 // The stored token, decrypted, whether or not it has expired.
@@ -938,7 +954,7 @@ async function linkZenodoDeposition(
   posterId: number,
   userId: string,
   recordId: number,
-  published?: { doi?: string },
+  published?: { doi?: string; filesEmbargoUntil?: string | null },
   draftOrigin?: WorkingDraftOrigin,
 ) {
   const state = {
@@ -950,6 +966,9 @@ async function linkZenodoDeposition(
         ? NEW_DEPOSITION_DRAFT_STATUS
         : "draft",
     ...(published?.doi && { lastPublishedZenodoDoi: published.doi }),
+    ...(published && {
+      filesEmbargoUntil: published.filesEmbargoUntil ?? null,
+    }),
   };
 
   try {
@@ -1244,6 +1263,21 @@ export async function beginZenodoPublication(
     return { success: false, error: "Poster or metadata not found" };
   }
 
+  const bulkFileEmbargoDays =
+    mode === "new"
+      ? await bulkZenodoFileEmbargoDaysForPoster(userId, posterInt)
+      : null;
+  const zenodoFileEmbargoAccess =
+    bulkFileEmbargoDays != null
+      ? zenodoFileEmbargoAccessFromDays(bulkFileEmbargoDays)
+      : null;
+
+  if (zenodoFileEmbargoAccess) {
+    console.log(
+      `[Zenodo] Bulk batch file embargo until ${zenodoFileEmbargoAccess.embargo.until} [poster ${posterId}]`,
+    );
+  }
+
   // Sequential local versions must extend their existing Zenodo record. Check
   // this before thumbnail work or any remote draft can be created.
   if (poster.versionRootId && mode !== "existing") {
@@ -1436,7 +1470,10 @@ export async function beginZenodoPublication(
       data: {
         recordId: poster.zenodoDepositions.depositionId,
         doi: publishedDoi,
-        recordUrl: `${config.zenodoEndpoint}/records/${poster.zenodoDepositions.depositionId}`,
+        recordUrl: zenodoRecordWebUrl(
+          poster.zenodoDepositions.depositionId,
+          config.zenodoEndpoint,
+        ),
       },
     };
   }
@@ -1504,6 +1541,7 @@ export async function beginZenodoPublication(
         { skipRorIds: true },
       ),
     },
+    zenodoFileEmbargoAccess,
   );
 
   if (!status.success) {
@@ -1812,6 +1850,9 @@ export async function beginZenodoPublication(
       ...(draft.pids?.doi?.identifier && {
         pids: draft.pids as Record<string, unknown>,
       }),
+      ...(zenodoFileEmbargoAccess && {
+        rdmAccess: zenodoFileEmbargoAccess,
+      }),
     },
   );
 
@@ -1984,7 +2025,9 @@ export async function beginZenodoPublication(
   await onProgress?.({
     step: "publish",
     status: "in_progress",
-    message: "Publishing to Zenodo...",
+    message: zenodoFileEmbargoAccess
+      ? `Publishing to Zenodo (files under embargo until ${zenodoFileEmbargoAccess.embargo.until})...`
+      : "Publishing to Zenodo...",
   });
 
   // Publish the draft
@@ -2038,7 +2081,10 @@ export async function beginZenodoPublication(
     posterInt,
     userId,
     published.recordId,
-    { doi: publishedDoi },
+    {
+      doi: publishedDoi,
+      filesEmbargoUntil: zenodoFileEmbargoAccess?.embargo.until ?? null,
+    },
   );
 
   if (!linkedPublished.success) {
@@ -2179,11 +2225,15 @@ function rdmGet(path: string, zenodoToken: string) {
   });
 }
 
-async function createRdmDraft(zenodoToken: string, seed: RdmDraftSeed) {
+async function createRdmDraft(
+  zenodoToken: string,
+  seed: RdmDraftSeed,
+  access: ZenodoRdmAccess = zenodoPublicRdmAccess(),
+) {
   console.log("[Zenodo] Creating new InvenioRDM draft");
 
   const body = {
-    access: { record: "public", files: "public" },
+    access,
     files: { enabled: true },
     metadata: {
       title: seed.title,
@@ -2277,11 +2327,16 @@ async function acquireWorkingDraft(
   depositionId: number | undefined,
   zenodoToken: string,
   seed: RdmDraftSeed,
+  fileEmbargoAccess: ZenodoRdmFileEmbargoAccess | null = null,
 ): Promise<
   { success: true; data: WorkingDraft } | { success: false; error: string }
 > {
   if (mode === "new") {
-    const created = await createRdmDraft(zenodoToken, seed);
+    const created = await createRdmDraft(
+      zenodoToken,
+      seed,
+      fileEmbargoAccess ?? zenodoPublicRdmAccess(),
+    );
 
     return created.success
       ? {
@@ -2643,6 +2698,7 @@ type RdmExtras = {
   // Echoed back on the PUT so a full replacement update cannot drop a DOI the
   // draft already carries.
   pids?: Record<string, unknown>;
+  rdmAccess?: ZenodoRdmAccess;
 };
 
 // Builds a complete InvenioRDM PUT payload directly from DB data.
@@ -2723,6 +2779,10 @@ function buildFullRdmPayload(
   }
 
   return {
+    ...(options?.rdmAccess && {
+      access: options.rdmAccess,
+      files: { enabled: true },
+    }),
     metadata: {
       title: posterTitle,
       description: posterDescription,
@@ -2770,6 +2830,7 @@ async function updateRdmMetadata(
     | "dbRelated"
     | "presentedDates"
     | "pids"
+    | "rdmAccess"
   >,
 ): Promise<{ success: boolean; error?: string }> {
   try {
@@ -3232,13 +3293,7 @@ async function publishRdmDraft(zenodoToken: string, recordId: number) {
       doi: extractRecordDoi(record),
       conceptDoi: extractConceptDoi(record),
       ...(conceptRecordId !== undefined && { conceptRecordId }),
-      // self_html is this exact version; latest_html redirects to whichever
-      // version is newest, which is not what the user just published.
-      recordUrl:
-        record?.links?.self_html ??
-        record?.links?.record_html ??
-        record?.links?.latest_html ??
-        "",
+      recordUrl: zenodoRecordWebUrl(publishedId, config.zenodoEndpoint),
     };
 
     console.log(

@@ -16,6 +16,7 @@ export default defineEventHandler(async (event) => {
     select: {
       id: true,
       status: true,
+      completed: true,
       poster: {
         select: { id: true, posterMetadata: { select: { posterId: true } } },
       },
@@ -26,9 +27,15 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, statusMessage: "Job not found" });
   }
 
+  const snapshot: RequeueExtractionJobSnapshot = {
+    status: job.status,
+    completed: job.completed,
+    hasPosterMetadata: Boolean(job.poster.posterMetadata),
+  };
+
   const pending = await requeueExtractionJob(
     job.id,
-    Boolean(job.poster.posterMetadata),
+    snapshot,
     "admin/extraction-jobs/retry",
   );
 

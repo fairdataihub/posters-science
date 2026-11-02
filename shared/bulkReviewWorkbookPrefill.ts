@@ -8,7 +8,10 @@ import type {
   BulkReviewFieldTier,
   BulkReviewWorkbookColumn,
 } from "#shared/bulkReviewWorkbookManifest";
-import { bulkReviewWorkbookColumnByFillKey } from "#shared/bulkReviewWorkbookManifest";
+import {
+  bulkReviewColumnRequirement,
+  bulkReviewWorkbookColumnByFillKey,
+} from "#shared/bulkReviewWorkbookManifest";
 
 export type BulkReviewPosterContentKind = "section" | "figure" | "table";
 
@@ -155,6 +158,12 @@ export function bulkReviewShouldPersistExtractedField(
 ): boolean {
   if (BULK_REVIEW_WORKBOOK_BATCH_FILL_KEYS.has(fillKey)) return true;
 
+  const column = bulkReviewWorkbookColumnByFillKey(fillKey);
+  /** Required workbook columns (row 3) must not be stripped after import or manual edit. */
+  if (column && bulkReviewColumnRequirement(column.tier) === "required") {
+    return true;
+  }
+
   if (context?.contentKind) {
     if (
       fillKey === "body" ||
@@ -175,7 +184,6 @@ export function bulkReviewShouldPersistExtractedField(
     }
   }
 
-  const column = bulkReviewWorkbookColumnByFillKey(fillKey);
   if (!column) {
     return extractionMethod === "full";
   }

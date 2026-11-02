@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { BulkSubmissionCompletionResponse } from "#shared/types/bulkSubmissionCompletion";
 import type { BulkPosterSubmissionJob } from "#shared/types/bulkPosterSubmissionJob";
 import ConferenceBulkImport from "~/components/conferences/ConferenceBulkImport.vue";
 import { normalizeBulkImportWizardStep } from "#shared/types/bulkImportWizard";
@@ -49,9 +50,19 @@ const initialWizardStep = computed(
 
 watch(
   () => resumeJob.value?.status,
-  (status) => {
-    if (status === "completed" && jobIdFromQuery.value) {
-      void navigateTo(shareBulkCompletionPath(jobIdFromQuery.value));
+  async (status) => {
+    if (status !== "completed" || !jobIdFromQuery.value) return;
+
+    try {
+      const completion = await $fetch<BulkSubmissionCompletionResponse>(
+        `/api/bulk-poster-submissions/${jobIdFromQuery.value}/completion`,
+      );
+      if (completion.awaitingEmbargoRelease) return;
+      if (completion.completedAt) {
+        void navigateTo(shareBulkCompletionPath(jobIdFromQuery.value));
+      }
+    } catch {
+      // Resume wizard on publish step instead.
     }
   },
   { immediate: true },
@@ -83,6 +94,7 @@ useSeoMeta({
         <UBreadcrumb
           :items="[
             { label: 'Dashboard', to: '/dashboard' },
+            { label: 'Share Posters', to: '/share' },
             { label: 'Share Posters in bulk', to: bulkBreadcrumbTo },
           ]"
         />

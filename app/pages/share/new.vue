@@ -271,6 +271,7 @@ onUnmounted(() => {
         <UBreadcrumb
           :items="[
             { label: 'Dashboard', to: '/dashboard' },
+            { label: 'Share Posters', to: '/share' },
             { label: 'Upload Poster', to: '/share/new' },
           ]"
         />

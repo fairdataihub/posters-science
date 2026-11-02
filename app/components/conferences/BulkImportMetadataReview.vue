@@ -3,6 +3,10 @@ import type { BulkImportBatchItem } from "#shared/types/conferenceBulkImport";
 import type { BulkSubmissionExtractionMethod } from "#shared/types/bulkSubmission";
 import type { PosterResponse } from "@/utils/poster_schema";
 import { sharePosterEditPath } from "~/utils/sharePaths";
+import {
+  validatePosterResponseStrictForm,
+  type PosterStrictValidationResult,
+} from "~/utils/posterResponseToStrictForm";
 
 const props = defineProps<{
   items: BulkImportBatchItem[];
@@ -14,6 +18,13 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   retry: [item: BulkImportBatchItem];
+  "validation-change": [
+    payload: {
+      allValid: boolean;
+      invalidCount: number;
+      pending: boolean;
+    },
+  ];
 }>();
 
 function isRetrying(item: BulkImportBatchItem) {
@@ -225,7 +236,7 @@ const editMetadataPath = computed(() => {
   }
   return sharePosterEditPath(selectedPosterId.value, {
     bulkImportJobId: props.bulkImportJobId,
-    bulkWizardStep: "review",
+    bulkWizardStep: "preview",
   });
 });
 
@@ -316,6 +327,71 @@ const creators = computed(() => {
     })
     .filter(Boolean);
 });
+
+function validationForPosterId(
+  posterId: number,
+): PosterStrictValidationResult | null {
+  const data = posterCache.value[posterId];
+  if (!data) return null;
+  return validatePosterResponseStrictForm(data);
+}
+
+const validationByPosterId = computed(() => {
+  const map: Record<number, PosterStrictValidationResult> = {};
+  for (const item of reviewableItems.value) {
+    if (item.posterId == null) continue;
+    const result = validationForPosterId(item.posterId);
+    if (result) map[item.posterId] = result;
+  }
+  return map;
+});
+
+const metadataValidationPending = computed(() =>
+  reviewableItems.value.some(
+    (item) =>
+      item.posterId != null &&
+      (fetchingPosterIds.value.has(item.posterId) ||
+        posterCache.value[item.posterId] == null),
+  ),
+);
+
+const invalidMetadataItems = computed(() =>
+  reviewableItems.value.filter((item) => {
+    if (item.posterId == null) return false;
+    const result = validationByPosterId.value[item.posterId];
+    return result != null && !result.valid;
+  }),
+);
+
+const allReviewableMetadataValid = computed(() => {
+  if (reviewableItems.value.length === 0) return false;
+  if (metadataValidationPending.value) return false;
+  return invalidMetadataItems.value.length === 0;
+});
+
+const selectedPosterValidation = computed(() => {
+  const id = selectedPosterId.value;
+  if (id == null) return null;
+  return validationByPosterId.value[id] ?? null;
+});
+
+watch(
+  [allReviewableMetadataValid, invalidMetadataItems, metadataValidationPending],
+  () => {
+    emit("validation-change", {
+      allValid: allReviewableMetadataValid.value,
+      invalidCount: invalidMetadataItems.value.length,
+      pending: metadataValidationPending.value,
+    });
+  },
+  { immediate: true, deep: true },
+);
+
+defineExpose({
+  allReviewableMetadataValid,
+  metadataValidationPending,
+  invalidMetadataItems,
+});
 </script>
 
 <template>
@@ -372,6 +448,50 @@ const creators = computed(() => {
       </template>
     </UAlert>
 
+    <UAlert
+      v-if="reviewableItems.length > 0 && metadataValidationPending"
+      color="neutral"
+      variant="soft"
+      icon="i-lucide-loader-circle"
+      title="Checking required metadata"
+      description="Loading each poster to verify mandatory fields match the single-poster editor."
+    />
+
+    <UAlert
+      v-else-if="invalidMetadataItems.length > 0"
+      color="error"
+      variant="soft"
+      icon="i-lucide-circle-alert"
+      title="Required metadata is incomplete"
+    >
+      <template #description>
+        <p class="text-sm">
+          {{ invalidMetadataItems.length }} of
+          {{ reviewableItems.length }} poster(s) still need fixes before you can
+          continue. Use Edit metadata on each poster — the same required fields
+          as a single poster upload apply here.
+        </p>
+        <ul class="mt-3 max-h-40 space-y-1 overflow-y-auto text-sm">
+          <li
+            v-for="item in invalidMetadataItems"
+            :key="item.id"
+            class="flex flex-wrap items-baseline gap-x-2"
+          >
+            <span class="font-medium">{{ item.fileName }}</span>
+            <span
+              v-if="item.posterId != null && validationByPosterId[item.posterId]"
+              class="text-muted text-xs"
+            >
+              {{
+                validationByPosterId[item.posterId]!.issues[0]?.message ??
+                  "Missing required fields"
+              }}
+            </span>
+          </li>
+        </ul>
+      </template>
+    </UAlert>
+
     <div
       v-if="reviewableItems.length === 0"
       class="text-muted rounded-lg border border-dashed px-4 py-8 text-center text-sm"
@@ -385,7 +505,7 @@ const creators = computed(() => {
           v-for="item in reviewableItems"
           :key="item.posterId"
           type="button"
-          class="flex w-full rounded-lg border px-3 py-2 text-left text-sm transition-colors"
+          class="flex w-full items-start gap-2 rounded-lg border px-3 py-2 text-left text-sm transition-colors"
           :class="
             item.posterId === selectedPosterId
               ? 'border-primary bg-primary/5 font-medium'
@@ -393,7 +513,26 @@ const creators = computed(() => {
           "
           @click="item.posterId != null && selectPoster(item.posterId)"
         >
-          <span class="line-clamp-2">{{ item.fileName }}</span>
+          <span class="line-clamp-2 flex-1">{{ item.fileName }}</span>
+          <UIcon
+            v-if="
+              item.posterId != null &&
+              validationByPosterId[item.posterId] &&
+              !validationByPosterId[item.posterId]!.valid
+            "
+            name="i-lucide-circle-alert"
+            class="text-error size-4 shrink-0"
+            aria-label="Required metadata incomplete"
+          />
+          <UIcon
+            v-else-if="
+              item.posterId != null &&
+              validationByPosterId[item.posterId]?.valid
+            "
+            name="i-lucide-circle-check"
+            class="text-success size-4 shrink-0"
+            aria-label="Required metadata complete"
+          />
         </button>
       </nav>
 
@@ -432,6 +571,38 @@ const creators = computed(() => {
                 :to="editMetadataPath"
               />
             </div>
+
+            <UAlert
+              v-if="
+                selectedPosterValidation &&
+                !selectedPosterValidation.valid
+              "
+              color="error"
+              variant="subtle"
+              icon="i-lucide-circle-alert"
+              title="Required fields missing"
+            >
+              <template #description>
+                <ul class="mt-1 list-inside list-disc text-sm">
+                  <li
+                    v-for="(issue, index) in selectedPosterValidation.issues.slice(
+                      0,
+                      6,
+                    )"
+                    :key="`${issue.path}-${index}`"
+                  >
+                    {{ issue.message }}
+                  </li>
+                  <li
+                    v-if="selectedPosterValidation.issues.length > 6"
+                    class="text-muted list-none text-xs"
+                  >
+                    …and
+                    {{ selectedPosterValidation.issues.length - 6 }} more
+                  </li>
+                </ul>
+              </template>
+            </UAlert>
 
             <div
               class="border-default flex aspect-video max-h-[min(55vh,22rem)] w-full items-center justify-center overflow-hidden rounded-lg border bg-gray-50 dark:bg-gray-900/50"

@@ -1,10 +1,17 @@
 import type { BulkImportSubmissionSummary } from "#shared/types/bulkImportLicenses";
+import { resolveBulkBatchEmbargoStatus } from "~~/server/utils/bulkImportZenodoBatchCompletion";
 import prisma from "~~/server/utils/prisma";
 
 type BulkRowWithSummary = {
   status: string;
   submissionSummary: unknown;
 };
+
+const BULK_STATUSES_HIDE_POSTER_CARDS = new Set([
+  "draft",
+  "processing",
+  "failed",
+]);
 
 const ACTIVE_EXTRACTION_JOB_STATUSES = [
   "pending-extraction",
@@ -63,7 +70,7 @@ export function bulkSubmissionHasActiveExtraction(
 
 /**
  * Poster IDs created by bulk submit that should not appear as separate
- * dashboard cards while the batch is still in progress.
+ * dashboard cards while the batch is still in progress (draft through publish).
  */
 export function posterIdsHiddenByBulkImport(
   bulkRows: BulkRowWithSummary[],
@@ -71,24 +78,70 @@ export function posterIdsHiddenByBulkImport(
   const hidden = new Set<number>();
 
   for (const bulk of bulkRows) {
-    if (bulk.status !== "processing") continue;
+    if (!BULK_STATUSES_HIDE_POSTER_CARDS.has(bulk.status)) continue;
 
-    const summary = bulk.submissionSummary as BulkImportSubmissionSummary | null;
-    if (!summary) continue;
-
-    if (Array.isArray(summary.createdPosterIds)) {
-      for (const id of summary.createdPosterIds) {
-        if (typeof id === "number") hidden.add(id);
-      }
+    for (const id of posterIdsFromBulkSubmissionSummary(bulk.submissionSummary)) {
+      hidden.add(id);
     }
+  }
 
-    if (Array.isArray(summary.createdPosters)) {
-      for (const entry of summary.createdPosters) {
-        if (entry && typeof entry.posterId === "number") {
-          hidden.add(entry.posterId);
-        }
-      }
+  return hidden;
+}
+
+/**
+ * Poster IDs from a bulk batch marked completed while Zenodo file embargoes
+ * are still active. Those posters stay tied to the batch card, not as
+ * individual in-progress rows (legacy jobs completed before embargo-aware flow).
+ */
+export async function posterIdsHiddenByCompletedBulkEmbargo(
+  userId: string,
+  completedBulkRows: BulkRowWithSummary[],
+): Promise<Set<number>> {
+  const hidden = new Set<number>();
+
+  for (const bulk of completedBulkRows) {
+    if (bulk.status !== "completed") continue;
+
+    const posterIds = posterIdsFromBulkSubmissionSummary(bulk.submissionSummary);
+    if (posterIds.length === 0) continue;
+
+    const posters = await prisma.poster.findMany({
+      where: { id: { in: posterIds }, userId },
+      select: {
+        id: true,
+        status: true,
+        publishedAt: true,
+        zenodoDepositions: { select: { filesEmbargoUntil: true } },
+      },
+    });
+
+    if (posters.length === 0) continue;
+
+    const embargo = await resolveBulkBatchEmbargoStatus(userId, posters);
+    if (!embargo.hasActiveEmbargo) continue;
+
+    for (const id of posterIds) {
+      hidden.add(id);
     }
+  }
+
+  return hidden;
+}
+
+/** Union of bulk-hide rules for the dashboard in-progress feed. */
+export async function posterIdsHiddenFromBulkDashboard(
+  userId: string,
+  inProgressBulkRows: BulkRowWithSummary[],
+  completedBulkRows: BulkRowWithSummary[],
+): Promise<Set<number>> {
+  const hidden = posterIdsHiddenByBulkImport(inProgressBulkRows);
+  const embargoHidden = await posterIdsHiddenByCompletedBulkEmbargo(
+    userId,
+    completedBulkRows,
+  );
+
+  for (const id of embargoHidden) {
+    hidden.add(id);
   }
 
   return hidden;

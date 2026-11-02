@@ -4,8 +4,6 @@ import type { NavigationMenuItem } from "@nuxt/ui";
 const { clear, user } = useUserSession();
 const feedbackOpen = useState("feedbackOpen", () => false);
 const mobileMenuOpen = ref(false);
-const { openSharePostersChooser } = useSharePostersChooser();
-
 const route = useRoute();
 
 const scienceArticleUrl =
@@ -26,11 +24,6 @@ function openFeedback() {
   feedbackOpen.value = true;
 }
 
-function openSharePostersModal() {
-  mobileMenuOpen.value = false;
-  openSharePostersChooser();
-}
-
 const logout = async () => {
   clear();
   await navigateTo("/");
@@ -49,8 +42,8 @@ const headerItems = computed<NavigationMenuItem[]>(() => [
   },
   {
     label: "Share Posters",
+    to: "/share",
     active: route.path.startsWith("/share"),
-    onSelect: openSharePostersModal,
   },
   {
     label: "Documentation",
@@ -396,8 +389,6 @@ const footerItems: NavigationMenuItem[] = [
         </template>
       </UButton>
     </div>
-
-    <SharePostersChooserModal />
 
     <UModal
       v-model:open="feedbackOpen"

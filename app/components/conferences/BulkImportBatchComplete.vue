@@ -112,8 +112,10 @@ useSeoMeta({
                     size="sm"
                     icon="i-simple-icons-zenodo"
                     label="View on Zenodo"
-                    :to="poster.zenodoUrl"
+                    :href="poster.zenodoUrl"
                     target="_blank"
+                    rel="noopener noreferrer"
+                    external
                   />
                   <UButton
                     v-if="poster.discoverUrl"

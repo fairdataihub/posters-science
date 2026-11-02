@@ -6,6 +6,7 @@ import {
 } from "#shared/bulkExtractionMetadataGate";
 import prisma from "~~/server/utils/prisma";
 import { posterIdsFromBulkSubmissionSummary } from "~~/server/utils/bulkImportDashboard";
+import { applyBulkOrcidRorAutomationForPoster } from "~~/server/utils/bulkOrcidRorAutomation";
 
 export async function findBulkSubmissionJobForPoster(
   userId: string,
@@ -90,68 +91,81 @@ export async function gateBulkExtractedPosterMetadata(
   posterId: number,
   extractionMethod: BulkSubmissionExtractionMethod,
 ): Promise<boolean> {
-  if (extractionMethod === "full") return false;
+  let gated = false;
 
-  const poster = await prisma.poster.findFirst({
-    where: { id: posterId, userId },
-    include: { posterMetadata: true },
-  });
+  if (extractionMethod !== "full") {
+    const poster = await prisma.poster.findFirst({
+      where: { id: posterId, userId },
+      include: { posterMetadata: true },
+    });
 
-  if (!poster?.posterMetadata) return false;
+    if (poster?.posterMetadata) {
+      const before = snapshotFromPoster({
+        title: poster.title,
+        description: poster.description,
+        posterMetadata: poster.posterMetadata,
+      });
+      const after = gateBulkExtractedPosterSnapshot(extractionMethod, before);
 
-  const before = snapshotFromPoster(poster);
-  const after = gateBulkExtractedPosterSnapshot(extractionMethod, before);
+      const metadataChanged =
+        JSON.stringify(before.subjects) !== JSON.stringify(after.subjects) ||
+        before.language !== after.language ||
+        before.domain !== after.domain ||
+        before.version !== after.version ||
+        before.doi !== after.doi ||
+        before.publisher !== after.publisher ||
+        before.publicationYear !== after.publicationYear ||
+        JSON.stringify(before.creators) !== JSON.stringify(after.creators) ||
+        JSON.stringify(before.fundingReferences) !==
+          JSON.stringify(after.fundingReferences) ||
+        JSON.stringify(before.relatedIdentifiers) !==
+          JSON.stringify(after.relatedIdentifiers) ||
+        JSON.stringify(before.posterContent) !==
+          JSON.stringify(after.posterContent) ||
+        JSON.stringify(before.imageCaptions) !==
+          JSON.stringify(after.imageCaptions) ||
+        JSON.stringify(before.tableCaptions) !==
+          JSON.stringify(after.tableCaptions) ||
+        JSON.stringify(before.dates) !== JSON.stringify(after.dates);
 
-  const metadataChanged =
-    JSON.stringify(before.subjects) !== JSON.stringify(after.subjects) ||
-    before.language !== after.language ||
-    before.domain !== after.domain ||
-    before.version !== after.version ||
-    before.doi !== after.doi ||
-    before.publisher !== after.publisher ||
-    before.publicationYear !== after.publicationYear ||
-    JSON.stringify(before.creators) !== JSON.stringify(after.creators) ||
-    JSON.stringify(before.fundingReferences) !==
-      JSON.stringify(after.fundingReferences) ||
-    JSON.stringify(before.relatedIdentifiers) !==
-      JSON.stringify(after.relatedIdentifiers) ||
-    JSON.stringify(before.posterContent) !== JSON.stringify(after.posterContent) ||
-    JSON.stringify(before.imageCaptions) !== JSON.stringify(after.imageCaptions) ||
-    JSON.stringify(before.tableCaptions) !== JSON.stringify(after.tableCaptions) ||
-    JSON.stringify(before.dates) !== JSON.stringify(after.dates);
+      const posterChanged =
+        before.title !== after.title ||
+        before.description !== after.description;
 
-  const posterChanged =
-    before.title !== after.title || before.description !== after.description;
+      if (metadataChanged || posterChanged) {
+        await prisma.poster.update({
+          where: { id: posterId },
+          data: {
+            title: after.title,
+            description: after.description,
+            posterMetadata: {
+              update: {
+                subjects: after.subjects,
+                language: after.language,
+                domain: after.domain,
+                version: after.version,
+                doi: after.doi,
+                publisher: after.publisher,
+                publicationYear: after.publicationYear,
+                creators: after.creators as never,
+                fundingReferences: after.fundingReferences as never,
+                relatedIdentifiers: after.relatedIdentifiers as never,
+                posterContent: after.posterContent as never,
+                imageCaptions: after.imageCaptions as never,
+                tableCaptions: after.tableCaptions as never,
+                dates: after.dates as never,
+              },
+            },
+          },
+        });
+        gated = true;
+      }
+    }
+  }
 
-  if (!metadataChanged && !posterChanged) return false;
+  await applyBulkOrcidRorAutomationForPoster(userId, posterId);
 
-  await prisma.poster.update({
-    where: { id: posterId },
-    data: {
-      title: after.title,
-      description: after.description,
-      posterMetadata: {
-        update: {
-          subjects: after.subjects,
-          language: after.language,
-          domain: after.domain,
-          version: after.version,
-          doi: after.doi,
-          publisher: after.publisher,
-          publicationYear: after.publicationYear,
-          creators: after.creators as never,
-          fundingReferences: after.fundingReferences as never,
-          relatedIdentifiers: after.relatedIdentifiers as never,
-          posterContent: after.posterContent as never,
-          imageCaptions: after.imageCaptions as never,
-          tableCaptions: after.tableCaptions as never,
-          dates: after.dates as never,
-        },
-      },
-    },
-  });
-
-  return true;
+  return gated;
 }
 
 export async function gateBulkExtractedPosterMetadataForJobPoster(

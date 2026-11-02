@@ -21,6 +21,7 @@ import {
   contributorAffiliationRorFillKey,
   type BulkReviewWorkbookSheet,
 } from "#shared/bulkReviewWorkbookManifest";
+import { bulkReviewWorkbookCellText } from "#shared/bulkReviewWorkbookCellText";
 import ExcelJS from "exceljs";
 import {
   inferAffiliationIdentifierScheme,
@@ -79,18 +80,7 @@ function findWorksheet(
 }
 
 function cellText(value: ExcelJS.CellValue | null | undefined): string {
-  if (value == null) return "";
-  if (value instanceof Date) {
-    return value.toISOString().slice(0, 10);
-  }
-  if (typeof value === "object" && "text" in value) {
-    return String((value as { text?: string }).text ?? "").trim();
-  }
-  if (typeof value === "number" || typeof value === "boolean") {
-    return String(value);
-  }
-  if (typeof value === "string") return value.trim();
-  return "";
+  return bulkReviewWorkbookCellText(value);
 }
 
 function parsePosterId(raw: string, issues: BulkImportValidationIssue[], rowNumber: number) {
