@@ -23,7 +23,9 @@ export default defineEventHandler(async (event) => {
       id: true,
       status: true,
       tombstone: true,
-      extractionJob: { select: { id: true, filePath: true } },
+      extractionJob: {
+        select: { id: true, filePath: true, fileUploaded: true },
+      },
     },
   });
 
@@ -45,6 +47,13 @@ export default defineEventHandler(async (event) => {
     throw createError({
       statusCode: 400,
       statusMessage: "No file path available for this poster",
+    });
+  }
+
+  if (!poster.extractionJob.fileUploaded) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: "Upload the original file before generating a preview",
     });
   }
 

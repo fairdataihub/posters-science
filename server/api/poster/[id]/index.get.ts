@@ -26,6 +26,8 @@ export default defineEventHandler(async (event) => {
         select: {
           completed: true,
           status: true,
+          batchId: true,
+          fileUploaded: true,
           fileName: true,
           filePath: true,
         },

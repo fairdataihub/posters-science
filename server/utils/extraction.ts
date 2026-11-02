@@ -2,7 +2,11 @@
 // worker polls the database for pending jobs, so re-queuing is a status write
 // plus an optional nudge to skip the wait until its next poll.
 
-export type RequeueContext = "poster/job/retry" | "admin/extraction-jobs/retry";
+export type RequeueContext =
+  | "poster/job/retry"
+  | "admin/extraction-jobs/retry"
+  | "batch/upload"
+  | "batch/retry";
 
 // A job is in flight until it reaches one of these.
 export const TERMINAL_EXTRACTION_STATUSES = ["completed", "failed"];
@@ -46,6 +50,17 @@ export async function requeueExtractionJob(
   hasMetadata: boolean,
   context: RequeueContext,
 ) {
+  const job = await prisma.extractionJob.findUnique({
+    where: { id: jobId },
+    select: { fileUploaded: true },
+  });
+  if (job && !job.fileUploaded) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: "Upload the original file before retrying extraction",
+    });
+  }
+
   const pending = await prisma.extractionJob.update({
     where: { id: jobId },
     data: {
