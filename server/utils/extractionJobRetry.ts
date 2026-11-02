@@ -6,8 +6,6 @@ import {
 } from "~~/server/utils/extraction";
 import { triggerPosterExtractionWorker } from "~~/server/utils/bulkImportSubmit";
 
-export type { RetryExtractionJobResult };
-
 const RESTARTABLE_INCOMPLETE_STATUSES = new Set([
   "processing",
   "pending-thumbnail",
