@@ -14,10 +14,13 @@ export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig();
   const siteEnv = config.siteEnv || config.public.siteEnv;
 
+  await tryCompleteBulkBatchIfReady(session.user.id, jobId);
+
   const completion = await buildBulkSubmissionCompletion(
     session.user.id,
     jobId,
     siteEnv,
+    config.zenodoEndpoint,
   );
 
   if (!completion) {

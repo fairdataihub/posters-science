@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { LICENSE_OPTIONS_WITH_SUGGESTED } from "~/utils/poster_schema";
+import { normalizeZenodoRecordWebUrl } from "#shared/utils/zenodoRecordWebUrl";
+import { resolveDoiUrl } from "#shared/utils/doi";
 import ZenodoConnectPanel from "~/components/share/ZenodoConnectPanel.vue";
 import { useZenodoReleaseConnection } from "~/composables/useZenodoReleaseConnection";
 
@@ -10,7 +12,8 @@ const props = defineProps<{
 const id = props.posterId;
 
 const toast = useToast();
-const { siteEnv } = useRuntimeConfig().public;
+const runtimeConfig = useRuntimeConfig();
+const siteEnv = runtimeConfig.public.siteEnv;
 
 const isProductionEnv = siteEnv === "production";
 
@@ -263,9 +266,28 @@ const defaultSteps = (): ArchiveStep[] => [
 
 const archiveSteps = ref<ArchiveStep[]>(defaultSteps());
 
-const zenodoRecordUrl = computed(
-  () => (archiveResult.value?.recordUrl as string | undefined) ?? "",
-);
+const zenodoRecordUrl = computed(() => {
+  const data = archiveResult.value;
+  if (!data) return "";
+
+  const doi = typeof data.doi === "string" ? data.doi.trim() : "";
+  if (doi) {
+    return resolveDoiUrl(doi);
+  }
+
+  const recordId =
+    typeof data.recordId === "number" && Number.isFinite(data.recordId)
+      ? data.recordId
+      : undefined;
+  const raw =
+    typeof data.recordUrl === "string" ? data.recordUrl : undefined;
+
+  return (
+    normalizeZenodoRecordWebUrl(raw, {
+      recordId,
+    }) ?? ""
+  );
+});
 
 const { data: posterData, error: posterError } = useFetch(
   () => `/api/poster/${props.posterId}`,
@@ -720,8 +742,10 @@ async function handleArchive() {
                 v-if="zenodoRecordUrl"
                 color="primary"
                 icon="i-lucide-external-link"
-                :to="zenodoRecordUrl"
+                :href="zenodoRecordUrl"
                 target="_blank"
+                rel="noopener noreferrer"
+                external
               >
                 View on Zenodo
               </UButton>

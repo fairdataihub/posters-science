@@ -20,6 +20,37 @@ export function nextExtractionStatus(hasMetadata: boolean) {
   return hasMetadata ? "pending-thumbnail" : "pending-extraction";
 }
 
+export type RequeueExtractionJobSnapshot = {
+  status: string;
+  completed: boolean;
+  hasPosterMetadata: boolean;
+};
+
+export type RetryExtractionJobResult = {
+  status: string;
+  completed: boolean;
+  error: string | null;
+};
+
+/**
+ * Bulk posters always have a metadata row (batch conference/license) before
+ * extraction runs. Use job completion, not row presence, to decide whether
+ * to re-run extraction or only refresh the thumbnail.
+ */
+export function resolveRequeueExtractionStatus(
+  job: RequeueExtractionJobSnapshot,
+): "pending-extraction" | "pending-thumbnail" {
+  if (!job.completed) {
+    return "pending-extraction";
+  }
+
+  if (job.status === "completed" && job.hasPosterMetadata) {
+    return "pending-thumbnail";
+  }
+
+  return "pending-extraction";
+}
+
 /**
  * Fire and forget wake up call. A failed wake is not a failed retry, so this
  * never throws.
@@ -43,13 +74,15 @@ export function wakeExtractionWorker(jobId: string, context: RequeueContext) {
 
 export async function requeueExtractionJob(
   jobId: string,
-  hasMetadata: boolean,
+  job: RequeueExtractionJobSnapshot,
   context: RequeueContext,
 ) {
+  const status = resolveRequeueExtractionStatus(job);
+
   const pending = await prisma.extractionJob.update({
     where: { id: jobId },
     data: {
-      status: nextExtractionStatus(hasMetadata),
+      status,
       completed: false,
       error: null,
     },

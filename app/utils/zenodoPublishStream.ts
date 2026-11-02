@@ -1,3 +1,6 @@
+import { resolveDoiUrl } from "#shared/utils/doi";
+import { normalizeZenodoRecordWebUrl } from "#shared/utils/zenodoRecordWebUrl";
+
 export type ZenodoStreamEvent = {
   step: string;
   status: string;
@@ -26,21 +29,16 @@ function recordUrlFromEventData(
   if (!data) return undefined;
 
   const url = data.recordUrl;
-  if (typeof url === "string" && url.length > 0) return url;
+  if (typeof url === "string" && /^https?:\/\//i.test(url.trim())) {
+    return url.trim();
+  }
 
   const doi = data.doi;
   if (typeof doi === "string" && doi.trim()) {
-    const trimmed = doi.trim();
-    if (/^https?:\/\//i.test(trimmed)) return trimmed;
-    return `https://doi.org/${trimmed.replace(/^doi:\s*/i, "")}`;
+    return resolveDoiUrl(doi);
   }
 
-  const recordId = data.recordId;
-  if (typeof recordId === "number" && Number.isFinite(recordId)) {
-    return `https://zenodo.org/records/${recordId}`;
-  }
-
-  return undefined;
+  return normalizeZenodoRecordWebUrl(typeof url === "string" ? url : undefined);
 }
 
 /** POST /api/release/zenodo and consume the SSE response until complete or error. */

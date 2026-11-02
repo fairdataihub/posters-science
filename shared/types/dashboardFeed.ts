@@ -34,4 +34,6 @@ export type DashboardPosterFeedResponse = {
   completedBulkSubmissions?: DashboardBulkSubmission[];
   /** Posters (non-published) and bulk imports interleaved, newest first. */
   inProgressFeed: DashboardInProgressFeedEntry[];
+  /** Poster IDs still managed by an open bulk job (hide duplicate published cards). */
+  activeBulkManagedPosterIds?: number[];
 };

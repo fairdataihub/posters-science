@@ -290,6 +290,8 @@ model ZenodoDeposition {
   depositionId           Int     @unique // Last published Zenodo deposition ID
   status                 String  @default("unpublished") // draft, published, unpublished
   lastPublishedZenodoDoi String? // Last published Zenodo DOI
+  /** ISO date (YYYY-MM-DD, UTC) when Zenodo file download embargo ends; null if files are public. */
+  filesEmbargoUntil      String?
 
   user   User   @relation(fields: [userId], references: [id])
   userId String

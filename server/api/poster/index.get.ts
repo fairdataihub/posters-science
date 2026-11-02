@@ -2,8 +2,15 @@ import {
   bulkSubmissionHasActiveExtraction,
   posterIdsFromBulkSubmissionSummary,
   posterIdsHiddenByBulkImport,
+  posterIdsHiddenFromBulkDashboard,
   posterIdsWithActiveExtractionJob,
 } from "~~/server/utils/bulkImportDashboard";
+import { tryCompleteBulkBatchIfReady } from "~~/server/utils/bulkImportZenodoBatchCompletion";
+
+import {
+  posterCountsAsDashboardInProgress,
+  resolvePosterZenodoFilesEmbargoUntil,
+} from "~~/server/utils/posterZenodoFilesEmbargo";
 
 const posterInclude = {
   posterMetadata: {
@@ -32,9 +39,46 @@ const posterInclude = {
       depositionId: true,
       status: true,
       lastPublishedZenodoDoi: true,
+      filesEmbargoUntil: true,
     },
   },
 } as const;
+
+const bulkDashboardSelect = {
+  id: true,
+  name: true,
+  wizardStep: true,
+  status: true,
+  extractionMethod: true,
+  posterCount: true,
+  submissionSummary: true,
+  created: true,
+  updated: true,
+  completedAt: true,
+} as const;
+
+async function loadBulkDashboardRows(userId: string) {
+  const [bulkSubmissionRows, completedBulkSubmissionRows] = await Promise.all([
+    prisma.bulkSubmission.findMany({
+      where: {
+        userId,
+        status: { in: ["draft", "processing", "failed"] },
+      },
+      orderBy: { updated: "desc" },
+      select: bulkDashboardSelect,
+    }),
+    prisma.bulkSubmission.findMany({
+      where: {
+        userId,
+        status: "completed",
+      },
+      orderBy: { completedAt: "desc" },
+      select: bulkDashboardSelect,
+    }),
+  ]);
+
+  return { bulkSubmissionRows, completedBulkSubmissionRows };
+}
 
 export default defineEventHandler(async (event) => {
   const session = await requireUserSession(event);
@@ -42,8 +86,7 @@ export default defineEventHandler(async (event) => {
   const { user } = session;
   const userId = user.id;
 
-  const [posterRows, bulkSubmissionRows, completedBulkSubmissionRows] =
-    await Promise.all([
+  const [posterRows, bulkRowsInitial] = await Promise.all([
       prisma.poster.findMany({
         include: posterInclude,
         where: {
@@ -53,44 +96,24 @@ export default defineEventHandler(async (event) => {
           updated: "desc",
         },
       }),
-      prisma.bulkSubmission.findMany({
-        where: {
-          userId,
-          status: { in: ["draft", "processing", "failed"] },
-        },
-        orderBy: { updated: "desc" },
-        select: {
-          id: true,
-          name: true,
-          wizardStep: true,
-          status: true,
-          extractionMethod: true,
-          posterCount: true,
-          submissionSummary: true,
-          created: true,
-          updated: true,
-        },
-      }),
-      prisma.bulkSubmission.findMany({
-        where: {
-          userId,
-          status: "completed",
-        },
-        orderBy: { completedAt: "desc" },
-        select: {
-          id: true,
-          name: true,
-          wizardStep: true,
-          status: true,
-          extractionMethod: true,
-          posterCount: true,
-          submissionSummary: true,
-          created: true,
-          updated: true,
-          completedAt: true,
-        },
-      }),
+      loadBulkDashboardRows(userId),
     ]);
+
+  let { bulkSubmissionRows, completedBulkSubmissionRows } = bulkRowsInitial;
+
+  let bulkCompletionChanged = false;
+  for (const bulk of bulkSubmissionRows) {
+    if (bulk.status !== "processing") continue;
+    const { markedComplete } = await tryCompleteBulkBatchIfReady(
+      userId,
+      bulk.id,
+    );
+    if (markedComplete) bulkCompletionChanged = true;
+  }
+  if (bulkCompletionChanged) {
+    ({ bulkSubmissionRows, completedBulkSubmissionRows } =
+      await loadBulkDashboardRows(userId));
+  }
 
   const families = new Map<number, typeof posterRows>();
 
@@ -145,6 +168,14 @@ export default defineEventHandler(async (event) => {
     });
   }
 
+  const zenodoFilesEmbargoUntilByPosterId = new Map<number, string | null>();
+  await Promise.all(
+    posterRows.map(async (poster) => {
+      const until = await resolvePosterZenodoFilesEmbargoUntil(poster, userId);
+      zenodoFilesEmbargoUntilByPosterId.set(poster.id, until);
+    }),
+  );
+
   const owned = posterRows.map((poster) => {
     const rootPosterId = posterFamilyRootId(poster);
     const details = familyDetails.get(rootPosterId)!;
@@ -155,6 +186,8 @@ export default defineEventHandler(async (event) => {
       rootPosterId,
       versionCount: details.publishedCount,
       isLatestPublished,
+      zenodoFilesEmbargoUntil:
+        zenodoFilesEmbargoUntilByPosterId.get(poster.id) ?? null,
       // Only the latest published record owns the family-level edit action.
       // Drafts are returned separately so each dashboard card has one state.
       activeVersionDraft: isLatestPublished ? details.activeVersionDraft : null,
@@ -210,13 +243,24 @@ export default defineEventHandler(async (event) => {
     mapBulkSubmissionRow,
   );
 
-  const bulkHiddenPosterIds = posterIdsHiddenByBulkImport(bulkSubmissionRows);
+  const bulkHiddenPosterIds = await posterIdsHiddenFromBulkDashboard(
+    userId,
+    bulkSubmissionRows,
+    completedBulkSubmissionRows,
+  );
+
+  const activeBulkManagedPosterIds = [
+    ...posterIdsHiddenByBulkImport(bulkSubmissionRows),
+  ];
 
   const inProgressFeed = [
     ...owned
       .filter(
         (poster) =>
-          poster.status !== "published" && !bulkHiddenPosterIds.has(poster.id),
+          posterCountsAsDashboardInProgress(
+            poster.status,
+            poster.zenodoFilesEmbargoUntil,
+          ) && !bulkHiddenPosterIds.has(poster.id),
       )
       .map((poster) => ({
         type: "poster" as const,
@@ -241,6 +285,7 @@ export default defineEventHandler(async (event) => {
     bulkSubmissions,
     completedBulkSubmissions,
     inProgressFeed,
+    activeBulkManagedPosterIds,
   };
 });
 
@@ -289,6 +334,7 @@ async function loadClaimedPosters(userId: string) {
     rootPosterId,
     versionCount: 1,
     isLatestPublished: true,
+    zenodoFilesEmbargoUntil: null as string | null,
     activeVersionDraft: null,
     claimed: true,
     claimedAt: claimedAt.get(rootPosterId) ?? null,

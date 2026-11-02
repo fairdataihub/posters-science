@@ -2,6 +2,7 @@ import {
   findBulkSubmissionJobForPoster,
   gateBulkExtractedPosterMetadata,
 } from "~~/server/utils/bulkExtractionMetadataGate";
+import { zenodoRecordUrlForPoster } from "~~/server/utils/zenodoPosterRecordUrl";
 
 export default defineEventHandler(async (event) => {
   const session = await requireUserSession(event);
@@ -94,7 +95,18 @@ export default defineEventHandler(async (event) => {
   });
 
   if (!meta) {
-    return { ...poster, rootPosterId, versions };
+    const config = useRuntimeConfig();
+    const zenodoRecordUrl = zenodoRecordUrlForPoster(
+      poster,
+      config.zenodoEndpoint,
+    );
+
+    return {
+      ...poster,
+      rootPosterId,
+      versions,
+      zenodoRecordUrl: zenodoRecordUrl ?? null,
+    };
   }
 
   // Normalize posterContent: DB may store array (sections) or object
@@ -135,10 +147,17 @@ export default defineEventHandler(async (event) => {
     presentedEndDate,
   };
 
+  const config = useRuntimeConfig();
+  const zenodoRecordUrl = zenodoRecordUrlForPoster(
+    poster,
+    config.zenodoEndpoint,
+  );
+
   return {
     ...poster,
     rootPosterId,
     versions,
+    zenodoRecordUrl: zenodoRecordUrl ?? null,
     posterMetadata: {
       ...meta,
       posterContent,

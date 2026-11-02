@@ -1,12 +1,18 @@
 import { createError } from "h3";
 import prisma from "~~/server/utils/prisma";
+import {
+  requeueExtractionJob,
+  type RetryExtractionJobResult,
+} from "~~/server/utils/extraction";
 import { triggerPosterExtractionWorker } from "~~/server/utils/bulkImportSubmit";
 
-export type RetryExtractionJobResult = {
-  status: string;
-  completed: boolean;
-  error: string | null;
-};
+export type { RetryExtractionJobResult };
+
+const RESTARTABLE_INCOMPLETE_STATUSES = new Set([
+  "processing",
+  "pending-thumbnail",
+  "pending-extraction",
+]);
 
 export async function retryExtractionJobForUser(
   userId: string,
@@ -15,30 +21,62 @@ export async function retryExtractionJobForUser(
   const job = await prisma.extractionJob.findFirst({
     where: {
       id: jobId,
-      status: "failed",
       poster: { userId, status: { not: "published" } },
     },
-    select: { id: true },
+    select: {
+      id: true,
+      status: true,
+      completed: true,
+      error: true,
+      poster: {
+        select: { posterMetadata: { select: { posterId: true } } },
+      },
+    },
   });
 
   if (!job) {
     throw createError({
       statusCode: 404,
-      statusMessage: "Failed extraction job not found",
+      statusMessage: "Extraction job not found",
     });
   }
 
-  const pending = await prisma.extractionJob.update({
-    where: { id: job.id },
-    data: {
-      status: "pending-extraction",
-      completed: false,
-      error: null,
-    },
-    select: { status: true, completed: true, error: true },
-  });
+  if (job.completed && job.status === "completed") {
+    throw createError({
+      statusCode: 409,
+      statusMessage: "Extraction already completed",
+    });
+  }
 
-  triggerPosterExtractionWorker();
+  const snapshot = {
+    status: job.status,
+    completed: job.completed,
+    hasPosterMetadata: Boolean(job.poster.posterMetadata),
+  };
 
-  return pending;
+  if (
+    !job.completed &&
+    job.status === "pending-extraction" &&
+    !job.error?.trim()
+  ) {
+    triggerPosterExtractionWorker();
+    return {
+      status: job.status,
+      completed: job.completed,
+      error: job.error,
+    };
+  }
+
+  const canRestart =
+    job.status === "failed" ||
+    (!job.completed && RESTARTABLE_INCOMPLETE_STATUSES.has(job.status));
+
+  if (!canRestart) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: "This extraction job cannot be restarted",
+    });
+  }
+
+  return requeueExtractionJob(job.id, snapshot, "poster/job/retry");
 }

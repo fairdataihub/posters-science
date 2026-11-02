@@ -6,6 +6,8 @@ export type BulkSubmissionCompletionPoster = {
   doi: string | null;
   zenodoUrl: string | null;
   discoverUrl: string | null;
+  filesEmbargoUntil: string | null;
+  filesEmbargoActive: boolean;
 };
 
 export type BulkSubmissionCompletionResponse = {
@@ -15,4 +17,16 @@ export type BulkSubmissionCompletionResponse = {
   zenodoBatchCompletedAt: string | null;
   posters: BulkSubmissionCompletionPoster[];
   allPublishedOnPlatform: boolean;
+  /** True when every poster is on Zenodo but at least one file embargo is still active. */
+  awaitingEmbargoRelease: boolean;
+  activeEmbargoCount: number;
+  latestActiveEmbargoUntil: string | null;
+  /** False when embargo dates were not persisted from Zenodo publish — early release is hidden. */
+  fileEmbargoEarlyReleaseReady: boolean;
+};
+
+export type BulkReleaseFileEmbargoResponse = {
+  released: number;
+  failed: number;
+  failures: { posterId: number; error: string }[];
 };

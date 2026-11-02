@@ -1,3 +1,5 @@
+import { resolveDoiUrl } from "#shared/utils/doi";
+
 type ZenodoDepositionLike = {
   depositionId?: number;
   status?: string;
@@ -6,36 +8,21 @@ type ZenodoDepositionLike = {
 
 type PosterZenodoSource = {
   status?: string;
+  /** Set by GET /api/poster/:id using server `zenodoEndpoint`. */
+  zenodoRecordUrl?: string | null;
   zenodoDepositions?: ZenodoDepositionLike | null;
 };
-
-function doiToUrl(doi: string): string {
-  const trimmed = doi.trim();
-  if (!trimmed) return "";
-  if (/^https?:\/\//i.test(trimmed)) return trimmed;
-  const bare = trimmed.replace(/^doi:\s*/i, "");
-  return `https://doi.org/${bare}`;
-}
 
 /** Public Zenodo record page for a poster that has been published via Zenodo. */
 export function zenodoPublicationUrlForPoster(
   poster: PosterZenodoSource,
-  zenodoWebBase = "https://zenodo.org",
 ): string | undefined {
-  const deposition = poster.zenodoDepositions;
-  if (!deposition) return undefined;
+  const fromApi = poster.zenodoRecordUrl?.trim();
+  if (fromApi) return fromApi;
 
-  const publishedDoi = deposition.lastPublishedZenodoDoi?.trim();
+  const publishedDoi = poster.zenodoDepositions?.lastPublishedZenodoDoi?.trim();
   if (publishedDoi) {
-    return doiToUrl(publishedDoi);
-  }
-
-  const isPublished =
-    poster.status === "published" || deposition.status === "published";
-
-  if (isPublished && deposition.depositionId) {
-    const base = zenodoWebBase.replace(/\/$/, "");
-    return `${base}/records/${deposition.depositionId}`;
+    return resolveDoiUrl(publishedDoi);
   }
 
   return undefined;
