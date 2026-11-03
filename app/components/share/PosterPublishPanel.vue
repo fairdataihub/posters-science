@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { downloadFilenameFromDisposition } from "~/utils/downloadFilename";
 import { LICENSE_OPTIONS_WITH_SUGGESTED } from "~/utils/poster_schema";
 import { normalizeZenodoRecordWebUrl } from "#shared/utils/zenodoRecordWebUrl";
 import { resolveDoiUrl } from "#shared/utils/doi";
@@ -144,8 +145,8 @@ async function downloadMetadata() {
 
     const blob = await response.blob();
     const disposition = response.headers.get("Content-Disposition");
-    const filenameMatch = disposition?.match(/filename="?([^";\n]+)"?/);
-    const filename = filenameMatch?.[1] ?? `poster-${id}.zip`;
+    const filename =
+      downloadFilenameFromDisposition(disposition) ?? `poster-${id}.zip`;
 
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");

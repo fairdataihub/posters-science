@@ -48,8 +48,8 @@ export async function resolveBulkBatchEmbargoStatus(
 }
 
 /**
- * True when every embargoed poster has a Zenodo record id and a stored
- * filesEmbargoUntil from publish (not a bulk-settings fallback).
+ * True when every embargoed poster has a Zenodo record id, so its files can
+ * be released early.
  */
 export async function bulkBatchFileEmbargoEarlyReleaseReady(
   userId: string,
@@ -63,9 +63,11 @@ export async function bulkBatchFileEmbargoEarlyReleaseReady(
 
     sawActiveEmbargo = true;
 
-    const stored = poster.zenodoDepositions?.filesEmbargoUntil?.trim();
+    // A Zenodo record is enough to release early. The stored date may be
+    // missing (e.g. cleared by an older early release), in which case the
+    // embargo comes from the batch setting; releasing again is harmless.
     const recordId = poster.zenodoDepositions?.depositionId;
-    if (!stored || !recordId) return false;
+    if (!recordId) return false;
   }
 
   return sawActiveEmbargo;

@@ -142,16 +142,26 @@ export async function applyBulkSubmissionMetadataToPosters(
 
   const updatedPosterIds: number[] = [];
 
-  for (const id of targetIds) {
-    const owned = await prisma.poster.findFirst({
-      where: { id, userId },
-      select: {
-        id: true,
-        posterMetadata: { select: { posterId: true } },
-        extractionJob: { select: { completed: true } },
-      },
-    });
-    if (!owned) continue;
+  // One query for ownership/state of every poster in the batch.
+  const ownedRows = await prisma.poster.findMany({
+    where: { id: { in: targetIds }, userId },
+    select: {
+      id: true,
+      posterMetadata: { select: { posterId: true } },
+      extractionJob: { select: { completed: true } },
+    },
+  });
+  const ownedById = new Map(ownedRows.map((row) => [row.id, row]));
+
+  const config = useRuntimeConfig();
+  const siteEnv = config.siteEnv || config.public.siteEnv;
+  // Known from this job; avoids a per-poster scan of every bulk job.
+  const automateOrcidRor = summary.automateOrcidRorLookups === true;
+  const extractionMethod = job.extractionMethod;
+
+  async function applyOne(id: number): Promise<boolean> {
+    const owned = ownedById.get(id);
+    if (!owned) return false;
 
     if (owned.posterMetadata) {
       await prisma.posterMetadata.update({
@@ -160,7 +170,7 @@ export async function applyBulkSubmissionMetadataToPosters(
       });
     } else {
       const createData = posterMetadataCreateFromBulkSubmissionSummary(summary);
-      if (!createData) continue;
+      if (!createData) return false;
       await prisma.posterMetadata.create({
         data: { posterId: id, ...createData },
       });
@@ -169,16 +179,25 @@ export async function applyBulkSubmissionMetadataToPosters(
     await gateBulkExtractedPosterMetadataForJobPoster(
       userId,
       id,
-      job.extractionMethod,
+      extractionMethod,
+      { automateOrcidRor, jobId },
     );
 
     if (owned.extractionJob?.completed) {
-      const config = useRuntimeConfig();
-      const siteEnv = config.siteEnv || config.public.siteEnv;
       await ensurePostersScienceDiscoverRelatedIdentifier(id, { siteEnv });
     }
 
-    updatedPosterIds.push(id);
+    return true;
+  }
+
+  // Posters are independent rows; process a few at a time instead of serially.
+  const APPLY_CONCURRENCY = 6;
+  for (let i = 0; i < targetIds.length; i += APPLY_CONCURRENCY) {
+    const chunk = targetIds.slice(i, i + APPLY_CONCURRENCY);
+    const results = await Promise.all(chunk.map((id) => applyOne(id)));
+    chunk.forEach((id, index) => {
+      if (results[index]) updatedPosterIds.push(id);
+    });
   }
 
   return { updatedPosterIds };

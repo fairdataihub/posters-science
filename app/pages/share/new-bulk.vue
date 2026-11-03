@@ -6,7 +6,6 @@ import { normalizeBulkImportWizardStep } from "#shared/types/bulkImportWizard";
 import {
   SHARE_BULK_IMPORT_STEP_QUERY,
   shareBulkCompletionPath,
-  shareNewBulkPath,
 } from "~/utils/sharePaths";
 
 definePageMeta({
@@ -68,11 +67,6 @@ watch(
   { immediate: true },
 );
 
-const bulkBreadcrumbTo = computed(() =>
-  jobIdFromQuery.value
-    ? shareNewBulkPath({ jobId: jobIdFromQuery.value })
-    : "/share/new-bulk",
-);
 
 const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Share Posters in bulk - Posters.science")}&description=${encodeURIComponent("Import multiple posters with license metadata")}&app=posters-science&org=fairdataihub`;
 
@@ -88,19 +82,7 @@ useSeoMeta({
 </script>
 
 <template>
-  <div class="mx-auto flex w-full max-w-screen-xl flex-col gap-6 px-6 pb-12">
-    <UPageHeader title="Share Posters in bulk">
-      <template #headline>
-        <UBreadcrumb
-          :items="[
-            { label: 'Dashboard', to: '/dashboard' },
-            { label: 'Share Posters', to: '/share' },
-            { label: 'Share Posters in bulk', to: bulkBreadcrumbTo },
-          ]"
-        />
-      </template>
-    </UPageHeader>
-
+  <div class="mx-auto flex w-full max-w-screen-xl flex-col gap-6 px-6 pt-8 pb-12">
     <ConferenceBulkImport
       v-if="!jobIdFromQuery || resumeStatus !== 'pending'"
       :key="jobIdFromQuery ?? 'new-bulk'"

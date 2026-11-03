@@ -7,11 +7,32 @@ import prisma from "~~/server/utils/prisma";
 
 const config = useRuntimeConfig();
 
+// Without this Accept header Zenodo's draft endpoints return the legacy deposit
+// shape. Round-tripping that through PUT drops metadata.resource_type and
+// creators, and publish then fails validation (see RDM_ACCEPT in zenodo.ts).
+const RDM_ACCEPT = "application/vnd.inveniordm.v1+json";
+
 function rdmHeaders(zenodoToken: string, extra: Record<string, string> = {}) {
   return {
+    Accept: RDM_ACCEPT,
     Authorization: `Bearer ${zenodoToken}`,
     ...extra,
   };
+}
+
+/**
+ * Discard the edit draft of a published record (the published version is
+ * untouched). Best effort: used to clear a leftover or half-updated draft.
+ */
+async function discardEditDraft(zenodoToken: string, recordId: number) {
+  try {
+    await fetch(`${config.zenodoApiEndpoint}/records/${recordId}/draft`, {
+      method: "DELETE",
+      headers: rdmHeaders(zenodoToken),
+    });
+  } catch {
+    // Ignore: a later attempt will try again.
+  }
 }
 
 async function createEditDraftFromPublishedRecord(
@@ -44,12 +65,20 @@ async function createEditDraftFromPublishedRecord(
     }
 
     if (response.status === 409 || response.status === 400) {
-      const existing = await fetch(
+      // An edit draft already exists, possibly left half-updated by an earlier
+      // failed attempt. Discard it and open a fresh one from the published record.
+      await discardEditDraft(zenodoToken, recordId);
+      const retry = await fetch(
         `${config.zenodoApiEndpoint}/records/${recordId}/draft`,
-        { headers: rdmHeaders(zenodoToken) },
+        {
+          method: "POST",
+          headers: rdmHeaders(zenodoToken, {
+            "Content-Type": "application/json",
+          }),
+        },
       );
-      if (existing.ok) {
-        const data = (await existing.json()) as { id?: string | number };
+      if (retry.ok) {
+        const data = (await retry.json()) as { id?: string | number };
         const draftId = Number(data.id);
         if (Number.isFinite(draftId)) {
           return { success: true, draftId };
@@ -100,46 +129,91 @@ async function fetchRdmDraftPayload(
   }
 }
 
-function draftWithPublicAccess(
-  draft: Record<string, unknown>,
-  access: ZenodoRdmAccess,
-): Record<string, unknown> {
-  const files =
-    draft.files && typeof draft.files === "object"
-      ? { ...(draft.files as Record<string, unknown>) }
-      : {};
-
-  const merged = {
-    ...draft,
-    access,
-    files: { ...files, enabled: true },
-  };
-
-  return prepareRdmDraftForPut(merged);
+/**
+ * Read the published record in RDM format. Zenodo's edit-draft endpoint can
+ * ignore the RDM Accept header and return the legacy deposit shape (no
+ * metadata.resource_type, legacy creators/dates), which then fails validation;
+ * the published-record endpoint honors it, and the edit draft starts as a copy
+ * of the published record anyway.
+ */
+async function fetchPublishedRdmRecord(
+  zenodoToken: string,
+  recordId: number,
+): Promise<
+  { success: true; record: Record<string, unknown> } | { success: false; error: string }
+> {
+  try {
+    const response = await fetch(`${config.zenodoApiEndpoint}/records/${recordId}`, {
+      headers: rdmHeaders(zenodoToken),
+    });
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      return {
+        success: false,
+        error: `Could not read Zenodo record ${recordId} (${response.status})${body ? `: ${body.slice(0, 200)}` : ""}`,
+      };
+    }
+    const record = (await response.json()) as Record<string, unknown>;
+    return { success: true, record };
+  } catch (error) {
+    return {
+      success: false,
+      error: `Could not read Zenodo record ${recordId}: ${(error as Error).message}`,
+    };
+  }
 }
 
-const READ_ONLY_RDM_DRAFT_KEYS = new Set([
-  "created",
-  "updated",
-  "revision_id",
-  "links",
-  "parent",
-  "pid",
-  "id",
-  "status",
-  "versions",
-  "deletion_status",
-]);
+function hasRdmMetadata(record: Record<string, unknown>): boolean {
+  const metadata = record.metadata as Record<string, unknown> | undefined;
+  const resourceType = metadata?.resource_type as { id?: unknown } | undefined;
+  return Boolean(resourceType?.id) && Array.isArray(metadata?.creators);
+}
 
-function prepareRdmDraftForPut(
-  draft: Record<string, unknown>,
-): Record<string, unknown> {
-  const payload: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(draft)) {
-    if (READ_ONLY_RDM_DRAFT_KEYS.has(key)) continue;
-    payload[key] = value;
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+/**
+ * GET returns vocabulary references expanded with read-only fields, e.g.
+ * rights { id, title: { en }, icon, props }, affiliations { id, name,
+ * identifiers }. A draft PUT only accepts the reference and rejects the rest as
+ * "Unknown field". Within RDM metadata every object carrying a string `id` is
+ * such a reference (rights, languages, resource_type, subjects, roles, date /
+ * relation / description types, affiliations, funders, awards), so collapse it
+ * to { id }. Entries without an id (custom rights, free-text affiliations or
+ * awards) are left as-is.
+ */
+function collapseRdmVocabularies(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(collapseRdmVocabularies);
+  if (!isPlainObject(value)) return value;
+
+  if (typeof value.id === "string" && value.id.trim()) {
+    return { id: value.id };
   }
-  return payload;
+
+  const out: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(value)) {
+    out[key] = collapseRdmVocabularies(child);
+  }
+  return out;
+}
+
+/**
+ * Edit payload with public file access: only the parts an RDM draft PUT
+ * accepts (whitelisted), copied from an RDM-format record.
+ */
+function publicAccessPayloadFromRecord(
+  record: Record<string, unknown>,
+  access: ZenodoRdmAccess,
+): Record<string, unknown> {
+  return {
+    access,
+    files: { enabled: true },
+    metadata: collapseRdmVocabularies(record.metadata),
+    ...(record.custom_fields ? { custom_fields: record.custom_fields } : {}),
+    // Keep the existing DOI: a draft PUT is a full replacement.
+    ...(record.pids ? { pids: record.pids } : {}),
+  };
 }
 
 async function putRdmDraftPayload(
@@ -159,12 +233,26 @@ async function putRdmDraftPayload(
       },
     );
 
+    const body = await response.text().catch(() => "");
     if (!response.ok) {
-      const body = await response.text().catch(() => "");
       return {
         success: false,
         error: `Zenodo rejected the draft update for ${draftId} (${response.status})${body ? `: ${body.slice(0, 200)}` : ""}`,
       };
+    }
+
+    // Zenodo saves invalid drafts with 200 and lists problems in errors[];
+    // publish would fail later, so stop here with the real reason.
+    try {
+      const parsed = JSON.parse(body) as { errors?: unknown[] };
+      if (Array.isArray(parsed.errors) && parsed.errors.length > 0) {
+        return {
+          success: false,
+          error: `Zenodo flagged the draft update for ${draftId}: ${JSON.stringify(parsed.errors).slice(0, 300)}`,
+        };
+      }
+    } catch {
+      // Non-JSON body: treat as success.
     }
 
     return { success: true };
@@ -255,13 +343,29 @@ export async function liftZenodoFileEmbargoForPoster(
     return { success: false, error: editDraft.error };
   }
 
-  const loaded = await fetchRdmDraftPayload(accessToken, editDraft.draftId);
-  if (!loaded.success) {
-    return { success: false, error: loaded.error };
+  const publicAccess = zenodoPublicRdmAccess();
+
+  // Prefer the published record (reliably RDM format); fall back to the draft
+  // only if it is RDM-shaped. Never PUT a legacy-shaped body.
+  let source: Record<string, unknown> | null = null;
+  const published = await fetchPublishedRdmRecord(accessToken, recordId);
+  if (published.success && hasRdmMetadata(published.record)) {
+    source = published.record;
+  } else {
+    const loaded = await fetchRdmDraftPayload(accessToken, editDraft.draftId);
+    if (loaded.success && hasRdmMetadata(loaded.draft)) {
+      source = loaded.draft;
+    }
+  }
+  if (!source) {
+    await discardEditDraft(accessToken, recordId);
+    return {
+      success: false,
+      error: `Zenodo did not return record ${recordId} in the expected format, so its files could not be released. Nothing was changed.`,
+    };
   }
 
-  const publicAccess = zenodoPublicRdmAccess();
-  const updatedPayload = draftWithPublicAccess(loaded.draft, publicAccess);
+  const updatedPayload = publicAccessPayloadFromRecord(source, publicAccess);
 
   const saved = await putRdmDraftPayload(
     accessToken,
@@ -269,17 +373,23 @@ export async function liftZenodoFileEmbargoForPoster(
     updatedPayload,
   );
   if (!saved.success) {
+    await discardEditDraft(accessToken, recordId);
     return { success: false, error: saved.error };
   }
 
-  const published = await publishZenodoDraft(accessToken, editDraft.draftId);
-  if (!published.success) {
-    return { success: false, error: published.error };
+  const publishResult = await publishZenodoDraft(accessToken, editDraft.draftId);
+  if (!publishResult.success) {
+    // Leave the published record as it was so a retry starts clean.
+    await discardEditDraft(accessToken, recordId);
+    return { success: false, error: publishResult.error };
   }
 
   await prisma.zenodoDeposition.update({
     where: { posterId },
-    data: { filesEmbargoUntil: null },
+    // Store today's UTC date ("embargo ended today"), not null: null means
+    // "unknown" and the resolver would fall back to the batch's embargo days,
+    // making the poster look embargoed again.
+    data: { filesEmbargoUntil: new Date().toISOString().slice(0, 10) },
   });
 
   return { success: true };

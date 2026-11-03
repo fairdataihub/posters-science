@@ -109,17 +109,12 @@ async function searchOrcidUrl(
       headers: { Accept: "application/json" },
     });
 
+    // High confidence only: attribute an ORCID iD only when the search (name,
+    // plus affiliation when known) matches exactly one person. Several matches
+    // are ambiguous, so leave the creator for the user to fill in.
     const results = response["expanded-result"] ?? [];
-    if (results.length === 0) return null;
-    if (results.length === 1) {
-      return `https://orcid.org/${results[0]!["orcid-id"]}`;
-    }
-
-    if (affiliation?.trim()) {
-      return `https://orcid.org/${results[0]!["orcid-id"]}`;
-    }
-
-    return null;
+    if (results.length !== 1) return null;
+    return `https://orcid.org/${results[0]!["orcid-id"]}`;
   } catch {
     return null;
   }
@@ -278,8 +273,15 @@ async function loadAutomateOrcidRorLookups(
 export async function applyBulkOrcidRorAutomationForPoster(
   userId: string,
   posterId: number,
+  options: {
+    /** Batch setting when the caller already knows it (skips a lookup across all jobs). */
+    automate?: boolean | null;
+  } = {},
 ): Promise<boolean> {
-  const automate = await loadAutomateOrcidRorLookups(userId, posterId);
+  const automate =
+    options.automate !== undefined
+      ? options.automate
+      : await loadAutomateOrcidRorLookups(userId, posterId);
   if (automate === null) return false;
 
   const poster = await prisma.poster.findFirst({

@@ -51,7 +51,7 @@ export const BULK_IMPORT_WIZARD_STEPS: BulkImportWizardStepDefinition[] = [
   {
     id: "review",
     label: "Supplementary metadata",
-    task: "Optionally download the batch workbook to add or correct metadata in Excel, then import it here. You can skip this and edit posters directly on the next step.",
+    task: "Optionally review and add metadata for every poster in the batch below. You can skip this and edit posters individually on the next step.",
   },
   {
     id: "preview",

@@ -188,16 +188,20 @@ export async function removePostersFromBulkImportJob(
     if (removal.posterId != null) {
       await assertDraftPosterRemovable(userId, removal.posterId);
       removedPosterIds.add(removal.posterId);
-      continue;
     }
 
+    // Always remove bulk-import storage for this path. Draft poster delete also
+    // attempts Bunny cleanup but only logs failures; leaving the object causes
+    // sync-staged to resurrect the file and submit to create a duplicate job.
     if (removal.filePath) {
       await deleteBunnyObjectIfConfigured(removal.filePath, jobId);
     }
   }
 
   const remainingCreated = created.filter(
-    (entry) => !removedPosterIds.has(entry.posterId),
+    (entry) =>
+      !removedPosterIds.has(entry.posterId) &&
+      !(entry.filePath && removedPaths.has(entry.filePath)),
   );
   const nextStaged = staged.filter(
     (poster) => !removedPaths.has(poster.filePath),

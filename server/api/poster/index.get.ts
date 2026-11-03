@@ -1,9 +1,11 @@
 import {
   bulkSubmissionHasActiveExtraction,
   posterIdsFromBulkSubmissionSummary,
-  posterIdsHiddenByBulkImport,
+  posterIdsHiddenByInProgressBulkBatches,
   posterIdsHiddenFromBulkDashboard,
   posterIdsWithActiveExtractionJob,
+  repairDownloadedPostersInActiveBulkBatches,
+  splitBulkSubmissionsForDashboard,
 } from "~~/server/utils/bulkImportDashboard";
 import { tryCompleteBulkBatchIfReady } from "~~/server/utils/bulkImportZenodoBatchCompletion";
 
@@ -59,26 +61,23 @@ const bulkDashboardSelect = {
 } as const;
 
 async function loadBulkDashboardRows(userId: string) {
-  const [bulkSubmissionRows, completedBulkSubmissionRows] = await Promise.all([
-    prisma.bulkSubmission.findMany({
-      where: {
-        userId,
-        status: { in: ["draft", "processing", "failed"] },
-      },
-      orderBy: { updated: "desc" },
-      select: bulkDashboardSelect,
-    }),
-    prisma.bulkSubmission.findMany({
-      where: {
-        userId,
-        status: "completed",
-      },
-      orderBy: { completedAt: "desc" },
-      select: bulkDashboardSelect,
-    }),
-  ]);
+  const allRows = await prisma.bulkSubmission.findMany({
+    where: { userId },
+    orderBy: { updated: "desc" },
+    select: bulkDashboardSelect,
+  });
 
-  return { bulkSubmissionRows, completedBulkSubmissionRows };
+  const { inProgress, completed } = await splitBulkSubmissionsForDashboard(
+    userId,
+    allRows,
+  );
+
+  await repairDownloadedPostersInActiveBulkBatches(userId, inProgress);
+
+  return {
+    bulkSubmissionRows: inProgress,
+    completedBulkSubmissionRows: completed,
+  };
 }
 
 export default defineEventHandler(async (event) => {
@@ -87,20 +86,8 @@ export default defineEventHandler(async (event) => {
   const { user } = session;
   const userId = user.id;
 
-  const [posterRows, bulkRowsInitial] = await Promise.all([
-      prisma.poster.findMany({
-        include: posterInclude,
-        where: {
-          userId,
-        },
-        orderBy: {
-          updated: "desc",
-        },
-      }),
-      loadBulkDashboardRows(userId),
-    ]);
-
-  let { bulkSubmissionRows, completedBulkSubmissionRows } = bulkRowsInitial;
+  let { bulkSubmissionRows, completedBulkSubmissionRows } =
+    await loadBulkDashboardRows(userId);
 
   let bulkCompletionChanged = false;
   for (const bulk of bulkSubmissionRows) {
@@ -115,6 +102,16 @@ export default defineEventHandler(async (event) => {
     ({ bulkSubmissionRows, completedBulkSubmissionRows } =
       await loadBulkDashboardRows(userId));
   }
+
+  const posterRows = await prisma.poster.findMany({
+    include: posterInclude,
+    where: {
+      userId,
+    },
+    orderBy: {
+      updated: "desc",
+    },
+  });
 
   const families = new Map<number, typeof posterRows>();
 
@@ -251,7 +248,7 @@ export default defineEventHandler(async (event) => {
   );
 
   const activeBulkManagedPosterIds = [
-    ...posterIdsHiddenByBulkImport(bulkSubmissionRows),
+    ...posterIdsHiddenByInProgressBulkBatches(bulkSubmissionRows),
   ];
 
   const inProgressFeed = [

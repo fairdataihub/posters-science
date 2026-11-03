@@ -3,10 +3,12 @@
  * Uses the same rules as workbook prefill (shared/bulkReviewWorkbookPrefill.ts).
  */
 import type { BulkSubmissionExtractionMethod } from "#shared/types/bulkSubmission";
+import { bulkReviewWorkbookColumnByFillKey } from "#shared/bulkReviewWorkbookManifest";
 import {
   bulkReviewShouldPersistExtractedField,
   bulkReviewShouldPersistPosterCaption,
   getBulkReviewWorkbookPrefillPolicy,
+  bulkReviewWorkbookShouldPrefillColumn,
 } from "#shared/bulkReviewWorkbookPrefill";
 
 type JsonRecord = Record<string, unknown>;
@@ -352,5 +354,32 @@ export function gateBulkExtractedPosterSnapshot(
       "table",
     ),
     dates: gateDates(snapshot.dates, extractionMethod),
+  };
+}
+
+/**
+ * The regular gate never strips grid-required fields (title, description,
+ * keywords). The one-time post-extraction gate also drops extracted values for
+ * those when the batch's level does not keep them, so the stored poster
+ * matches what the level promises.
+ */
+export function stripFreshlyExtractedFieldsBelowLevel(
+  extractionMethod: BulkSubmissionExtractionMethod,
+  snapshot: BulkExtractionGatedPosterSnapshot,
+): BulkExtractionGatedPosterSnapshot {
+  if (extractionMethod === "full") return snapshot;
+
+  const keep = (fillKey: string) => {
+    const column = bulkReviewWorkbookColumnByFillKey(fillKey);
+    return column
+      ? bulkReviewWorkbookShouldPrefillColumn(extractionMethod, column)
+      : false;
+  };
+
+  return {
+    ...snapshot,
+    title: keep("title") ? snapshot.title : "",
+    description: keep("description") ? snapshot.description : "",
+    subjects: keep("keywords") ? snapshot.subjects : [],
   };
 }

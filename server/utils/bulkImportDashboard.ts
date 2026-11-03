@@ -7,12 +7,6 @@ type BulkRowWithSummary = {
   submissionSummary: unknown;
 };
 
-const BULK_STATUSES_HIDE_POSTER_CARDS = new Set([
-  "draft",
-  "processing",
-  "failed",
-]);
-
 const ACTIVE_EXTRACTION_JOB_STATUSES = [
   "pending-extraction",
   "pending-thumbnail",
@@ -68,24 +62,139 @@ export function bulkSubmissionHasActiveExtraction(
   );
 }
 
+function bulkBatchAllPostersPublished(
+  posterIds: number[],
+  statusByPosterId: Map<number, string>,
+): boolean {
+  if (posterIds.length === 0) return false;
+  return posterIds.every((id) => statusByPosterId.get(id) === "published");
+}
+
 /**
- * Poster IDs created by bulk submit that should not appear as separate
- * dashboard cards while the batch is still in progress (draft through publish).
+ * Splits bulk jobs for the dashboard. A batch stays "in progress" until every
+ * poster in the batch is published on Zenodo, even if the job row is marked
+ * completed or posters were marked downloaded after a local ZIP export.
  */
-export function posterIdsHiddenByBulkImport(
-  bulkRows: BulkRowWithSummary[],
+export async function splitBulkSubmissionsForDashboard<
+  T extends BulkRowWithSummary,
+>(userId: string, rows: T[]): Promise<{ inProgress: T[]; completed: T[] }> {
+  const allPosterIds = new Set<number>();
+  for (const bulk of rows) {
+    for (const id of posterIdsFromBulkSubmissionSummary(bulk.submissionSummary)) {
+      allPosterIds.add(id);
+    }
+  }
+
+  const statusByPosterId = new Map<number, string>();
+  if (allPosterIds.size > 0) {
+    const posters = await prisma.poster.findMany({
+      where: { userId, id: { in: [...allPosterIds] } },
+      select: { id: true, status: true },
+    });
+    for (const poster of posters) {
+      statusByPosterId.set(poster.id, poster.status);
+    }
+  }
+
+  const inProgress: T[] = [];
+  const completed: T[] = [];
+
+  for (const bulk of rows) {
+    const posterIds = posterIdsFromBulkSubmissionSummary(bulk.submissionSummary);
+    const zenodoComplete =
+      bulk.status === "completed" &&
+      bulkBatchAllPostersPublished(posterIds, statusByPosterId);
+
+    if (zenodoComplete) {
+      completed.push(bulk);
+    } else {
+      inProgress.push(bulk);
+    }
+  }
+
+  return { inProgress, completed };
+}
+
+/** Reset local-download status so batch posters stay drafts until Zenodo publish. */
+export async function repairDownloadedPostersInActiveBulkBatches(
+  userId: string,
+  inProgressBulkRows: BulkRowWithSummary[],
+): Promise<void> {
+  const posterIds = new Set<number>();
+  for (const bulk of inProgressBulkRows) {
+    for (const id of posterIdsFromBulkSubmissionSummary(bulk.submissionSummary)) {
+      posterIds.add(id);
+    }
+  }
+
+  if (posterIds.size === 0) return;
+
+  await prisma.poster.updateMany({
+    where: {
+      userId,
+      id: { in: [...posterIds] },
+      status: "downloaded",
+    },
+    data: { status: "draft" },
+  });
+}
+
+/**
+ * True when this poster belongs to a bulk batch that has not finished Zenodo
+ * publication for every member poster.
+ */
+export async function posterManagedByUnfinishedBulkBatch(
+  userId: string,
+  posterId: number,
+): Promise<boolean> {
+  const jobs = await prisma.bulkSubmission.findMany({
+    where: { userId },
+    select: { submissionSummary: true, status: true },
+    orderBy: { updated: "desc" },
+  });
+
+  for (const job of jobs) {
+    const posterIds = posterIdsFromBulkSubmissionSummary(job.submissionSummary);
+    if (!posterIds.includes(posterId)) continue;
+
+    if (job.status !== "completed") return true;
+
+    const posters = await prisma.poster.findMany({
+      where: { userId, id: { in: posterIds } },
+      select: { id: true, status: true },
+    });
+    const statusByPosterId = new Map(posters.map((row) => [row.id, row.status]));
+    if (!bulkBatchAllPostersPublished(posterIds, statusByPosterId)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Poster IDs that should not appear as separate dashboard cards while their
+ * bulk batch is still in progress (through local download and until Zenodo).
+ */
+export function posterIdsHiddenByInProgressBulkBatches(
+  inProgressBulkRows: BulkRowWithSummary[],
 ): Set<number> {
   const hidden = new Set<number>();
 
-  for (const bulk of bulkRows) {
-    if (!BULK_STATUSES_HIDE_POSTER_CARDS.has(bulk.status)) continue;
-
+  for (const bulk of inProgressBulkRows) {
     for (const id of posterIdsFromBulkSubmissionSummary(bulk.submissionSummary)) {
       hidden.add(id);
     }
   }
 
   return hidden;
+}
+
+/** @deprecated Use posterIdsHiddenByInProgressBulkBatches after dashboard split. */
+export function posterIdsHiddenByBulkImport(
+  bulkRows: BulkRowWithSummary[],
+): Set<number> {
+  return posterIdsHiddenByInProgressBulkBatches(bulkRows);
 }
 
 /**
@@ -134,7 +243,7 @@ export async function posterIdsHiddenFromBulkDashboard(
   inProgressBulkRows: BulkRowWithSummary[],
   completedBulkRows: BulkRowWithSummary[],
 ): Promise<Set<number>> {
-  const hidden = posterIdsHiddenByBulkImport(inProgressBulkRows);
+  const hidden = posterIdsHiddenByInProgressBulkBatches(inProgressBulkRows);
   const embargoHidden = await posterIdsHiddenByCompletedBulkEmbargo(
     userId,
     completedBulkRows,
