@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { downloadFilenameFromDisposition } from "~/utils/downloadFilename";
 import type { BulkImportBatchItem } from "#shared/types/conferenceBulkImport";
 import type { PosterResponse } from "@/utils/poster_schema";
 import { normalizeZenodoRecordWebUrl } from "#shared/utils/zenodoRecordWebUrl";
@@ -235,8 +236,8 @@ async function downloadPosterPackage(posterId: number) {
 
   const blob = await response.blob();
   const disposition = response.headers.get("Content-Disposition");
-  const filenameMatch = disposition?.match(/filename="?([^";\n]+)"?/);
-  const filename = filenameMatch?.[1] ?? `poster-${posterId}.zip`;
+  const filename =
+    downloadFilenameFromDisposition(disposition) ?? `poster-${posterId}.zip`;
 
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
@@ -366,6 +367,7 @@ type PosterWithZenodo = PosterResponse & {
     depositionId?: number;
     status?: string;
     lastPublishedZenodoDoi?: string | null;
+    filesEmbargoUntil?: string | null;
   } | null;
 };
 
@@ -376,6 +378,8 @@ type PublishRow = {
   error?: string;
   recordUrl?: string;
   doi?: string;
+  /** Zenodo file embargo end for an already-published poster (from the poster record). */
+  filesEmbargoUntil?: string | null;
 };
 
 const completedItems = computed(() =>
@@ -388,13 +392,47 @@ const rows = ref<PublishRow[]>([]);
 const batchPublishing = ref(false);
 const batchStoppedEarly = ref(false);
 const batchCompletionSyncing = ref(false);
+/** Rows whose publish status is still being fetched (one request per poster). */
+const rowsHydrating = ref(0);
+
+/**
+ * Publish controls (intro, embargo settings, "Publish all") only matter while
+ * some poster is not on Zenodo yet; hidden once all are published (and while
+ * statuses are loading, so they don't flash up for an already-published batch).
+ */
+const showZenodoPublishControls = computed(
+  () => rowsHydrating.value === 0 && !allPublished.value,
+);
+
+/** Still show the connect panel when files are embargoed but Zenodo is not
+ * connected: releasing the embargo early needs the account. */
+const showZenodoConnectPanel = computed(
+  () =>
+    showZenodoPublishControls.value ||
+    (allPublished.value &&
+      awaitingEmbargoRelease.value &&
+      !zenodo.zenodoTokenExists.value),
+);
 const batchCompletion = ref<BulkSubmissionCompletionResponse | null>(null);
 const releasingEmbargo = ref(false);
 const embargoClockNow = ref(Date.now());
 let embargoPollInterval: ReturnType<typeof setInterval> | undefined;
 
+/** Any poster already on Zenodo whose files are still restricted. */
+const rowsHaveActiveEmbargo = computed(() =>
+  rows.value.some(
+    (row) =>
+      Boolean(row.filesEmbargoUntil) &&
+      isZenodoFileEmbargoActive(
+        row.filesEmbargoUntil!,
+        new Date(embargoClockNow.value),
+      ),
+  ),
+);
+
 const awaitingEmbargoRelease = computed(() => {
   if (batchCompletion.value?.awaitingEmbargoRelease) return true;
+  if (allPublished.value && rowsHaveActiveEmbargo.value) return true;
   if (!allPublished.value || reviewEmbargoChoice.value !== "yes") return false;
   const until = batchCompletion.value?.latestActiveEmbargoUntil;
   if (until) {
@@ -617,7 +655,10 @@ watch(
     for (const row of rows.value) {
       const posterId = row.item.posterId;
       if (posterId == null) continue;
-      void hydrateRowTitleAndStatus(row, posterId);
+      rowsHydrating.value += 1;
+      void hydrateRowTitleAndStatus(row, posterId).finally(() => {
+        rowsHydrating.value = Math.max(0, rowsHydrating.value - 1);
+      });
     }
   },
   { immediate: true },
@@ -645,6 +686,7 @@ async function hydrateRowTitleAndStatus(row: PublishRow, posterId: number) {
       ...(recordUrl && { recordUrl }),
       ...(doi && { doi }),
       status: alreadyOnZenodo ? "skipped" : row.status,
+      filesEmbargoUntil: poster.zenodoDepositions?.filesEmbargoUntil ?? null,
     });
   } catch {
     // Keep file-based title and ready status.
@@ -823,6 +865,15 @@ async function syncBatchCompletionIfReady() {
   }
 }
 
+// Fetch completion as soon as every row is known to be published (statuses
+// load per poster after mount), instead of waiting for the 60s interval.
+watch(
+  () => allPublished.value && rowsHydrating.value === 0,
+  (ready) => {
+    if (ready) void syncBatchCompletionIfReady();
+  },
+);
+
 onMounted(() => {
   void loadZenodoEmbargoFromJob();
   embargoPollInterval = setInterval(() => {
@@ -936,7 +987,7 @@ watch(
           <h3 class="text-lg font-semibold">Archive to Zenodo</h3>
         </div>
 
-        <p class="mb-5 text-sm">
+        <p v-if="showZenodoPublishControls" class="mb-5 text-sm">
           <ULink
             to="https://zenodo.org"
             target="_blank"
@@ -950,11 +1001,11 @@ watch(
         </p>
 
         <UFormField
-          v-if="zenodoEmbargoLoaded"
+          v-if="zenodoEmbargoLoaded && showZenodoPublishControls"
           class="mb-5"
-          label="Zenodo file embargo"
+          label="Put the poster files under a Zenodo embargo?"
           required
-          description="When enabled, each record is published with files restricted until the embargo date. Metadata and the DOI are public; downloads open automatically when the embargo ends."
+          description="If yes, each poster's record is published right away, but its files can't be downloaded until the embargo ends. This is helpful if you want to review your posters on Zenodo before others can download them. You can lift the embargo early from this page at any time."
         >
           <div class="space-y-3">
             <URadioGroup
@@ -992,7 +1043,7 @@ watch(
         </UFormField>
 
         <UAlert
-          v-if="zenodoFileEmbargoNotice"
+          v-if="zenodoFileEmbargoNotice && showZenodoPublishControls"
           class="mb-5"
           color="info"
           variant="subtle"
@@ -1001,7 +1052,7 @@ watch(
           :description="zenodoFileEmbargoNotice"
         />
 
-        <ZenodoConnectPanel :zenodo="zenodo">
+        <ZenodoConnectPanel v-if="showZenodoConnectPanel" :zenodo="zenodo">
           <div class="flex flex-wrap items-center gap-3">
             <UButton
               color="primary"
@@ -1017,14 +1068,36 @@ watch(
               "
               @click="publishAllToZenodo"
             />
-            <span
-              v-if="allPublished && !awaitingEmbargoRelease"
-              class="text-success text-sm font-medium"
-            >
-              All posters in this batch are published.
-            </span>
           </div>
         </ZenodoConnectPanel>
+
+        <UAlert
+          v-if="
+            allPublished &&
+            !awaitingEmbargoRelease &&
+            rowsHydrating === 0 &&
+            batchCompletion != null &&
+            !batchCompletionSyncing
+          "
+          color="success"
+          variant="soft"
+          icon="i-lucide-circle-check"
+          title="All posters in this batch are published on Zenodo."
+        />
+
+        <UAlert
+          v-if="
+            !(allPublished && awaitingEmbargoRelease) &&
+            (rowsHydrating > 0 || batchCompletionSyncing)
+          "
+          color="neutral"
+          variant="soft"
+          icon="i-lucide-loader-circle"
+          :ui="{ icon: 'animate-spin' }"
+          title="Checking publication status…"
+          description="Loading each poster's Zenodo status for this batch."
+          class="mt-4"
+        />
 
         <UAlert
           v-if="allPublished && awaitingEmbargoRelease"
@@ -1036,10 +1109,7 @@ watch(
         >
           <template #description>
             <p class="text-sm">
-              Metadata and DOIs are public; downloads stay restricted until the
-              embargo ends. We will open the batch summary when every poster’s
-              files are unrestricted.
-              <span v-if="embargoWaitLabel" class="mt-1 block font-medium">
+              <span v-if="embargoWaitLabel" class="block font-medium">
                 {{ embargoWaitLabel }}
                 <template v-if="batchCompletion?.latestActiveEmbargoUntil">
                   (until

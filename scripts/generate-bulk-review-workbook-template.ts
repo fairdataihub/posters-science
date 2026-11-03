@@ -13,7 +13,7 @@ import {
   BULK_REVIEW_WORKBOOK_FIRST_DATA_ROW,
   BULK_REVIEW_WORKBOOK_HEADER_ROW,
   BULK_REVIEW_WORKBOOK_SHEETS,
-  bulkReviewWorkbookRequirementRowLabel,
+  bulkReviewWorkbookRequirementRowValues,
 } from "../shared/bulkReviewWorkbookManifest.ts";
 import { applyBulkReviewWorkbookSheetProtection } from "../server/utils/bulkReviewWorkbookSheetProtection.ts";
 import {
@@ -47,7 +47,7 @@ function addDataSheet(
   sheet.addRow(headers);
   sheet.addRow(sheetDef.columns.map((col) => col.instruction ?? ""));
   sheet.addRow(
-    sheetDef.columns.map((col) => bulkReviewWorkbookRequirementRowLabel(col.tier)),
+    bulkReviewWorkbookRequirementRowValues(sheetDef.columns),
   );
 
   styleHeaderRow(sheet.getRow(BULK_REVIEW_WORKBOOK_HEADER_ROW));

@@ -2,7 +2,10 @@ import archiver from "archiver";
 import { Readable } from "node:stream";
 import { sendStream, setHeader } from "h3";
 import type { BulkImportSubmissionSummary } from "#shared/types/bulkImportLicenses";
-import { posterIdsFromBulkSubmissionSummary } from "~~/server/utils/bulkImportDashboard";
+import {
+  posterIdsFromBulkSubmissionSummary,
+  posterManagedByUnfinishedBulkBatch,
+} from "~~/server/utils/bulkImportDashboard";
 import { getBulkPosterSubmissionJobRepository } from "~~/server/utils/bulkPosterSubmissionJobs";
 import {
   appendPosterDownloadPackage,
@@ -140,12 +143,9 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  await prisma.poster.updateMany({
-    where: {
-      id: { in: posterIds },
-      userId: session.user.id,
-    },
-    data: { status: "downloaded" },
+  await prisma.bulkSubmission.update({
+    where: { id: jobId },
+    data: { updated: new Date() },
   });
 
   const zipFilename = safeZipFilename(job.name, job.id);

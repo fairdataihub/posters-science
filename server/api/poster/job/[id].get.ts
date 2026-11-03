@@ -31,23 +31,32 @@ export default defineEventHandler(async (event) => {
     });
   }
 
+  // Post-extraction housekeeping must never block status polling: if it fails,
+  // still report the job's status (it is retried on the next poll / poster open).
   if (job.completed && job.posterId) {
-    const bulkJob = await findBulkSubmissionJobForPoster(user.id, job.posterId);
-    if (bulkJob) {
-      await gateBulkExtractedPosterMetadata(
-        user.id,
-        job.posterId,
-        bulkJob.extractionMethod,
-      );
+    try {
+      const bulkJob = await findBulkSubmissionJobForPoster(user.id, job.posterId);
+      if (bulkJob) {
+        await gateBulkExtractedPosterMetadata(
+          user.id,
+          job.posterId,
+          bulkJob.extractionMethod,
+          { jobId: bulkJob.id },
+        );
+      }
+    } catch (error) {
+      console.error("[poster/job] extraction-level gating failed:", error);
     }
-  }
 
-  if (job.completed && job.posterId) {
-    const config = useRuntimeConfig(event);
-    const siteEnv = config.siteEnv || config.public.siteEnv;
-    await ensurePostersScienceDiscoverRelatedIdentifier(job.posterId, {
-      siteEnv,
-    });
+    try {
+      const config = useRuntimeConfig(event);
+      const siteEnv = config.siteEnv || config.public.siteEnv;
+      await ensurePostersScienceDiscoverRelatedIdentifier(job.posterId, {
+        siteEnv,
+      });
+    } catch (error) {
+      console.error("[poster/job] discover link update failed:", error);
+    }
   }
 
   return {

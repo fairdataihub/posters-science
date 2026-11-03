@@ -875,7 +875,7 @@ export const strictFormSchema = z.object({
   identifiers: z.array(IdentifierSchema),
   creators: z
     .array(StrictCreatorSchema)
-    .min(1, { message: "At least one creator is required" }),
+    .min(1, { message: "You must add at least one contributor." }),
   subjects: z
     .array(z.string())
     .min(1, { message: "At least one subject is required" }),

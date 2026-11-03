@@ -147,7 +147,7 @@ function continueImport() {
             </UBadge>
 
             <UBadge color="neutral" variant="soft" size="sm">
-              Bulk import
+              Bulk submission
             </UBadge>
           </div>
 
@@ -155,7 +155,7 @@ function continueImport() {
             class="line-clamp-2 max-h-14 overflow-hidden text-lg font-semibold break-words"
             :title="bulk.name"
           >
-            {{ displayTitle || "Untitled bulk import" }}
+            {{ displayTitle || "Untitled bulk submission" }}
           </h3>
 
           <div class="flex flex-col gap-1">

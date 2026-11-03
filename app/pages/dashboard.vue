@@ -235,7 +235,7 @@ const activeTabHasItems = computed(() => activeTabListItems.value.length > 0);
 const versioningEnabled = useVersioningEnabled();
 const activeDashboardDescription = computed(() => {
   if (activeDashboardTab.value === "in-progress") {
-    return "Posters and bulk imports that still need your attention.";
+    return "Posters and bulk submissions that still need your attention.";
   }
 
   // FEATURE FLAG (versioning)
@@ -859,11 +859,11 @@ async function deleteBulkImport() {
 
     const kept = result.keptPublishedPosterCount ?? 0;
     toast.add({
-      title: "Bulk import deleted",
+      title: "Bulk submission deleted",
       description:
         kept > 0
           ? `Draft posters were removed. ${kept === 1 ? "One published poster" : `${kept} published posters`} from this batch remain on your dashboard.`
-          : "Your bulk import and its draft posters have been removed.",
+          : "Your bulk submission and its draft posters have been removed.",
       color: "success",
     });
 
@@ -874,7 +874,7 @@ async function deleteBulkImport() {
     console.error(err);
     toast.add({
       title: "Error",
-      description: "There was a problem deleting this bulk import.",
+      description: "There was a problem deleting this bulk submission.",
       color: "error",
     });
   } finally {
@@ -2791,22 +2791,21 @@ function posterMenuItems(poster: Poster) {
       </template>
     </UModal>
 
-    <UModal v-model:open="bulkDeleteModalOpen" title="Delete bulk import">
+    <UModal v-model:open="bulkDeleteModalOpen" title="Delete bulk submission">
       <template #body>
         <p class="text-sm">
           Are you sure you want to delete
           <span class="font-medium">{{
-            bulkToDelete?.name || "this bulk import"
+            bulkToDelete?.name || "this bulk submission"
           }}</span
           >?
           <template v-if="bulkToDelete?.status === 'processing'">
-            Staged files and draft posters from this import will be removed.
+            Staged files and draft posters from this submission will be removed.
           </template>
           <template v-else>
-            Staged poster files for this import will be removed.
+            Staged poster files for this submission will be removed.
           </template>
-          Posters you already published to Zenodo stay on your dashboard. This
-          cannot be undone.
+          This cannot be undone.
         </p>
       </template>
 

@@ -41,9 +41,20 @@ export type BulkReviewWorkbookColumn = {
   hint?: string;
   /** Row 2 help text (share UI + validation notes) */
   instruction?: string;
+  /**
+   * Overrides the requirement implied by `tier`. Tier is extraction confidence
+   * (what Minimal keeps); a column can be high-confidence yet still optional.
+   */
+  requirement?: BulkReviewColumnRequirement;
 };
 
-type ColOpts = { width?: number; wrapText?: boolean; hint?: string; instruction?: string };
+type ColOpts = {
+  width?: number;
+  wrapText?: boolean;
+  hint?: string;
+  instruction?: string;
+  requirement?: BulkReviewColumnRequirement;
+};
 
 function col(
   header: string,
@@ -66,6 +77,8 @@ function col(
 export type BulkReviewWorkbookSheet = {
   name: string;
   description: string;
+  /** Singular label for one row on list sheets, e.g. "funder" ("Add funder"). */
+  rowNoun?: string;
   /** One row per poster vs repeating child rows */
   grain:
     | "poster"
@@ -87,6 +100,13 @@ export function bulkReviewColumnRequirement(
   tier: BulkReviewFieldTier,
 ): BulkReviewColumnRequirement {
   return tier === "optional" ? "optional" : "required";
+}
+
+/** Required vs optional for a column, honoring an explicit `requirement`. */
+export function bulkReviewColumnRequirementFor(
+  column: Pick<BulkReviewWorkbookColumn, "tier" | "requirement">,
+): BulkReviewColumnRequirement {
+  return column.requirement ?? bulkReviewColumnRequirement(column.tier);
 }
 
 export const BULK_REVIEW_REQUIREMENT_ROW_LABEL: Record<
@@ -128,6 +148,7 @@ export const BULK_REVIEW_WORKBOOK_SHEET_CREATORS = "Creators";
 export const BULK_REVIEW_WORKBOOK_SHEET_CONFERENCE = "Conference";
 export const BULK_REVIEW_WORKBOOK_SHEET_ADDITIONAL = "Additional information";
 export const BULK_REVIEW_WORKBOOK_SHEET_RELATED_RESOURCES = "Related resources";
+export const BULK_REVIEW_WORKBOOK_SHEET_IDENTIFIERS = "Poster identifiers";
 export const BULK_REVIEW_WORKBOOK_SHEET_FUNDING = "Funding";
 export const BULK_REVIEW_WORKBOOK_SHEET_POSTER_CONTENT = "Poster content";
 export const BULK_REVIEW_WORKBOOK_SHEET_TABLE_CAPTIONS = "Table captions";
@@ -173,8 +194,12 @@ function contributorAffiliationColumns(): BulkReviewWorkbookColumn[] {
         `Affiliation ${slot}`,
         contributorAffiliationNameFillKey(slot),
         `creators[].affiliation[${slot - 1}].name`,
-        "optional",
+        // Extraction eval: printed affiliation strings 0.953 -> Minimal (0.95).
+        // Author-affiliation assignment is lower (0.884) but affiliations live on
+        // author rows here; kept so users move a misassigned one, not retype it.
+        "minimal",
         {
+          requirement: "optional",
           width: 32,
           hint:
             slot === 1
@@ -198,7 +223,7 @@ export const BULK_REVIEW_WORKBOOK_SHEETS: BulkReviewWorkbookSheet[] = [
   {
     name: BULK_REVIEW_WORKBOOK_SHEET_ABOUT,
     description:
-      "Mandatory: title, description, keywords (share UI: About the poster).",
+      "Mandatory: title, description, keywords.",
     grain: "poster",
     columns: [
       col("Poster ID", "poster_id", "poster.id", "system", { width: 12 }),
@@ -206,7 +231,7 @@ export const BULK_REVIEW_WORKBOOK_SHEETS: BulkReviewWorkbookSheet[] = [
         width: 42,
       }),
       col("Title", "title", "title", "minimal", {
-        width: 80,
+        width: 36,
         wrapText: true,
       }),
       col("Description", "description", "description", "full", {
@@ -221,11 +246,15 @@ export const BULK_REVIEW_WORKBOOK_SHEETS: BulkReviewWorkbookSheet[] = [
   },
   {
     name: BULK_REVIEW_WORKBOOK_SHEET_CREATORS,
+    rowNoun: "creator",
     description:
       "Mandatory: one row per contributor per poster. ORCID (or org ROR for Organizational) plus up to 30 affiliations on the same row.",
     grain: "contributor",
     columns: [
       col("Poster ID", "poster_id", "poster.id", "system", { width: 12 }),
+      // Extraction eval rates the given/family split near exact (1.000) and lists
+      // it under Minimal; author names overall are Full (0.898). Names are kept
+      // in Minimal so the split has something to apply to.
       col("Given name", "given_name", "creators[].givenName", "near_exact", {
         width: 22,
       }),
@@ -251,7 +280,7 @@ export const BULK_REVIEW_WORKBOOK_SHEETS: BulkReviewWorkbookSheet[] = [
   },
   {
     name: BULK_REVIEW_WORKBOOK_SHEET_CONFERENCE,
-    description: "Mandatory: conference or event (share UI: Conference).",
+    description: "Mandatory: conference or event.",
     grain: "poster",
     columns: [
       col("Poster ID", "poster_id", "poster.id", "system", { width: 12 }),
@@ -343,7 +372,7 @@ export const BULK_REVIEW_WORKBOOK_SHEETS: BulkReviewWorkbookSheet[] = [
   {
     name: BULK_REVIEW_WORKBOOK_SHEET_ADDITIONAL,
     description:
-      "Optional: one row per poster: submission abstract, primary language, and domain (share UI: Poster Abstract + General).",
+      "Optional: one row per poster: submission abstract, primary language, and domain.",
     grain: "poster",
     columns: [
       col("Poster ID", "poster_id", "poster.id", "system", { width: 12 }),
@@ -368,8 +397,9 @@ export const BULK_REVIEW_WORKBOOK_SHEETS: BulkReviewWorkbookSheet[] = [
   },
   {
     name: BULK_REVIEW_WORKBOOK_SHEET_RELATED_RESOURCES,
+    rowNoun: "related resource",
     description:
-      "Optional: one row per related resource (share UI: Related Resources). Row order is the list order. The Posters.science discover link is added automatically when you download the workbook.",
+      "Optional: one row per related resource. Row order is the list order. The Posters.science discover link is added automatically.",
     grain: "relation",
     columns: [
       col("Poster ID", "poster_id", "poster.id", "system", { width: 12 }),
@@ -414,8 +444,32 @@ export const BULK_REVIEW_WORKBOOK_SHEETS: BulkReviewWorkbookSheet[] = [
     ],
   },
   {
+    name: BULK_REVIEW_WORKBOOK_SHEET_IDENTIFIERS,
+    rowNoun: "identifier",
+    description:
+      "Optional: alternate and other identifiers. One row per identifier.",
+    grain: "relation",
+    columns: [
+      col("Poster ID", "poster_id", "poster.id", "system", { width: 12 }),
+      col("File name", "file_name", "extractionJob.fileName", "system", {
+        width: 36,
+      }),
+      col("Identifier", "identifier", "identifiers[].identifier", "optional", {
+        width: 36,
+      }),
+      col(
+        "Identifier type",
+        "identifier_type",
+        "identifiers[].identifierType",
+        "optional",
+        { width: 22 },
+      ),
+    ],
+  },
+  {
     name: BULK_REVIEW_WORKBOOK_SHEET_FUNDING,
-    description: "Optional: one row per funding reference (share UI: Funding).",
+    rowNoun: "funder",
+    description: "Optional: one row per funding reference.",
     grain: "funder",
     columns: [
       col("Poster ID", "poster_id", "poster.id", "system", { width: 12 }),
@@ -467,8 +521,9 @@ export const BULK_REVIEW_WORKBOOK_SHEETS: BulkReviewWorkbookSheet[] = [
   },
   {
     name: BULK_REVIEW_WORKBOOK_SHEET_POSTER_CONTENT,
+    rowNoun: "section",
     description:
-      "Optional: poster body sections (share UI: Poster content). One row per section.",
+      "Optional: poster body sections. One row per section.",
     grain: "section",
     columns: [
       col("Poster ID", "poster_id", "poster.id", "system", { width: 12 }),
@@ -480,19 +535,23 @@ export const BULK_REVIEW_WORKBOOK_SHEETS: BulkReviewWorkbookSheet[] = [
         "section_title",
         "posterContent.sections[].sectionTitle",
         "full",
-        { width: 28 },
+        // Schema: optional (PosterSectionSchema).
+        { width: 28, requirement: "optional" },
       ),
       col(
         "Section content",
         "section_content",
         "posterContent.sections[].sectionContent",
         "full",
-        { width: 64, wrapText: true },
+        // Schema: required only when a section title is given; the strict
+        // validation reports that case, so the grid does not mark it required.
+        { width: 64, wrapText: true, requirement: "optional" },
       ),
     ],
   },
   {
     name: BULK_REVIEW_WORKBOOK_SHEET_TABLE_CAPTIONS,
+    rowNoun: "table caption",
     description: "Optional: table captions extracted from the poster.",
     grain: "caption",
     columns: [
@@ -511,6 +570,7 @@ export const BULK_REVIEW_WORKBOOK_SHEETS: BulkReviewWorkbookSheet[] = [
   },
   {
     name: BULK_REVIEW_WORKBOOK_SHEET_IMAGE_CAPTIONS,
+    rowNoun: "image caption",
     description: "Optional: figure/image captions extracted from the poster.",
     grain: "caption",
     columns: [
@@ -545,7 +605,9 @@ export function bulkReviewWorkbookColumnByFillKey(
 }
 
 function requirementRowValues(columns: BulkReviewWorkbookColumn[]): string[] {
-  return columns.map((col) => bulkReviewWorkbookRequirementRowLabel(col.tier));
+  return columns.map(
+    (col) => BULK_REVIEW_REQUIREMENT_ROW_LABEL[bulkReviewColumnRequirementFor(col)],
+  );
 }
 
 function rowHasRequirementLabels(

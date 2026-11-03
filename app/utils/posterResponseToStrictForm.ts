@@ -384,7 +384,64 @@ export function posterResponseToStrictFormSchema(
 
   state.domain = meta.domain ?? "";
 
+  state.creators = state.creators.filter(
+    (creator) => !contributorRowIsEmpty(creator),
+  );
+
   return state;
+}
+
+function contributorRowIsEmpty(
+  creator: StrictFormSchema["creators"][number],
+): boolean {
+  const given = creator.givenName?.trim() ?? "";
+  const family = creator.familyName?.trim() ?? "";
+  if (creator.nameType === "Organizational") return given.length === 0;
+  return given.length === 0 && family.length === 0;
+}
+
+export const BULK_CONTRIBUTOR_REQUIRED_MESSAGE =
+  "You must add at least one contributor.";
+
+function isPlaceholderContributorIssue(issue: PosterStrictValidationIssue): boolean {
+  if (issue.path === "creators") {
+    return (
+      issue.message === BULK_CONTRIBUTOR_REQUIRED_MESSAGE ||
+      issue.message === "At least one creator is required" ||
+      /creator|contributor/i.test(issue.message)
+    );
+  }
+
+  if (!issue.path.startsWith("creators.")) return false;
+
+  const field = issue.path.split(".").pop();
+  if (field === "givenName" && issue.message === "Name is required") {
+    return true;
+  }
+  if (field === "familyName" && issue.message === "Family name is required") {
+    return true;
+  }
+
+  return false;
+}
+
+/** Collapse empty creator rows into one contributor message for bulk UX. */
+export function normalizeStrictValidationIssues(
+  issues: PosterStrictValidationIssue[],
+): PosterStrictValidationIssue[] {
+  if (issues.length === 0) return issues;
+
+  const hasPlaceholderContributorIssue = issues.some(isPlaceholderContributorIssue);
+  if (!hasPlaceholderContributorIssue) return issues;
+
+  const otherIssues = issues.filter((issue) => !isPlaceholderContributorIssue(issue));
+  const contributorIssue: PosterStrictValidationIssue = {
+    path: "creators",
+    message: BULK_CONTRIBUTOR_REQUIRED_MESSAGE,
+  };
+
+  if (otherIssues.length === 0) return [contributorIssue];
+  return [...otherIssues, contributorIssue];
 }
 
 export type PosterStrictValidationIssue = {
@@ -409,9 +466,11 @@ export function validatePosterResponseStrictForm(
 
   return {
     valid: false,
-    issues: parseResult.error.issues.map((issue) => ({
-      path: issue.path.join("."),
-      message: issue.message,
-    })),
+    issues: normalizeStrictValidationIssues(
+      parseResult.error.issues.map((issue) => ({
+        path: issue.path.join("."),
+        message: issue.message,
+      })),
+    ),
   };
 }

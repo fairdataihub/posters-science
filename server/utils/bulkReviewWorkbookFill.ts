@@ -9,6 +9,7 @@ import {
   BULK_REVIEW_WORKBOOK_SHEETS,
   BULK_REVIEW_WORKBOOK_SHEET_ABOUT,
   BULK_REVIEW_WORKBOOK_SHEET_ADDITIONAL,
+  BULK_REVIEW_WORKBOOK_SHEET_IDENTIFIERS,
   BULK_REVIEW_WORKBOOK_SHEET_RELATED_RESOURCES,
   BULK_REVIEW_WORKBOOK_SHEET_CONFERENCE,
   BULK_REVIEW_WORKBOOK_SHEET_CREATORS,
@@ -174,21 +175,20 @@ function clearDataRows(sheet: ExcelJS.Worksheet) {
   }
 }
 
-export async function buildBulkReviewWorkbookBuffer(
+function collectBulkReviewSheetPayloads(
   posters: PosterRow[],
-  extractionMethod: BulkSubmissionExtractionMethod = DEFAULT_BULK_SUBMISSION_EXTRACTION_METHOD,
+  extractionMethod: BulkSubmissionExtractionMethod,
   batchConference?: BulkImportConferenceMetadata | null,
-): Promise<Buffer> {
-  const prefillPolicy = getBulkReviewWorkbookPrefillPolicy(extractionMethod);
+  options: { includeAllStored?: boolean } = {},
+): Array<{ sheetName: string; rows: Record<string, string | number>[] }> {
+  // The in-app grid shows everything stored (the one-time post-extraction gate
+  // already removed what the level does not keep, and anything left is the
+  // user's). The legacy xlsx export still applies the prefill policy.
+  const prefillPolicy = options.includeAllStored
+    ? getBulkReviewWorkbookPrefillPolicy("full")
+    : getBulkReviewWorkbookPrefillPolicy(extractionMethod);
   const batchConferenceCells =
     bulkReviewWorkbookConferenceCellsFromBatch(batchConference);
-  const templatePath = path.join(
-    process.cwd(),
-    BULK_IMPORT_METADATA_REVIEW_TEMPLATE_RELATIVE_PATH,
-  );
-  const templateBytes = await readFile(templatePath);
-  const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(templateBytes);
 
   const sheetPayloads: Array<{
     sheetName: string;
@@ -263,6 +263,7 @@ export async function buildBulkReviewWorkbookBuffer(
   });
 
   const additionalRows: Record<string, string | number>[] = [];
+  const identifierRows: Record<string, string | number>[] = [];
   const relatedRows: Record<string, string | number>[] = [];
   const fundingRows: Record<string, string | number>[] = [];
   const sectionRows: Record<string, string | number>[] = [];
@@ -281,6 +282,20 @@ export async function buildBulkReviewWorkbookBuffer(
       language: meta?.language ?? "",
       domain: meta?.domain ?? "",
     });
+
+    if (meta) {
+      const identifiers = asArray(meta.identifiers) as Array<
+        Record<string, unknown>
+      >;
+      identifiers.forEach((entry) => {
+        identifierRows.push({
+          poster_id: poster.id,
+          file_name,
+          identifier: cellString(entry.identifier),
+          identifier_type: cellString(entry.identifierType),
+        });
+      });
+    }
 
     if (prefillPolicy.includeLinksAndFunding && meta) {
       const related = asArray(meta.relatedIdentifiers) as Array<
@@ -366,6 +381,10 @@ export async function buildBulkReviewWorkbookBuffer(
     rows: additionalRows,
   });
   sheetPayloads.push({
+    sheetName: BULK_REVIEW_WORKBOOK_SHEET_IDENTIFIERS,
+    rows: identifierRows,
+  });
+  sheetPayloads.push({
     sheetName: BULK_REVIEW_WORKBOOK_SHEET_RELATED_RESOURCES,
     rows: relatedRows,
   });
@@ -382,6 +401,63 @@ export async function buildBulkReviewWorkbookBuffer(
     sheetName: BULK_REVIEW_WORKBOOK_SHEET_IMAGE_CAPTIONS,
     rows: imageCaptionRows,
   });
+
+  return sheetPayloads;
+}
+
+export type BulkReviewSheetRows = {
+  sheetName: string;
+  rows: Record<string, string>[];
+};
+
+export type BulkReviewPosterRow = PosterRow;
+
+/**
+ * Per-sheet rows (one object per row, keyed by fillKey) for the in-app grid:
+ * everything currently stored for each poster.
+ */
+export function buildBulkReviewSheetRows(
+  posters: PosterRow[],
+  extractionMethod: BulkSubmissionExtractionMethod = DEFAULT_BULK_SUBMISSION_EXTRACTION_METHOD,
+  batchConference?: BulkImportConferenceMetadata | null,
+): BulkReviewSheetRows[] {
+  const payloads = collectBulkReviewSheetPayloads(
+    posters,
+    extractionMethod,
+    batchConference,
+    { includeAllStored: true },
+  );
+  return BULK_REVIEW_WORKBOOK_SHEETS.map((sheetDef) => {
+    const payload = payloads.find((p) => p.sheetName === sheetDef.name);
+    const rows = (payload?.rows ?? []).map((raw) => {
+      const row: Record<string, string> = {};
+      for (const column of sheetDef.columns) {
+        const value = raw[column.fillKey];
+        row[column.fillKey] = value == null ? "" : String(value);
+      }
+      return row;
+    });
+    return { sheetName: sheetDef.name, rows };
+  });
+}
+
+export async function buildBulkReviewWorkbookBuffer(
+  posters: PosterRow[],
+  extractionMethod: BulkSubmissionExtractionMethod = DEFAULT_BULK_SUBMISSION_EXTRACTION_METHOD,
+  batchConference?: BulkImportConferenceMetadata | null,
+): Promise<Buffer> {
+  const sheetPayloads = collectBulkReviewSheetPayloads(
+    posters,
+    extractionMethod,
+    batchConference,
+  );
+  const templatePath = path.join(
+    process.cwd(),
+    BULK_IMPORT_METADATA_REVIEW_TEMPLATE_RELATIVE_PATH,
+  );
+  const templateBytes = await readFile(templatePath);
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(templateBytes);
 
   for (const payload of sheetPayloads) {
     const sheet = workbook.getWorksheet(payload.sheetName);

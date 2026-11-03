@@ -9,6 +9,7 @@ import {
   BULK_REVIEW_CONTRIBUTOR_AFFILIATION_SLOT_COUNT,
   BULK_REVIEW_WORKBOOK_SHEET_ABOUT,
   BULK_REVIEW_WORKBOOK_SHEET_ADDITIONAL,
+  BULK_REVIEW_WORKBOOK_SHEET_IDENTIFIERS,
   BULK_REVIEW_WORKBOOK_SHEET_RELATED_RESOURCES,
   BULK_REVIEW_WORKBOOK_SHEET_CONFERENCE,
   BULK_REVIEW_WORKBOOK_SHEET_CREATORS,
@@ -32,12 +33,17 @@ import {
 } from "~~/app/utils/poster_schema";
 import { conferenceYearFromStartDate } from "#shared/types/bulkImportConference";
 import prisma from "~~/server/utils/prisma";
+import type { BulkSubmissionExtractionMethod } from "#shared/types/bulkSubmission";
 import { posterIdsFromBulkSubmissionSummary } from "~~/server/utils/bulkImportDashboard";
 
 type RowValues = Record<string, string>;
 
 type PosterImportPatch = {
-  about?: { title: string; description: string; keywords: string };
+  about?: {
+    title: string;
+    description: string;
+    keywords: string;
+  };
   conference?: RowValues;
   additional?: RowValues;
   contributorRows: RowValues[];
@@ -51,7 +57,19 @@ type PosterImportPatch = {
   identifierRows: RowValues[];
   linkRows: RowValues[];
   contentRows: RowValues[];
+  /**
+   * List fields to clear when this patch has no rows for them (in-app grid only:
+   * the grid sends complete lists, so a deleted last row means "remove").
+   */
+  clearWhenEmpty?: Set<BulkReviewClearableList>;
 };
+
+type BulkReviewClearableList =
+  | "related"
+  | "funding"
+  | "sections"
+  | "tableCaptions"
+  | "imageCaptions";
 
 function emptyPatch(): PosterImportPatch {
   return {
@@ -267,6 +285,101 @@ function enrichAffiliationIdentifier(
   };
 }
 
+/** Route one sheet row (keyed by fillKey) into a poster patch. */
+function ingestSheetRow(
+  sheetName: string,
+  values: RowValues,
+  patch: PosterImportPatch,
+) {
+  switch (sheetName) {
+    case BULK_REVIEW_WORKBOOK_SHEET_ABOUT:
+      patch.about = {
+        title: values.title ?? "",
+        description: values.description ?? "",
+        keywords: values.keywords ?? "",
+      };
+      break;
+    case BULK_REVIEW_WORKBOOK_SHEET_CREATORS:
+      if (values.given_name?.trim() || values.family_name?.trim()) {
+        patch.contributorRows.push(values);
+      }
+      break;
+    case BULK_REVIEW_WORKBOOK_SHEET_CONFERENCE:
+      patch.conference = values;
+      break;
+    case BULK_REVIEW_WORKBOOK_SHEET_ADDITIONAL: {
+      const hasRelated =
+        values.related_identifier?.trim() ||
+        values.related_identifier_type?.trim() ||
+        values.relation_type?.trim();
+      if (hasRelated) {
+        patch.relatedResourceRows.push(values);
+      }
+      if (
+        values.submission_abstract?.trim() ||
+        values.language?.trim() ||
+        values.domain?.trim()
+      ) {
+        patch.additional = { ...(patch.additional ?? {}), ...values };
+      }
+      break;
+    }
+    case BULK_REVIEW_WORKBOOK_SHEET_RELATED_RESOURCES:
+      if (
+        values.related_identifier?.trim() ||
+        values.related_identifier_type?.trim() ||
+        values.relation_type?.trim()
+      ) {
+        patch.relatedResourceRows.push(values);
+      }
+      break;
+    case BULK_REVIEW_WORKBOOK_SHEET_IDENTIFIERS:
+      if (values.identifier?.trim() || values.identifier_type?.trim()) {
+        patch.identifierRows.push(values);
+      }
+      break;
+    case BULK_REVIEW_WORKBOOK_SHEET_FUNDING:
+      if (
+        values.funder_name?.trim() ||
+        values.award_number?.trim() ||
+        values.funder_identifier?.trim()
+      ) {
+        patch.fundingRows.push(values);
+      }
+      break;
+    case BULK_REVIEW_WORKBOOK_SHEET_POSTER_CONTENT:
+      if (
+        values.section_title?.trim() ||
+        values.section_content?.trim() ||
+        values.title?.trim() ||
+        values.body?.trim()
+      ) {
+        if (values.content_kind?.trim()) {
+          patch.contentRows.push(values);
+        } else {
+          patch.sectionRows.push({
+            ...values,
+            section_title: values.section_title ?? values.title ?? "",
+            section_content: values.section_content ?? values.body ?? "",
+          });
+        }
+      }
+      break;
+    case BULK_REVIEW_WORKBOOK_SHEET_TABLE_CAPTIONS:
+      if (values.caption?.trim() || values.item_id?.trim()) {
+        patch.tableCaptionRows.push(values);
+      }
+      break;
+    case BULK_REVIEW_WORKBOOK_SHEET_IMAGE_CAPTIONS:
+      if (values.caption?.trim() || values.item_id?.trim()) {
+        patch.imageCaptionRows.push(values);
+      }
+      break;
+    default:
+      break;
+  }
+}
+
 function parseWorkbookSheets(
   workbook: ExcelJS.Workbook,
   allowedPosterIds: Set<number>,
@@ -319,88 +432,7 @@ function parseWorkbookSheets(
 
       const patch = patchFor(posterId);
 
-      switch (sheetDef.name) {
-        case BULK_REVIEW_WORKBOOK_SHEET_ABOUT:
-          patch.about = {
-            title: values.title ?? "",
-            description: values.description ?? "",
-            keywords: values.keywords ?? "",
-          };
-          break;
-        case BULK_REVIEW_WORKBOOK_SHEET_CREATORS:
-          if (values.given_name?.trim() || values.family_name?.trim()) {
-            patch.contributorRows.push(values);
-          }
-          break;
-        case BULK_REVIEW_WORKBOOK_SHEET_CONFERENCE:
-          patch.conference = values;
-          break;
-        case BULK_REVIEW_WORKBOOK_SHEET_ADDITIONAL: {
-          const hasRelated =
-            values.related_identifier?.trim() ||
-            values.related_identifier_type?.trim() ||
-            values.relation_type?.trim();
-          if (hasRelated) {
-            patch.relatedResourceRows.push(values);
-          }
-          if (
-            values.submission_abstract?.trim() ||
-            values.language?.trim() ||
-            values.domain?.trim()
-          ) {
-            patch.additional = { ...(patch.additional ?? {}), ...values };
-          }
-          break;
-        }
-        case BULK_REVIEW_WORKBOOK_SHEET_RELATED_RESOURCES:
-          if (
-            values.related_identifier?.trim() ||
-            values.related_identifier_type?.trim() ||
-            values.relation_type?.trim()
-          ) {
-            patch.relatedResourceRows.push(values);
-          }
-          break;
-        case BULK_REVIEW_WORKBOOK_SHEET_FUNDING:
-          if (
-            values.funder_name?.trim() ||
-            values.award_number?.trim() ||
-            values.funder_identifier?.trim()
-          ) {
-            patch.fundingRows.push(values);
-          }
-          break;
-        case BULK_REVIEW_WORKBOOK_SHEET_POSTER_CONTENT:
-          if (
-            values.section_title?.trim() ||
-            values.section_content?.trim() ||
-            values.title?.trim() ||
-            values.body?.trim()
-          ) {
-            if (values.content_kind?.trim()) {
-              patch.contentRows.push(values);
-            } else {
-              patch.sectionRows.push({
-                ...values,
-                section_title: values.section_title ?? values.title ?? "",
-                section_content: values.section_content ?? values.body ?? "",
-              });
-            }
-          }
-          break;
-        case BULK_REVIEW_WORKBOOK_SHEET_TABLE_CAPTIONS:
-          if (values.caption?.trim() || values.item_id?.trim()) {
-            patch.tableCaptionRows.push(values);
-          }
-          break;
-        case BULK_REVIEW_WORKBOOK_SHEET_IMAGE_CAPTIONS:
-          if (values.caption?.trim() || values.item_id?.trim()) {
-            patch.imageCaptionRows.push(values);
-          }
-          break;
-        default:
-          break;
-      }
+      ingestSheetRow(sheetDef.name, values, patch);
     }
   }
 
@@ -1055,15 +1087,23 @@ function mergePresentedDate(
   ] as Prisma.InputJsonValue;
 }
 
+type PosterWithMetadata = Prisma.PosterGetPayload<{
+  include: { posterMetadata: true };
+}>;
+
 async function applyPatchToPoster(
   userId: string,
   posterId: number,
   patch: PosterImportPatch,
+  prefetched?: PosterWithMetadata | null,
 ): Promise<void> {
-  const poster = await prisma.poster.findFirst({
-    where: { id: posterId, userId },
-    include: { posterMetadata: true },
-  });
+  const poster =
+    prefetched !== undefined
+      ? prefetched
+      : await prisma.poster.findFirst({
+          where: { id: posterId, userId },
+          include: { posterMetadata: true },
+        });
 
   if (!poster?.posterMetadata) return;
 
@@ -1152,7 +1192,7 @@ async function applyPatchToPoster(
     ...buildRelatedFromResourceRows(patch.relatedResourceRows),
     ...legacyLinks.relatedIdentifiers,
   ];
-  if (relatedIdentifiers.length > 0) {
+  if (relatedIdentifiers.length > 0 || patch.clearWhenEmpty?.has("related")) {
     data.relatedIdentifiers = relatedIdentifiers as Prisma.InputJsonValue;
   }
 
@@ -1160,7 +1200,7 @@ async function applyPatchToPoster(
     ...buildFundingFromRows(patch.fundingRows),
     ...legacyLinks.fundingReferences,
   ];
-  if (fundingReferences.length > 0) {
+  if (fundingReferences.length > 0 || patch.clearWhenEmpty?.has("funding")) {
     data.fundingReferences = fundingReferences as Prisma.InputJsonValue;
   }
 
@@ -1170,7 +1210,8 @@ async function applyPatchToPoster(
       (row) => (row.content_kind ?? "").trim().toLowerCase() === "section",
     ),
   ];
-  const hasSectionUpdates = sectionRows.length > 0;
+  const hasSectionUpdates =
+    sectionRows.length > 0 || Boolean(patch.clearWhenEmpty?.has("sections"));
   const hasLegacyContent = patch.contentRows.some(
     (row) => (row.content_kind ?? "").trim().toLowerCase() !== "section",
   );
@@ -1217,19 +1258,19 @@ async function applyPatchToPoster(
           : ""),
     } as Prisma.InputJsonValue;
 
-    if (imageCaptions.length > 0) {
+    if (imageCaptions.length > 0 || patch.clearWhenEmpty?.has("imageCaptions")) {
       data.imageCaptions = imageCaptions as Prisma.InputJsonValue;
     }
-    if (tableCaptions.length > 0) {
+    if (tableCaptions.length > 0 || patch.clearWhenEmpty?.has("tableCaptions")) {
       data.tableCaptions = tableCaptions as Prisma.InputJsonValue;
     }
   } else {
-    if (patch.imageCaptionRows.length > 0) {
+    if (patch.imageCaptionRows.length > 0 || patch.clearWhenEmpty?.has("imageCaptions")) {
       data.imageCaptions = buildCaptionsFromRows(
         patch.imageCaptionRows,
       ) as Prisma.InputJsonValue;
     }
-    if (patch.tableCaptionRows.length > 0) {
+    if (patch.tableCaptionRows.length > 0 || patch.clearWhenEmpty?.has("tableCaptions")) {
       data.tableCaptions = buildCaptionsFromRows(
         patch.tableCaptionRows,
       ) as Prisma.InputJsonValue;
@@ -1249,6 +1290,70 @@ async function applyPatchToPoster(
       }),
     },
   });
+}
+
+async function applyBulkReviewPatches(
+  userId: string,
+  patches: Map<number, PosterImportPatch>,
+  issues: BulkImportValidationIssue[],
+): Promise<BulkReviewWorkbookImportResult> {
+  const updatedPosterIds: number[] = [];
+
+  // One query for every poster, then apply updates a few at a time
+  // (previously one read + one write per poster, strictly in sequence).
+  const posterRows = await prisma.poster.findMany({
+    where: { id: { in: [...patches.keys()] }, userId },
+    include: { posterMetadata: true },
+  });
+  const posterById = new Map(posterRows.map((row) => [row.id, row]));
+  const work: Array<{ posterId: number; patch: PosterImportPatch }> = [];
+
+  for (const [posterId, patch] of patches) {
+    const hasUpdates =
+      (patch.clearWhenEmpty?.size ?? 0) > 0 ||
+      patch.about ||
+      patch.conference ||
+      patch.additional ||
+      patch.contributorRows.length > 0 ||
+      patch.affiliationRows.length > 0 ||
+      patch.relatedResourceRows.length > 0 ||
+      patch.fundingRows.length > 0 ||
+      patch.sectionRows.length > 0 ||
+      patch.tableCaptionRows.length > 0 ||
+      patch.imageCaptionRows.length > 0 ||
+      patch.identifierRows.length > 0 ||
+      patch.linkRows.length > 0 ||
+      patch.contentRows.length > 0;
+
+    if (!hasUpdates) continue;
+
+    work.push({ posterId, patch });
+  }
+
+  const SAVE_CONCURRENCY = 8;
+  for (let i = 0; i < work.length; i += SAVE_CONCURRENCY) {
+    const chunk = work.slice(i, i + SAVE_CONCURRENCY);
+    await Promise.all(
+      chunk.map(({ posterId, patch }) =>
+        applyPatchToPoster(userId, posterId, patch, posterById.get(posterId) ?? null),
+      ),
+    );
+    updatedPosterIds.push(...chunk.map((item) => item.posterId));
+  }
+
+  if (updatedPosterIds.length === 0 && !issues.some((i) => i.severity === "error")) {
+    issues.push({
+      code: "nothing_to_apply",
+      message: "No editable values were found to apply.",
+      severity: "error",
+    });
+    return { updatedPosterIds: [], issues };
+  }
+
+  return {
+    updatedPosterIds,
+    issues: bulkImportValidationResult(issues).issues,
+  };
 }
 
 export async function importBulkReviewWorkbookFromBuffer(
@@ -1292,41 +1397,114 @@ export async function importBulkReviewWorkbookFromBuffer(
     return { updatedPosterIds: [], issues: validation.issues };
   }
 
-  const updatedPosterIds: number[] = [];
+  return applyBulkReviewPatches(userId, patches, issues);
+}
 
-  for (const [posterId, patch] of patches) {
-    const hasUpdates =
-      patch.about ||
-      patch.conference ||
-      patch.additional ||
-      patch.contributorRows.length > 0 ||
-      patch.affiliationRows.length > 0 ||
-      patch.relatedResourceRows.length > 0 ||
-      patch.fundingRows.length > 0 ||
-      patch.sectionRows.length > 0 ||
-      patch.tableCaptionRows.length > 0 ||
-      patch.imageCaptionRows.length > 0 ||
-      patch.identifierRows.length > 0 ||
-      patch.linkRows.length > 0 ||
-      patch.contentRows.length > 0;
+/**
+ * Apply metadata edited in the in-app grid. `sheets` maps canonical sheet name to
+ * rows keyed by fillKey (same shape the grid GET endpoint returns).
+ */
+export async function importBulkReviewGridRows(
+  userId: string,
+  jobSubmissionSummary: unknown,
+  _extractionMethod: BulkSubmissionExtractionMethod,
+  sheets: Record<string, RowValues[]>,
+): Promise<BulkReviewWorkbookImportResult> {
+  const issues: BulkImportValidationIssue[] = [];
+  const allowedPosterIds = new Set(
+    posterIdsFromBulkSubmissionSummary(jobSubmissionSummary),
+  );
 
-    if (!hasUpdates) continue;
-
-    await applyPatchToPoster(userId, posterId, patch);
-    updatedPosterIds.push(posterId);
+  if (allowedPosterIds.size === 0) {
+    return {
+      updatedPosterIds: [],
+      issues: [
+        {
+          code: "no_posters",
+          message: "This bulk import has no submitted posters yet.",
+          severity: "error",
+        },
+      ],
+    };
   }
 
-  if (updatedPosterIds.length === 0 && !issues.some((i) => i.severity === "error")) {
+  const patches = new Map<number, PosterImportPatch>();
+  function patchFor(posterId: number): PosterImportPatch {
+    let patch = patches.get(posterId);
+    if (!patch) {
+      patch = emptyPatch();
+      patches.set(posterId, patch);
+    }
+    return patch;
+  }
+
+  for (const sheetDef of BULK_REVIEW_WORKBOOK_SHEETS) {
+    const rows = sheets[sheetDef.name];
+    if (!rows) continue;
+    const fillKeys = sheetDef.columns.map((column) => column.fillKey);
+
+    rows.forEach((raw, index) => {
+      const rowNumber = index + 1;
+      const values: RowValues = {};
+      for (const fillKey of fillKeys) {
+        const value = raw[fillKey];
+        values[fillKey] = typeof value === "string" ? value : "";
+      }
+      const posterId = parsePosterId(values.poster_id ?? "", issues, rowNumber);
+      if (posterId == null) return;
+      if (!allowedPosterIds.has(posterId)) {
+        issues.push({
+          code: "poster_not_in_batch",
+          message: `Row ${rowNumber} on "${sheetDef.name}": poster ${posterId} is not part of this bulk import.`,
+          severity: "error",
+          rowNumber,
+          field: "poster_id",
+        });
+        return;
+      }
+      ingestSheetRow(sheetDef.name, values, patchFor(posterId));
+    });
+  }
+
+  // The grid shows every stored row, so an empty list for a sheet that was sent
+  // means the user removed every row for that poster.
+  const clearable = new Set<BulkReviewClearableList>();
+  const sentSheet = (name: string) => Array.isArray(sheets[name]);
+  if (sentSheet(BULK_REVIEW_WORKBOOK_SHEET_RELATED_RESOURCES)) clearable.add("related");
+  if (sentSheet(BULK_REVIEW_WORKBOOK_SHEET_FUNDING)) clearable.add("funding");
+  if (sentSheet(BULK_REVIEW_WORKBOOK_SHEET_POSTER_CONTENT)) clearable.add("sections");
+  if (sentSheet(BULK_REVIEW_WORKBOOK_SHEET_TABLE_CAPTIONS)) clearable.add("tableCaptions");
+  if (sentSheet(BULK_REVIEW_WORKBOOK_SHEET_IMAGE_CAPTIONS)) clearable.add("imageCaptions");
+
+  if (clearable.size > 0) {
+    for (const posterId of allowedPosterIds) {
+      const patch = patchFor(posterId);
+      const clear = new Set<BulkReviewClearableList>();
+      if (clearable.has("related") && patch.relatedResourceRows.length === 0) clear.add("related");
+      if (clearable.has("funding") && patch.fundingRows.length === 0) clear.add("funding");
+      if (clearable.has("sections") && patch.sectionRows.length === 0) clear.add("sections");
+      if (clearable.has("tableCaptions") && patch.tableCaptionRows.length === 0) {
+        clear.add("tableCaptions");
+      }
+      if (clearable.has("imageCaptions") && patch.imageCaptionRows.length === 0) {
+        clear.add("imageCaptions");
+      }
+      if (clear.size > 0) patch.clearWhenEmpty = clear;
+    }
+  }
+
+  if (patches.size === 0) {
     issues.push({
-      code: "nothing_to_apply",
-      message: "No editable values were found to apply.",
+      code: "no_rows",
+      message: "No metadata rows were sent.",
       severity: "error",
     });
-    return { updatedPosterIds: [], issues };
   }
 
-  return {
-    updatedPosterIds,
-    issues: bulkImportValidationResult(issues).issues,
-  };
+  const validation = bulkImportValidationResult(issues);
+  if (!validation.valid) {
+    return { updatedPosterIds: [], issues: validation.issues };
+  }
+
+  return applyBulkReviewPatches(userId, patches, issues);
 }

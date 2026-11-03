@@ -51,12 +51,13 @@ export default defineEventHandler(async (event) => {
   if (poster.extractionJob?.completed) {
     const bulkJob = await findBulkSubmissionJobForPoster(userId, posterId);
     if (bulkJob) {
-      await gateBulkExtractedPosterMetadata(
+      const gated = await gateBulkExtractedPosterMetadata(
         userId,
         posterId,
         bulkJob.extractionMethod,
+        { jobId: bulkJob.id },
       );
-      if (bulkJob.extractionMethod !== "full") {
+      if (gated) {
         const refreshed = await prisma.poster.findUnique({
           where: { id: posterId, userId },
           include: {

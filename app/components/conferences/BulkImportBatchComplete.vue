@@ -104,7 +104,8 @@ useSeoMeta({
                 </span>
               </td>
               <td class="px-4 py-3 align-top">
-                <div class="flex flex-col items-start gap-2">
+                <!-- inline-flex + stretch: both buttons take the wider one's width -->
+                <div class="inline-flex flex-col items-stretch gap-2">
                   <UButton
                     v-if="poster.zenodoUrl"
                     color="primary"

@@ -102,6 +102,37 @@ export async function applyBulkSubmissionMetadataToPosters(
   );
 }
 
+export async function getBulkReviewMetadataGrid(
+  jobId: string,
+  options: { refresh?: boolean } = {},
+) {
+  return $fetch<import("#shared/types/bulkReviewMetadataGrid").BulkReviewMetadataGrid>(
+    `/api/bulk-poster-submissions/${jobId}/metadata-grid`,
+    { query: options.refresh ? { refresh: "1" } : undefined },
+  );
+}
+
+/** Strict-form validation for every poster in the batch, in one request. */
+export async function getBulkReviewMetadataValidation(jobId: string) {
+  return $fetch<{
+    posters: Array<{
+      posterId: number;
+      issues: Array<{ path: string; message: string }>;
+    }>;
+  }>(`/api/bulk-poster-submissions/${jobId}/metadata-validation`);
+}
+
+export async function saveBulkReviewMetadataGrid(
+  jobId: string,
+  body: import("#shared/types/bulkReviewMetadataGrid").BulkReviewMetadataGridSaveBody,
+) {
+  return $fetch<import("#shared/types/bulkReviewWorkbookImport").BulkReviewWorkbookImportResult>(
+    `/api/bulk-poster-submissions/${jobId}/metadata-grid`,
+    { method: "POST", body },
+  );
+}
+
+/** @deprecated Batch metadata is edited in-app via the metadata grid. */
 export async function importBulkReviewMetadataWorkbook(
   jobId: string,
   file: File,

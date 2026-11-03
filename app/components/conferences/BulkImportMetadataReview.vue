@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { strictIssueMessage } from "~/utils/strictIssueLabel";
 import type { BulkImportBatchItem } from "#shared/types/conferenceBulkImport";
 import type { BulkSubmissionExtractionMethod } from "#shared/types/bulkSubmission";
 import type { PosterResponse } from "@/utils/poster_schema";
@@ -287,46 +288,10 @@ const displayTitle = computed(() => {
   return poster.value?.title?.trim() || "Untitled poster";
 });
 
-const displaySummary = computed(() => {
-  const descriptions = meta.value?.descriptions;
-  if (Array.isArray(descriptions)) {
-    for (const entry of descriptions) {
-      if (!entry || typeof entry !== "object") continue;
-      const typed = entry as { description?: string; descriptionType?: string };
-      const text = typed.description?.trim();
-      if (!text) continue;
-      if ((typed.descriptionType ?? "").trim() === "Abstract") return text;
-    }
-    for (const entry of descriptions) {
-      if (!entry || typeof entry !== "object") continue;
-      const text = (entry as { description?: string }).description?.trim();
-      if (text) return text;
-    }
-  }
-
-  const posterContent = meta.value?.posterContent as
-    | {
-        submissionAbstract?: string;
-        sections?: Array<{ sectionTitle?: string; sectionContent?: string }>;
-      }
-    | undefined;
-
-  const submissionAbstract = posterContent?.submissionAbstract?.trim();
-  if (submissionAbstract) return submissionAbstract;
-
-  const sections = posterContent?.sections;
-  if (Array.isArray(sections)) {
-    for (const section of sections) {
-      const title = section.sectionTitle?.trim() ?? "";
-      if (title && /abstract/i.test(title)) {
-        const content = section.sectionContent?.trim();
-        if (content) return content;
-      }
-    }
-  }
-
-  return poster.value?.description?.trim() ?? "";
-});
+/** The poster's description (what is published and validated as Description). */
+const displayDescription = computed(
+  () => poster.value?.description?.trim() ?? "",
+);
 
 const editMetadataPath = computed(() => {
   if (selectedPosterId.value == null) return undefined;
@@ -490,10 +455,62 @@ watch(
   { immediate: true, deep: true },
 );
 
+function previewValidationLines(): string[] {
+  return invalidMetadataItems.value.map((item) => {
+    const label = item.fileName?.trim() || `Poster ${item.posterId ?? ""}`;
+    const validation =
+      item.posterId != null
+        ? validationByPosterId.value[item.posterId]
+        : undefined;
+    const detail =
+      (validation?.issues[0] &&
+        strictIssueMessage(validation.issues[0].path, validation.issues[0].message)) ??
+      "Required metadata is incomplete.";
+    return `${label}: ${detail}`;
+  });
+}
+
+export type PreviewValidationGroup = {
+  posterId: number;
+  fileName: string;
+  issues: string[];
+  editPath: string;
+};
+
+/** Every invalid poster with all of its issues and a link to fix them. */
+function previewValidationGroups(): PreviewValidationGroup[] {
+  return invalidMetadataItems.value.flatMap((item) => {
+    if (item.posterId == null) return [];
+    const validation = validationByPosterId.value[item.posterId];
+    const messages = [
+      ...new Set(
+        (validation?.issues ?? [])
+          .map((issue) => strictIssueMessage(issue.path, issue.message))
+          .filter(Boolean),
+      ),
+    ];
+    return [
+      {
+        posterId: item.posterId,
+        fileName: item.fileName?.trim() || `Poster ${item.posterId}`,
+        issues: messages.length ? messages : ["Required metadata is incomplete."],
+        editPath: props.bulkImportJobId
+          ? sharePosterEditPath(item.posterId, {
+              bulkImportJobId: props.bulkImportJobId,
+              bulkWizardStep: "preview",
+            })
+          : `/share/${item.posterId}`,
+      },
+    ];
+  });
+}
+
 defineExpose({
   allReviewableMetadataValid,
   metadataValidationPending,
   invalidMetadataItems,
+  previewValidationLines,
+  previewValidationGroups,
 });
 
 onUnmounted(() => {
@@ -503,15 +520,6 @@ onUnmounted(() => {
 
 <template>
   <div class="space-y-4">
-    <UAlert
-      v-if="props.extractionMethod === 'minimal'"
-      color="neutral"
-      variant="soft"
-      icon="i-lucide-filter"
-      title="High-confidence auto-fill only"
-      description="Only high-confidence extracted fields are stored for this batch (title, authors, figure/table captions, plus batch conference and license). Lower-confidence fields were omitted. You can add them in the editor if needed."
-    />
-
     <UAlert
       v-if="pendingItems.length > 0"
       color="info"
@@ -590,7 +598,11 @@ onUnmounted(() => {
               class="text-muted text-xs"
             >
               {{
-                validationByPosterId[item.posterId]!.issues[0]?.message ??
+                (validationByPosterId[item.posterId]!.issues[0] &&
+                  strictIssueMessage(
+                    validationByPosterId[item.posterId]!.issues[0]!.path,
+                    validationByPosterId[item.posterId]!.issues[0]!.message,
+                  )) ??
                   "Missing required fields"
               }}
             </span>
@@ -607,7 +619,11 @@ onUnmounted(() => {
     </div>
 
     <div v-else class="grid gap-4 lg:grid-cols-[minmax(11rem,14rem)_1fr]">
-      <nav aria-label="Posters in batch" class="space-y-1">
+      <nav
+        aria-label="Posters in batch"
+        class="max-h-80 space-y-1 self-start overflow-y-auto overscroll-contain pr-1 lg:max-h-[min(48rem,80vh)]"
+        tabindex="0"
+      >
         <button
           v-for="item in reviewableItems"
           :key="item.posterId"
@@ -620,7 +636,9 @@ onUnmounted(() => {
           "
           @click="item.posterId != null && selectPoster(item.posterId)"
         >
-          <span class="line-clamp-2 flex-1">{{ item.fileName }}</span>
+          <span class="min-w-0 flex-1 [overflow-wrap:anywhere]">{{
+            item.fileName
+          }}</span>
           <UIcon
             v-if="
               item.posterId != null &&
@@ -628,7 +646,7 @@ onUnmounted(() => {
               !validationByPosterId[item.posterId]!.valid
             "
             name="i-lucide-circle-alert"
-            class="text-error size-4 shrink-0"
+            class="text-error mt-0.5 size-4 shrink-0"
             aria-label="Required metadata incomplete"
           />
           <UIcon
@@ -637,7 +655,7 @@ onUnmounted(() => {
               validationByPosterId[item.posterId]?.valid
             "
             name="i-lucide-circle-check"
-            class="text-success size-4 shrink-0"
+            class="text-success mt-0.5 size-4 shrink-0"
             aria-label="Required metadata complete"
           />
         </button>
@@ -664,12 +682,16 @@ onUnmounted(() => {
 
         <template v-else-if="poster">
           <div class="min-w-0 space-y-4">
-            <div class="flex flex-wrap items-start justify-between gap-2">
-              <h4 class="text-base font-semibold leading-snug">
+            <!-- Title wraps on the left; the button stays pinned top-right. -->
+            <div class="flex items-start gap-3">
+              <h4
+                class="min-w-0 flex-1 text-base leading-snug font-semibold [overflow-wrap:anywhere]"
+              >
                 {{ displayTitle }}
               </h4>
               <UButton
                 v-if="editMetadataPath"
+                class="shrink-0"
                 color="primary"
                 variant="soft"
                 size="sm"
@@ -698,7 +720,7 @@ onUnmounted(() => {
                     )"
                     :key="`${issue.path}-${index}`"
                   >
-                    {{ issue.message }}
+                    {{ strictIssueMessage(issue.path, issue.message) }}
                   </li>
                   <li
                     v-if="selectedPosterValidation.issues.length > 6"
@@ -757,28 +779,24 @@ onUnmounted(() => {
                 Creators
               </p>
               <p class="mt-1 text-sm">{{ creators.join(", ") }}</p>
-              <p class="text-muted mt-1 text-xs">
-                Add ORCID and affiliations on the Creators sheet in the batch
-                workbook.
-              </p>
             </div>
             <p v-else class="text-muted text-sm">
-              No contributors were extracted. Add them on the Creators sheet in
-              the batch workbook.
+              No contributors were extracted. Add them on the Creators tab of
+              the batch metadata step.
             </p>
 
             <div>
               <p class="text-muted text-xs font-medium uppercase tracking-wide">
-                Summary
+                Description
               </p>
               <p
-                v-if="displaySummary"
+                v-if="displayDescription"
                 class="mt-1 line-clamp-6 text-sm whitespace-pre-wrap"
               >
-                {{ displaySummary }}
+                {{ displayDescription }}
               </p>
               <p v-else class="text-muted mt-1 text-sm">
-                No summary extracted yet.
+                No description yet.
               </p>
             </div>
           </div>

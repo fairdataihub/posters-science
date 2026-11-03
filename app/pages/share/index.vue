@@ -15,7 +15,7 @@ useSeoMeta({
 </script>
 
 <template>
-  <div class="mx-auto flex w-full max-w-lg flex-col gap-6 px-6 pb-12">
+  <div class="mx-auto flex w-full max-w-3xl flex-col gap-6 px-6 pb-12">
     <UPageHeader title="How many posters will you be sharing?">
       <template #headline>
         <UBreadcrumb

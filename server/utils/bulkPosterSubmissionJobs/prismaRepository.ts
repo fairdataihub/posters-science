@@ -1,3 +1,4 @@
+import { preserveBulkGatingMarkers } from "~~/server/utils/bulkExtractionGateMarker";
 import { createError } from "h3";
 import { Prisma } from "#shared/generated/client";
 import type { BulkPosterSubmissionJob } from "#shared/types/bulkPosterSubmissionJob";
@@ -183,9 +184,21 @@ export const prismaBulkPosterSubmissionJobRepository: BulkPosterSubmissionJobRep
         });
       }
 
+      // Never drop one-time gating markers when the summary is replaced.
+      const safePatch =
+        patch.submissionSummary != null
+          ? {
+              ...patch,
+              submissionSummary: preserveBulkGatingMarkers(
+                patch.submissionSummary,
+                existing.submissionSummary,
+              ),
+            }
+          : patch;
+
       const record = await prisma.bulkSubmission.update({
         where: { id },
-        data: buildUpdateData(patch),
+        data: buildUpdateData(safePatch),
       });
 
       return toApiJob(record);

@@ -9,7 +9,7 @@ import type {
   BulkReviewWorkbookColumn,
 } from "#shared/bulkReviewWorkbookManifest";
 import {
-  bulkReviewColumnRequirement,
+  bulkReviewColumnRequirementFor,
   bulkReviewWorkbookColumnByFillKey,
 } from "#shared/bulkReviewWorkbookManifest";
 
@@ -150,6 +150,17 @@ export function bulkReviewWorkbookPrefillSummary(
   );
 }
 
+/**
+ * Confidence tiers for extracted fields the gate checks by a name that is not a
+ * grid column (the grid splits affiliations into numbered slots).
+ */
+const EXTRACTED_FIELD_TIERS: Record<string, BulkReviewFieldTier> = {
+  // Extraction eval: printed affiliation strings 0.953 -> Minimal.
+  affiliation_name: "minimal",
+  // ROR identifiers are not measured; only Full keeps them.
+  affiliation_identifier: "optional",
+};
+
 /** Whether extracted (non-batch) metadata for a manifest field should remain stored / shown. */
 export function bulkReviewShouldPersistExtractedField(
   extractionMethod: BulkSubmissionExtractionMethod,
@@ -160,7 +171,7 @@ export function bulkReviewShouldPersistExtractedField(
 
   const column = bulkReviewWorkbookColumnByFillKey(fillKey);
   /** Required workbook columns (row 3) must not be stripped after import or manual edit. */
-  if (column && bulkReviewColumnRequirement(column.tier) === "required") {
+  if (column && bulkReviewColumnRequirementFor(column) === "required") {
     return true;
   }
 
@@ -185,6 +196,13 @@ export function bulkReviewShouldPersistExtractedField(
   }
 
   if (!column) {
+    // Extracted fields stored outside the grid's per-slot columns.
+    const tier = EXTRACTED_FIELD_TIERS[fillKey];
+    if (tier) {
+      return getBulkReviewWorkbookPrefillPolicy(extractionMethod).extractedTiers.includes(
+        tier,
+      );
+    }
     return extractionMethod === "full";
   }
 
