@@ -148,6 +148,8 @@ export default defineNuxtConfig({
     // NUXT_ZENODO_TOKEN_ENCRYPTION_KEY. Changing it disconnects every user.
     zenodoTokenEncryptionKey: "",
     posterExtractionApi: "",
+    // Overridden by NUXT_FEATURES.
+    features: "",
     bunnyPrivateStorage: "",
     bunnyPrivateStorageKey: "",
     bunnyPublicStorage: "",

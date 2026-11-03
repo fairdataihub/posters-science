@@ -278,6 +278,31 @@ function zenodoAuthHeader(zenodoToken: string) {
   return `Bearer ${zenodoToken}`;
 }
 
+// zenodo.org sits behind a traffic filter that answers requests carrying a
+// generic client User-Agent, such as Node's default, with an HTML 403 page
+// about "unusual traffic". Every request to Zenodo names the app instead.
+const ZENODO_USER_AGENT = "Posters.science (+https://posters.science)";
+
+export function zenodoFetch(input: string | URL, init: RequestInit = {}) {
+  const headers = new Headers(init.headers);
+
+  headers.set("User-Agent", ZENODO_USER_AGENT);
+
+  return fetch(input, { ...init, headers });
+}
+
+/**
+ * True when Zenodo's API refused the token itself, which it does with a JSON
+ * body. The traffic filter also answers 403, with an HTML page, and that says
+ * nothing about the token.
+ */
+function isZenodoTokenRejection(response: Response) {
+  return (
+    (response.status === 401 || response.status === 403) &&
+    (response.headers.get("content-type") ?? "").includes("json")
+  );
+}
+
 // Zenodo's default serializer on draft endpoints is the legacy deposit shape
 // (top-level doi, conceptrecid, state/submitted) rather than what Invenio's API docs state
 // This asks for the RDM representation explicitly. The
@@ -454,12 +479,12 @@ export async function validateZenodoToken(
     allversions: "false",
   });
 
-  const probe = await fetch(
+  const probe = await zenodoFetch(
     `${config.zenodoApiEndpoint}/user/records?${query.toString()}`,
     { headers: rdmHeaders(tokenRecord.accessToken) },
   );
 
-  if (probe.status === 401 || probe.status === 403) {
+  if (isZenodoTokenRejection(probe)) {
     // Drop it so the UI offers a reconnect.
     let message =
       probe.status === 403
@@ -602,7 +627,7 @@ export async function connectZenodoPersonalToken(
   let probe: Response;
 
   try {
-    probe = await fetch(
+    probe = await zenodoFetch(
       `${config.zenodoApiEndpoint}/user/records?${query.toString()}`,
       {
         headers: rdmHeaders(token),
@@ -617,7 +642,7 @@ export async function connectZenodoPersonalToken(
     return "unavailable";
   }
 
-  if (probe.status === 401 || probe.status === 403) {
+  if (isZenodoTokenRejection(probe)) {
     console.log(
       `[Zenodo] Personal token rejected (status: ${probe.status}), not stored`,
     );
@@ -627,7 +652,7 @@ export async function connectZenodoPersonalToken(
 
   if (!probe.ok) {
     console.warn(
-      `[Zenodo] Personal token check failed (status: ${probe.status}), not stored`,
+      `[Zenodo] ${await getZenodoErrorMessage("Personal token check failed", probe)} - not stored`,
     );
 
     return "unavailable";
@@ -673,7 +698,7 @@ async function refreshZenodoToken(
     client_secret: config.zenodoClientSecret,
   });
 
-  const refresh = await fetch(`${config.zenodoEndpoint}/oauth/token`, {
+  const refresh = await zenodoFetch(`${config.zenodoEndpoint}/oauth/token`, {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
@@ -805,7 +830,7 @@ async function discardRdmDraft(zenodoToken: string, recordId: number) {
   let response: Response;
 
   try {
-    response = await fetch(
+    response = await zenodoFetch(
       `${config.zenodoApiEndpoint}/records/${recordId}/draft`,
       {
         method: "DELETE",
@@ -2220,7 +2245,7 @@ function parseRdmRecord(body: string): RdmRecord | null {
 }
 
 function rdmGet(path: string, zenodoToken: string) {
-  return fetch(`${config.zenodoApiEndpoint}${path}`, {
+  return zenodoFetch(`${config.zenodoApiEndpoint}${path}`, {
     headers: rdmHeaders(zenodoToken),
   });
 }
@@ -2245,7 +2270,7 @@ async function createRdmDraft(
   };
 
   try {
-    const response = await fetch(`${config.zenodoApiEndpoint}/records`, {
+    const response = await zenodoFetch(`${config.zenodoApiEndpoint}/records`, {
       method: "POST",
       headers: rdmHeaders(zenodoToken, {
         "Content-Type": "application/json",
@@ -2282,7 +2307,7 @@ async function createRdmVersion(zenodoToken: string, recordId: number) {
   console.log(`[Zenodo] Creating new version of record: ${recordId}`);
 
   try {
-    const response = await fetch(
+    const response = await zenodoFetch(
       `${config.zenodoApiEndpoint}/records/${recordId}/versions`,
       {
         method: "POST",
@@ -2359,7 +2384,7 @@ async function acquireWorkingDraft(
     };
   }
 
-  if (published.status === 401 || published.status === 403) {
+  if (isZenodoTokenRejection(published)) {
     return {
       success: false,
       // Mid-publish, so the connection still reads as active and the UI keeps
@@ -2457,7 +2482,7 @@ async function acquireWorkingDraft(
 // different names, which would otherwise be published alongside the new ones.
 async function purgeDraftFiles(recordId: number, zenodoToken: string) {
   const authHeader = zenodoAuthHeader(zenodoToken);
-  const listing = await fetch(
+  const listing = await zenodoFetch(
     `${config.zenodoApiEndpoint}/records/${recordId}/draft/files`,
     { headers: { Authorization: authHeader } },
   );
@@ -2484,7 +2509,7 @@ async function purgeDraftFiles(recordId: number, zenodoToken: string) {
       entry.links?.self ??
       `${config.zenodoApiEndpoint}/records/${recordId}/draft/files/${encodeURIComponent(entry.key)}`;
 
-    const response = await fetch(target, {
+    const response = await zenodoFetch(target, {
       method: "DELETE",
       headers: { Authorization: authHeader },
     });
@@ -2531,7 +2556,7 @@ async function ensureReservedDoi(
     `${config.zenodoApiEndpoint}/records/${recordId}/draft/pids/doi`;
 
   try {
-    const response = await fetch(url, {
+    const response = await zenodoFetch(url, {
       method: "POST",
       headers: rdmHeaders(zenodoToken, {
         "Content-Type": "application/json",
@@ -2852,7 +2877,7 @@ async function updateRdmMetadata(
     }
 
     const putDraft = async (body: object) => {
-      const res = await fetch(
+      const res = await zenodoFetch(
         `${config.zenodoApiEndpoint}/records/${recordId}/draft`,
         {
           method: "PUT",
@@ -2960,7 +2985,7 @@ async function deleteZenodoDraftFileIfPresent(
   zenodoToken: string,
   filename: string,
 ) {
-  const response = await fetch(
+  const response = await zenodoFetch(
     `${config.zenodoApiEndpoint}/records/${recordId}/draft/files/${encodeURIComponent(filename)}`,
     {
       method: "DELETE",
@@ -3016,7 +3041,7 @@ async function initializeZenodoDraftFile(
   zenodoToken: string,
   filename: string,
 ) {
-  const response = await fetch(
+  const response = await zenodoFetch(
     `${config.zenodoApiEndpoint}/records/${recordId}/draft/files`,
     {
       method: "POST",
@@ -3136,7 +3161,7 @@ async function uploadFileToZenodoDraft(
     let contentResponse: Response;
 
     try {
-      contentResponse = await fetch(contentUrl, {
+      contentResponse = await zenodoFetch(contentUrl, {
         method: "PUT",
         headers: {
           "Content-Type": "application/octet-stream",
@@ -3186,7 +3211,7 @@ async function uploadFileToZenodoDraft(
     let commitResponse: Response;
 
     try {
-      commitResponse = await fetch(uploadedCommitUrl, {
+      commitResponse = await zenodoFetch(uploadedCommitUrl, {
         method: "POST",
         headers: {
           Authorization: authHeader,
@@ -3251,7 +3276,7 @@ async function publishRdmDraft(zenodoToken: string, recordId: number) {
   console.log(`[Zenodo] Publishing draft [record ${recordId}]`);
 
   try {
-    const response = await fetch(
+    const response = await zenodoFetch(
       `${config.zenodoApiEndpoint}/records/${recordId}/draft/actions/publish`,
       {
         method: "POST",

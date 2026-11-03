@@ -198,7 +198,7 @@ export const BULK_REVIEW_WORKBOOK_SHEETS: BulkReviewWorkbookSheet[] = [
   {
     name: BULK_REVIEW_WORKBOOK_SHEET_ABOUT,
     description:
-      "Mandatory — title, description, keywords (share UI: About the poster).",
+      "Mandatory: title, description, keywords (share UI: About the poster).",
     grain: "poster",
     columns: [
       col("Poster ID", "poster_id", "poster.id", "system", { width: 12 }),
@@ -222,7 +222,7 @@ export const BULK_REVIEW_WORKBOOK_SHEETS: BulkReviewWorkbookSheet[] = [
   {
     name: BULK_REVIEW_WORKBOOK_SHEET_CREATORS,
     description:
-      "Mandatory — one row per contributor per poster. ORCID (or org ROR for Organizational) plus up to 30 affiliations on the same row.",
+      "Mandatory: one row per contributor per poster. ORCID (or org ROR for Organizational) plus up to 30 affiliations on the same row.",
     grain: "contributor",
     columns: [
       col("Poster ID", "poster_id", "poster.id", "system", { width: 12 }),
@@ -251,7 +251,7 @@ export const BULK_REVIEW_WORKBOOK_SHEETS: BulkReviewWorkbookSheet[] = [
   },
   {
     name: BULK_REVIEW_WORKBOOK_SHEET_CONFERENCE,
-    description: "Mandatory — conference or event (share UI: Conference).",
+    description: "Mandatory: conference or event (share UI: Conference).",
     grain: "poster",
     columns: [
       col("Poster ID", "poster_id", "poster.id", "system", { width: 12 }),
@@ -343,7 +343,7 @@ export const BULK_REVIEW_WORKBOOK_SHEETS: BulkReviewWorkbookSheet[] = [
   {
     name: BULK_REVIEW_WORKBOOK_SHEET_ADDITIONAL,
     description:
-      "Optional — one row per poster: submission abstract, primary language, and domain (share UI: Poster Abstract + General).",
+      "Optional: one row per poster: submission abstract, primary language, and domain (share UI: Poster Abstract + General).",
     grain: "poster",
     columns: [
       col("Poster ID", "poster_id", "poster.id", "system", { width: 12 }),
@@ -369,7 +369,7 @@ export const BULK_REVIEW_WORKBOOK_SHEETS: BulkReviewWorkbookSheet[] = [
   {
     name: BULK_REVIEW_WORKBOOK_SHEET_RELATED_RESOURCES,
     description:
-      "Optional — one row per related resource (share UI: Related Resources). Row order is the list order. The Posters.science discover link is added automatically when you download the workbook.",
+      "Optional: one row per related resource (share UI: Related Resources). Row order is the list order. The Posters.science discover link is added automatically when you download the workbook.",
     grain: "relation",
     columns: [
       col("Poster ID", "poster_id", "poster.id", "system", { width: 12 }),
@@ -415,7 +415,7 @@ export const BULK_REVIEW_WORKBOOK_SHEETS: BulkReviewWorkbookSheet[] = [
   },
   {
     name: BULK_REVIEW_WORKBOOK_SHEET_FUNDING,
-    description: "Optional — one row per funding reference (share UI: Funding).",
+    description: "Optional: one row per funding reference (share UI: Funding).",
     grain: "funder",
     columns: [
       col("Poster ID", "poster_id", "poster.id", "system", { width: 12 }),
@@ -468,7 +468,7 @@ export const BULK_REVIEW_WORKBOOK_SHEETS: BulkReviewWorkbookSheet[] = [
   {
     name: BULK_REVIEW_WORKBOOK_SHEET_POSTER_CONTENT,
     description:
-      "Optional — poster body sections (share UI: Poster content). One row per section.",
+      "Optional: poster body sections (share UI: Poster content). One row per section.",
     grain: "section",
     columns: [
       col("Poster ID", "poster_id", "poster.id", "system", { width: 12 }),
@@ -493,7 +493,7 @@ export const BULK_REVIEW_WORKBOOK_SHEETS: BulkReviewWorkbookSheet[] = [
   },
   {
     name: BULK_REVIEW_WORKBOOK_SHEET_TABLE_CAPTIONS,
-    description: "Optional — table captions extracted from the poster.",
+    description: "Optional: table captions extracted from the poster.",
     grain: "caption",
     columns: [
       col("Poster ID", "poster_id", "poster.id", "system", { width: 12 }),
@@ -511,7 +511,7 @@ export const BULK_REVIEW_WORKBOOK_SHEETS: BulkReviewWorkbookSheet[] = [
   },
   {
     name: BULK_REVIEW_WORKBOOK_SHEET_IMAGE_CAPTIONS,
-    description: "Optional — figure/image captions extracted from the poster.",
+    description: "Optional: figure/image captions extracted from the poster.",
     grain: "caption",
     columns: [
       col("Poster ID", "poster_id", "poster.id", "system", { width: 12 }),

@@ -476,7 +476,7 @@ async function releaseEmbargoEarly() {
         title: "Files released on Zenodo",
         description:
           result.failed > 0
-            ? `${result.released} poster(s) are now unrestricted. ${result.failed} could not be updated — try again or wait for the embargo date.`
+            ? `${result.released} poster(s) are now unrestricted. ${result.failed} could not be updated. Try again or wait for the embargo date.`
             : "Downloads are now public for every poster in this batch.",
         color: result.failed > 0 ? "warning" : "success",
       });
