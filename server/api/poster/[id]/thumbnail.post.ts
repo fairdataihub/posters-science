@@ -1,3 +1,4 @@
+import { queueDraftPosterThumbnail } from "~~/server/utils/queueDraftPosterThumbnail";
 import { ensureThumbnailServicePosterPath } from "../../../utils/posterObjectPath";
 import { copyThumbnailToPublicZone } from "../../../utils/zenodo";
 
@@ -24,7 +25,9 @@ export default defineEventHandler(async (event) => {
       id: true,
       status: true,
       tombstone: true,
-      extractionJob: { select: { id: true, filePath: true } },
+      extractionJob: {
+        select: { id: true, filePath: true, fileUploaded: true },
+      },
     },
   });
 
@@ -33,6 +36,17 @@ export default defineEventHandler(async (event) => {
       statusCode: 404,
       statusMessage: "Poster not found",
     });
+  }
+
+  if (poster.status !== "published") {
+    const queued = await queueDraftPosterThumbnail(posterId, user.id);
+    if (!queued.ok) {
+      throw createError({
+        statusCode: queued.statusCode,
+        statusMessage: queued.statusMessage,
+      });
+    }
+    return { success: true, queued: true, imageUrl: null };
   }
 
   if (poster.tombstone) {
@@ -49,11 +63,16 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  const { id: extractionJobId, filePath: rawFilePath } = poster.extractionJob;
+  if (!poster.extractionJob.fileUploaded) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: "Upload the original file before generating a preview",
+    });
+  }
 
   const resolvedPath = await ensureThumbnailServicePosterPath(
     posterId,
-    rawFilePath,
+    poster.extractionJob.filePath,
   );
   if (!resolvedPath.ok) {
     throw createError({
@@ -65,38 +84,6 @@ export default defineEventHandler(async (event) => {
 
   const config = useRuntimeConfig();
   const { posterExtractionApi } = config;
-
-  // A published poster is served from the public zone, so its thumbnail needs
-  // promoting before imageUrl is written. That copy is this app's job, so a
-  // published poster still waits on the extraction service directly.
-  const isPublished = poster.status === "published";
-
-  // An unpublished poster keeps its preview in the private zone.
-  if (!isPublished) {
-    await prisma.extractionJob.update({
-      where: { id: extractionJobId },
-      data: {
-        status: "pending-thumbnail",
-        completed: false,
-        error: null,
-      },
-    });
-
-    if (posterExtractionApi) {
-      setImmediate(async () => {
-        try {
-          await fetch(`${posterExtractionApi}/jobs/check`, { method: "POST" });
-        } catch (error) {
-          console.error(
-            `[thumbnail] Could not wake the worker for poster ${posterId}; it will be picked up on the next poll`,
-            error,
-          );
-        }
-      });
-    }
-
-    return { success: true, queued: true, imageUrl: null };
-  }
 
   if (!posterExtractionApi) {
     throw createError({

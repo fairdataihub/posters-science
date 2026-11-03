@@ -47,8 +47,104 @@ const posterErrors = ref<Record<number, string>>({});
 const fetchingPosterIds = ref<Set<number>>(new Set());
 const thumbnailCacheBustById = ref<Record<number, number>>({});
 const regeneratingPreview = ref(false);
+const thumbnailQueueAttempted = ref<Set<number>>(new Set());
+const thumbnailPollGeneration = ref<Record<number, number>>({});
 
 const posterInFlight = new Map<number, Promise<void>>();
+const thumbnailPollTimers = new Map<number, ReturnType<typeof setInterval>>();
+
+const THUMBNAIL_POLL_MS = 3_000;
+const THUMBNAIL_POLL_MAX_MS = 120_000;
+
+function stopThumbnailPoll(posterId: number) {
+  const timer = thumbnailPollTimers.get(posterId);
+  if (timer) {
+    clearInterval(timer);
+    thumbnailPollTimers.delete(posterId);
+  }
+  if (thumbnailPollGeneration.value[posterId]) {
+    const { [posterId]: _drop, ...rest } = thumbnailPollGeneration.value;
+    thumbnailPollGeneration.value = rest;
+  }
+}
+
+function stopAllThumbnailPolls() {
+  for (const posterId of thumbnailPollTimers.keys()) {
+    stopThumbnailPoll(posterId);
+  }
+}
+
+async function refreshPosterFromApi(posterId: number) {
+  const data = await $fetch<ReviewPoster>(`/api/poster/${posterId}`);
+  patchPosterCache(posterId, data);
+  if (data.imageUrl?.trim()) {
+    stopThumbnailPoll(posterId);
+    thumbnailCacheBustById.value = {
+      ...thumbnailCacheBustById.value,
+      [posterId]: Date.now(),
+    };
+    preloadPosterPreview(data);
+    return true;
+  }
+  return false;
+}
+
+function startThumbnailPoll(posterId: number) {
+  if (thumbnailPollTimers.has(posterId)) return;
+
+  const startedAt = Date.now();
+  thumbnailPollGeneration.value = {
+    ...thumbnailPollGeneration.value,
+    [posterId]: startedAt,
+  };
+
+  const timer = setInterval(() => {
+    if (Date.now() - startedAt > THUMBNAIL_POLL_MAX_MS) {
+      stopThumbnailPoll(posterId);
+      return;
+    }
+
+    void refreshPosterFromApi(posterId).catch(() => {
+      // Keep polling until timeout; user can use Generate again.
+    });
+  }, THUMBNAIL_POLL_MS);
+
+  thumbnailPollTimers.set(posterId, timer);
+}
+
+async function queueThumbnailGeneration(posterId: number) {
+  if (thumbnailQueueAttempted.value.has(posterId)) return;
+
+  const cached = posterCache.value[posterId];
+  if (cached?.imageUrl?.trim()) return;
+
+  thumbnailQueueAttempted.value = new Set([
+    ...thumbnailQueueAttempted.value,
+    posterId,
+  ]);
+
+  try {
+    await $fetch(`/api/poster/${posterId}/thumbnail`, { method: "POST" });
+    await refreshPosterFromApi(posterId).catch(() => undefined);
+    startThumbnailPoll(posterId);
+  } catch {
+    const next = new Set(thumbnailQueueAttempted.value);
+    next.delete(posterId);
+    thumbnailQueueAttempted.value = next;
+  }
+}
+
+async function ensureThumbnailIfMissing(posterId: number) {
+  const cached = posterCache.value[posterId];
+  if (!cached || cached.imageUrl?.trim()) return;
+
+  const job = cached.extractionJob;
+  const extractionDone =
+    job?.completed === true || job?.status === "completed";
+  if (!extractionDone) return;
+
+  await queueThumbnailGeneration(posterId);
+}
 
 const poster = computed(() => {
   const id = selectedPosterId.value;
@@ -119,6 +215,7 @@ async function ensurePosterInCache(posterId: number) {
       preloadPosterPreview(data);
       const { [posterId]: _removed, ...rest } = posterErrors.value;
       posterErrors.value = rest;
+      await ensureThumbnailIfMissing(posterId);
     } catch {
       posterErrors.value = {
         ...posterErrors.value,
@@ -139,6 +236,8 @@ async function ensurePosterInCache(posterId: number) {
 watch(
   () => props.metadataRefreshKey,
   () => {
+    stopAllThumbnailPolls();
+    thumbnailQueueAttempted.value = new Set();
     posterCache.value = {};
     posterErrors.value = {};
     for (const item of reviewableItems.value) {
@@ -254,8 +353,11 @@ const posterPreviewSrc = computed(() => {
 });
 
 const posterPreviewMissing = computed(() => {
-  if (!poster.value?.imageUrl?.trim()) {
-    const job = poster.value?.extractionJob;
+  const current = poster.value;
+  if (!current?.imageUrl?.trim()) {
+    const job = current?.extractionJob;
+    if (job?.status === "pending-thumbnail") return false;
+    if (thumbnailPollGeneration.value[current.id]) return false;
     return Boolean(
       !job ||
         job.completed ||
@@ -296,6 +398,7 @@ async function regeneratePreview() {
     }
 
     if (response.queued) {
+      startThumbnailPoll(posterId);
       toast.add({
         title: "Generating preview",
         description: "The thumbnail will appear here when it is ready.",
@@ -304,7 +407,7 @@ async function regeneratePreview() {
       return;
     }
 
-    await ensurePosterInCache(posterId);
+    await refreshPosterFromApi(posterId);
   } catch {
     toast.add({
       title: "Could not generate preview",
@@ -392,6 +495,10 @@ defineExpose({
   metadataValidationPending,
   invalidMetadataItems,
 });
+
+onUnmounted(() => {
+  stopAllThumbnailPolls();
+});
 </script>
 
 <template>
@@ -468,7 +575,7 @@ defineExpose({
         <p class="text-sm">
           {{ invalidMetadataItems.length }} of
           {{ reviewableItems.length }} poster(s) still need fixes before you can
-          continue. Use Edit metadata on each poster — the same required fields
+          continue. Use Edit metadata on each poster. The same required fields
           as a single poster upload apply here.
         </p>
         <ul class="mt-3 max-h-40 space-y-1 overflow-y-auto text-sm">

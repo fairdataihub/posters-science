@@ -22,7 +22,7 @@ const completedLabel = computed(() => {
 useSeoMeta({
   title: () =>
     data.value?.name
-      ? `${data.value.name} — bulk import complete`
+      ? `${data.value.name}: bulk import complete`
       : "Bulk import complete",
 });
 </script>

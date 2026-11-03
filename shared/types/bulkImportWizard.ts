@@ -56,7 +56,7 @@ export const BULK_IMPORT_WIZARD_STEPS: BulkImportWizardStepDefinition[] = [
   {
     id: "preview",
     label: "Poster previews",
-    task: "Preview each poster in this batch and open Edit metadata to fix fields in the poster editor before you publish.",
+    task: "Preview each poster, use Edit metadata for any required fixes, then continue when you are ready to publish.",
   },
   {
     id: "publish",

@@ -124,11 +124,11 @@ const orcidRorAutomationItems: {
   value: OrcidRorAutomationChoice;
 }[] = [
   {
-    label: "Yes — look up missing ORCID and ROR from names",
+    label: "Yes, look up missing ORCID and ROR from names",
     value: "yes",
   },
   {
-    label: "No — do not look up; remove ORCID/ROR from extraction",
+    label: "No, do not look up; remove ORCID/ROR from extraction",
     value: "no",
   },
 ];
@@ -164,7 +164,7 @@ watch(
   { immediate: true },
 );
 
-const POSTER_ONLY_HINT = `${ALLOWED_POSTER_FILE_LABEL}, ZIP archives, or folders — up to ${MAX_POSTER_FILE_SIZE_LABEL} per poster file and ${MAX_BULK_POSTER_ZIP_SIZE_LABEL} per ZIP`;
+const POSTER_ONLY_HINT = `${ALLOWED_POSTER_FILE_LABEL}, ZIP archives, or folders, up to ${MAX_POSTER_FILE_SIZE_LABEL} per poster file and ${MAX_BULK_POSTER_ZIP_SIZE_LABEL} per ZIP`;
 
 const validatePosterFile = (file: File) =>
   posterFileRejectionReason({
@@ -1489,6 +1489,15 @@ async function refreshBatchExtractionStatuses() {
           row.posterId != null
         ) {
           newlyCompletedPosterIds.push(row.posterId);
+          if (!response.imageUrl?.trim()) {
+            try {
+              await $fetch(`/api/poster/${row.posterId}/thumbnail`, {
+                method: "POST",
+              });
+            } catch {
+              // Preview step can retry; path copy + worker wake happen in POST.
+            }
+          }
         }
       } catch {
         // Keep last known status if a single poll fails.
@@ -2929,7 +2938,10 @@ async function startImport() {
       <template v-else-if="currentStep === 'preview'">
         <div class="space-y-4">
           <div>
-            <h3 class="text-base font-semibold">
+            <h3
+              id="bulk-poster-previews-heading"
+              class="text-base font-semibold"
+            >
               Step {{ currentStepNumber }}: Poster previews
             </h3>
             <p class="text-muted mt-1 text-sm">
@@ -2937,28 +2949,16 @@ async function startImport() {
             </p>
           </div>
 
-          <div class="space-y-4" aria-labelledby="bulk-poster-previews-heading">
-            <div>
-              <h4 id="bulk-poster-previews-heading" class="text-base font-semibold">
-                Poster previews
-              </h4>
-              <p class="text-muted mt-1 text-sm">
-                Use the interface below to preview each poster in this batch. Open
-                Edit metadata to change fields in the poster editor, or continue
-                when you are satisfied.
-              </p>
-            </div>
-
-            <BulkImportMetadataReview
-              :items="batchItems"
-              :bulk-import-job-id="jobId"
-              :extraction-method="extractionMethod"
-              :metadata-refresh-key="metadataRefreshKey"
-              :retrying-job-ids="batchRetryingJobIds"
-              @retry="retryBatchExtraction"
-              @validation-change="onBulkMetadataValidationChange"
-            />
-          </div>
+          <BulkImportMetadataReview
+            aria-labelledby="bulk-poster-previews-heading"
+            :items="batchItems"
+            :bulk-import-job-id="jobId"
+            :extraction-method="extractionMethod"
+            :metadata-refresh-key="metadataRefreshKey"
+            :retrying-job-ids="batchRetryingJobIds"
+            @retry="retryBatchExtraction"
+            @validation-change="onBulkMetadataValidationChange"
+          />
         </div>
 
         <div

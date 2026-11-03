@@ -48,9 +48,10 @@ model User {
   // (0000-0002-1825-0097) or "" when unset.
   orcid            String  @default("")
 
-  created DateTime @default(now())
-  updated DateTime @updatedAt
-  Poster  Poster[]
+  created           DateTime          @default(now())
+  updated           DateTime          @updatedAt
+  Poster            Poster[]
+  extractionBatches ExtractionBatch[]
 
   ZenodoToken       ZenodoToken?
   ZenodoDepositions ZenodoDeposition[]
@@ -267,8 +268,9 @@ model ZenodoToken {
   userId String @unique
 
   // oauth: issued by the Zenodo OAuth flow, expires and comes with a refresh
-  // token. personal: a personal access token the user pasted in, which never
-  // expires and has no refresh token.
+  // token. personal: a personal access token the user pasted in, which has no
+  // refresh token and is deleted an hour after it is connected
+  // (server/plugins/zenodoPersonalTokenPurge.ts).
   tokenType String @default("oauth") // oauth | personal
 
   // Both tokens are encrypted at rest (server/utils/zenodoTokenCrypto.ts).
@@ -373,6 +375,21 @@ model BulkSubmission {
   @@index([status])
 }
 
+model ExtractionBatch {
+  id         String          @id @default(cuid(2))
+  user       User            @relation(fields: [userId], references: [id])
+  userId     String
+  requestKey String
+  name       String
+  totalFiles Int
+  jobs       ExtractionJob[]
+  created    DateTime        @default(now())
+  updated    DateTime        @updatedAt
+
+  @@unique([userId, requestKey])
+  @@index([userId, created])
+}
+
 model ExtractionJob {
   // This record and the files will only be removed after the poster is published or a doi is submitted
   id String @id @default(cuid(2))
@@ -383,15 +400,24 @@ model ExtractionJob {
   fileName String
   filePath String
 
-  completed Boolean @default(false)
-  // pending-extraction, pending-thumbnail, processing, completed, failed
-  status    String  @default("pending-extraction")
-  error     String? // Filled when job fails
+  completed    Boolean          @default(false)
+  // Existing jobs retain single priority. A bulk job always belongs to a batch.
+  queueClass   String           @default("single")
+  batch        ExtractionBatch? @relation(fields: [batchId], references: [id], onDelete: Restrict)
+  batchId      String?
+  batchIndex   Int?
+  fileSize     Int?
+  fileUploaded Boolean          @default(true)
+  // pending-upload, uploading, pending-extraction, pending-thumbnail, processing, completed, failed
+  status       String           @default("pending-extraction")
+  error        String? // Filled when job fails
 
   created DateTime @default(now())
   updated DateTime @updatedAt
 
+  @@unique([batchId, batchIndex])
   @@index([status])
+  @@index([queueClass, completed, status, created])
 }
 
 model MaintenanceFlag {

@@ -27,6 +27,7 @@ const posterInclude = {
       id: true,
       status: true,
       completed: true,
+      fileUploaded: true,
       error: true,
       // The dashboard shows how long a draft has been preparing, so the
       // panel can report elapsed time without waiting for its first poll.

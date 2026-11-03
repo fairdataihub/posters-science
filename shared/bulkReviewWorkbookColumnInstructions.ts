@@ -42,7 +42,7 @@ const INSTRUCTIONS: Record<string, string> = {
   submission_abstract:
     "Poster abstract exactly as submitted to the conference (share UI: Poster Abstract).",
   language:
-    "Primary language — use the same ISO 639-1 code as the Primary Language dropdown on the share form (e.g. en).",
+    "Primary language. Use the same ISO 639-1 code as the Primary Language dropdown on the share form (e.g. en).",
   domain:
     "Domain or field of study (e.g. Machine Learning, Clinical Medicine). Same as Domain / Field of Study on the share form.",
   related_identifier:
@@ -69,7 +69,7 @@ const INSTRUCTIONS: Record<string, string> = {
     "Link to the award record. Requires an award number or award title when provided; must be a valid URL.",
   section_title: "Title of a section extracted from the poster body.",
   section_content:
-    "Text of the section. Share UI: Poster content — content extracted from your poster.",
+    "Text of the section. Share UI: Poster content, content extracted from your poster.",
   item_id:
     "Stable ID for the table or figure on the poster (used to match captions to items).",
   caption:
