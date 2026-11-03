@@ -1,48 +1,22 @@
 import { PrismaClient } from "#shared/generated/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 
+const adapter = new PrismaPg({
+  connectionString: process.env.DATABASE_URL,
+});
+
+const prismaClientSingleton = () => {
+  return new PrismaClient({ adapter });
+};
+
 declare const globalThis: {
-  prismaGlobal?: PrismaClient;
-  prismaGlobalDatabaseUrl?: string;
+  prismaGlobal: ReturnType<typeof prismaClientSingleton>;
 } & typeof global;
 
-function clientHasExpectedModels(client: PrismaClient) {
-  return "maintenanceFlag" in client && "bulkSubmission" in client;
-}
-
-function createPrismaClient() {
-  const connectionString = process.env.DATABASE_URL;
-  if (!connectionString) {
-    throw new Error("DATABASE_URL is not set");
-  }
-
-  const adapter = new PrismaPg({ connectionString });
-  return new PrismaClient({ adapter });
-}
-
-function getPrismaClient() {
-  const databaseUrl = process.env.DATABASE_URL;
-  const cached = globalThis.prismaGlobal;
-
-  if (
-    cached &&
-    databaseUrl &&
-    globalThis.prismaGlobalDatabaseUrl === databaseUrl &&
-    clientHasExpectedModels(cached)
-  ) {
-    return cached;
-  }
-
-  const client = createPrismaClient();
-
-  if (process.env.NODE_ENV !== "production") {
-    globalThis.prismaGlobal = client;
-    globalThis.prismaGlobalDatabaseUrl = databaseUrl;
-  }
-
-  return client;
-}
-
-const prisma = getPrismaClient();
+const prisma = globalThis.prismaGlobal ?? prismaClientSingleton();
 
 export default prisma;
+
+if (process.env.NODE_ENV !== "production") {
+  globalThis.prismaGlobal = prisma;
+}
