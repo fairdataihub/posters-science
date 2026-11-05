@@ -1,59 +1,158 @@
 # Extraction batch API and staging-first features
 
-This change provides server endpoints, feature configuration and persistent
-batch/job data. The upload, history and progress UI will be implemented by the
-teammate consuming this API. Existing website pages are unchanged.
+This document covers two things: how the `bulk_extraction` feature flag works
+across the website and the extraction API, and the contract for the batch
+endpoints this repository provides. Read the feature flag sections before
+configuring anything. Existing single-upload pages and routes are unchanged.
 
-## Runtime settings
+## How the feature flag works
 
-`NUXT_FEATURES` is a server-only, comma-separated list of names registered in
-`shared/utils/features.ts`. It defaults to empty. Both website deployment
-workflows read `${{ secrets.NUXT_FEATURES }}` and pass it through Kamal.
-The staging branch selects GitHub Environment `stg`; main selects `prd`.
+There are two independent flag layers. They share a feature name and nothing
+else, so each one has to be set on its own.
 
-Sync the staging Doppler config to GitHub Environment `stg` with
-`NUXT_FEATURES=bulk_extraction`. Sync the production config to `prd` with
-`NUXT_FEATURES=none`. The secret name is identical; its value is scoped to the
-selected environment. A repository-level secret alone is shared by both
-workflows. There is no automatic staging fallback. Empty or `none` disables
-new experimental entry points. Redeploy for a changed secret to take effect.
+| Layer | Setting | Where it lives | What it controls |
+| --- | --- | --- | --- |
+| Website admission | `NUXT_FEATURES` | GitHub Environment secret, `stg` and `prd` | Whether a guarded route exists for a signed-in user |
+| Worker processing | `STAGING_FEATURES`, `PRODUCTION_FEATURES` | Extraction API repository secrets | Whether extraction behaves differently for jobs from that database |
 
-The shared extraction API has one deployment handling both databases, so its
-repository still uses separate `STAGING_FEATURES` and `PRODUCTION_FEATURES`
-settings for processing behavior. These are not website secret names.
+The website decides what new work is accepted. The extraction API decides how a
+job it has already been given is processed. Turning the website flag off stops
+new submissions; it does not cancel or reclaim work already accepted.
 
-`GET /api/features` requires sign-in and exposes only feature booleans to the
-future UI. The server enforces feature admission independently of any browser
-controls. A request parameter cannot enable a feature or select an environment.
+### How a value is resolved
 
-Accepted batches, uploads, progress and retries remain accessible after new
-batch admission is disabled, allowing existing work to finish.
+Both layers take a comma-separated list of names. The website registers names in
+`shared/utils/features.ts`; the extraction API registers them in
+`feature_flags.KNOWN_FEATURES`.
 
-## Temporary bulk feature showcase
+- Empty means every feature is off. `none` also means every feature is off, and
+  is the value to write when a default would otherwise enable something.
+- An unregistered name is a hard failure, not a silent skip. The website throws
+  `Unknown feature: <name>`, and the extraction API fails configuration
+  validation.
+- The website reads the value from runtime config per request, so a changed
+  secret takes effect on redeployment. The worker loads its flags at startup, so
+  it needs a restart or redeployment.
+- There is no automatic staging fallback and no inheritance between the two
+  layers. A repository-level secret alone is shared by both website workflows,
+  which is why the website values are set per GitHub Environment instead.
 
-Sign in and open the endpoint directly in a browser:
+### What "off" looks like
+
+`requireFeature` throws a 404 with the message `Not found`, not a 403. A guarded
+route behaves as though it does not exist. That is deliberate, so a disabled
+feature is not discoverable, but it does mean a 404 in production is not proof
+on its own that the guard fired: an older deployment that never received the
+route returns 404 as well. Confirm the same commit is deployed before reading a
+404 as a flag result.
+
+### What the flag is not
+
+The flag is resolved from server configuration only. A query string, a request
+body field, a header, a storage prefix or a browser toggle cannot enable a
+feature or select an environment. On the extraction API side the context comes
+from the database target the worker is pulling from, never from a job field, so
+`?staging=true` and similar parameters have no effect anywhere.
+
+Flags separate behavior within one deployment. They do not run a second API
+branch, model or dependency version, and they do not isolate the installed
+poster2json version.
+
+## Configuring the website
+
+`NUXT_FEATURES` is server-only and defaults to empty in `nuxt.config.ts`. Both
+deployment workflows read `${{ secrets.NUXT_FEATURES }}` and pass it through
+Kamal. `deploy-stg.yml` selects GitHub Environment `stg` for the staging branch
+and `deploy-prd.yml` selects `prd` for main, so the same secret name holds a
+different value in each environment.
+
+Sync the staging Doppler config to `stg` with `NUXT_FEATURES=bulk_extraction`,
+and the production config to `prd` with `NUXT_FEATURES=none`. Redeploy for a
+change to take effect.
+
+`GET /api/features` requires sign-in and returns only the feature booleans. Use
+it to decide what to show, and let the server enforce admission. Hiding a button
+is a courtesy, not a control.
+
+## Configuring the extraction API
+
+The shared extraction API has one deployment, from main, whose single worker
+process handles both databases. That is why it keeps separate
+`STAGING_FEATURES` and `PRODUCTION_FEATURES` settings rather than one value per
+deployment. These are extraction API repository secrets and are not website
+secret names.
+
+Initial values are `STAGING_FEATURES=bulk_extraction` and an empty
+`PRODUCTION_FEATURES`. Note that both Compose files default `STAGING_FEATURES`
+to `bulk_extraction` when the variable is unset, so leaving it blank in a local
+`.env` turns staging bulk on. Write `none` to be certain it is off.
+`PRODUCTION_FEATURES` defaults to empty, so production fails safe.
+
+The extraction API repository documents its own side, including the scheduler
+weights, in `docs/FEATURES_AND_BATCHES.md`.
+
+## Guarding a route
+
+One line, after the session check and before any storage request or database
+write:
+
+```ts
+import { requireFeature } from "~~/server/utils/features";
+
+export default defineEventHandler(async (event) => {
+  const session = await requireDbUserSession(event);
+  requireFeature("bulk_extraction", event);
+  // ...
+});
+```
+
+Guard the admission point only. `POST /api/extraction-batches` is guarded;
+reads, uploads and retries are not, so work already accepted can still be
+finished after the flag is turned off. Apply the same split to any new feature:
+block the route that creates new work, and leave the routes that complete
+existing work open.
+
+### The bulk submission routes are not guarded yet
+
+The wizard flow under `server/api/bulk-poster-submissions/` is a separate API
+from `/api/extraction-batches`, and none of its routes currently calls
+`requireFeature`, so it is reachable in any environment where it is deployed.
+The admission point there is `POST /api/bulk-poster-submissions`, which creates
+the `BulkSubmission` row. Guarding that one route is enough to stop new bulk
+work, because every other route in the flow is keyed on an existing job ID.
+
+Two related notes for whoever picks this up:
+
+- `queueClass: "bulk"` is set only in
+  `server/api/extraction-batches/index.post.ts`. Posters created through the
+  wizard flow therefore queue with the default single class and do not receive
+  bulk scheduling.
+- The two APIs overlap in purpose. Whether they converge is a separate
+  conversation, and adding the guard does not depend on it.
+
+## Checking the flag without a database or GPU
+
+A temporary read-only probe shares the batch creation guard. Sign in, then open
+the endpoint directly in a browser:
 
 - `https://sandbox.posters.science/api/extraction-batches/showcase`
 - `https://posters.science/api/extraction-batches/showcase`
 
-The endpoint uses the same `requireFeature("bulk_extraction", event)` guard as
-batch creation. No page, upload form or showcase button is required.
-
 | GitHub Environment | Environment secret | Expected signed-in result |
 | --- | --- | --- |
-| `stg` | `NUXT_FEATURES=bulk_extraction` | HTTP 200: `Hello world! Bulk extraction is enabled for staging.` |
-| `prd` | `NUXT_FEATURES=none` | HTTP 404 |
+| `stg` | `NUXT_FEATURES=bulk_extraction` | 200 with `{ feature, environment, temporary, message }` |
+| `prd` | `NUXT_FEATURES=none` | 404 `Not found` |
 
-Signed-out requests return HTTP 401. Responses are not cached. This probe reads
-configuration only: no database records, uploads, extraction API calls or GPU
-work. It verifies the website server's feature guard, not worker queue routing.
-A production 404 demonstrates the guard only once the same route code has
-also been deployed there; an older deployment may simply lack the route.
+The success message reads `Hello world! Bulk extraction is enabled for <env>.`
+using the configured site environment, with no staging-only condition
+hardcoded, so intentionally enabling bulk in production later enables this
+endpoint there too. Signed-out requests return 401, because the session check
+runs first. Responses are not cached.
 
-The message uses the configured site environment. Intentionally enabling bulk
-in production later enables this endpoint there too. No staging-only condition
-is hardcoded. After the walkthrough, remove only
-`server/api/extraction-batches/showcase.get.ts` and its local test fixture.
+This reads configuration only: no database records, uploads, extraction API
+calls or GPU work. It verifies the website server's feature guard, not worker
+queue routing. After the walkthrough, delete
+`server/api/extraction-batches/showcase.get.ts`.
 
 ## Endpoint contract
 
@@ -99,8 +198,8 @@ File names are sanitized for storage.
 
 Send a separate multipart request with a `file` field to
 `POST /api/extraction-batches/:id/files/:jobId`. Name and size must match the
-manifest entry. The future client should limit concurrent uploads, for example
-to two files, instead of sending a single large multipart batch.
+manifest entry. Limit concurrent uploads, for example to two files, instead of
+sending a single large multipart batch.
 
 Jobs remain `pending-upload` or `uploading` until storage accepts the file, then
 become `pending-extraction`. Atomic status transitions prevent duplicate uploads.
@@ -116,19 +215,17 @@ unfinished uploads from being queued as extractable files.
 Batch counts include `total`, `completed`, `failed`, `queued`, `processing`,
 `uploading` and `removed`. Per-file jobs include `status`, `completed`,
 `fileUploaded`, `error` and `posterId`. Deleted poster entries count as removed,
-preserving the original total. Status is stored in the database, so a future UI
-can leave and resume polling later without losing progress.
+preserving the original total. Status is stored in the database, so a client can
+leave and resume polling later without losing progress.
 
 Only failed jobs with uploaded files on owned drafts can be retried as
 extractions. Upload failures require resending the original file. If metadata
 already exists, retry queues thumbnail-only work to avoid overwriting edits.
 Completed sibling posters are unaffected. `batchId` and `queueClass` are retained.
 
-## Future UI handoff
+## Consuming the API
 
-No bulk upload, history, progress or showcase UI is included. The teammate can
-build those screens using the endpoint contract above and shared DTOs in
-`shared/utils/extractionBatch.ts`.
+Shared DTOs live in `shared/utils/extractionBatch.ts`.
 
 - Read `/api/features` for visibility and let the server enforce permissions.
 - Reuse a request key when retrying batch creation and map jobs by `batchIndex`.
@@ -160,8 +257,9 @@ existing records.
 1. Register its name in `shared/utils/features.ts`.
 2. Guard its server entry point with `requireFeature("feature_name", event)`
    before storage requests or database mutations.
-3. If worker behavior changes, register the name in the extraction API and use
-   its trusted `FeatureContext` in `extract_for_environment`.
+3. If worker behavior changes, register the name in the extraction API and
+   branch in `job_worker.extract_for_environment(local_path, context)` using
+   `context.enabled("feature_name")`.
 4. Add the name to website `NUXT_FEATURES` in the staging Doppler config
    synced to GitHub Environment `stg`. For worker features, also add it to
    `STAGING_FEATURES` in the extraction API config. Redeploy affected services
@@ -169,31 +267,21 @@ existing records.
 5. Enable production once tested. Retire temporary guards and flag entries
    together with their environment settings after the feature is stable.
 
-There is one extraction API deployment from main. Feature flags separate
-behavior; they do not run a second API branch, model or dependency version.
-
 ## Rollout and verification
 
 1. Deploy the extraction API scheduler from main first, with one worker.
 2. Back up staging and deploy the website API with its additive migration.
-3. Check the direct showcase endpoint and exercise batch creation, upload,
-   status and retry through authenticated API calls.
-4. Verify continued production single extraction. Keep production bulk disabled.
+3. Confirm the flag layer: signed in on staging, `GET /api/features` returns
+   `bulk_extraction: true` and the showcase endpoint returns 200. On production
+   the same two requests return `false` and 404.
+4. Exercise batch creation, upload, status and retry through authenticated API
+   calls against staging.
+5. Verify continued production single extraction. Keep production bulk disabled.
 
 Before any later production migration, verify the target, take a backup and
 obtain production-write confirmation. Do not drop batch columns on rollback;
 disable new submissions and drain accepted bulk jobs before reverting a worker.
 
-`scripts/test-bulk-showcase.ts` checks the probe without a database or GPU.
-`scripts/test-extraction-batches.ts` exercises the batch APIs using fixture
-sessions and a local storage mock. It requires an explicit
-`QUEUE_TEST_DATABASE_URL` naming `127.0.0.1:<port>/posters_bulk_test`, with
-repository migrations applied only to that disposable database.
-
-```powershell
-pnpm exec tsx scripts/test-bulk-showcase.ts
-pnpm exec tsx scripts/test-extraction-batches.ts
-```
-
-Run Prisma validation/generation, lint and server type checks as well. Real
-model inference requires a separate smoke test on the GPU server.
+Run Prisma validation and generation, lint and server type checks before
+deploying. Real model inference requires a separate smoke test on the GPU
+server.
