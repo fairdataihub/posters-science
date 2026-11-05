@@ -12,8 +12,6 @@ export type BulkImportSubmissionSummary = {
   uniformLicense?: string;
   licenseSpreadsheetRows?: unknown[];
   conference?: BulkImportConferenceMetadata;
-  /** When true, run automated ORCID and ROR lookups where possible. */
-  automateOrcidRorLookups?: boolean;
   /** When true, Zenodo records use a file embargo for `reviewEmbargoDays`. */
   reviewEmbargoEnabled?: boolean;
   /** File embargo length in days when `reviewEmbargoEnabled` is true (1–30). */

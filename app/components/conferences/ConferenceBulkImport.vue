@@ -114,20 +114,6 @@ const extractionMethod = ref<BulkSubmissionExtractionMethod>(
   ),
 );
 
-type OrcidRorAutomationChoice = "yes" | "no";
-
-const orcidRorAutomationChoice = ref<OrcidRorAutomationChoice | undefined>(
-  undefined,
-);
-
-const orcidRorAutomationItems: {
-  label: string;
-  value: OrcidRorAutomationChoice;
-}[] = [
-  { label: "Yes", value: "yes" },
-  { label: "No", value: "no" },
-];
-
 /** Posters already submitted were extracted at the current level; it can't change. */
 const extractionLevelLocked = computed(() =>
   batchItems.value.some((item) => item.posterId != null),
@@ -482,13 +468,7 @@ const canContinueFromUpload = computed(
 
 const extractionStepAcknowledged = ref(false);
 
-const extractionStepReady = computed(
-  () => orcidRorAutomationChoice.value !== undefined,
-);
-
-const extractionStepComplete = computed(
-  () => extractionStepAcknowledged.value && extractionStepReady.value,
-);
+const extractionStepComplete = computed(() => extractionStepAcknowledged.value);
 
 const extractionStepSaving = ref(false);
 
@@ -737,13 +717,6 @@ function applyLicenseSummaryFromJob(job: BulkPosterSubmissionJob) {
   }
 
   applyBulkImportConferenceToForm(conferenceForm, summary?.conference);
-  if (summary?.automateOrcidRorLookups === true) {
-    orcidRorAutomationChoice.value = "yes";
-  } else if (summary?.automateOrcidRorLookups === false) {
-    orcidRorAutomationChoice.value = "no";
-  } else {
-    orcidRorAutomationChoice.value = undefined;
-  }
 }
 
 function applyJobSnapshot(job: BulkPosterSubmissionJob) {
@@ -1836,8 +1809,6 @@ async function continueToExtraction() {
 }
 
 async function continueToConference() {
-  if (!extractionStepReady.value) return;
-
   if (!jobId.value) {
     extractionStepAcknowledged.value = true;
     goToStep("conference");
@@ -1849,9 +1820,6 @@ async function continueToConference() {
   try {
     await updateBulkPosterSubmissionJob(jobId.value, {
       extractionMethod: extractionMethod.value,
-    });
-    await mergeJobSubmissionSummary({
-      automateOrcidRorLookups: orcidRorAutomationChoice.value === "yes",
     });
     extractionStepAcknowledged.value = true;
     void persistWizardStep("extraction");
@@ -2547,19 +2515,6 @@ async function startImport() {
             </div>
           </UFormField>
 
-          <UFormField
-            label="Automate ORCID and ROR lookups"
-            required
-            description="Fill in missing ORCID iDs for creators and ROR IDs for affiliations automatically. Only high-confidence matches are added to a poster, so some creators may still need their ORCID iD added by hand. If you choose No, you can add them yourself."
-          >
-            <URadioGroup
-              v-model="orcidRorAutomationChoice"
-              :items="orcidRorAutomationItems"
-              value-key="value"
-              label-key="label"
-              :ui="{ fieldset: 'gap-3', item: 'items-start' }"
-            />
-          </UFormField>
         </div>
 
         <div
@@ -2577,7 +2532,6 @@ async function startImport() {
             icon="i-lucide-arrow-right"
             trailing
             label="Save and Continue"
-            :disabled="!extractionStepReady"
             :loading="extractionStepSaving"
             @click="continueToConference"
           />

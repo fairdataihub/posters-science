@@ -157,8 +157,8 @@ export function bulkReviewWorkbookPrefillSummary(
 const EXTRACTED_FIELD_TIERS: Record<string, BulkReviewFieldTier> = {
   // Extraction eval: printed affiliation strings 0.953 -> Minimal.
   affiliation_name: "minimal",
-  // ROR identifiers are not measured; only Full keeps them.
-  affiliation_identifier: "optional",
+  // ORCID and ROR identifiers found on the poster are kept at every level.
+  affiliation_identifier: "minimal",
 };
 
 /** Whether extracted (non-batch) metadata for a manifest field should remain stored / shown. */
