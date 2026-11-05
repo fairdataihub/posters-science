@@ -1,7 +1,6 @@
 import { createError } from "h3";
 import { createId } from "@paralleldrive/cuid2";
 import type { BulkPosterSubmissionJob } from "#shared/types/bulkPosterSubmissionJob";
-import { DEFAULT_BULK_SUBMISSION_EXTRACTION_METHOD } from "#shared/types/bulkSubmission";
 import type {
   BulkPosterSubmissionJobRepository,
   CreateBulkPosterSubmissionJobInput,
@@ -23,8 +22,6 @@ export const mockBulkPosterSubmissionJobRepository: BulkPosterSubmissionJobRepos
         name: input.name.trim(),
         wizardStep: "upload",
         status: "draft",
-        extractionMethod:
-          input.extractionMethod ?? DEFAULT_BULK_SUBMISSION_EXTRACTION_METHOD,
         stagedPosters: [],
         licenseMetadataFileName: null,
         licenseMetadataFilePath: null,

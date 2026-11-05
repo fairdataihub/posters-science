@@ -1,6 +1,6 @@
 import type { BulkImportSubmissionSummary } from "#shared/types/bulkImportLicenses";
 import { normalizeBulkImportReviewEmbargoDays } from "#shared/types/bulkImportReviewEmbargo";
-import { findBulkSubmissionJobForPoster } from "~~/server/utils/bulkExtractionMetadataGate";
+import { findBulkSubmissionJobForPoster } from "~~/server/utils/bulkSubmissionForPoster";
 import prisma from "~~/server/utils/prisma";
 
 /**

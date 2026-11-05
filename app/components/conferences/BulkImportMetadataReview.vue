@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { strictIssueMessage } from "~/utils/strictIssueLabel";
 import type { BulkImportBatchItem } from "#shared/types/conferenceBulkImport";
-import type { BulkSubmissionExtractionMethod } from "#shared/types/bulkSubmission";
 import type { PosterResponse } from "@/utils/poster_schema";
 import { sharePosterEditPath } from "~/utils/sharePaths";
 import {
@@ -12,7 +11,6 @@ import {
 const props = defineProps<{
   items: BulkImportBatchItem[];
   bulkImportJobId: string | null;
-  extractionMethod: BulkSubmissionExtractionMethod;
   metadataRefreshKey?: number;
   retryingJobIds?: Set<string>;
 }>();

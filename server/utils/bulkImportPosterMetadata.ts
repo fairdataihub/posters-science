@@ -4,7 +4,6 @@ import type { BulkImportConferenceMetadata } from "#shared/types/bulkImportConfe
 import type { BulkImportSubmissionSummary } from "#shared/types/bulkImportLicenses";
 import prisma from "~~/server/utils/prisma";
 import { getBulkPosterSubmissionJobRepository } from "~~/server/utils/bulkPosterSubmissionJobs";
-import { gateBulkExtractedPosterMetadataForJobPoster } from "~~/server/utils/bulkExtractionMetadataGate";
 import { ensurePostersScienceDiscoverRelatedIdentifier } from "~~/server/utils/postersScienceDiscoverRelatedIdentifier";
 
 function optionalString(value: string | undefined) {
@@ -155,7 +154,6 @@ export async function applyBulkSubmissionMetadataToPosters(
 
   const config = useRuntimeConfig();
   const siteEnv = config.siteEnv || config.public.siteEnv;
-  const extractionMethod = job.extractionMethod;
 
   async function applyOne(id: number): Promise<boolean> {
     const owned = ownedById.get(id);
@@ -173,13 +171,6 @@ export async function applyBulkSubmissionMetadataToPosters(
         data: { posterId: id, ...createData },
       });
     }
-
-    await gateBulkExtractedPosterMetadataForJobPoster(
-      userId,
-      id,
-      extractionMethod,
-      { jobId },
-    );
 
     if (owned.extractionJob?.completed) {
       await ensurePostersScienceDiscoverRelatedIdentifier(id, { siteEnv });

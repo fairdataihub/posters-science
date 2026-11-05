@@ -89,7 +89,6 @@ useSeoMeta({
       :initial-job-id="jobIdFromQuery ?? resumeJob?.id ?? undefined"
       :initial-import-name="resumeJob?.name"
       :initial-step="initialWizardStep"
-      :initial-extraction-method="resumeJob?.extractionMethod"
       :resume-loading="resumeLoading"
     />
 

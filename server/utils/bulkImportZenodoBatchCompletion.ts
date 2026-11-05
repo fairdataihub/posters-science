@@ -1,7 +1,7 @@
 import { isZenodoFileEmbargoActive } from "#shared/utils/zenodoFileEmbargoAccess";
 import type { BulkImportSubmissionSummary } from "#shared/types/bulkImportLicenses";
 import { posterFamilyRootId } from "~~/server/utils/posterVersions";
-import { findBulkSubmissionJobForPoster } from "~~/server/utils/bulkExtractionMetadataGate";
+import { findBulkSubmissionJobForPoster } from "~~/server/utils/bulkSubmissionForPoster";
 import { orderedBulkImportPosterEntries } from "~~/server/utils/bulkImportOrderedPosters";
 import { postersScienceDiscoverUrl } from "~~/server/utils/postersScienceDiscoverRelatedIdentifier";
 import { resolvePosterZenodoFilesEmbargoUntil } from "~~/server/utils/posterZenodoFilesEmbargo";

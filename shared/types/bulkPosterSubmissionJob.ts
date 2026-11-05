@@ -1,5 +1,4 @@
 import type { BulkImportWizardStep } from "#shared/types/bulkImportWizard";
-import type { BulkSubmissionExtractionMethod } from "#shared/types/bulkSubmission";
 
 /** Persisted bulk import batch (matches a future Prisma model). */
 export type BulkPosterSubmissionJobStatus =
@@ -21,7 +20,6 @@ export type BulkPosterSubmissionJob = {
   name: string;
   wizardStep: BulkImportWizardStep | "assets" | "metadata";
   status: BulkPosterSubmissionJobStatus;
-  extractionMethod: BulkSubmissionExtractionMethod;
   /** Posters uploaded to Bunny under this job (before extraction). */
   stagedPosters: BulkImportStagedPoster[];
   licenseMetadataFileName: string | null;
@@ -42,14 +40,12 @@ export type BulkPosterSubmissionJob = {
 export type CreateBulkPosterSubmissionJobBody = {
   name: string;
   managedConferenceId?: string;
-  extractionMethod?: BulkSubmissionExtractionMethod;
 };
 
 export type UpdateBulkPosterSubmissionJobBody = {
   name?: string;
   wizardStep?: BulkImportWizardStep | "assets" | "metadata";
   status?: BulkPosterSubmissionJobStatus;
-  extractionMethod?: BulkSubmissionExtractionMethod;
   stagedPosters?: BulkImportStagedPoster[];
   licenseMetadataFileName?: string | null;
   licenseMetadataFilePath?: string | null;

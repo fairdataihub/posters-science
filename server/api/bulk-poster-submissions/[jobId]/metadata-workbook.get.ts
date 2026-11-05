@@ -25,12 +25,11 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  const { job, batchConference, orderedPosters, extractionMethod } =
+  const { job, batchConference, orderedPosters } =
     await loadBulkReviewJobPosters(event, session.user.id, jobId);
 
   const buffer = await buildBulkReviewWorkbookBuffer(
     orderedPosters,
-    extractionMethod,
     batchConference,
   );
   const filename = safeWorkbookFilename(job.name, job.id);

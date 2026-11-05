@@ -20,10 +20,7 @@ export const BULK_IMPORT_METADATA_REVIEW_TEMPLATE_RELATIVE_PATH =
 
 export type BulkReviewFieldTier =
   | "system"
-  | "near_exact"
-  | "minimal"
-  | "high"
-  | "full"
+  | "extracted"
   | "optional";
 
 export type BulkReviewWorkbookColumn = {
@@ -42,8 +39,8 @@ export type BulkReviewWorkbookColumn = {
   /** Row 2 help text (share UI + validation notes) */
   instruction?: string;
   /**
-   * Overrides the requirement implied by `tier`. Tier is extraction confidence
-   * (what Minimal keeps); a column can be high-confidence yet still optional.
+   * Overrides the requirement implied by `tier` (an extracted column can still
+   * be optional).
    */
   requirement?: BulkReviewColumnRequirement;
 };
@@ -93,7 +90,7 @@ export type BulkReviewWorkbookSheet = {
   columns: BulkReviewWorkbookColumn[];
 };
 
-/** Row 2 label and header fill: required vs optional (extraction tier is internal only). */
+/** Row 2 label and header fill: required vs optional (tier is internal only). */
 export type BulkReviewColumnRequirement = "required" | "optional";
 
 export function bulkReviewColumnRequirement(
@@ -123,10 +120,7 @@ export const BULK_REVIEW_WORKBOOK_COLUMN_FILL: Record<
   string
 > = {
   system: "FFE7E6E6",
-  near_exact: "FFB4C7E7",
-  minimal: "FFB4C7E7",
-  high: "FFB4C7E7",
-  full: "FFB4C7E7",
+  extracted: "FFB4C7E7",
   optional: "FFF2F2F2",
 };
 
@@ -194,10 +188,7 @@ function contributorAffiliationColumns(): BulkReviewWorkbookColumn[] {
         `Affiliation ${slot}`,
         contributorAffiliationNameFillKey(slot),
         `creators[].affiliation[${slot - 1}].name`,
-        // Extraction eval: printed affiliation strings 0.953 -> Minimal (0.95).
-        // Author-affiliation assignment is lower (0.884) but affiliations live on
-        // author rows here; kept so users move a misassigned one, not retype it.
-        "minimal",
+        "extracted",
         {
           requirement: "optional",
           width: 32,
@@ -230,15 +221,15 @@ export const BULK_REVIEW_WORKBOOK_SHEETS: BulkReviewWorkbookSheet[] = [
       col("File name", "file_name", "extractionJob.fileName", "system", {
         width: 42,
       }),
-      col("Title", "title", "title", "minimal", {
+      col("Title", "title", "title", "extracted", {
         width: 36,
         wrapText: true,
       }),
-      col("Description", "description", "description", "full", {
+      col("Description", "description", "description", "extracted", {
         width: 80,
         wrapText: true,
       }),
-      col("Keywords", "keywords", "subjects", "full", {
+      col("Keywords", "keywords", "subjects", "extracted", {
         width: 48,
         hint: "Semicolon-separated keywords (maps to subjects[]).",
       }),
@@ -252,16 +243,13 @@ export const BULK_REVIEW_WORKBOOK_SHEETS: BulkReviewWorkbookSheet[] = [
     grain: "contributor",
     columns: [
       col("Poster ID", "poster_id", "poster.id", "system", { width: 12 }),
-      // Extraction eval rates the given/family split near exact (1.000) and lists
-      // it under Minimal; author names overall are Full (0.898). Names are kept
-      // in Minimal so the split has something to apply to.
-      col("Given name", "given_name", "creators[].givenName", "near_exact", {
+      col("Given name", "given_name", "creators[].givenName", "extracted", {
         width: 22,
       }),
-      col("Family name", "family_name", "creators[].familyName", "near_exact", {
+      col("Family name", "family_name", "creators[].familyName", "extracted", {
         width: 22,
       }),
-      col("Name type", "name_type", "creators[].nameType", "minimal", {
+      col("Name type", "name_type", "creators[].nameType", "extracted", {
         width: 16,
         hint: "Personal | Organizational",
       }),
@@ -269,7 +257,7 @@ export const BULK_REVIEW_WORKBOOK_SHEETS: BulkReviewWorkbookSheet[] = [
         "ORCID identifier",
         "name_identifier",
         "creators[].nameIdentifiers[0].nameIdentifier",
-        "minimal",
+        "extracted",
         {
           width: 36,
           hint: "ORCID URL for Personal; organization ROR URL for Organizational",
@@ -534,7 +522,7 @@ export const BULK_REVIEW_WORKBOOK_SHEETS: BulkReviewWorkbookSheet[] = [
         "Section title",
         "section_title",
         "posterContent.sections[].sectionTitle",
-        "full",
+        "extracted",
         // Schema: optional (PosterSectionSchema).
         { width: 28, requirement: "optional" },
       ),
@@ -542,7 +530,7 @@ export const BULK_REVIEW_WORKBOOK_SHEETS: BulkReviewWorkbookSheet[] = [
         "Section content",
         "section_content",
         "posterContent.sections[].sectionContent",
-        "full",
+        "extracted",
         // Schema: required only when a section title is given; the strict
         // validation reports that case, so the grid does not mark it required.
         { width: 64, wrapText: true, requirement: "optional" },
@@ -562,7 +550,7 @@ export const BULK_REVIEW_WORKBOOK_SHEETS: BulkReviewWorkbookSheet[] = [
       col("Table ID", "item_id", "tableCaptions[].id", "optional", {
         width: 14,
       }),
-      col("Caption", "caption", "tableCaptions[].caption", "near_exact", {
+      col("Caption", "caption", "tableCaptions[].caption", "extracted", {
         width: 64,
         wrapText: true,
       }),
@@ -581,7 +569,7 @@ export const BULK_REVIEW_WORKBOOK_SHEETS: BulkReviewWorkbookSheet[] = [
       col("Figure ID", "item_id", "imageCaptions[].id", "optional", {
         width: 14,
       }),
-      col("Caption", "caption", "imageCaptions[].caption", "minimal", {
+      col("Caption", "caption", "imageCaptions[].caption", "extracted", {
         width: 64,
         wrapText: true,
       }),
