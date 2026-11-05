@@ -106,8 +106,8 @@ export async function validateBulkJobPosters(
       continue;
     }
 
-    // Stored data is the source of truth: extraction-level gating already ran
-    // once after extraction, so validate exactly what the poster editor shows.
+    // Stored data is the source of truth: validate exactly what the poster
+    // editor shows.
     const title = poster.title;
     const description = poster.description;
     const meta = poster.posterMetadata as Record<string, unknown> | null;

@@ -172,13 +172,18 @@ export default defineNuxtConfig({
       include: [
         "@inspira-ui/plugins", // CJS
         "@internationalized/date",
+        "@vue/devtools-core",
+        "@vue/devtools-kit",
+        "@vueuse/core",
         "clsx",
         "dayjs", // CJS
         "dayjs/plugin/relativeTime", // CJS
         "dayjs/plugin/timezone", // CJS
         "dayjs/plugin/updateLocale", // CJS
         "dayjs/plugin/utc", // CJS
+        "jszip", // CJS
         "motion-v",
+        "tailwind-merge",
         "vue3-lottie",
         "zod",
       ],

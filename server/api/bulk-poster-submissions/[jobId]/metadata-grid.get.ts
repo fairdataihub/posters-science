@@ -19,19 +19,14 @@ export default defineEventHandler(async (event): Promise<BulkReviewMetadataGrid>
     });
   }
 
-  const { batchConference, orderedPosters, extractionMethod } =
+  const { batchConference, orderedPosters } =
     await loadBulkReviewJobPosters(event, session.user.id, jobId, {
       prepare: getQuery(event).refresh !== "1",
     });
 
-  const sheetRows = buildBulkReviewSheetRows(
-    orderedPosters,
-    extractionMethod,
-    batchConference,
-  );
+  const sheetRows = buildBulkReviewSheetRows(orderedPosters, batchConference);
 
   return {
-    extractionMethod,
     posters: orderedPosters.map((poster) => ({
       id: poster.id,
       fileName: poster.extractionJob?.fileName ?? `poster-${poster.id}.pdf`,

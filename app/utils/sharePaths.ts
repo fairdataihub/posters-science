@@ -76,10 +76,11 @@ export function shareBulkImportReturnFromQuery(
 
   const rawStep = query[SHARE_BULK_IMPORT_STEP_QUERY];
   const stepValue = Array.isArray(rawStep) ? rawStep[0] : rawStep;
-  const wizardStep =
-    normalizeBulkImportWizardStep(
-      typeof stepValue === "string" ? stepValue : undefined,
-    ) ?? "review";
+  const savedStep = typeof stepValue === "string" ? stepValue : undefined;
+  // No step: return to review. A step no longer in the wizard: start over.
+  const wizardStep = savedStep
+    ? (normalizeBulkImportWizardStep(savedStep) ?? "setup")
+    : "review";
 
   return { jobId: jobId.trim(), wizardStep };
 }

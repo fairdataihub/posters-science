@@ -7,7 +7,6 @@ import {
 
 export type BulkImportWizardStepCompletion = {
   upload: MaybeRefOrGetter<boolean>;
-  extraction: MaybeRefOrGetter<boolean>;
   conference: MaybeRefOrGetter<boolean>;
   license: MaybeRefOrGetter<boolean>;
   /** All submission rows ready to import. */
@@ -67,8 +66,6 @@ export function useBulkImportWizard(
         return setupSaved.value;
       case "upload":
         return readCompletion(completion.upload);
-      case "extraction":
-        return readCompletion(completion.extraction);
       case "conference":
         return readCompletion(completion.conference);
       case "license":

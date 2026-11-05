@@ -2,7 +2,6 @@
 export type BulkImportWizardStep =
   | "setup"
   | "upload"
-  | "extraction"
   | "conference"
   | "license"
   | "submit"
@@ -27,11 +26,6 @@ export const BULK_IMPORT_WIZARD_STEPS: BulkImportWizardStepDefinition[] = [
     id: "upload",
     label: "Posters",
     task: "Use the interface below to drag and drop or import all of your posters.",
-  },
-  {
-    id: "extraction",
-    label: "Poster details",
-    task: "Choose how much metadata we auto-fill from each poster PDF and whether to use an on-site review period (1–30 days) before Zenodo.",
   },
   {
     id: "conference",
@@ -76,6 +70,8 @@ export function normalizeBulkImportWizardStep(
   step: string | undefined | null,
 ): BulkImportWizardStep | undefined {
   if (!step) return undefined;
+  // Steps no longer in the wizard (e.g. the removed "extraction" step) return
+  // undefined, so callers fall back to the first step.
   if (BULK_IMPORT_WIZARD_STEP_SET.has(step)) {
     return step as BulkImportWizardStep;
   }

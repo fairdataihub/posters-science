@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { getBulkPosterSubmissionJobRepository } from "~~/server/utils/bulkPosterSubmissionJobs";
 import { importBulkReviewGridRows } from "~~/server/utils/bulkReviewWorkbookImport";
-import { normalizeBulkSubmissionExtractionMethod } from "#shared/types/bulkSubmission";
 
 const MAX_ROWS_PER_SHEET = 20_000;
 const MAX_CELL_LENGTH = 100_000;
@@ -49,7 +48,6 @@ export default defineEventHandler(async (event) => {
   const result = await importBulkReviewGridRows(
     session.user.id,
     job.submissionSummary,
-    normalizeBulkSubmissionExtractionMethod(job.extractionMethod),
     parsed.data.sheets,
   );
 

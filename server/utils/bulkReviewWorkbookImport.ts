@@ -33,7 +33,6 @@ import {
 } from "~~/app/utils/poster_schema";
 import { conferenceYearFromStartDate } from "#shared/types/bulkImportConference";
 import prisma from "~~/server/utils/prisma";
-import type { BulkSubmissionExtractionMethod } from "#shared/types/bulkSubmission";
 import { posterIdsFromBulkSubmissionSummary } from "~~/server/utils/bulkImportDashboard";
 
 type RowValues = Record<string, string>;
@@ -476,13 +475,13 @@ function parseLegacyOptionalSheets(
           header: "Affiliation name",
           fillKey: "affiliation_name",
           schemaPath: "",
-          tier: "minimal",
+          tier: "extracted",
         },
         {
           header: "Affiliation identifier",
           fillKey: "affiliation_identifier",
           schemaPath: "",
-          tier: "minimal",
+          tier: "extracted",
         },
         {
           header: "Affiliation order",
@@ -1407,7 +1406,6 @@ export async function importBulkReviewWorkbookFromBuffer(
 export async function importBulkReviewGridRows(
   userId: string,
   jobSubmissionSummary: unknown,
-  _extractionMethod: BulkSubmissionExtractionMethod,
   sheets: Record<string, RowValues[]>,
 ): Promise<BulkReviewWorkbookImportResult> {
   const issues: BulkImportValidationIssue[] = [];

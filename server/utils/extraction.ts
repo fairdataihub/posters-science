@@ -1,4 +1,3 @@
-import { releaseBulkPosterGating } from "~~/server/utils/bulkExtractionGateMarker";
 // Shared helpers for putting an ExtractionJob back on the queue. The external
 // worker polls the database for pending jobs, so re-queuing is a status write
 // plus an optional nudge to skip the wait until its next poll.
@@ -110,11 +109,6 @@ export async function requeueExtractionJob(
       posterId: true,
     },
   });
-
-  // Fresh extraction output must be gated again for its bulk batch.
-  if (pending.posterId != null) {
-    await releaseBulkPosterGating(pending.posterId);
-  }
 
   wakeExtractionWorker(jobId, context);
 
