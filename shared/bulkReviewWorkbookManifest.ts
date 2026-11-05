@@ -211,8 +211,8 @@ function contributorAffiliationColumns(): BulkReviewWorkbookColumn[] {
         `Affiliation ${slot} ROR identifier`,
         contributorAffiliationRorFillKey(slot),
         `creators[].affiliation[${slot - 1}].affiliationIdentifier`,
-        "optional",
-        { width: 28, hint: "ROR URL for this affiliation" },
+        "minimal",
+        { requirement: "optional", width: 28, hint: "ROR URL for this affiliation" },
       ),
     );
   }
@@ -271,6 +271,7 @@ export const BULK_REVIEW_WORKBOOK_SHEETS: BulkReviewWorkbookSheet[] = [
         "creators[].nameIdentifiers[0].nameIdentifier",
         "minimal",
         {
+          requirement: "optional",
           width: 36,
           hint: "ORCID URL for Personal; organization ROR URL for Organizational",
         },
