@@ -8,7 +8,6 @@ import {
 import { claimBulkPosterGating } from "~~/server/utils/bulkExtractionGateMarker";
 import prisma from "~~/server/utils/prisma";
 import { posterIdsFromBulkSubmissionSummary } from "~~/server/utils/bulkImportDashboard";
-import { applyBulkOrcidRorAutomationForPoster } from "~~/server/utils/bulkOrcidRorAutomation";
 
 export async function findBulkSubmissionJobForPoster(
   userId: string,
@@ -87,7 +86,7 @@ export function snapshotFromPoster(
 /**
  * One-time post-extraction cleanup for a bulk poster: strips extracted fields
  * above the batch's extraction level (including title/description/keywords,
- * which later reads must never touch) and applies ORCID/ROR automation.
+ * which later reads must never touch).
  *
  * Runs at most once per poster (atomic claim in the bulk job summary), and
  * only after extraction has completed, so it never erases values the user
@@ -97,7 +96,7 @@ export async function gateBulkExtractedPosterMetadata(
   userId: string,
   posterId: number,
   extractionMethod: BulkSubmissionExtractionMethod,
-  options: { automateOrcidRor?: boolean | null; jobId?: string } = {},
+  options: { jobId?: string } = {},
 ): Promise<boolean> {
   const poster = await prisma.poster.findFirst({
     where: { id: posterId, userId },
@@ -190,19 +189,15 @@ export async function gateBulkExtractedPosterMetadata(
     }
   }
 
-  const automated = await applyBulkOrcidRorAutomationForPoster(userId, posterId, {
-    automate: options.automateOrcidRor,
-  });
-
   // True when stored data changed, so callers re-read the poster.
-  return gated || automated;
+  return gated;
 }
 
 export async function gateBulkExtractedPosterMetadataForJobPoster(
   userId: string,
   posterId: number,
   jobExtractionMethod: string,
-  options: { automateOrcidRor?: boolean | null; jobId?: string } = {},
+  options: { jobId?: string } = {},
 ): Promise<boolean> {
   return gateBulkExtractedPosterMetadata(
     userId,

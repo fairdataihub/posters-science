@@ -155,8 +155,6 @@ export async function applyBulkSubmissionMetadataToPosters(
 
   const config = useRuntimeConfig();
   const siteEnv = config.siteEnv || config.public.siteEnv;
-  // Known from this job; avoids a per-poster scan of every bulk job.
-  const automateOrcidRor = summary.automateOrcidRorLookups === true;
   const extractionMethod = job.extractionMethod;
 
   async function applyOne(id: number): Promise<boolean> {
@@ -180,7 +178,7 @@ export async function applyBulkSubmissionMetadataToPosters(
       userId,
       id,
       extractionMethod,
-      { automateOrcidRor, jobId },
+      { jobId },
     );
 
     if (owned.extractionJob?.completed) {

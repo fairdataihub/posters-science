@@ -269,7 +269,7 @@ export const BULK_REVIEW_WORKBOOK_SHEETS: BulkReviewWorkbookSheet[] = [
         "ORCID identifier",
         "name_identifier",
         "creators[].nameIdentifiers[0].nameIdentifier",
-        "optional",
+        "minimal",
         {
           width: 36,
           hint: "ORCID URL for Personal; organization ROR URL for Organizational",
