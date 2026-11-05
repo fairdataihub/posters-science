@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { posterFileRejectionReason } from "./posterFile.ts";
 
-export const MAX_BATCH_FILES = 50;
 export const batchManifestSchema = z.object({
   requestKey: z.uuid(),
   name: z.string().trim().min(1).max(100),
@@ -19,8 +18,7 @@ export const batchManifestSchema = z.object({
           if (reason) ctx.addIssue({ code: "custom", message: reason });
         }),
     )
-    .min(1)
-    .max(MAX_BATCH_FILES),
+    .min(1),
 });
 
 export type BatchJob = {

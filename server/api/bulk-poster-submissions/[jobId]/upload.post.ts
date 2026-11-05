@@ -9,6 +9,9 @@ import {
   bulkImportPosterObjectPath,
 } from "~~/server/utils/bulkImportBunnyPaths";
 import { getBulkPosterSubmissionJobRepository } from "~~/server/utils/bulkPosterSubmissionJobs";
+import { posterTitleFromFileName } from "~~/server/utils/bulkImportSubmit";
+import { deleteUserDraftPoster } from "~~/server/utils/deleteUserDraftPoster";
+import prisma from "~~/server/utils/prisma";
 
 async function putOnBunny(input: {
   bunnyPrivateStorage: string;
@@ -135,27 +138,51 @@ export default defineEventHandler(async (event) => {
     });
   }
 
+  // The job stays "staged" (ignored by the worker) until the import is submitted.
+  const poster = await prisma.poster.create({
+    data: {
+      userId: session.user.id,
+      title: posterTitleFromFileName(fileName),
+      description: "",
+      imageUrl: "",
+      status: "draft",
+    },
+    select: { id: true },
+  });
+
   const filePath = bulkImportPosterObjectPath(
     folderExtension,
     jobId,
+    poster.id,
     fileName,
   );
+  console.log(`[bulk-import/upload] poster ${poster.id}: ${filePath}`);
 
-  await putOnBunny({
-    bunnyPrivateStorage,
-    bunnyPrivateStorageKey,
-    filePath,
-    body: fileEntry.data,
-    contentType: fileType,
-  });
+  try {
+    await putOnBunny({
+      bunnyPrivateStorage,
+      bunnyPrivateStorageKey,
+      filePath,
+      body: fileEntry.data,
+      contentType: fileType,
+    });
+    await prisma.extractionJob.create({
+      data: { posterId: poster.id, fileName, filePath, status: "staged" },
+    });
+  } catch (error) {
+    await prisma.poster.delete({ where: { id: poster.id } }).catch(() => {});
+    throw error;
+  }
 
   const staged: BulkImportStagedPoster = {
     fileName,
     filePath,
     uploadedAt,
+    posterId: poster.id,
   };
 
   const existing = job.stagedPosters ?? [];
+  const replaced = existing.find((item) => item.fileName === fileName);
   const nextStaged = [
     ...existing.filter((item) => item.fileName !== fileName),
     staged,
@@ -168,6 +195,15 @@ export default defineEventHandler(async (event) => {
     posterCount: nextStaged.length,
     wizardStep: "upload",
   });
+
+  if (
+    replaced?.posterId != null &&
+    (await prisma.extractionJob.count({
+      where: { posterId: replaced.posterId, status: "staged" },
+    }))
+  ) {
+    await deleteUserDraftPoster(session.user.id, replaced.posterId);
+  }
 
   return {
     role,

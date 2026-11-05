@@ -107,6 +107,7 @@ export default defineEventHandler(async (event) => {
     include: posterInclude,
     where: {
       userId,
+      NOT: { extractionJob: { is: { status: "staged" } } },
     },
     orderBy: {
       updated: "desc",
