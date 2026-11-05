@@ -5,7 +5,7 @@ import {
 } from "#shared/utils/posterFile";
 import {
   bulkImportFolderExtension,
-  bulkImportJobPrefix,
+  bulkImportPostersPrefix,
 } from "~~/server/utils/bulkImportBunnyPaths";
 import { listBunnyStorageObjects } from "~~/server/utils/bunnyStorageList";
 import { getBulkPosterSubmissionJobRepository } from "~~/server/utils/bulkPosterSubmissionJobs";
@@ -45,7 +45,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const folderExtension = bulkImportFolderExtension(siteEnv);
-  const postersPrefix = `${bulkImportJobPrefix(folderExtension, jobId)}/posters`;
+  const postersPrefix = bulkImportPostersPrefix(folderExtension, jobId);
 
   const storedObjects = await listBunnyStorageObjects(
     bunnyPrivateStorage,
@@ -75,6 +75,7 @@ export default defineEventHandler(async (event) => {
       fileName,
       filePath,
       uploadedAt: existing?.uploadedAt ?? new Date().toISOString(),
+      posterId: Number(filePath.split("/").at(-2)),
     };
   });
 

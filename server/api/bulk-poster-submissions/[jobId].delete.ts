@@ -41,9 +41,12 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  const linkedPosterIds = posterIdsFromBulkSubmissionSummary(
-    job.submissionSummary,
-  );
+  const linkedPosterIds = [
+    ...posterIdsFromBulkSubmissionSummary(job.submissionSummary),
+    ...(job.stagedPosters ?? []).flatMap((poster) =>
+      poster.posterId != null ? [poster.posterId] : [],
+    ),
+  ];
 
   if (job.status === "processing") {
     const activePosterIds =

@@ -12,6 +12,7 @@ export type BulkImportStagedPoster = {
   fileName: string;
   filePath: string;
   uploadedAt: string;
+  posterId?: number;
 };
 
 export type BulkPosterSubmissionJob = {

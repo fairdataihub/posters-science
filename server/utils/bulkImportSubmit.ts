@@ -30,7 +30,7 @@ function parseStagedPosters(value: unknown): BulkImportStagedPoster[] {
   );
 }
 
-function posterTitleFromFileName(fileName: string) {
+export function posterTitleFromFileName(fileName: string) {
   const base = fileName.replace(/\.[^.]+$/, "").trim();
   return base.length > 0 ? base : fileName;
 }
@@ -212,8 +212,55 @@ export async function submitBulkPosterSubmissionJob(
         }
       }
 
+      const newPosterCount = staged.filter(
+        (p) =>
+          !trackedPaths.has(p.filePath) &&
+          (p.posterId != null
+            ? !alreadyTracked(p.posterId)
+            : !existingJobByPath.has(p.filePath)),
+      ).length;
+      const extractionBatch =
+        newPosterCount > 0
+          ? await tx.extractionBatch.create({
+              data: {
+                userId,
+                requestKey: `bulk-submission:${jobId}:${crypto.randomUUID()}`,
+                name: job.name,
+                totalFiles: newPosterCount,
+              },
+              select: { id: true },
+            })
+          : null;
+      let nextBatchIndex = 0;
+
       for (const stagedPoster of staged) {
         if (trackedPaths.has(stagedPoster.filePath)) continue;
+
+        if (stagedPoster.posterId != null) {
+          if (alreadyTracked(stagedPoster.posterId)) continue;
+          const poster = await tx.poster.update({
+            where: { id: stagedPoster.posterId, userId },
+            data: {
+              posterMetadata: { create: metadataCreate },
+              extractionJob: {
+                update: {
+                  status: "pending-extraction",
+                  queueClass: "bulk",
+                  batch: { connect: { id: extractionBatch!.id } },
+                  batchIndex: nextBatchIndex++,
+                },
+              },
+            },
+            select: { id: true, extractionJob: { select: { id: true } } },
+          });
+          created.push({
+            posterId: poster.id,
+            extractionJobId: poster.extractionJob!.id,
+            fileName: stagedPoster.fileName,
+            filePath: stagedPoster.filePath,
+          });
+          continue;
+        }
 
         const existingJobForPath = existingJobByPath.get(stagedPoster.filePath);
         if (existingJobForPath) {
@@ -243,6 +290,9 @@ export async function submitBulkPosterSubmissionJob(
                 fileName: stagedPoster.fileName,
                 filePath: stagedPoster.filePath,
                 status: "pending-extraction",
+                queueClass: "bulk",
+                batch: { connect: { id: extractionBatch!.id } },
+                batchIndex: nextBatchIndex++,
               },
             },
           },

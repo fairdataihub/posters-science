@@ -1,5 +1,3 @@
-import { createId } from "@paralleldrive/cuid2";
-
 export function bulkImportFolderExtension(siteEnv: string | undefined) {
   if (siteEnv === "production") return "p";
   if (siteEnv === "staging") return "s";
@@ -11,7 +9,7 @@ export function bulkImportJobPrefix(folderExtension: string, jobId: string) {
 }
 
 export function bulkImportPostersPrefix(folderExtension: string, jobId: string) {
-  return `${bulkImportJobPrefix(folderExtension, jobId)}/posters/`;
+  return `posters/${folderExtension}/b/${jobId}/`;
 }
 
 /** Guard deletes so paths cannot escape this job's poster prefix. */
@@ -27,11 +25,11 @@ export function isBulkImportPosterObjectPath(
 export function bulkImportPosterObjectPath(
   folderExtension: string,
   jobId: string,
+  posterId: number,
   originalFileName: string,
 ) {
   const safeName = originalFileName.replace(/[^a-zA-Z0-9._-]/g, "_");
-  const fileId = createId();
-  return `${bulkImportJobPrefix(folderExtension, jobId)}/posters/${fileId}/${safeName}`;
+  return `${bulkImportPostersPrefix(folderExtension, jobId)}${posterId}/${safeName}`;
 }
 
 export function bulkImportLicenseMetadataObjectPath(

@@ -98,7 +98,7 @@ function resolveRemovals(
     }
 
     const resolved: ResolvedRemoval = {
-      posterId: createdEntry?.posterId,
+      posterId: createdEntry?.posterId ?? stagedEntry?.posterId,
       fileName:
         createdEntry?.fileName ??
         stagedEntry?.fileName ??

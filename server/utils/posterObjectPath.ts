@@ -3,7 +3,7 @@ import { bulkImportFolderExtension } from "./bulkImportBunnyPaths";
 
 /** Matches the extraction service rule for `pdf_path` / thumbnail generation. */
 const THUMBNAIL_SERVICE_POSTER_PATH =
-  /^posters\/[psd]\/[^/]+(?:\/version-\d+-\d+)?\/[^/]+\.(pdf|jpg|jpeg|png)$/i;
+  /^posters\/[psd]\/(?:b\/[^/]+\/\d+|[^/]+)(?:\/version-\d+-\d+)?\/[^/]+\.(pdf|jpg|jpeg|png)$/i;
 
 export function isThumbnailServicePosterPath(filePath: string): boolean {
   return THUMBNAIL_SERVICE_POSTER_PATH.test(filePath.trim());
