@@ -33,6 +33,7 @@ jobs:
       KAMAL_APP_NAME: ${{ secrets.KAMAL_APP_NAME }}
       # Nuxt runtime config overrides (NUXT_ prefix)
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      CONFERENCE_DATABASE_URL: ${{ secrets.CONFERENCE_DATABASE_URL }}
       NUXT_SESSION_PASSWORD: ${{ secrets.NUXT_SESSION_PASSWORD }}
       NUXT_POSTER_EXTRACTION_API: ${{ secrets.NUXT_POSTER_EXTRACTION_API }}
       NUXT_PUBLIC_SITE_ENV: ${{ secrets.NUXT_PUBLIC_SITE_ENV }}
