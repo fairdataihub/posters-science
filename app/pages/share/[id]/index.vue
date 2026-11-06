@@ -5,6 +5,7 @@ import {
   strictFormSchema,
   type PosterResponse,
   type StrictFormSchema,
+  type StrictFormState,
   ISO_LANGUAGE_OPTIONS,
   IDENTIFIER_TYPE_OPTIONS,
   IDENTIFIER_TYPE_PLACEHOLDER_OPTIONS,
@@ -33,10 +34,6 @@ import {
   shareBulkImportReturnFromQuery,
   shareNewBulkPath,
 } from "~/utils/sharePaths";
-import {
-  conferenceDateRangeFieldErrors,
-  conferenceYearFromStartDate,
-} from "#shared/types/bulkImportConference";
 
 type FundingReference = StrictFormSchema["fundingReferences"][number];
 
@@ -141,7 +138,7 @@ const posterContentOpened = ref(false);
 const subjectInputRefs = ref<{ $el?: HTMLElement; focus?: () => void }[]>([]);
 
 // Initial state (matches PosterMetadata / StrictFormSchema)
-const state = reactive<StrictFormSchema>({
+const state = reactive<StrictFormState>({
   title: "",
   description: "",
   submissionAbstract: "",
@@ -194,7 +191,7 @@ const state = reactive<StrictFormSchema>({
 const { data, error } = await useFetch(`/api/poster/${numericPosterId}`);
 
 if (data.value) {
-  const poster = data.value as PosterResponse;
+  const poster = data.value as unknown as PosterResponse;
   isVersionedPoster.value = poster.versionRootId != null;
 
   // Check if the poster is already published
@@ -308,8 +305,7 @@ if (data.value) {
               (ni) => ni.nameIdentifier.trim() !== "",
             );
             if (firstNonEmpty > 0) {
-              const [item] = mapped.splice(firstNonEmpty, 1);
-              mapped.unshift(item);
+              mapped.unshift(...mapped.splice(firstNonEmpty, 1));
             }
 
             return mapped.length > 0
@@ -454,12 +450,6 @@ if (data.value) {
         presentedStartDate: meta.conference.presentedStartDate ?? "",
         presentedEndDate: meta.conference.presentedEndDate ?? "",
       };
-      const yearFromStart = conferenceYearFromStartDate(
-        state.conference.conferenceStartDate,
-      );
-      if (yearFromStart != null) {
-        state.conference.conferenceYear = yearFromStart;
-      }
     }
 
     if (meta.posterContent) {
@@ -565,9 +555,6 @@ const conferenceDateRange = computed<DateRange>({
       state.conference.conferenceEndDate = value.end
         ? toW3CDate(value.end)
         : "";
-      state.conference.conferenceYear = conferenceYearFromStartDate(
-        state.conference.conferenceStartDate,
-      );
     }
   },
 });
@@ -577,10 +564,10 @@ function clearConferenceDates() {
   if (state.conference) {
     state.conference.conferenceStartDate = "";
     state.conference.conferenceEndDate = "";
-    state.conference.conferenceYear = undefined;
   }
 }
 
+<<<<<<< HEAD
 const conferenceDateRangeError = computed(() => {
   const hasDates = Boolean(
     state.conference?.conferenceStartDate?.trim() ||
@@ -596,6 +583,8 @@ const conferenceDateRangeError = computed(() => {
   return errors.start ?? errors.end;
 });
 
+=======
+>>>>>>> staging-polish
 const presentedDate = computed<CalendarDate | undefined>({
   get() {
     const str = state.conference?.presentedStartDate ?? "";
@@ -620,6 +609,11 @@ function clearPresentedDate() {
 }
 
 /** Extract a year from text (e.g. "ARVO 2025" or "Conference 25") for auto-fill. */
+const conferenceYearOptions = Array.from(
+  { length: new Date().getFullYear() + 1 - 2000 + 1 },
+  (_, i) => new Date().getFullYear() + 1 - i,
+).map((y) => ({ label: String(y), value: y }));
+
 function yearFromText(text: string): number | undefined {
   if (!text || typeof text !== "string") return undefined;
 
@@ -647,10 +641,7 @@ function yearFromText(text: string): number | undefined {
 watch(
   () => state.conference?.conferenceName,
   (name) => {
-    if (!state.conference || state.conference.conferenceStartDate?.trim()) {
-      return;
-    }
-    if (state.conference.conferenceYear != null) return;
+    if (!state.conference || state.conference.conferenceYear != null) return;
 
     const year = yearFromText(name ?? "");
 
@@ -915,7 +906,7 @@ function handleNameTypeChange(nameType: string, cIndex: number) {
       identifierTypeErrors.value[key] =
         nameType === "Organizational"
           ? "Only ROR identifiers are accepted for organizational creators."
-          : "Only ORCID identifiers are accepted for personal creators.";
+          : "Only ORCIDs are accepted for personal creators.";
     } else {
       identifierTypeErrors.value[key] = undefined;
     }
@@ -945,7 +936,7 @@ function handleNameIdentifierInput(
       identifierTypeErrors.value[key] =
         nameType === "Organizational"
           ? "Only ROR identifiers are accepted for organizational creators."
-          : "Only ORCID identifiers are accepted for personal creators.";
+          : "Only ORCIDs are accepted for personal creators.";
     } else {
       identifierTypeErrors.value[key] = undefined;
     }
@@ -953,7 +944,7 @@ function handleNameIdentifierInput(
     identifierTypeErrors.value[key] =
       nameType === "Organizational"
         ? "Only ROR identifiers are accepted for organizational creators."
-        : "Only ORCID identifiers are accepted for personal creators.";
+        : "Only ORCIDs are accepted for personal creators.";
   } else {
     identifierTypeErrors.value[key] = undefined;
   }
@@ -1153,10 +1144,11 @@ const moveCreator = (index: number, direction: "up" | "down") => {
       </template>
     </UPageHeader>
 
+    <!-- state holds a draft: the conference year may be blank until validated -->
     <UForm
       ref="formRef"
       :schema="strictFormSchema"
-      :state="state"
+      :state="state as Partial<StrictFormSchema>"
       class="space-y-8"
       :disabled="loading"
       @submit="onSubmit"
@@ -1598,7 +1590,7 @@ const moveCreator = (index: number, direction: "up" | "down") => {
                       :label="
                         creator.nameType === 'Organizational'
                           ? 'ROR Identifier'
-                          : 'ORCID Identifier'
+                          : 'ORCID'
                       "
                       :error="
                         orcidErrors[`${cIndex}-0`] ||
@@ -1775,11 +1767,23 @@ const moveCreator = (index: number, direction: "up" | "down") => {
                   name="conference.conferenceName"
                   label="Conference name"
                   required
-                  class="md:col-span-2"
                 >
                   <UInput
                     v-model="state.conference.conferenceName"
                     placeholder="e.g., Association for Research in Vision and Ophthalmology Conference"
+                  />
+                </UFormField>
+
+                <UFormField
+                  name="conference.conferenceYear"
+                  label="Conference year"
+                  required
+                >
+                  <USelect
+                    v-model="state.conference.conferenceYear"
+                    class="w-full"
+                    :items="conferenceYearOptions"
+                    placeholder="Select a year"
                   />
                 </UFormField>
               </div>
@@ -1815,9 +1819,13 @@ const moveCreator = (index: number, direction: "up" | "down") => {
                 <UFormField
                   name="conference.conferenceStartDate"
                   label="Conference dates"
+<<<<<<< HEAD
                   required
                   :error="conferenceDateRangeError"
                   description="The start date also sets the conference year."
+=======
+                  description="The full date range of the conference or event"
+>>>>>>> staging-polish
                 >
                   <DateRangePicker
                     v-model="conferenceDateRange"

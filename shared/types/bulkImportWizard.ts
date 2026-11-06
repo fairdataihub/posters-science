@@ -1,8 +1,8 @@
+import * as z from "zod";
+
 /** Ordered steps for the bulk poster import wizard (extend this list as the flow grows). */
 export type BulkImportWizardStep =
-  | "setup"
   | "upload"
-  | "extraction"
   | "conference"
   | "license"
   | "submit"
@@ -19,19 +19,9 @@ export type BulkImportWizardStepDefinition = {
 
 export const BULK_IMPORT_WIZARD_STEPS: BulkImportWizardStepDefinition[] = [
   {
-    id: "setup",
-    label: "Batch name",
-    task: "Choose a name for your batch of posters. This name will apear in your dashboard so you can easily return to it later.",
-  },
-  {
     id: "upload",
     label: "Posters",
-    task: "Use the interface below to drag and drop or import all of your posters.",
-  },
-  {
-    id: "extraction",
-    label: "Poster details",
-    task: "Choose how much metadata we auto-fill from each poster PDF and whether to use an on-site review period (1–30 days) before Zenodo.",
+    task: "Name your batch, then drag and drop or import all of your posters. The name appears in your dashboard so you can return to the batch later.",
   },
   {
     id: "conference",
@@ -45,18 +35,18 @@ export const BULK_IMPORT_WIZARD_STEPS: BulkImportWizardStepDefinition[] = [
   },
   {
     id: "submit",
-    label: "AI metadata extraction",
+    label: "AI poster extraction",
     task: "Wait until all posters have had their metadata extracted. You can leave this page and come back later for large batches.",
   },
   {
     id: "review",
-    label: "Supplementary metadata",
+    label: "Review Posters",
     task: "Optionally review and add metadata for every poster in the batch below. You can skip this and edit posters individually on the next step.",
   },
   {
     id: "preview",
     label: "Poster previews",
-    task: "Preview each poster, use Edit metadata for any required fixes, then continue when you are ready to publish.",
+    task: "Preview each poster, use Edit poster for any required fixes, then continue when you are ready to publish.",
   },
   {
     id: "publish",
@@ -68,6 +58,17 @@ export const BULK_IMPORT_WIZARD_STEPS: BulkImportWizardStepDefinition[] = [
 export const BULK_IMPORT_NAME_MIN_LENGTH = 2;
 export const BULK_IMPORT_NAME_MAX_LENGTH = 120;
 
+/** Batch name rules for the upload step. */
+export const bulkImportNameSchema = z
+  .string()
+  .trim()
+  .min(BULK_IMPORT_NAME_MIN_LENGTH, {
+    message: `Batch name must be at least ${BULK_IMPORT_NAME_MIN_LENGTH} characters`,
+  })
+  .max(BULK_IMPORT_NAME_MAX_LENGTH, {
+    message: `Batch name must be ${BULK_IMPORT_NAME_MAX_LENGTH} characters or fewer`,
+  });
+
 const BULK_IMPORT_WIZARD_STEP_SET = new Set<string>(
   BULK_IMPORT_WIZARD_STEPS.map((step) => step.id),
 );
@@ -76,6 +77,8 @@ export function normalizeBulkImportWizardStep(
   step: string | undefined | null,
 ): BulkImportWizardStep | undefined {
   if (!step) return undefined;
+  // Steps no longer in the wizard (e.g. the removed "setup" and "extraction"
+  // steps) return undefined, so callers fall back to the first step.
   if (BULK_IMPORT_WIZARD_STEP_SET.has(step)) {
     return step as BulkImportWizardStep;
   }

@@ -6,7 +6,6 @@ import relationTypes from "~/assets/data/relation-types.json";
 import resourceTypes from "~/assets/data/resource-types.json";
 import { isValidOrcidChecksum, validateOrcidExists } from "#shared/utils/orcid";
 import { normalizeDoi, validateDoi } from "#shared/utils/doi";
-import { validateConferenceDateRange } from "#shared/types/bulkImportConference";
 
 export { validateOrcidExists };
 
@@ -312,7 +311,13 @@ const suggestedLicenses = SUGGESTED_LICENSE_IDS.flatMap((id) => {
   return lic ? [{ label: lic.name, value: lic.licenseId }] : [];
 });
 
-export const LICENSE_OPTIONS_WITH_SUGGESTED = [
+// Typed loosely so select menus can use `value-key="value"` across label,
+// separator and license items.
+export const LICENSE_OPTIONS_WITH_SUGGESTED: {
+  type?: "label" | "separator";
+  label?: string;
+  value?: string;
+}[] = [
   { type: "label" as const, label: "Suggested" },
   ...suggestedLicenses,
   { type: "separator" as const },
@@ -626,12 +631,19 @@ export const posterResponseSchema = z.object({
   description: z.string().optional(),
   status: z.enum(["draft", "published"]).optional(),
   publishedAt: z.string().optional(),
+  automated: z.boolean().optional(),
   posterMetadata: schema.optional(),
   extractionJob: z
     .object({
       completed: z.boolean().optional(),
       status: z
-        .enum(["pending-extraction", "processing", "completed", "failed"])
+        .enum([
+          "pending-extraction",
+          "pending-thumbnail",
+          "processing",
+          "completed",
+          "failed",
+        ])
         .optional(),
       fileName: z.string().optional(),
       filePath: z.string().optional(),
@@ -825,39 +837,25 @@ const StrictFundingSchema = z
     },
   );
 
-const StrictConferenceSchema = z
-  .object({
-    conferenceName: z.string().min(1, { message: "Conference name is required" }),
-    conferenceLocation: z.string().optional(),
-    conferenceUri: z.string().optional().refine(isValidUrl, {
-      message: "Must be a valid URL (e.g. https://example.com)",
-    }),
-    conferenceIdentifier: z.string().optional(),
-    conferenceIdentifierType: z.string().optional(),
-    conferenceYear: z
-      .number()
-      .min(1000)
-      .max(9999, { message: "Conference year is required" }),
-    conferenceStartDate: z.string(),
-    conferenceEndDate: z.string(),
-    conferenceAcronym: z.string().optional(),
-    conferenceSeries: z.string().optional(),
-    presentedStartDate: z.string().optional(),
-    presentedEndDate: z.string().optional(),
-  })
-  .superRefine((data, ctx) => {
-    const range = validateConferenceDateRange(
-      data.conferenceStartDate,
-      data.conferenceEndDate,
-    );
-    if (!range.valid) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: range.message,
-        path: ["conferenceEndDate"],
-      });
-    }
-  });
+export const StrictConferenceSchema = z.object({
+  conferenceName: z.string().min(1, { message: "Conference name is required" }),
+  conferenceLocation: z.string().optional(),
+  conferenceUri: z.string().optional().refine(isValidUrl, {
+    message: "Must be a valid URL (e.g. https://example.com)",
+  }),
+  conferenceIdentifier: z.string().optional(),
+  conferenceIdentifierType: z.string().optional(),
+  conferenceYear: z
+    .number()
+    .min(1000)
+    .max(9999, { message: "Conference year is required" }),
+  conferenceStartDate: z.string(),
+  conferenceEndDate: z.string(),
+  conferenceAcronym: z.string().optional(),
+  conferenceSeries: z.string().optional(),
+  presentedStartDate: z.string().optional(),
+  presentedEndDate: z.string().optional(),
+});
 
 export const strictFormSchema = z.object({
   title: z.string().min(1, { message: "Title is required" }),
@@ -894,3 +892,10 @@ export const strictFormSchema = z.object({
 });
 
 export type StrictFormSchema = z.infer<typeof strictFormSchema>;
+
+/** Editor state before validation: the conference year may still be blank. */
+export type StrictFormState = Omit<StrictFormSchema, "conference"> & {
+  conference: Omit<StrictFormSchema["conference"], "conferenceYear"> & {
+    conferenceYear: number | undefined;
+  };
+};

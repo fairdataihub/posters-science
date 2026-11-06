@@ -4,7 +4,6 @@ import { applyBulkSubmissionMetadataToPosters } from "~~/server/utils/bulkImport
 import { ensurePostersScienceDiscoverRelatedIdentifier } from "~~/server/utils/postersScienceDiscoverRelatedIdentifier";
 import { getBulkPosterSubmissionJobRepository } from "~~/server/utils/bulkPosterSubmissionJobs";
 import type { BulkReviewPosterRow } from "~~/server/utils/bulkReviewWorkbookFill";
-import { normalizeBulkSubmissionExtractionMethod } from "#shared/types/bulkSubmission";
 import type { BulkImportSubmissionSummary } from "#shared/types/bulkImportLicenses";
 
 /**
@@ -102,8 +101,5 @@ export async function loadBulkReviewJobPosters(
     job,
     batchConference,
     orderedPosters,
-    extractionMethod: normalizeBulkSubmissionExtractionMethod(
-      job.extractionMethod,
-    ),
   };
 }

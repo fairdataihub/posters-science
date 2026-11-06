@@ -1,7 +1,3 @@
-import {
-  findBulkSubmissionJobForPoster,
-  gateBulkExtractedPosterMetadata,
-} from "~~/server/utils/bulkExtractionMetadataGate";
 import { ensurePostersScienceDiscoverRelatedIdentifier } from "~~/server/utils/postersScienceDiscoverRelatedIdentifier";
 
 export default defineEventHandler(async (event) => {
@@ -34,20 +30,6 @@ export default defineEventHandler(async (event) => {
   // Post-extraction housekeeping must never block status polling: if it fails,
   // still report the job's status (it is retried on the next poll / poster open).
   if (job.completed && job.posterId) {
-    try {
-      const bulkJob = await findBulkSubmissionJobForPoster(user.id, job.posterId);
-      if (bulkJob) {
-        await gateBulkExtractedPosterMetadata(
-          user.id,
-          job.posterId,
-          bulkJob.extractionMethod,
-          { jobId: bulkJob.id },
-        );
-      }
-    } catch (error) {
-      console.error("[poster/job] extraction-level gating failed:", error);
-    }
-
     try {
       const config = useRuntimeConfig(event);
       const siteEnv = config.siteEnv || config.public.siteEnv;

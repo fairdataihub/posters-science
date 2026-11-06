@@ -2,7 +2,6 @@ import type {
   BulkReviewColumnRequirement,
   BulkReviewWorkbookSheet,
 } from "#shared/bulkReviewWorkbookManifest";
-import type { BulkSubmissionExtractionMethod } from "#shared/types/bulkSubmission";
 
 /** One editable row, keyed by manifest fillKey. */
 export type BulkReviewGridRow = Record<string, string>;
@@ -17,6 +16,8 @@ export type BulkReviewGridColumn = {
   hint?: string;
   width?: number;
   wrapText?: boolean;
+  /** Semicolon-separated list, edited as badges. */
+  list?: boolean;
 };
 
 export type BulkReviewGridSheet = {
@@ -38,7 +39,6 @@ export type BulkReviewGridPoster = {
 };
 
 export type BulkReviewMetadataGrid = {
-  extractionMethod: BulkSubmissionExtractionMethod;
   posters: BulkReviewGridPoster[];
   sheets: BulkReviewGridSheet[];
 };

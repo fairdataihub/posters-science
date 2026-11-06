@@ -1,5 +1,3 @@
-export type BulkImportConferenceAttendance = "In-person" | "Online";
-
 /** Matches bulk import validation (stricter than poster.json 1000–9999). */
 export const CONFERENCE_YEAR_MIN = 1900;
 export const CONFERENCE_YEAR_MAX = 2100;
@@ -68,10 +66,6 @@ export function parseConferenceIsoDate(
   return date;
 }
 
-const MS_PER_DAY = 86_400_000;
-/** Longest span allowed between conference start and end (inclusive of both days). */
-export const CONFERENCE_DATE_RANGE_MAX_DAYS = 365;
-
 export function validateConferenceDateRange(
   startDate: string | undefined | null,
   endDate: string | undefined | null,
@@ -101,15 +95,6 @@ export function validateConferenceDateRange(
     return {
       valid: false,
       message: "Start date must be on or before the end date",
-    };
-  }
-
-  const spanDays = (end.getTime() - start.getTime()) / MS_PER_DAY;
-  if (spanDays > CONFERENCE_DATE_RANGE_MAX_DAYS) {
-    return {
-      valid: false,
-      message:
-        "Start and end dates must be within one year of each other (365 days or less)",
     };
   }
 
@@ -148,14 +133,6 @@ export function conferenceDateRangeFieldErrors(
   return { end: range.message };
 }
 
-export const BULK_IMPORT_CONFERENCE_ATTENDANCE_OPTIONS: {
-  label: string;
-  value: BulkImportConferenceAttendance;
-}[] = [
-  { label: "In-person", value: "In-person" },
-  { label: "Online", value: "Online" },
-];
-
 const ONLINE_CONFERENCE_LOCATION = "Online";
 
 function isOnlineConferenceLocation(value: string | undefined | null): boolean {
@@ -180,7 +157,6 @@ export type BulkImportConferenceMetadata = {
 export type BulkImportConferenceFormState = {
   conferenceName: string;
   conferenceYear: number | undefined;
-  conferenceAttendance: BulkImportConferenceAttendance | undefined;
   conferenceLocation: string;
   conferenceUri: string;
   conferenceIdentifier: string;
@@ -196,7 +172,6 @@ export function emptyBulkImportConferenceForm(): BulkImportConferenceFormState {
   return {
     conferenceName: "",
     conferenceYear: undefined,
-    conferenceAttendance: undefined,
     conferenceLocation: "",
     conferenceUri: "",
     conferenceIdentifier: "",
@@ -212,32 +187,7 @@ export function emptyBulkImportConferenceForm(): BulkImportConferenceFormState {
 export function bulkImportConferenceFormValid(
   form: BulkImportConferenceFormState,
 ): boolean {
-  const name = form.conferenceName.trim();
-  if (!name) return false;
-
-  const start = form.conferenceStartDate.trim();
-  if (!start) return false;
-
-  const year = conferenceYearFromStartDate(start);
-  if (year == null) return false;
-
-  const range = validateConferenceDateRange(
-    form.conferenceStartDate,
-    form.conferenceEndDate,
-  );
-  if (!range.valid) return false;
-
-  if (form.conferenceIdentifier.trim() && !form.conferenceIdentifierType.trim()) {
-    return false;
-  }
-  if (!form.conferenceAttendance) return false;
-  if (
-    form.conferenceAttendance === "In-person" &&
-    !form.conferenceLocation.trim()
-  ) {
-    return false;
-  }
-  return true;
+  return form.conferenceName.trim().length > 0 && form.conferenceYear != null;
 }
 
 export function bulkImportConferenceFromForm(
@@ -245,20 +195,21 @@ export function bulkImportConferenceFromForm(
 ): BulkImportConferenceMetadata | null {
   if (!bulkImportConferenceFormValid(form)) return null;
 
-  const year = conferenceYearFromStartDate(form.conferenceStartDate)!;
+  const year = form.conferenceYear!;
 
   const payload: BulkImportConferenceMetadata = {
     conferenceName: form.conferenceName.trim(),
     conferenceYear: year,
   };
 
-  if (form.conferenceAttendance === "Online") {
-    payload.conferenceLocation = ONLINE_CONFERENCE_LOCATION;
-  } else if (form.conferenceLocation.trim()) {
-    payload.conferenceLocation = form.conferenceLocation.trim();
+  const location = form.conferenceLocation.trim();
+  if (location) {
+    payload.conferenceLocation = isOnlineConferenceLocation(location)
+      ? ONLINE_CONFERENCE_LOCATION
+      : location;
   }
 
-  const optionalStringFields: (keyof BulkImportConferenceFormState)[] = [
+  const optionalStringFields = [
     "conferenceUri",
     "conferenceIdentifier",
     "conferenceIdentifierType",
@@ -267,7 +218,7 @@ export function bulkImportConferenceFromForm(
     "conferenceEndDate",
     "conferenceAcronym",
     "conferenceSeries",
-  ];
+  ] as const satisfies readonly (keyof BulkImportConferenceFormState)[];
 
   for (const key of optionalStringFields) {
     const value = form[key].trim();
@@ -287,17 +238,7 @@ export function applyBulkImportConferenceToForm(
 
   form.conferenceName = metadata.conferenceName ?? "";
   form.conferenceYear = metadata.conferenceYear;
-  const location = metadata.conferenceLocation ?? "";
-  if (isOnlineConferenceLocation(location)) {
-    form.conferenceAttendance = "Online";
-    form.conferenceLocation = "";
-  } else if (location.trim()) {
-    form.conferenceAttendance = "In-person";
-    form.conferenceLocation = location;
-  } else {
-    form.conferenceAttendance = undefined;
-    form.conferenceLocation = "";
-  }
+  form.conferenceLocation = metadata.conferenceLocation ?? "";
   form.conferenceUri = metadata.conferenceUri ?? "";
   form.conferenceIdentifier = metadata.conferenceIdentifier ?? "";
   form.conferenceIdentifierType = metadata.conferenceIdentifierType ?? "";
@@ -306,5 +247,6 @@ export function applyBulkImportConferenceToForm(
   form.conferenceEndDate = metadata.conferenceEndDate ?? "";
   form.conferenceAcronym = metadata.conferenceAcronym ?? "";
   form.conferenceSeries = metadata.conferenceSeries ?? "";
-  syncConferenceYearFromStartDate(form);
+  // Batches saved before the year had its own field only have dates.
+  if (form.conferenceYear == null) syncConferenceYearFromStartDate(form);
 }

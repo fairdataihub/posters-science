@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { strictIssueMessage } from "~/utils/strictIssueLabel";
 import type { BulkImportBatchItem } from "#shared/types/conferenceBulkImport";
-import type { BulkSubmissionExtractionMethod } from "#shared/types/bulkSubmission";
 import type { PosterResponse } from "@/utils/poster_schema";
 import { sharePosterEditPath } from "~/utils/sharePaths";
 import {
@@ -12,7 +11,6 @@ import {
 const props = defineProps<{
   items: BulkImportBatchItem[];
   bulkImportJobId: string | null;
-  extractionMethod: BulkSubmissionExtractionMethod;
   metadataRefreshKey?: number;
   retryingJobIds?: Set<string>;
 }>();
@@ -322,7 +320,7 @@ const posterPreviewMissing = computed(() => {
   if (!current?.imageUrl?.trim()) {
     const job = current?.extractionJob;
     if (job?.status === "pending-thumbnail") return false;
-    if (thumbnailPollGeneration.value[current.id]) return false;
+    if (current && thumbnailPollGeneration.value[current.id]) return false;
     return Boolean(
       !job ||
         job.completed ||
@@ -474,7 +472,7 @@ export type PreviewValidationGroup = {
   posterId: number;
   fileName: string;
   issues: string[];
-  editPath: string;
+  editPath: ReturnType<typeof sharePosterEditPath>;
 };
 
 /** Every invalid poster with all of its issues and a link to fix them. */
@@ -583,7 +581,7 @@ onUnmounted(() => {
         <p class="text-sm">
           {{ invalidMetadataItems.length }} of
           {{ reviewableItems.length }} poster(s) still need fixes before you can
-          continue. Use Edit metadata on each poster. The same required fields
+          continue. Use Edit poster on each poster. The same required fields
           as a single poster upload apply here.
         </p>
         <ul class="mt-3 max-h-40 space-y-1 overflow-y-auto text-sm">
@@ -696,7 +694,7 @@ onUnmounted(() => {
                 variant="soft"
                 size="sm"
                 icon="i-lucide-pencil-line"
-                label="Edit metadata"
+                label="Edit poster"
                 :to="editMetadataPath"
               />
             </div>

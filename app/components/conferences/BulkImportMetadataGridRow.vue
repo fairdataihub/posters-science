@@ -4,6 +4,7 @@ import type {
   BulkReviewGridRow,
 } from "#shared/types/bulkReviewMetadataGrid";
 import { vAutoGrow } from "~/utils/autoGrowTextarea";
+import BulkImportMetadataGridListCell from "~/components/conferences/BulkImportMetadataGridListCell.vue";
 
 /**
  * One editable row of the batch metadata grid. A separate component so typing
@@ -87,6 +88,17 @@ function onInput(fillKey: string, event: Event) {
           {{ choice }}
         </option>
       </select>
+      <BulkImportMetadataGridListCell
+        v-else-if="column.list"
+        :value="row[column.fillKey] ?? ''"
+        :data-cell="`${rowPos}:${colPos}`"
+        :style="cellStyle(column)"
+        :label="`${column.header}, ${posterName}`"
+        :item-noun="column.header.toLowerCase().replace(/s$/, '')"
+        @change="emit('cellInput', row, column.fillKey, $event)"
+        @keydown="emit('cellKeydown', $event, rowPos, colPos, false)"
+        @paste="emit('cellPaste', $event, rowPos, colPos)"
+      />
       <textarea
         v-else-if="column.wrapText"
         v-auto-grow

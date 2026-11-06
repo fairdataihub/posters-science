@@ -33,7 +33,6 @@ import {
 } from "~~/app/utils/poster_schema";
 import { conferenceYearFromStartDate } from "#shared/types/bulkImportConference";
 import prisma from "~~/server/utils/prisma";
-import type { BulkSubmissionExtractionMethod } from "#shared/types/bulkSubmission";
 import { posterIdsFromBulkSubmissionSummary } from "~~/server/utils/bulkImportDashboard";
 
 type RowValues = Record<string, string>;
@@ -143,7 +142,10 @@ function columnIndexByFillKey(
 
     if (sheetDef.name === BULK_REVIEW_WORKBOOK_SHEET_CREATORS) {
       const normalized = header.trim().toLowerCase();
-      if (normalized === "name identifier") {
+      if (
+        normalized === "name identifier" ||
+        normalized === "orcid identifier"
+      ) {
         indexByFillKey.set("name_identifier", col);
       } else if (
         normalized === "identifier scheme" ||
@@ -476,13 +478,13 @@ function parseLegacyOptionalSheets(
           header: "Affiliation name",
           fillKey: "affiliation_name",
           schemaPath: "",
-          tier: "minimal",
+          tier: "extracted",
         },
         {
           header: "Affiliation identifier",
           fillKey: "affiliation_identifier",
           schemaPath: "",
-          tier: "minimal",
+          tier: "extracted",
         },
         {
           header: "Affiliation order",
@@ -1380,7 +1382,10 @@ export async function importBulkReviewWorkbookFromBuffer(
   }
 
   const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(fileBuffer);
+  // exceljs declares its own global Buffer that Node's Buffer type no longer matches.
+  await workbook.xlsx.load(
+    fileBuffer as unknown as Parameters<ExcelJS.Xlsx["load"]>[0],
+  );
 
   const patches = parseWorkbookSheets(workbook, allowedPosterIds, issues);
 
@@ -1407,7 +1412,6 @@ export async function importBulkReviewWorkbookFromBuffer(
 export async function importBulkReviewGridRows(
   userId: string,
   jobSubmissionSummary: unknown,
-  _extractionMethod: BulkSubmissionExtractionMethod,
   sheets: Record<string, RowValues[]>,
 ): Promise<BulkReviewWorkbookImportResult> {
   const issues: BulkImportValidationIssue[] = [];

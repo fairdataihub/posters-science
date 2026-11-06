@@ -3,7 +3,6 @@ import {
   BULK_IMPORT_NAME_MIN_LENGTH,
 } from "#shared/types/bulkImportWizard";
 import type { CreateBulkPosterSubmissionJobBody } from "#shared/types/bulkPosterSubmissionJob";
-import { isBulkSubmissionExtractionMethod } from "#shared/types/bulkSubmission";
 import { getBulkPosterSubmissionJobRepository } from "~~/server/utils/bulkPosterSubmissionJobs";
 
 export default defineEventHandler(async (event) => {
@@ -21,22 +20,11 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  if (
-    body.extractionMethod &&
-    !isBulkSubmissionExtractionMethod(body.extractionMethod)
-  ) {
-    throw createError({
-      statusCode: 400,
-      statusMessage: "Invalid extraction method",
-    });
-  }
-
   const repository = getBulkPosterSubmissionJobRepository();
   const job = await repository.create({
     userId: session.user.id,
     name,
     managedConferenceId: body.managedConferenceId,
-    extractionMethod: body.extractionMethod,
   });
 
   return job;
