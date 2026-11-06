@@ -5,43 +5,48 @@ import {
   type BulkImportWizardStep,
 } from "#shared/types/bulkImportWizard";
 
-export type BulkImportWizardStepCompletion = {
-  upload: MaybeRefOrGetter<boolean>;
-  conference: MaybeRefOrGetter<boolean>;
-  license: MaybeRefOrGetter<boolean>;
-  /** All submission rows ready to import. */
-  submit: MaybeRefOrGetter<boolean>;
-  /** Batch submitted to the extraction pipeline. */
-  review: MaybeRefOrGetter<boolean>;
-  /** At least one poster finished extraction (preview step available). */
-  preview: MaybeRefOrGetter<boolean>;
-  /** Repository submit step (same as preview gate). */
-  publish: MaybeRefOrGetter<boolean>;
+/** Why a step cannot open right now, shown to the user as a toast. */
+export type BulkImportStepBlock = {
+  title: string;
+  description: string;
+  /** Open this step instead (e.g. a step that must be finished first). */
+  openInstead?: BulkImportWizardStep;
+};
+
+/**
+ * Everything one wizard step needs for navigation. Steps never name their
+ * neighbours: Continue and Back follow the order of BULK_IMPORT_WIZARD_STEPS,
+ * so reordering that list reorders the wizard.
+ */
+export type BulkImportStepHandlers = {
+  /** Done enough that the following step can open. */
+  isComplete: () => boolean;
+  /** Return a block to stop this step from opening. */
+  guard?: () => BulkImportStepBlock | null;
+  /** Runs each time the step opens, including when a job is resumed on it. */
+  open?: () => void | Promise<void>;
+  /** Validates and saves when leaving forward. Return false to stay. */
+  save?: () => boolean | Promise<boolean>;
 };
 
 function stepIndex(step: BulkImportWizardStep) {
   return BULK_IMPORT_WIZARD_STEPS.findIndex((item) => item.id === step);
 }
 
-function readCompletion(
-  source: MaybeRefOrGetter<boolean>,
-): boolean {
-  return toValue(source);
-}
-
-export function useBulkImportWizard(
-  completion: BulkImportWizardStepCompletion,
-  options?: {
-    initialStep?: BulkImportWizardStep;
-    initialImportName?: string;
-    initialJobId?: string | null;
-  },
-) {
+export function useBulkImportWizard(options: {
+  initialStep?: BulkImportWizardStep;
+  initialImportName?: string;
+  initialJobId?: string | null;
+  /** Called after a step opens (not on resume), e.g. to save it on the job. */
+  onStepOpened?: (step: BulkImportWizardStep) => void;
+  /** Called when a guard stops a step from opening. */
+  onStepBlocked?: (block: BulkImportStepBlock) => void;
+}) {
   const currentStep = ref<BulkImportWizardStep>(
-    options?.initialStep ?? "upload",
+    options.initialStep ?? "upload",
   );
-  const importName = ref(options?.initialImportName ?? "");
-  const jobId = ref<string | null>(options?.initialJobId ?? null);
+  const importName = ref(options.initialImportName ?? "");
+  const jobId = ref<string | null>(options.initialJobId ?? null);
 
   const importNameTrimmed = computed(() => importName.value.trim());
 
@@ -60,33 +65,27 @@ export function useBulkImportWizard(
 
   const currentStepNumber = computed(() => stepIndex(currentStep.value) + 1);
 
+  const handlers = shallowRef<
+    Partial<Record<BulkImportWizardStep, BulkImportStepHandlers>>
+  >({});
+
+  /** Register every step's handlers (call once, during setup). */
+  function defineStepHandlers(
+    stepHandlers: Record<BulkImportWizardStep, BulkImportStepHandlers>,
+  ) {
+    handlers.value = stepHandlers;
+  }
+
   function isStepComplete(step: BulkImportWizardStep): boolean {
-    switch (step) {
-      case "upload":
-        return setupSaved.value && readCompletion(completion.upload);
-      case "conference":
-        return readCompletion(completion.conference);
-      case "license":
-        return readCompletion(completion.license);
-      case "submit":
-        return readCompletion(completion.submit);
-      case "review":
-        return readCompletion(completion.review);
-      case "preview":
-        return readCompletion(completion.preview);
-      case "publish":
-        return readCompletion(completion.publish);
-    }
+    return handlers.value[step]?.isComplete() ?? false;
   }
 
   function highestCompletedStepIndex() {
     let max = -1;
     for (let i = 0; i < wizardSteps.length; i++) {
-      const step = wizardSteps[i]!.id;
-      if (isStepComplete(step)) {
-        max = i;
-      }
+      if (isStepComplete(wizardSteps[i]!.id)) max = i;
     }
+
     return max;
   }
 
@@ -105,6 +104,7 @@ export function useBulkImportWizard(
     const idx = stepIndex(step);
     const currentIdx = stepIndex(currentStep.value);
     if (idx < currentIdx) return true;
+
     return isStepComplete(step) && currentIdx > idx;
   }
 
@@ -112,20 +112,67 @@ export function useBulkImportWizard(
     return step === currentStep.value;
   }
 
-  function goToStep(
-    step: BulkImportWizardStep,
-    hooks?: { beforeEnter?: (step: BulkImportWizardStep) => void },
-  ) {
-    if (!canGoToStep(step)) return false;
+  /** True while a step is saving or opening; blocks a second navigation. */
+  const stepTransitionPending = ref(false);
 
-    hooks?.beforeEnter?.(step);
-    currentStep.value = step;
+  /**
+   * The one way to change step. Moving forward saves the current step first;
+   * then the target's guard and completion gates run, and its open handler.
+   */
+  async function openStep(target: BulkImportWizardStep): Promise<boolean> {
+    if (stepTransitionPending.value || target === currentStep.value) {
+      return false;
+    }
+
+    stepTransitionPending.value = true;
+    let opened: BulkImportWizardStep | null = null;
+    try {
+      const from = currentStep.value;
+      const forward = stepIndex(target) > stepIndex(from);
+      if (forward) {
+        const saved = (await handlers.value[from]?.save?.()) ?? true;
+        if (!saved) return false;
+      }
+
+      const block = handlers.value[target]?.guard?.();
+      if (block) {
+        options.onStepBlocked?.(block);
+        if (!block.openInstead || block.openInstead === from) return false;
+        target = block.openInstead;
+      }
+
+      if (!canGoToStep(target)) return false;
+
+      currentStep.value = target;
+      opened = target;
+    } finally {
+      stepTransitionPending.value = false;
+    }
+
+    options.onStepOpened?.(opened);
+    await handlers.value[opened]?.open?.();
+
     return true;
   }
 
-  /** Restore saved step when resuming a job (skips forward-navigation gates). */
-  function restoreWizardStep(step: BulkImportWizardStep) {
+  /** Save the current step and open the one after it. */
+  function continueStep() {
+    const next = wizardSteps[stepIndex(currentStep.value) + 1];
+
+    return next ? openStep(next.id) : Promise.resolve(false);
+  }
+
+  /** Open the step before the current one (no save). */
+  function backStep() {
+    const previous = wizardSteps[stepIndex(currentStep.value) - 1];
+
+    return previous ? openStep(previous.id) : Promise.resolve(false);
+  }
+
+  /** Resume a job on its saved step: skips save, guards and gates. */
+  async function resumeStep(step: BulkImportWizardStep) {
     currentStep.value = step;
+    await handlers.value[step]?.open?.();
   }
 
   const headerTitle = computed(() =>
@@ -145,8 +192,12 @@ export function useBulkImportWizard(
     canGoToStep,
     stepIsDone,
     stepIsActive,
-    goToStep,
-    restoreWizardStep,
+    defineStepHandlers,
+    stepTransitionPending,
+    openStep,
+    continueStep,
+    backStep,
+    resumeStep,
     BULK_IMPORT_NAME_MAX_LENGTH,
     BULK_IMPORT_NAME_MIN_LENGTH,
   };

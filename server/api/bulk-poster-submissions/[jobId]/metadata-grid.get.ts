@@ -51,6 +51,7 @@ export default defineEventHandler(async (event): Promise<BulkReviewMetadataGrid>
         hint: column.hint,
         width: column.width,
         wrapText: column.wrapText,
+        list: column.list,
       })),
       rows:
         sheetRows.find((entry) => entry.sheetName === sheetDef.name)?.rows ?? [],

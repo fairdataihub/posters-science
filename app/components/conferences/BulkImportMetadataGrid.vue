@@ -291,20 +291,25 @@ function isMissingRequired(
   column: BulkReviewGridColumn,
   row: BulkReviewGridRow,
 ) {
-  if (column.requirement !== "required") return false;
-  if (currentSheet.value?.name === CREATORS_SHEET) {
-    if (column.fillKey === "family_name" && row.name_type === "Organizational") {
-      return false;
-    }
-  }
-  return !(row[column.fillKey] ?? "").trim();
+  const sheetName = currentSheet.value?.name;
+
+  return sheetName ? cellMissingRequired(sheetName, column, row) : false;
 }
 
+/**
+ * An empty row on a list sheet (creators, funding, identifiers, ...) is
+ * dropped on save, so its required cells are not flagged.
+ */
 function isBlankRepeatableRow(sheetName: string, row: BulkReviewGridRow) {
   if (sheetName === CREATORS_SHEET) {
     return !row.given_name?.trim() && !row.family_name?.trim();
   }
-  return false;
+  const sheet = grid.value?.sheets.find((item) => item.name === sheetName);
+  if (!sheet?.repeatable) return false;
+
+  return sheet.columns.every(
+    (column) => column.system || !(row[column.fillKey] ?? "").trim(),
+  );
 }
 
 function cellMissingRequired(
@@ -313,12 +318,15 @@ function cellMissingRequired(
   row: BulkReviewGridRow,
 ) {
   if (column.requirement !== "required") return false;
-  if (sheetName === CREATORS_SHEET) {
-    if (column.fillKey === "family_name" && row.name_type === "Organizational") {
-      return false;
-    }
-    if (isBlankRepeatableRow(sheetName, row)) return false;
+  if (
+    sheetName === CREATORS_SHEET &&
+    column.fillKey === "family_name" &&
+    row.name_type === "Organizational"
+  ) {
+    return false;
   }
+  if (isBlankRepeatableRow(sheetName, row)) return false;
+
   return !(row[column.fillKey] ?? "").trim();
 }
 

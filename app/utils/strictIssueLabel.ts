@@ -1,6 +1,6 @@
 /**
  * Turn strict-form validation paths (e.g. "creators.0.nameIdentifiers.0.nameIdentifier")
- * into readable labels ("Creator 1 ORCID identifier") for user-facing messages.
+ * into readable labels ("Creator 1 ORCID") for user-facing messages.
  */
 
 const LIST_ITEM_LABELS: Record<string, string> = {
@@ -23,7 +23,7 @@ const FIELD_LABELS: Record<string, string> = {
   familyName: "family name",
   name: "name",
   nameType: "name type",
-  nameIdentifier: "ORCID identifier",
+  nameIdentifier: "ORCID",
   nameIdentifierScheme: "identifier scheme",
   affiliationIdentifier: "ROR identifier",
   funderName: "name",
@@ -103,7 +103,7 @@ function lastFieldLabel(path: string): string {
   return (FIELD_LABELS[last] ?? last).toLowerCase();
 }
 
-/** "Creator 1 ORCID identifier must be a valid URL (…)" */
+/** "Creator 1 ORCID must be a valid URL (…)" */
 export function strictIssueMessage(
   path: string | undefined,
   message: string,
