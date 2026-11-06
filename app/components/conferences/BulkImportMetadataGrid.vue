@@ -49,7 +49,10 @@ const loading = ref(false);
 const saving = ref(false);
 const loadError = ref<string | null>(null);
 /** A validation issue tagged with the grid tab (or other area) where it is fixed. */
-type GridValidationIssue = BulkImportValidationIssue & { sheet?: string };
+type GridValidationIssue = BulkImportValidationIssue & {
+  sheet?: string;
+  posterId?: string;
+};
 
 const saveIssues = ref<GridValidationIssue[]>([]);
 const validationModalOpen = ref(false);
@@ -365,6 +368,7 @@ function collectGridRequiredIssues(): GridValidationIssue[] {
           sheet: sheet.name,
           rowNumber: rowIndex + 1,
           field: column.fillKey,
+          posterId: row.poster_id,
         });
       }
     });
@@ -389,6 +393,8 @@ async function collectStrictFormIssues(): Promise<GridValidationIssue[]> {
           message: `${label}: ${detail}`,
           severity: "error",
           sheet: sheetForSchemaPath(issue.path),
+          field: fillKeyForSchemaPath(issue.path),
+          posterId: String(result.posterId),
         });
       }
     }
@@ -421,6 +427,8 @@ function sheetForSchemaPath(path: string | undefined): string {
     case "language":
     case "domain":
       return "Additional information";
+    case "identifiers":
+      return "Poster identifiers";
     case "relatedIdentifiers":
       return "Related resources";
     case "fundingReferences":
@@ -439,6 +447,43 @@ function sheetForSchemaPath(path: string | undefined): string {
     default:
       return OTHER_GROUP;
   }
+}
+
+/** Grid column for the last part of a strictFormSchema path, when there is one. */
+const SCHEMA_FIELD_FILL_KEYS: Record<string, string> = {
+  title: "title",
+  description: "description",
+  subjects: "keywords",
+  givenName: "given_name",
+  familyName: "family_name",
+  identifier: "identifier",
+  identifierType: "identifier_type",
+  funderName: "funder_name",
+  caption: "caption",
+};
+
+function fillKeyForSchemaPath(path: string | undefined): string | undefined {
+  const parts = (path ?? "").split(".").filter((part) => !/^\d+$/.test(part));
+  const leaf = parts[parts.length - 1] ?? "";
+  return SCHEMA_FIELD_FILL_KEYS[leaf];
+}
+
+/**
+ * Drop server issues the grid already reports for the same poster, tab and
+ * column (the two checks word the same problem differently).
+ */
+function withoutGridDuplicates(
+  strictIssues: GridValidationIssue[],
+  gridIssues: GridValidationIssue[],
+): GridValidationIssue[] {
+  const reported = new Set(
+    gridIssues.map((issue) => `${issue.posterId}|${issue.sheet}|${issue.field}`),
+  );
+  return strictIssues.filter(
+    (issue) =>
+      !issue.field ||
+      !reported.has(`${issue.posterId}|${issue.sheet}|${issue.field}`),
+  );
 }
 
 /** Server issues mention the sheet as: Row 3 on "Funding": … */
@@ -530,6 +575,20 @@ async function collectAllValidationIssues(options: {
   let savedPosterIds: number[] = [];
   let saveAttempted = false;
 
+  // Everything saves as entered except an empty title: titles are shown across
+  // the site, so the server keeps the old one, and the reload after saving would
+  // put it back over the user's edit. Don't save; leave the edits and show why.
+  const emptyTitleIssues = collectGridRequiredIssues().filter(
+    (issue) => issue.field === "title",
+  );
+  if (emptyTitleIssues.length > 0) {
+    return {
+      issues: dedupeValidationIssues(emptyTitleIssues),
+      savedPosterIds,
+      saveAttempted,
+    };
+  }
+
   if (options.attemptSave && dirty.value) {
     saveAttempted = true;
     const sheets: Record<string, BulkReviewGridRow[]> = {};
@@ -547,10 +606,11 @@ async function collectAllValidationIssues(options: {
     }
   }
 
-  issues.push(...collectGridRequiredIssues());
+  const gridIssues = collectGridRequiredIssues();
+  issues.push(...gridIssues);
 
   const strictIssues = await collectStrictFormIssues();
-  issues.push(...strictIssues);
+  issues.push(...withoutGridDuplicates(strictIssues, gridIssues));
 
   return {
     issues: dedupeValidationIssues(issues.filter((issue) => issue.severity === "error")),
