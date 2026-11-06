@@ -362,7 +362,8 @@ async function fetchZenodoAccountInfo(
     profile?: { full_name?: string; affiliations?: string };
   } | undefined;
 
-  const username = current?.username?.trim();
+  if (!current) return null;
+  const username = current.username?.trim();
   if (!username) return null;
 
   const fullName = current.profile?.full_name?.trim();

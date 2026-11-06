@@ -312,7 +312,13 @@ const suggestedLicenses = SUGGESTED_LICENSE_IDS.flatMap((id) => {
   return lic ? [{ label: lic.name, value: lic.licenseId }] : [];
 });
 
-export const LICENSE_OPTIONS_WITH_SUGGESTED = [
+// Typed loosely so select menus can use `value-key="value"` across label,
+// separator and license items.
+export const LICENSE_OPTIONS_WITH_SUGGESTED: {
+  type?: "label" | "separator";
+  label?: string;
+  value?: string;
+}[] = [
   { type: "label" as const, label: "Suggested" },
   ...suggestedLicenses,
   { type: "separator" as const },
@@ -626,12 +632,19 @@ export const posterResponseSchema = z.object({
   description: z.string().optional(),
   status: z.enum(["draft", "published"]).optional(),
   publishedAt: z.string().optional(),
+  automated: z.boolean().optional(),
   posterMetadata: schema.optional(),
   extractionJob: z
     .object({
       completed: z.boolean().optional(),
       status: z
-        .enum(["pending-extraction", "processing", "completed", "failed"])
+        .enum([
+          "pending-extraction",
+          "pending-thumbnail",
+          "processing",
+          "completed",
+          "failed",
+        ])
         .optional(),
       fileName: z.string().optional(),
       filePath: z.string().optional(),
@@ -894,3 +907,10 @@ export const strictFormSchema = z.object({
 });
 
 export type StrictFormSchema = z.infer<typeof strictFormSchema>;
+
+/** Editor state before validation: the conference year may still be blank. */
+export type StrictFormState = Omit<StrictFormSchema, "conference"> & {
+  conference: Omit<StrictFormSchema["conference"], "conferenceYear"> & {
+    conferenceYear: number | undefined;
+  };
+};

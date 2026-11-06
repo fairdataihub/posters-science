@@ -52,8 +52,8 @@ export async function appendPosterDownloadPackage(
   const meta = poster.posterMetadata;
   const posterJson = meta
     ? buildPosterJson(meta, {
-        title: poster.title,
-        description: poster.description,
+        title: poster.title ?? undefined,
+        description: poster.description ?? undefined,
       })
     : { title: poster.title, description: poster.description };
   const posterJsonBuffer = Buffer.from(

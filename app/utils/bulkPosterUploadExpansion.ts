@@ -5,10 +5,6 @@ import {
   posterFileRejectionReason,
 } from "#shared/utils/posterFile";
 
-/** Avoid loading huge archives in the browser during bulk import. */
-export const MAX_BULK_POSTER_ZIP_BYTES = 200 * 1024 * 1024;
-export const MAX_BULK_POSTER_ZIP_SIZE_LABEL = "200MB";
-
 export type BulkPosterUploadSkip = {
   name: string;
   reason: string;
@@ -34,43 +30,103 @@ import {
   posterUploadPathHint,
 } from "#shared/utils/bulkPosterUploadFileName";
 
-async function posterFilesFromZip(file: File): Promise<{
+/** Archive extensions accepted for bulk upload. ZIP uses JSZip; the rest use libarchive.js. */
+const BULK_POSTER_ARCHIVE_EXTENSIONS = [
+  ".zip",
+  ".7z",
+  ".rar",
+  ".tar",
+  ".tar.gz",
+  ".tgz",
+];
+
+export function isBulkPosterArchive(name: string): boolean {
+  const lower = name.toLowerCase();
+
+  return BULK_POSTER_ARCHIVE_EXTENSIONS.some((ext) => lower.endsWith(ext));
+}
+
+type ArchiveEntry = { path: string; blob: Blob };
+
+async function zipArchiveEntries(file: File): Promise<ArchiveEntry[]> {
+  const zip = await JSZip.loadAsync(file);
+  const entries: ArchiveEntry[] = [];
+  for (const [path, entry] of Object.entries(zip.files)) {
+    if (entry.dir || shouldSkipArchivePath(path)) continue;
+    entries.push({ path, blob: await entry.async("blob") });
+  }
+
+  return entries;
+}
+
+class EncryptedArchiveError extends Error {}
+
+/** 7z, RAR and TAR archives. The WASM reader loads only when one is added. */
+async function libarchiveEntries(file: File): Promise<ArchiveEntry[]> {
+  const [{ Archive }, { default: workerUrl }] = await Promise.all([
+    import("libarchive.js"),
+    import("libarchive.js/dist/worker-bundle.js?worker&url"),
+  ]);
+  Archive.init({
+    getWorker: () => new Worker(workerUrl, { type: "module" }),
+  });
+
+  const archive = await Archive.open(file);
+  try {
+    if (await archive.hasEncryptedData()) throw new EncryptedArchiveError();
+    await archive.extractFiles();
+    const extracted = (await archive.getFilesArray()) as {
+      file: File;
+      path: string;
+    }[];
+
+    return extracted
+      .map(({ file: entry, path }) => ({
+        path: `${path}${entry.name}`,
+        blob: entry,
+      }))
+      .filter(({ path }) => !shouldSkipArchivePath(path));
+  } finally {
+    await archive.close();
+  }
+}
+
+async function posterFilesFromArchive(file: File): Promise<{
   files: File[];
   skipped: BulkPosterUploadSkip[];
 }> {
   const skipped: BulkPosterUploadSkip[] = [];
 
-  if (file.size > MAX_BULK_POSTER_ZIP_BYTES) {
+  let entries: ArchiveEntry[];
+  try {
+    entries = file.name.toLowerCase().endsWith(".zip")
+      ? await zipArchiveEntries(file)
+      : await libarchiveEntries(file);
+  } catch (error) {
     return {
       files: [],
       skipped: [
         {
           name: file.name,
-          reason: `ZIP is too large. Maximum size is ${MAX_BULK_POSTER_ZIP_SIZE_LABEL}.`,
+          reason:
+            error instanceof EncryptedArchiveError
+              ? "Password-protected archives are not supported."
+              : "Could not read archive.",
         },
       ],
-    };
-  }
-
-  let zip: JSZip;
-  try {
-    zip = await JSZip.loadAsync(file);
-  } catch {
-    return {
-      files: [],
-      skipped: [{ name: file.name, reason: "Could not read ZIP file." }],
     };
   }
 
   const files: File[] = [];
   const usedNames = new Set<string>();
 
-  for (const [path, entry] of Object.entries(zip.files)) {
-    if (entry.dir || shouldSkipArchivePath(path)) continue;
-
+  for (const { path, blob } of entries) {
     const uploadName = dedupePosterUploadBaseName(path, usedNames);
-    const blob = await entry.async("blob");
-    const type = blob.type || posterMimeForFileName(uploadName);
+    // libarchive labels every entry application/octet-stream.
+    const type =
+      blob.type && blob.type !== "application/octet-stream"
+        ? blob.type
+        : posterMimeForFileName(uploadName);
     const rejection = posterFileRejectionReason({
       name: uploadName,
       type,
@@ -93,7 +149,7 @@ async function posterFilesFromZip(file: File): Promise<{
   if (files.length === 0 && skipped.length === 0) {
     skipped.push({
       name: file.name,
-      reason: "ZIP contained no accepted poster PDF or image files.",
+      reason: "Archive contained no accepted poster PDF or image files.",
     });
   }
 
@@ -121,9 +177,15 @@ export { posterUploadBaseName, posterUploadPathHint };
 
 export const BULK_POSTER_UPLOAD_ACCEPT = [
   POSTER_FILE_ACCEPT,
-  ".zip",
+  ...BULK_POSTER_ARCHIVE_EXTENSIONS,
   "application/zip",
   "application/x-zip-compressed",
+  "application/x-7z-compressed",
+  "application/vnd.rar",
+  "application/x-rar-compressed",
+  "application/x-tar",
+  "application/gzip",
+  "application/x-gzip",
 ].join(",");
 
 async function readAllDirectoryEntries(
@@ -181,7 +243,7 @@ async function filesFromDirectoryEntry(
   return files;
 }
 
-/** Reads flat files, ZIP archives, and dropped folders from a drag-and-drop event. */
+/** Reads flat files, archives, and dropped folders from a drag-and-drop event. */
 export async function readBulkPosterUploadDataTransfer(
   dataTransfer: DataTransfer,
 ): Promise<File[]> {
@@ -232,7 +294,7 @@ export async function readBulkPosterUploadDataTransfer(
 }
 
 /**
- * Expands a file-picker or drop selection into poster files (ZIP → many files,
+ * Expands a file-picker or drop selection into poster files (archives → many files,
  * folder picks → unique names from relative paths).
  */
 export async function expandBulkPosterUploadSelection(files: File[]): Promise<{
@@ -244,13 +306,13 @@ export async function expandBulkPosterUploadSelection(files: File[]): Promise<{
   const usedNames = new Set<string>();
 
   for (const file of files) {
-    if (file.name.toLowerCase().endsWith(".zip")) {
-      const fromZip = await posterFilesFromZip(file);
-      for (const poster of fromZip.files) {
+    if (isBulkPosterArchive(file.name)) {
+      const fromArchive = await posterFilesFromArchive(file);
+      for (const poster of fromArchive.files) {
         usedNames.add(poster.name.toLowerCase());
       }
-      posters.push(...fromZip.files);
-      skipped.push(...fromZip.skipped);
+      posters.push(...fromArchive.files);
+      skipped.push(...fromArchive.skipped);
       continue;
     }
 

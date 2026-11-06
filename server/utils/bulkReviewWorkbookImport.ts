@@ -1379,7 +1379,10 @@ export async function importBulkReviewWorkbookFromBuffer(
   }
 
   const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(fileBuffer);
+  // exceljs declares its own global Buffer that Node's Buffer type no longer matches.
+  await workbook.xlsx.load(
+    fileBuffer as unknown as Parameters<ExcelJS.Xlsx["load"]>[0],
+  );
 
   const patches = parseWorkbookSheets(workbook, allowedPosterIds, issues);
 

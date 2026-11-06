@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { NavigationMenuItem } from "@nuxt/ui";
+import type { DropdownMenuItem, NavigationMenuItem } from "@nuxt/ui";
 
 const { clear, user } = useUserSession();
 const feedbackOpen = useState("feedbackOpen", () => false);
@@ -68,7 +68,7 @@ const headerItems = computed<NavigationMenuItem[]>(() => [
   // },
 ]);
 
-const profileDropdownItems = computed(() => [
+const profileDropdownItems = computed((): DropdownMenuItem[][] => [
   [
     {
       label: `${user?.value?.givenName} ${user?.value?.familyName}`,

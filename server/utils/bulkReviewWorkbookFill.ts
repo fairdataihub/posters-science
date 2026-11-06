@@ -1,6 +1,10 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import type { Poster, PosterMetadata, ExtractionJob } from "@prisma/client";
+import type {
+  Poster,
+  PosterMetadata,
+  ExtractionJob,
+} from "#shared/generated/client";
 import ExcelJS from "exceljs";
 import {
   BULK_IMPORT_METADATA_REVIEW_TEMPLATE_RELATIVE_PATH,
@@ -401,7 +405,10 @@ export async function buildBulkReviewWorkbookBuffer(
   );
   const templateBytes = await readFile(templatePath);
   const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(templateBytes);
+  // exceljs declares its own global Buffer that Node's Buffer type no longer matches.
+  await workbook.xlsx.load(
+    templateBytes as unknown as Parameters<ExcelJS.Xlsx["load"]>[0],
+  );
 
   for (const payload of sheetPayloads) {
     const sheet = workbook.getWorksheet(payload.sheetName);

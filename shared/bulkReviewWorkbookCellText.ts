@@ -13,7 +13,7 @@ export function bulkReviewWorkbookCellText(
     return String(value);
   }
   if (typeof value === "object") {
-    const record = value as Record<string, unknown>;
+    const record = value as unknown as Record<string, unknown>;
     if (Array.isArray(record.richText)) {
       return record.richText
         .map((part) => {

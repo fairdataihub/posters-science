@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import {
   type CalendarDate,
+  type DateValue,
   DateFormatter,
   getLocalTimeZone,
+  toCalendarDate,
 } from "@internationalized/date";
 
 defineOptions({ inheritAttrs: false });
@@ -19,8 +21,17 @@ const props = defineProps<{
 const df = new DateFormatter("en-US", { dateStyle: "medium" });
 const isOpen = ref(false);
 
-function onSelect(value: CalendarDate) {
-  modelValue.value = value;
+function onSelect(
+  value:
+    | DateValue
+    | { start?: DateValue; end?: DateValue }
+    | DateValue[]
+    | null
+    | undefined,
+) {
+  // Single-date calendar: range and multiple values never arrive here.
+  if (Array.isArray(value) || (value && !("calendar" in value))) return;
+  modelValue.value = value ? toCalendarDate(value) : undefined;
   isOpen.value = false;
 }
 

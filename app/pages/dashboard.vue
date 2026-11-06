@@ -171,7 +171,7 @@ const inProgressDashboardItems = computed(() => {
     inProgressPosters.value.map((poster) => [poster.id, poster]),
   );
 
-  return inProgressFeed.value.flatMap((entry) => {
+  return inProgressFeed.value.flatMap((entry): ActiveTabListItem[] => {
     if (entry.type === "bulkSubmission") {
       const bulk = bulkById.get(entry.bulkSubmissionId);
       if (!bulk) return [];

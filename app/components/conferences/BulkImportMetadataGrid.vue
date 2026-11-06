@@ -287,7 +287,10 @@ function cellWidthStyle(column: BulkReviewGridColumn) {
   return { width: "100%", minWidth: `${columnWidthPx(column)}px` };
 }
 
-function isMissingRequired(column: BulkReviewGridColumn, row: EditableRow) {
+function isMissingRequired(
+  column: BulkReviewGridColumn,
+  row: BulkReviewGridRow,
+) {
   if (column.requirement !== "required") return false;
   if (currentSheet.value?.name === CREATORS_SHEET) {
     if (column.fillKey === "family_name" && row.name_type === "Organizational") {
@@ -1063,7 +1066,7 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
             label="Save metadata"
             :loading="saving"
             :disabled="!dirty || disabled"
-            @click="save"
+            @click="save()"
           />
         </div>
       </div>

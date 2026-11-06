@@ -239,7 +239,7 @@ export function bulkImportConferenceFromForm(
     ? ONLINE_CONFERENCE_LOCATION
     : location;
 
-  const optionalStringFields: (keyof BulkImportConferenceFormState)[] = [
+  const optionalStringFields = [
     "conferenceUri",
     "conferenceIdentifier",
     "conferenceIdentifierType",
@@ -248,7 +248,7 @@ export function bulkImportConferenceFromForm(
     "conferenceEndDate",
     "conferenceAcronym",
     "conferenceSeries",
-  ];
+  ] as const satisfies readonly (keyof BulkImportConferenceFormState)[];
 
   for (const key of optionalStringFields) {
     const value = form[key].trim();
