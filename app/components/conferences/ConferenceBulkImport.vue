@@ -5,10 +5,12 @@ import {
   MAX_POSTER_FILE_SIZE_LABEL,
   posterFileRejectionReason,
 } from "#shared/utils/posterFile";
-import { posterUploadBaseName, posterUploadPathHint } from "#shared/utils/bulkPosterUploadFileName";
+import {
+  posterUploadBaseName,
+  posterUploadPathHint,
+} from "#shared/utils/bulkPosterUploadFileName";
 import {
   applyBulkImportConferenceToForm,
-  BULK_IMPORT_CONFERENCE_ATTENDANCE_OPTIONS,
   bulkImportConferenceFormValid,
   bulkImportConferenceFromForm,
   conferenceDateRangeFieldErrors,
@@ -422,10 +424,10 @@ const conferenceForm = reactive<BulkImportConferenceFormState>(
 );
 
 const { conferenceDateRange } = useConferenceDateRangePicker({
-    startDate: toRef(conferenceForm, "conferenceStartDate"),
-    endDate: toRef(conferenceForm, "conferenceEndDate"),
-    conferenceYear: toRef(conferenceForm, "conferenceYear"),
-  });
+  startDate: toRef(conferenceForm, "conferenceStartDate"),
+  endDate: toRef(conferenceForm, "conferenceEndDate"),
+  conferenceYear: toRef(conferenceForm, "conferenceYear"),
+});
 const conferenceStepAttempted = ref(false);
 const conferenceStepSaving = ref(false);
 const licenseStepAttempted = ref(false);
@@ -449,15 +451,6 @@ watch(
     if (!identifier.trim()) {
       conferenceForm.conferenceIdentifierType = "";
       conferenceForm.conferenceSchemaUri = "";
-    }
-  },
-);
-
-watch(
-  () => conferenceForm.conferenceAttendance,
-  (attendance) => {
-    if (attendance === "Online") {
-      conferenceForm.conferenceLocation = "";
     }
   },
 );
@@ -492,18 +485,10 @@ const conferenceIdentifierTypeError = computed(() =>
   ),
 );
 
-const conferenceAttendanceError = computed(() =>
-  conferenceFieldError(
-    !conferenceForm.conferenceAttendance,
-    "Select whether the conference is in-person or online",
-  ),
-);
-
 const conferenceLocationError = computed(() =>
   conferenceFieldError(
-    conferenceForm.conferenceAttendance === "In-person" &&
-      !conferenceForm.conferenceLocation.trim(),
-    "Conference location is required for in-person conferences",
+    !conferenceForm.conferenceLocation.trim(),
+    "Conference location is required",
   ),
 );
 
@@ -720,10 +705,7 @@ async function ensureResumeJobLoaded() {
           awaitingEmbargoRelease?: boolean;
           completedAt?: string | null;
         }>(`/api/bulk-poster-submissions/${job.id}/completion`);
-        if (
-          !completion.awaitingEmbargoRelease &&
-          completion.completedAt
-        ) {
+        if (!completion.awaitingEmbargoRelease && completion.completedAt) {
           await navigateTo(shareBulkCompletionPath(job.id));
           return;
         }
@@ -901,9 +883,7 @@ async function refreshStagedPostersFromStorage() {
 async function navigateToWizardStep(step: BulkImportWizardStep) {
   if (
     hasUnsubmittedStagedPosters.value &&
-    (step === "review" ||
-      step === "preview" ||
-      step === "publish")
+    (step === "review" || step === "preview" || step === "publish")
   ) {
     toast.add({
       title: "Extract new posters first",
@@ -972,11 +952,7 @@ watch(
       metadataRefreshKey.value += 1;
     }
     // Submit step refresh is handled by onEnterSubmitStep to avoid duplicate polls.
-    if (
-      step === "review" ||
-      step === "preview" ||
-      step === "publish"
-    ) {
+    if (step === "review" || step === "preview" || step === "publish") {
       void syncSubmitStepBatchProgress();
     }
     if (
@@ -1630,7 +1606,9 @@ async function enterSubmitStep() {
   await onEnterSubmitStep();
 }
 
-async function tryAutoStartBulkExtraction(options?: { skipStepCheck?: boolean }) {
+async function tryAutoStartBulkExtraction(options?: {
+  skipStepCheck?: boolean;
+}) {
   if (!options?.skipStepCheck && currentStep.value !== "submit") return;
   if (batchImportRunning.value || submissionLoading.value) return;
   if (!hasUnsubmittedStagedPosters.value) return;
@@ -2353,22 +2331,9 @@ async function startImport() {
             </UFormField>
 
             <UFormField
-              label="Conference format"
-              required
-              :error="conferenceAttendanceError"
-            >
-              <USelect
-                v-model="conferenceForm.conferenceAttendance"
-                class="w-full"
-                :items="BULK_IMPORT_CONFERENCE_ATTENDANCE_OPTIONS"
-                placeholder="In-person or online"
-              />
-            </UFormField>
-
-            <UFormField
-              v-if="conferenceForm.conferenceAttendance === 'In-person'"
               label="Conference location"
               required
+              description="Use “Online” if the conference was conducted virtually."
               :error="conferenceLocationError"
             >
               <UInput
@@ -2959,8 +2924,8 @@ async function startImport() {
         </li>
       </ul>
       <p class="text-muted mt-3 text-sm">
-        Replace all removes the saved copies and uploads your new files.
-        Keep existing skips uploading these names only.
+        Replace all removes the saved copies and uploads your new files. Keep
+        existing skips uploading these names only.
       </p>
     </template>
 
@@ -2983,9 +2948,7 @@ async function startImport() {
       />
       <UButton
         color="primary"
-        :label="
-          duplicateReplaceNames.length === 1 ? 'Replace' : 'Replace all'
-        "
+        :label="duplicateReplaceNames.length === 1 ? 'Replace' : 'Replace all'"
         @click="resolveDuplicateReplace('replace')"
       />
     </template>
@@ -2998,13 +2961,16 @@ async function startImport() {
   >
     <template #body>
       <p class="text-muted text-sm">
-        Every poster must have its required metadata before you can continue
-        to submit. Open a poster below to fix its issues.
+        Every poster must have its required metadata before you can continue to
+        submit. Open a poster below to fix its issues.
       </p>
       <p class="text-muted mt-3 mb-2 text-xs">
-        {{ previewValidationGroups.length || bulkMetadataValidation.invalidCount }}
+        {{
+          previewValidationGroups.length || bulkMetadataValidation.invalidCount
+        }}
         poster{{
-          (previewValidationGroups.length || bulkMetadataValidation.invalidCount) === 1
+          (previewValidationGroups.length ||
+            bulkMetadataValidation.invalidCount) === 1
             ? ""
             : "s"
         }}
@@ -3047,10 +3013,7 @@ async function startImport() {
             </li>
           </ul>
         </section>
-        <p
-          v-if="previewValidationGroups.length === 0"
-          class="text-sm"
-        >
+        <p v-if="previewValidationGroups.length === 0" class="text-sm">
           {{
             bulkMetadataValidation.invalidCount === 1
               ? "One poster still needs required fields."
