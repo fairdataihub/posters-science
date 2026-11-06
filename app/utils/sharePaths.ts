@@ -79,7 +79,7 @@ export function shareBulkImportReturnFromQuery(
   const savedStep = typeof stepValue === "string" ? stepValue : undefined;
   // No step: return to review. A step no longer in the wizard: start over.
   const wizardStep = savedStep
-    ? (normalizeBulkImportWizardStep(savedStep) ?? "setup")
+    ? (normalizeBulkImportWizardStep(savedStep) ?? "upload")
     : "review";
 
   return { jobId: jobId.trim(), wizardStep };

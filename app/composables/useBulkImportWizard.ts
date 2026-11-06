@@ -38,7 +38,7 @@ export function useBulkImportWizard(
   },
 ) {
   const currentStep = ref<BulkImportWizardStep>(
-    options?.initialStep ?? "setup",
+    options?.initialStep ?? "upload",
   );
   const importName = ref(options?.initialImportName ?? "");
   const jobId = ref<string | null>(options?.initialJobId ?? null);
@@ -51,7 +51,7 @@ export function useBulkImportWizard(
       importNameTrimmed.value.length <= BULK_IMPORT_NAME_MAX_LENGTH,
   );
 
-  /** Setup is saved once the user continues past the name step. */
+  /** The job is saved once the batch is named and its first poster uploads. */
   const setupSaved = computed(
     () => jobId.value !== null && importNameValid.value,
   );
@@ -62,10 +62,8 @@ export function useBulkImportWizard(
 
   function isStepComplete(step: BulkImportWizardStep): boolean {
     switch (step) {
-      case "setup":
-        return setupSaved.value;
       case "upload":
-        return readCompletion(completion.upload);
+        return setupSaved.value && readCompletion(completion.upload);
       case "conference":
         return readCompletion(completion.conference);
       case "license":
@@ -125,12 +123,6 @@ export function useBulkImportWizard(
     return true;
   }
 
-  /** Call after the job row exists server-side (mock or DB). */
-  function continueAfterSetupPersisted() {
-    if (!importNameValid.value || !jobId.value) return false;
-    return goToStep("upload");
-  }
-
   /** Restore saved step when resuming a job (skips forward-navigation gates). */
   function restoreWizardStep(step: BulkImportWizardStep) {
     currentStep.value = step;
@@ -154,7 +146,6 @@ export function useBulkImportWizard(
     stepIsDone,
     stepIsActive,
     goToStep,
-    continueAfterSetupPersisted,
     restoreWizardStep,
     BULK_IMPORT_NAME_MAX_LENGTH,
     BULK_IMPORT_NAME_MIN_LENGTH,

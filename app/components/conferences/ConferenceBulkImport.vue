@@ -99,6 +99,11 @@ const props = defineProps<{
   resumeLoading?: boolean;
 }>();
 
+const emit = defineEmits<{
+  /** The job row was created here, on the first upload. */
+  "job-created": [jobId: string];
+}>();
+
 const toast = useToast();
 
 const stagedPosters = ref<BulkImportStagedPoster[]>([]);
@@ -283,13 +288,7 @@ function clearPosterRowStatus(fileName: string) {
 async function onPosterFilesSelected(files: File[]) {
   if (files.length === 0) return;
 
-  if (!jobId.value) {
-    toast.add({
-      title: "Name this import first",
-      description:
-        "Go back to step 1 and continue so uploads can be attached to your job.",
-      color: "warning",
-    });
+  if (!(await ensureJobForUploads())) {
     posterFileUploadRef.value?.clearFiles();
     return;
   }
@@ -553,7 +552,6 @@ const {
   stepIsDone,
   stepIsActive,
   goToStep: goToWizardStep,
-  continueAfterSetupPersisted,
   restoreWizardStep,
   BULK_IMPORT_NAME_MAX_LENGTH,
   BULK_IMPORT_NAME_MIN_LENGTH,
@@ -574,7 +572,13 @@ const {
   },
 );
 
-const setupCanContinue = computed(() => importNameValid.value);
+// Shows the batch name error once the user tries to upload or continue.
+const batchNameAttempted = ref(false);
+const batchNameError = computed(() =>
+  batchNameAttempted.value && !importNameValid.value
+    ? `Enter a batch name (${BULK_IMPORT_NAME_MIN_LENGTH}–${BULK_IMPORT_NAME_MAX_LENGTH} characters) before adding posters.`
+    : undefined,
+);
 
 watch(
   () => props.initialJobId,
@@ -609,7 +613,8 @@ const posterStorageListLoading = computed(
 function resolveResumeWizardStep(): BulkImportWizardStep {
   const fromProps = normalizeBulkImportWizardStep(props.initialStep);
   if (fromProps) return fromProps;
-  return "setup";
+
+  return "upload";
 }
 
 function applyLicenseSummaryFromJob(job: BulkPosterSubmissionJob) {
@@ -776,7 +781,7 @@ const currentStepTask = computed(
   () => wizardSteps.find((step) => step.id === currentStep.value)?.task ?? "",
 );
 
-const setupSaving = ref(false);
+const batchNameSaving = ref(false);
 
 const stepperScrollRef = ref<HTMLElement | null>(null);
 const stepItemEls = ref<(HTMLElement | null)[]>([]);
@@ -996,13 +1001,18 @@ async function persistSetupJob(): Promise<string> {
   return job.id;
 }
 
-async function commitSetupAndContinue() {
-  if (!importNameValid.value || setupSaving.value) return;
+/**
+ * The job row is created on the first upload, once the batch has a name.
+ * Returns false (and shows why) when uploads cannot start yet.
+ */
+async function ensureJobForUploads(): Promise<boolean> {
+  if (jobId.value) return true;
 
-  setupSaving.value = true;
+  batchNameAttempted.value = true;
+  if (!importNameValid.value) return false;
 
-  let savedJobId: string | undefined;
-
+  batchNameSaving.value = true;
+  let savedJobId: string;
   try {
     savedJobId = await persistSetupJob();
   } catch (error) {
@@ -1013,21 +1023,20 @@ async function commitSetupAndContinue() {
         "We could not save this bulk import. Please try again.",
       color: "error",
     });
-    return;
+
+    return false;
   } finally {
-    setupSaving.value = false;
+    batchNameSaving.value = false;
   }
 
-  if (!continueAfterSetupPersisted()) return;
-
-  void persistWizardStep("upload");
-
-  if (!savedJobId) return;
-
+  // Tell the page first, so adding ?jobId does not remount this wizard.
+  emit("job-created", savedJobId);
   const path = shareNewBulkPath({ jobId: savedJobId });
   if (typeof path !== "string" && route.query.jobId !== savedJobId) {
     await router.replace(path);
   }
+
+  return true;
 }
 
 async function refreshSubmissionRows() {
@@ -1674,7 +1683,10 @@ function applyBatchStateFromJob(job: BulkPosterSubmissionJob) {
 }
 
 async function continueToConference() {
-  if (posterUploadRunning.value) return;
+  if (posterUploadRunning.value || batchNameSaving.value) return;
+
+  batchNameAttempted.value = true;
+  if (!importNameValid.value) return;
 
   if (stagedPosters.value.length === 0) {
     toast.add({
@@ -1683,6 +1695,22 @@ async function continueToConference() {
       color: "warning",
     });
     return;
+  }
+
+  // Save a renamed batch before moving on.
+  batchNameSaving.value = true;
+  try {
+    await persistSetupJob();
+  } catch (error) {
+    toast.add({
+      title: "Could not save batch name",
+      description: fetchErrorDescription(error) ?? "Please try again.",
+      color: "error",
+    });
+
+    return;
+  } finally {
+    batchNameSaving.value = false;
   }
 
   goToStep("conference");
@@ -2071,53 +2099,6 @@ async function startImport() {
         />
       </div>
 
-      <template v-else-if="currentStep === 'setup'">
-        <div class="space-y-4">
-          <div>
-            <h3 class="text-base font-semibold">
-              Step {{ currentStepNumber }}: Batch name
-            </h3>
-            <p class="text-muted mt-1 text-sm">
-              {{ currentStepTask }}
-            </p>
-          </div>
-
-          <UFormField
-            label="Batch name"
-            required
-            :hint="`${BULK_IMPORT_NAME_MIN_LENGTH}–${BULK_IMPORT_NAME_MAX_LENGTH} characters`"
-          >
-            <UInput
-              v-model="importName"
-              placeholder="e.g. Posters from the 2026 International Research Conference"
-              :maxlength="BULK_IMPORT_NAME_MAX_LENGTH"
-              autocomplete="off"
-            />
-          </UFormField>
-        </div>
-
-        <div
-          class="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-6 dark:border-gray-800"
-        >
-          <UButton
-            color="neutral"
-            variant="subtle"
-            icon="i-lucide-arrow-left"
-            label="Back"
-            to="/dashboard"
-          />
-          <UButton
-            color="primary"
-            icon="i-lucide-arrow-right"
-            trailing
-            label="Save and Continue"
-            :disabled="!setupCanContinue"
-            :loading="setupSaving"
-            @click="commitSetupAndContinue"
-          />
-        </div>
-      </template>
-
       <template v-else-if="currentStep === 'upload'">
         <div class="space-y-4">
           <div>
@@ -2129,14 +2110,20 @@ async function startImport() {
             </p>
           </div>
 
-          <UAlert
-            v-if="!jobId"
-            color="warning"
-            variant="soft"
-            icon="i-lucide-alert-triangle"
-            title="Name this import first"
-            description="Go back to step 1 and continue so we can attach uploads to your bulk import job."
-          />
+          <UFormField
+            label="Batch name"
+            required
+            :hint="`${BULK_IMPORT_NAME_MIN_LENGTH}–${BULK_IMPORT_NAME_MAX_LENGTH} characters`"
+            :error="batchNameError"
+          >
+            <UInput
+              v-model="importName"
+              placeholder="e.g. Posters from the 2026 International Research Conference"
+              :maxlength="BULK_IMPORT_NAME_MAX_LENGTH"
+              autocomplete="off"
+              class="w-full"
+            />
+          </UFormField>
 
           <div
             class="space-y-4 rounded-lg border border-gray-200 p-4 dark:border-gray-800"
@@ -2270,7 +2257,7 @@ async function startImport() {
             variant="subtle"
             icon="i-lucide-arrow-left"
             label="Back"
-            @click="goToStep('setup')"
+            to="/dashboard"
           />
           <UButton
             color="primary"
@@ -2280,7 +2267,7 @@ async function startImport() {
             :disabled="
               !canContinueFromUpload || !jobId || posterStorageListLoading
             "
-            :loading="posterUploadRunning"
+            :loading="posterUploadRunning || batchNameSaving"
             @click="continueToConference"
           />
         </div>

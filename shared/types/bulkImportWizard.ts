@@ -1,6 +1,5 @@
 /** Ordered steps for the bulk poster import wizard (extend this list as the flow grows). */
 export type BulkImportWizardStep =
-  | "setup"
   | "upload"
   | "conference"
   | "license"
@@ -18,14 +17,9 @@ export type BulkImportWizardStepDefinition = {
 
 export const BULK_IMPORT_WIZARD_STEPS: BulkImportWizardStepDefinition[] = [
   {
-    id: "setup",
-    label: "Batch name",
-    task: "Choose a name for your batch of posters. This name will apear in your dashboard so you can easily return to it later.",
-  },
-  {
     id: "upload",
     label: "Posters",
-    task: "Use the interface below to drag and drop or import all of your posters.",
+    task: "Name your batch, then drag and drop or import all of your posters. The name appears in your dashboard so you can return to the batch later.",
   },
   {
     id: "conference",
@@ -70,8 +64,8 @@ export function normalizeBulkImportWizardStep(
   step: string | undefined | null,
 ): BulkImportWizardStep | undefined {
   if (!step) return undefined;
-  // Steps no longer in the wizard (e.g. the removed "extraction" step) return
-  // undefined, so callers fall back to the first step.
+  // Steps no longer in the wizard (e.g. the removed "setup" and "extraction"
+  // steps) return undefined, so callers fall back to the first step.
   if (BULK_IMPORT_WIZARD_STEP_SET.has(step)) {
     return step as BulkImportWizardStep;
   }
