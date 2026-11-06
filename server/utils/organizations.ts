@@ -76,6 +76,7 @@ export const myOrganizationSelect = {
   description: true,
   websiteUrl: true,
   profilePublic: true,
+  showMemberCount: true,
   hiddenAt: true,
   hiddenReason: true,
   created: true,
@@ -95,6 +96,7 @@ type MyOrganizationRow = {
   description: string;
   websiteUrl: string;
   profilePublic: boolean;
+  showMemberCount: boolean;
   hiddenAt: Date | null;
   hiddenReason: string;
   created: Date;
@@ -113,6 +115,7 @@ export function toMyOrganization(
     description: organization.description,
     websiteUrl: organization.websiteUrl,
     profilePublic: organization.profilePublic,
+    showMemberCount: organization.showMemberCount,
     hidden: organization.hiddenAt !== null,
     hiddenReason: organization.hiddenReason,
     role,

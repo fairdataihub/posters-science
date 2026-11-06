@@ -9,11 +9,13 @@ import {
 
 const updateSchema = organizationDetailsSchema.partial().extend({
   profilePublic: z.boolean().optional(),
+  showMemberCount: z.boolean().optional(),
 });
 
 /**
- * Updates an organization's details or visibility. An admin's hide wins over
- * profilePublic, so an owner can't bring a hidden page back by toggling it.
+ * Updates an organization's details, its visibility, or whether its public
+ * page shows the member count. An admin's hide wins over profilePublic, so an
+ * owner can't bring a hidden page back by toggling it.
  */
 export default defineEventHandler(async (event) => {
   const organizationId = getRouterParam(event, "id") ?? "";
@@ -29,7 +31,8 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  const { name, description, websiteUrl, profilePublic } = body.data;
+  const { name, description, websiteUrl, profilePublic, showMemberCount } =
+    body.data;
 
   const organization = await prisma.organization.update({
     where: { id: organizationId },
@@ -38,6 +41,7 @@ export default defineEventHandler(async (event) => {
       ...(description !== undefined && { description }),
       ...(websiteUrl !== undefined && { websiteUrl }),
       ...(profilePublic !== undefined && { profilePublic }),
+      ...(showMemberCount !== undefined && { showMemberCount }),
     },
     select: myOrganizationSelect,
   });
@@ -48,6 +52,17 @@ export default defineEventHandler(async (event) => {
       message: profilePublic
         ? "Organization made public"
         : "Organization made private",
+      userId: session.user.id,
+      organizationId,
+    });
+  }
+
+  if (showMemberCount !== undefined) {
+    logwatch.info({
+      action: "organization.member_count",
+      message: showMemberCount
+        ? "Member count shown on the public page"
+        : "Member count hidden from the public page",
       userId: session.user.id,
       organizationId,
     });

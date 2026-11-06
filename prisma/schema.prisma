@@ -285,6 +285,10 @@ model Organization {
   // Private until an owner makes it public, like a user profile.
   profilePublic Boolean @default(false)
 
+  // Whether the public page says how many members there are. Members are never
+  // named there, and members always see the count.
+  showMemberCount Boolean @default(true)
+
   // Set when an admin takes the page down. Wins over profilePublic.
   hiddenAt     DateTime?
   hiddenReason String    @default("")
