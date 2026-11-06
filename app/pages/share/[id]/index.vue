@@ -523,9 +523,6 @@ type DateRange = {
   end: CalendarDate | undefined;
 };
 
-// Hold back the "required" error until the user picks dates or tries to submit
-const conferenceDatesTouched = ref(false);
-
 const conferenceDateRange = computed<DateRange>({
   get() {
     const startStr = state.conference?.conferenceStartDate ?? "";
@@ -547,7 +544,6 @@ const conferenceDateRange = computed<DateRange>({
     return { start, end };
   },
   set(value: DateRange) {
-    conferenceDatesTouched.value = true;
     if (state.conference) {
       state.conference.conferenceStartDate = value.start
         ? toW3CDate(value.start)
@@ -560,31 +556,12 @@ const conferenceDateRange = computed<DateRange>({
 });
 
 function clearConferenceDates() {
-  conferenceDatesTouched.value = true;
   if (state.conference) {
     state.conference.conferenceStartDate = "";
     state.conference.conferenceEndDate = "";
   }
 }
 
-<<<<<<< HEAD
-const conferenceDateRangeError = computed(() => {
-  const hasDates = Boolean(
-    state.conference?.conferenceStartDate?.trim() ||
-    state.conference?.conferenceEndDate?.trim(),
-  );
-  if (!hasDates && !conferenceDatesTouched.value) return undefined;
-
-  const errors = conferenceDateRangeFieldErrors(
-    state.conference?.conferenceStartDate,
-    state.conference?.conferenceEndDate,
-  );
-
-  return errors.start ?? errors.end;
-});
-
-=======
->>>>>>> staging-polish
 const presentedDate = computed<CalendarDate | undefined>({
   get() {
     const str = state.conference?.presentedStartDate ?? "";
@@ -807,8 +784,6 @@ async function onSubmit(event: FormSubmitEvent<StrictFormSchema>) {
 async function onError(event: {
   errors: { id?: string; path?: string; message?: string }[];
 }) {
-  conferenceDatesTouched.value = true;
-
   const errorCount = event.errors.length;
   const firstError = event.errors[0];
 
@@ -1819,13 +1794,7 @@ const moveCreator = (index: number, direction: "up" | "down") => {
                 <UFormField
                   name="conference.conferenceStartDate"
                   label="Conference dates"
-<<<<<<< HEAD
-                  required
-                  :error="conferenceDateRangeError"
-                  description="The start date also sets the conference year."
-=======
                   description="The full date range of the conference or event"
->>>>>>> staging-polish
                 >
                   <DateRangePicker
                     v-model="conferenceDateRange"

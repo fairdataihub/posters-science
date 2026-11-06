@@ -208,7 +208,7 @@ function contributorAffiliationColumns(): BulkReviewWorkbookColumn[] {
         `Affiliation ${slot} ROR identifier`,
         contributorAffiliationRorFillKey(slot),
         `creators[].affiliation[${slot - 1}].affiliationIdentifier`,
-        "minimal",
+        "optional",
         { requirement: "optional", width: 28, hint: "ROR URL for this affiliation" },
       ),
     );
