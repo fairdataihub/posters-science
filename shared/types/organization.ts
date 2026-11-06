@@ -9,6 +9,8 @@ export type MyOrganization = {
   description: string;
   websiteUrl: string;
   profilePublic: boolean;
+  /** Whether the public page shows memberCount. */
+  showMemberCount: boolean;
   hidden: boolean;
   hiddenReason: string;
   role: OrganizationRole;
@@ -50,6 +52,10 @@ export type OrganizationListedPoster = {
   imageUrl: string;
   addedAt: string;
   addedByMe: boolean;
+  /** The person who added it. Only members see this list. */
+  addedByName: string;
+  /** False once the person who added it has left the organization. */
+  addedByMember: boolean;
   canRemove: boolean;
 };
 

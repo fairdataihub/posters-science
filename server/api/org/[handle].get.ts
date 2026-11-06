@@ -13,7 +13,8 @@ import {
  * Public page for /org/<profileId>. To anyone outside the organization, a
  * private or hidden page and an unknown id all return 404. Members can open it
  * to preview it, and site admins can open it to moderate it. Members are never
- * named here, because their personal profiles are opt-in.
+ * named here, because their personal profiles are opt-in, and visitors only
+ * get the member count while the owners allow it.
  *
  * `search` takes the Discover search syntax. Every poster is still returned so
  * the page can show totals; `searchMatches` lists the ones that match.
@@ -36,8 +37,10 @@ export default defineEventHandler(async (event) => {
       description: true,
       websiteUrl: true,
       profilePublic: true,
+      showMemberCount: true,
       hiddenAt: true,
       hiddenReason: true,
+      _count: { select: { members: true } },
     },
   });
 
@@ -97,6 +100,13 @@ export default defineEventHandler(async (event) => {
     description: organization.description,
     websiteUrl: organization.websiteUrl,
     role: membership?.role ?? null,
+    // A count only, never names. Members and admins see it even when an owner
+    // has hidden it from visitors.
+    memberCount:
+      organization.showMemberCount || canPreview
+        ? organization._count.members
+        : null,
+    showMemberCount: organization.showMemberCount,
     isPublic,
     isHidden,
     hiddenReason: canPreview ? organization.hiddenReason : "",

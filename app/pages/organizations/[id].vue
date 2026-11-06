@@ -95,7 +95,10 @@ async function copyLink() {
 }
 
 async function patch(
-  body: Partial<OrganizationDetails> & { profilePublic?: boolean },
+  body: Partial<OrganizationDetails> & {
+    profilePublic?: boolean;
+    showMemberCount?: boolean;
+  },
 ) {
   const updated = await $fetch<MyOrganization>(
     `/api/organizations/${encodeURIComponent(organizationId)}`,
@@ -123,6 +126,27 @@ async function setVisibility(profilePublic: boolean) {
     showError("Could not update the organization", err);
   } finally {
     updatingVisibility.value = false;
+  }
+}
+
+const updatingMemberCount = ref(false);
+
+async function setShowMemberCount(showMemberCount: boolean) {
+  updatingMemberCount.value = true;
+
+  try {
+    await patch({ showMemberCount });
+    toast.add({
+      title: showMemberCount
+        ? "The public page shows the member count"
+        : "The public page hides the member count",
+      color: "success",
+      icon: "i-heroicons-check-circle",
+    });
+  } catch (err: unknown) {
+    showError("Could not update the organization", err);
+  } finally {
+    updatingMemberCount.value = false;
   }
 }
 
@@ -321,8 +345,8 @@ async function deleteOrganization() {
                       organization.hidden
                         ? "Only members and site admins can see this page while it is hidden."
                         : organization.profilePublic
-                          ? "Anyone with the link can see this organization's name, description, website and the posters its members have chosen to show. Members aren't listed, and search engines are asked not to index it."
-                          : "Only members can see this page. Make it public to share the organization's name, description, website and the posters its members have chosen to show. Members aren't listed."
+                          ? "Anyone with the link can see this organization's name, description, website and the posters its members have chosen to show. Members are never named, and search engines are asked not to index it."
+                          : "Only members can see this page. Make it public to share the organization's name, description, website and the posters its members have chosen to show. Members are never named."
                     }}
                   </p>
 
@@ -364,6 +388,29 @@ async function deleteOrganization() {
                       @click="setVisibility(true)"
                     />
                   </template>
+
+                  <USwitch
+                    v-if="isOwner"
+                    :model-value="organization.showMemberCount"
+                    :loading="updatingMemberCount"
+                    :disabled="updatingMemberCount"
+                    label="Show the number of members"
+                    description="Visitors see how many members the organization has, but never who they are. Members always see the count."
+                    class="border-default border-t pt-3"
+                    @update:model-value="setShowMemberCount"
+                  />
+
+                  <p
+                    v-else
+                    class="text-muted border-default border-t pt-3 text-sm"
+                  >
+                    {{
+                      organization.showMemberCount
+                        ? "The public page shows how many members the organization has, but never who they are."
+                        : "The public page doesn't show how many members the organization has."
+                    }}
+                    Only an owner can change this.
+                  </p>
                 </div>
               </UCard>
 

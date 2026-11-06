@@ -13,6 +13,9 @@ type PublicOrganization = {
   websiteUrl: string;
   /** Null for anyone who isn't a member. */
   role: OrganizationRole | null;
+  /** Null for visitors when an owner has hidden it. */
+  memberCount: number | null;
+  showMemberCount: boolean;
   /** False only for members and site admins previewing the page. */
   isPublic: boolean;
   isHidden: boolean;
@@ -53,6 +56,14 @@ const posterCountLabel = computed(() => {
   const count = organization.value?.posters.length ?? 0;
 
   return `${count} ${count === 1 ? "poster" : "posters"}`;
+});
+
+const memberCountLabel = computed(() => {
+  const count = organization.value?.memberCount;
+
+  if (count === null || count === undefined) return "";
+
+  return `${count.toLocaleString()} ${count === 1 ? "member" : "members"}`;
 });
 
 // Members manage the organization on its own page.
@@ -209,6 +220,24 @@ async function makePublic() {
                 <UBadge color="neutral" variant="subtle">
                   {{ posterCountLabel }}
                 </UBadge>
+
+                <UTooltip
+                  v-if="memberCountLabel"
+                  :disabled="organization.showMemberCount"
+                  text="Hidden from visitors. Only members and site admins see this."
+                >
+                  <UBadge
+                    color="neutral"
+                    variant="subtle"
+                    :icon="
+                      organization.showMemberCount
+                        ? undefined
+                        : 'i-heroicons-eye-slash'
+                    "
+                  >
+                    {{ memberCountLabel }}
+                  </UBadge>
+                </UTooltip>
 
                 <UButton
                   v-if="organization.websiteUrl"
