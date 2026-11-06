@@ -846,7 +846,7 @@ export const StrictConferenceSchema = z.object({
   conferenceIdentifier: z.string().optional(),
   conferenceIdentifierType: z.string().optional(),
   conferenceYear: z
-    .number()
+    .number({ message: "Conference year is required" })
     .min(1000)
     .max(9999, { message: "Conference year is required" }),
   conferenceStartDate: z.string(),
