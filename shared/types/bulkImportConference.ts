@@ -66,10 +66,6 @@ export function parseConferenceIsoDate(
   return date;
 }
 
-const MS_PER_DAY = 86_400_000;
-/** Longest span allowed between conference start and end (inclusive of both days). */
-export const CONFERENCE_DATE_RANGE_MAX_DAYS = 365;
-
 export function validateConferenceDateRange(
   startDate: string | undefined | null,
   endDate: string | undefined | null,
@@ -99,15 +95,6 @@ export function validateConferenceDateRange(
     return {
       valid: false,
       message: "Start date must be on or before the end date",
-    };
-  }
-
-  const spanDays = (end.getTime() - start.getTime()) / MS_PER_DAY;
-  if (spanDays > CONFERENCE_DATE_RANGE_MAX_DAYS) {
-    return {
-      valid: false,
-      message:
-        "Start and end dates must be within one year of each other (365 days or less)",
     };
   }
 
@@ -200,22 +187,7 @@ export function emptyBulkImportConferenceForm(): BulkImportConferenceFormState {
 export function bulkImportConferenceFormValid(
   form: BulkImportConferenceFormState,
 ): boolean {
-  const name = form.conferenceName.trim();
-  if (!name) return false;
-
-  const start = form.conferenceStartDate.trim();
-  if (!start) return false;
-
-  const year = conferenceYearFromStartDate(start);
-  if (year == null) return false;
-
-  const range = validateConferenceDateRange(
-    form.conferenceStartDate,
-    form.conferenceEndDate,
-  );
-  if (!range.valid) return false;
-
-  return true;
+  return form.conferenceName.trim().length > 0 && form.conferenceYear != null;
 }
 
 export function bulkImportConferenceFromForm(
@@ -223,7 +195,7 @@ export function bulkImportConferenceFromForm(
 ): BulkImportConferenceMetadata | null {
   if (!bulkImportConferenceFormValid(form)) return null;
 
-  const year = conferenceYearFromStartDate(form.conferenceStartDate)!;
+  const year = form.conferenceYear!;
 
   const payload: BulkImportConferenceMetadata = {
     conferenceName: form.conferenceName.trim(),
@@ -275,5 +247,6 @@ export function applyBulkImportConferenceToForm(
   form.conferenceEndDate = metadata.conferenceEndDate ?? "";
   form.conferenceAcronym = metadata.conferenceAcronym ?? "";
   form.conferenceSeries = metadata.conferenceSeries ?? "";
-  syncConferenceYearFromStartDate(form);
+  // Batches saved before the year had its own field only have dates.
+  if (form.conferenceYear == null) syncConferenceYearFromStartDate(form);
 }

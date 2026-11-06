@@ -13,7 +13,6 @@ import {
   applyBulkImportConferenceToForm,
   bulkImportConferenceFormValid,
   bulkImportConferenceFromForm,
-  conferenceDateRangeFieldErrors,
   emptyBulkImportConferenceForm,
   type BulkImportConferenceFormState,
 } from "#shared/types/bulkImportConference";
@@ -421,7 +420,6 @@ const conferenceForm = reactive<BulkImportConferenceFormState>(
 const { conferenceDateRange } = useConferenceDateRangePicker({
   startDate: toRef(conferenceForm, "conferenceStartDate"),
   endDate: toRef(conferenceForm, "conferenceEndDate"),
-  conferenceYear: toRef(conferenceForm, "conferenceYear"),
 });
 const conferenceStepAttempted = ref(false);
 const licenseStepAttempted = ref(false);
@@ -463,14 +461,16 @@ const conferenceNameError = computed(() =>
   conferenceFieldError("conferenceName"),
 );
 
-const conferenceDateRangeError = computed(() => {
-  if (!conferenceStepAttempted.value) return undefined;
-  const errors = conferenceDateRangeFieldErrors(
-    conferenceForm.conferenceStartDate,
-    conferenceForm.conferenceEndDate,
-  );
-  return errors.start ?? errors.end;
-});
+const conferenceYearError = computed(() =>
+  conferenceFieldError("conferenceYear")
+    ? "Conference year is required"
+    : undefined,
+);
+
+const conferenceYearOptions = Array.from(
+  { length: new Date().getFullYear() + 1 - 2000 + 1 },
+  (_, i) => new Date().getFullYear() + 1 - i,
+).map((y) => ({ label: String(y), value: y }));
 
 const conferenceUriError = computed(() =>
   conferenceFieldError("conferenceUri"),
@@ -1338,12 +1338,12 @@ const submitStepIntro = computed(() => {
       return "Resolve license or file issues on earlier steps, then go back to the license step before continuing.";
     }
     if (submissionLoading.value) {
-      return "Preparing your batch for AI metadata extraction…";
+      return "Preparing your batch for AI poster extraction…";
     }
-    return "Starting AI metadata extraction for each poster in this batch…";
+    return "Starting AI poster extraction for each poster in this batch…";
   }
   if (hasUnsubmittedStagedPosters.value) {
-    return "Submitting new poster files for AI metadata extraction…";
+    return "Submitting new poster files for AI poster extraction…";
   }
   if (batchExtractionsInProgress.value) {
     return "Wait until all posters have had their metadata extracted. You can leave this page and come back later if you are submitting a large batch.";
@@ -1752,7 +1752,7 @@ function requireCompletedExtractions(): boolean {
   toast.add({
     title: "No extracted posters",
     description:
-      "No posters in this batch have finished extraction. Go back to the AI metadata extraction step.",
+      "No posters in this batch have finished extraction. Go back to the AI poster extraction step.",
     color: "warning",
   });
 
@@ -1799,7 +1799,7 @@ function requireExtractedPosters(): BulkImportStepBlock | null {
   return {
     title: "Extract new posters first",
     description:
-      "You added poster files after the last extraction run. Open the AI metadata extraction step to process them.",
+      "You added poster files after the last extraction run. Open the AI poster extraction step to process them.",
     openInstead: "submit",
   };
 }
@@ -1837,7 +1837,7 @@ defineStepHandlers({
         ? {
             title: "Extraction still in progress",
             description:
-              "Wait until every poster has finished or failed before opening supplementary metadata.",
+              "Wait until every poster has finished or failed before opening Review Posters.",
           }
         : null),
     open: syncSubmitStepBatchProgress,
@@ -2261,6 +2261,19 @@ async function startImport() {
               />
             </UFormField>
 
+            <UFormField
+              label="Conference year"
+              required
+              :error="conferenceYearError"
+            >
+              <USelect
+                v-model="conferenceForm.conferenceYear"
+                class="w-full"
+                :items="conferenceYearOptions"
+                placeholder="Select a year"
+              />
+            </UFormField>
+
             <UFormField label="Conference acronym" name="conferenceAcronym">
               <UInput
                 v-model="conferenceForm.conferenceAcronym"
@@ -2282,8 +2295,7 @@ async function startImport() {
 
             <UFormField
               label="Conference dates"
-              required
-              :error="conferenceDateRangeError"
+              description="The full date range of the conference or event"
             >
               <DateRangePicker
                 v-model="conferenceDateRange"
@@ -2422,7 +2434,7 @@ async function startImport() {
         <div class="space-y-4">
           <div>
             <h3 class="text-base font-semibold">
-              Step {{ currentStepNumber }}: AI metadata extraction
+              Step {{ currentStepNumber }}: AI poster extraction
             </h3>
             <p class="text-muted mt-1 text-sm">
               {{ submitStepIntro }}
@@ -2628,7 +2640,7 @@ async function startImport() {
         <div class="space-y-4">
           <div>
             <h3 id="bulk-workbook-heading" class="text-base font-semibold">
-              Step {{ currentStepNumber }}: Supplementary metadata
+              Step {{ currentStepNumber }}: Review Posters
             </h3>
           </div>
 
@@ -2929,7 +2941,7 @@ async function startImport() {
               color="neutral"
               variant="link"
               trailing-icon="i-lucide-arrow-right"
-              label="Edit metadata"
+              label="Edit poster"
               :to="group.editPath"
               class="shrink-0"
             />

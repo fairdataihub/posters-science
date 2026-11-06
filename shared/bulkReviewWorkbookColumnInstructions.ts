@@ -26,7 +26,7 @@ const INSTRUCTIONS: Record<string, string> = {
   conference_name:
     "Name of the conference or event where the poster was presented. Required to publish.",
   conference_year:
-    "Four-digit year. Optional if Conference start date is set; on import the year is taken from the start date when the sheet year is blank.",
+    "Four-digit year the conference took place. Required to publish.",
   conference_location:
     "Where the event took place (e.g. Seattle, WA, USA).",
   conference_acronym: "Short acronym (e.g. ARVO).",
@@ -37,9 +37,9 @@ const INSTRUCTIONS: Record<string, string> = {
     "Type for the conference identifier (when an identifier is provided).",
   conference_series: "Name of the recurring conference series, if applicable.",
   conference_start_date:
-    "Start of the conference date range (YYYY-MM-DD). Conference year is taken from this date. Required to submit; start and end must be within 365 days and end must not be before start.",
+    "Start of the conference date range (YYYY-MM-DD). Optional; the end must not be before the start.",
   conference_end_date:
-    "End of the conference date range (YYYY-MM-DD). Optional; if set, must be on or after the start date and within 365 days of it.",
+    "End of the conference date range (YYYY-MM-DD). Optional; if set, must be on or after the start date.",
   presented_date:
     "When the poster was first presented (YYYY-MM-DD).",
   submission_abstract:

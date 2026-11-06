@@ -90,7 +90,7 @@ function addInstructionsSheet(workbook: ExcelJS.Workbook) {
     ],
     [
       "creators",
-      "Creators: one row per author with ORCID and Affiliation 1–30 (+ ROR). Additional information: one row per poster (abstract, language, domain). Related resources, Funding, Poster content, Table captions, and Image captions are separate sheets.",
+      "Creators: one row per author with ORCID and Affiliation 1–10 (+ ROR). Additional information: one row per poster (abstract, language, domain). Related resources, Funding, Poster content, Table captions, and Image captions are separate sheets.",
     ],
     [
       "links_and_content",

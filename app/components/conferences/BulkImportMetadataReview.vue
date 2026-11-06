@@ -581,7 +581,7 @@ onUnmounted(() => {
         <p class="text-sm">
           {{ invalidMetadataItems.length }} of
           {{ reviewableItems.length }} poster(s) still need fixes before you can
-          continue. Use Edit metadata on each poster. The same required fields
+          continue. Use Edit poster on each poster. The same required fields
           as a single poster upload apply here.
         </p>
         <ul class="mt-3 max-h-40 space-y-1 overflow-y-auto text-sm">
@@ -694,7 +694,7 @@ onUnmounted(() => {
                 variant="soft"
                 size="sm"
                 icon="i-lucide-pencil-line"
-                label="Edit metadata"
+                label="Edit poster"
                 :to="editMetadataPath"
               />
             </div>
