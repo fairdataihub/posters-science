@@ -404,10 +404,6 @@ const submissionLoading = ref(false);
 
 const uploadStepComplete = computed(() => stagedPosters.value.length > 0);
 
-const canContinueFromUpload = computed(
-  () => stagedPosters.value.length > 0 && !posterUploadRunning.value,
-);
-
 const canProceedFromReview = computed(() => {
   if (submissionRows.value.length === 0) return false;
   return submissionRows.value.every((row) => row.status === "ready");
@@ -1584,6 +1580,16 @@ async function saveUploadStep(): Promise<boolean> {
   batchNameAttempted.value = true;
   if (!importNameValid.value) return false;
 
+  if (posterStorageListLoading.value) {
+    toast.add({
+      title: "Loading posters",
+      description: "Wait until this batch's poster files have loaded.",
+      color: "neutral",
+    });
+
+    return false;
+  }
+
   if (stagedPosters.value.length === 0) {
     toast.add({
       title: "Add poster files",
@@ -1739,14 +1745,28 @@ const previewValidationGroups = computed(
   () => metadataReviewRef.value?.previewValidationGroups() ?? [],
 );
 
+/** Toast when no poster has finished extraction; true when some have. */
+function requireCompletedExtractions(): boolean {
+  if (batchHasCompletedExtractions.value) return true;
+
+  toast.add({
+    title: "No extracted posters",
+    description:
+      "No posters in this batch have finished extraction. Go back to the AI metadata extraction step.",
+    color: "warning",
+  });
+
+  return false;
+}
+
 async function saveReviewStep(): Promise<boolean> {
-  if (!batchHasCompletedExtractions.value) return false;
+  if (!requireCompletedExtractions()) return false;
 
   return (await metadataGridStepRef.value?.prepareStepTransition()) ?? true;
 }
 
 function savePreviewStep(): boolean {
-  if (!batchHasCompletedExtractions.value) return false;
+  if (!requireCompletedExtractions()) return false;
 
   if (bulkMetadataValidation.value.pending) {
     toast.add({
@@ -2209,9 +2229,6 @@ async function startImport() {
             icon="i-lucide-arrow-right"
             trailing
             label="Save and Continue"
-            :disabled="
-              !canContinueFromUpload || !jobId || posterStorageListLoading
-            "
             :loading="
               posterUploadRunning || batchNameSaving || stepTransitionPending
             "
@@ -2395,7 +2412,6 @@ async function startImport() {
             icon="i-lucide-arrow-right"
             trailing
             label="Save and Continue"
-            :disabled="!licenseStepComplete"
             :loading="stepTransitionPending"
             @click="continueStep()"
           />
@@ -2642,7 +2658,6 @@ async function startImport() {
             icon="i-lucide-arrow-right"
             trailing
             label="Save and Continue"
-            :disabled="!batchHasCompletedExtractions"
             :loading="stepTransitionPending"
             @click="continueStep()"
           />
@@ -2691,9 +2706,6 @@ async function startImport() {
             icon="i-lucide-arrow-right"
             trailing
             label="Save and Continue"
-            :disabled="
-              !batchHasCompletedExtractions || bulkMetadataValidation.pending
-            "
             @click="continueStep()"
           />
         </div>
