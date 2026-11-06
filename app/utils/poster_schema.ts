@@ -838,7 +838,7 @@ const StrictFundingSchema = z
     },
   );
 
-const StrictConferenceSchema = z
+export const StrictConferenceSchema = z
   .object({
     conferenceName: z.string().min(1, { message: "Conference name is required" }),
     conferenceLocation: z.string().optional(),

@@ -1,3 +1,5 @@
+import * as z from "zod";
+
 /** Ordered steps for the bulk poster import wizard (extend this list as the flow grows). */
 export type BulkImportWizardStep =
   | "upload"
@@ -55,6 +57,17 @@ export const BULK_IMPORT_WIZARD_STEPS: BulkImportWizardStepDefinition[] = [
 
 export const BULK_IMPORT_NAME_MIN_LENGTH = 2;
 export const BULK_IMPORT_NAME_MAX_LENGTH = 120;
+
+/** Batch name rules for the upload step. */
+export const bulkImportNameSchema = z
+  .string()
+  .trim()
+  .min(BULK_IMPORT_NAME_MIN_LENGTH, {
+    message: `Batch name must be at least ${BULK_IMPORT_NAME_MIN_LENGTH} characters`,
+  })
+  .max(BULK_IMPORT_NAME_MAX_LENGTH, {
+    message: `Batch name must be ${BULK_IMPORT_NAME_MAX_LENGTH} characters or fewer`,
+  });
 
 const BULK_IMPORT_WIZARD_STEP_SET = new Set<string>(
   BULK_IMPORT_WIZARD_STEPS.map((step) => step.id),

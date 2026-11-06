@@ -2,6 +2,7 @@ import {
   BULK_IMPORT_NAME_MAX_LENGTH,
   BULK_IMPORT_NAME_MIN_LENGTH,
   BULK_IMPORT_WIZARD_STEPS,
+  bulkImportNameSchema,
   type BulkImportWizardStep,
 } from "#shared/types/bulkImportWizard";
 
@@ -51,9 +52,7 @@ export function useBulkImportWizard(options: {
   const importNameTrimmed = computed(() => importName.value.trim());
 
   const importNameValid = computed(
-    () =>
-      importNameTrimmed.value.length >= BULK_IMPORT_NAME_MIN_LENGTH &&
-      importNameTrimmed.value.length <= BULK_IMPORT_NAME_MAX_LENGTH,
+    () => bulkImportNameSchema.safeParse(importName.value).success,
   );
 
   /** The job is saved once the batch is named and its first poster uploads. */

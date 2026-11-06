@@ -17,6 +17,8 @@ import {
   emptyBulkImportConferenceForm,
   type BulkImportConferenceFormState,
 } from "#shared/types/bulkImportConference";
+import { bulkImportNameSchema } from "#shared/types/bulkImportWizard";
+import { StrictConferenceSchema } from "~/utils/poster_schema";
 import DateRangePicker from "~/components/ui/DateRangePicker.vue";
 import { useConferenceDateRangePicker } from "~/composables/useConferenceDateRangePicker";
 import type { BulkImportSubmissionSummary } from "#shared/types/bulkImportLicenses";
@@ -450,15 +452,19 @@ watch(
   },
 );
 
-function conferenceFieldError(condition: boolean, message: string) {
-  return conferenceStepAttempted.value && condition ? message : undefined;
+const conferenceSchemaIssues = computed(
+  () => StrictConferenceSchema.safeParse(conferenceForm).error?.issues ?? [],
+);
+
+function conferenceFieldError(field: keyof BulkImportConferenceFormState) {
+  if (!conferenceStepAttempted.value) return undefined;
+
+  return conferenceSchemaIssues.value.find((issue) => issue.path[0] === field)
+    ?.message;
 }
 
 const conferenceNameError = computed(() =>
-  conferenceFieldError(
-    !conferenceForm.conferenceName.trim(),
-    "Conference name is required",
-  ),
+  conferenceFieldError("conferenceName"),
 );
 
 const conferenceDateRangeError = computed(() => {
@@ -470,21 +476,8 @@ const conferenceDateRangeError = computed(() => {
   return errors.start ?? errors.end;
 });
 
-const conferenceIdentifierTypeError = computed(() =>
-  conferenceFieldError(
-    Boolean(
-      conferenceForm.conferenceIdentifier.trim() &&
-      !conferenceForm.conferenceIdentifierType.trim(),
-    ),
-    "Identifier type is required when an identifier is provided",
-  ),
-);
-
-const conferenceLocationError = computed(() =>
-  conferenceFieldError(
-    !conferenceForm.conferenceLocation.trim(),
-    "Conference location is required",
-  ),
+const conferenceUriError = computed(() =>
+  conferenceFieldError("conferenceUri"),
 );
 
 function licenseFieldError(condition: boolean, message: string) {
@@ -575,8 +568,8 @@ const {
 // Shows the batch name error once the user tries to upload or continue.
 const batchNameAttempted = ref(false);
 const batchNameError = computed(() =>
-  batchNameAttempted.value && !importNameValid.value
-    ? `Enter a batch name (${BULK_IMPORT_NAME_MIN_LENGTH}–${BULK_IMPORT_NAME_MAX_LENGTH} characters) before adding posters.`
+  batchNameAttempted.value
+    ? bulkImportNameSchema.safeParse(importName.value).error?.issues[0]?.message
     : undefined,
 );
 
@@ -1620,6 +1613,7 @@ async function saveUploadStep(): Promise<boolean> {
 async function saveConferenceStep(): Promise<boolean> {
   conferenceStepAttempted.value = true;
   if (!conferenceStepComplete.value) return false;
+  if (conferenceSchemaIssues.value.length > 0) return false;
 
   const conference = bulkImportConferenceFromForm(conferenceForm);
   if (!conference || !jobId.value) return true;
@@ -2245,7 +2239,7 @@ async function startImport() {
             >
               <UInput
                 v-model="conferenceForm.conferenceName"
-                placeholder="e.g. Annual Research Conference"
+                placeholder="e.g., Association for Research in Vision and Ophthalmology Conference"
                 class="w-full"
               />
             </UFormField>
@@ -2253,20 +2247,18 @@ async function startImport() {
             <UFormField label="Conference acronym" name="conferenceAcronym">
               <UInput
                 v-model="conferenceForm.conferenceAcronym"
-                placeholder="e.g. EARC"
+                placeholder="e.g., ARVO"
                 class="w-full"
               />
             </UFormField>
 
             <UFormField
               label="Conference location"
-              required
               description="Use “Online” if the conference was conducted virtually."
-              :error="conferenceLocationError"
             >
               <UInput
                 v-model="conferenceForm.conferenceLocation"
-                placeholder="e.g. Seattle, WA, USA"
+                placeholder="e.g., Seattle, WA, USA"
                 class="w-full"
               />
             </UFormField>
@@ -2286,11 +2278,11 @@ async function startImport() {
               />
             </UFormField>
 
-            <UFormField label="Conference website">
+            <UFormField label="Conference website" :error="conferenceUriError">
               <UInput
                 v-model="conferenceForm.conferenceUri"
                 type="url"
-                placeholder="https://"
+                placeholder="https://www.arvo.org/annual-meeting"
                 class="w-full"
               />
             </UFormField>
@@ -2304,11 +2296,7 @@ async function startImport() {
             </UFormField>
 
             <template v-if="showConferenceIdentifierDetails">
-              <UFormField
-                label="Conference identifier type"
-                required
-                :error="conferenceIdentifierTypeError"
-              >
+              <UFormField label="Conference identifier type">
                 <USelectMenu
                   v-model="conferenceForm.conferenceIdentifierType"
                   :items="conferenceIdentifierTypeOptions"
@@ -2354,7 +2342,6 @@ async function startImport() {
             icon="i-lucide-arrow-right"
             trailing
             label="Save and Continue"
-            :disabled="!conferenceStepComplete"
             :loading="stepTransitionPending"
             @click="continueStep()"
           />
