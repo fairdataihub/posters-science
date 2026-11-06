@@ -15,6 +15,7 @@ import {
 } from "#shared/utils/zenodoFileEmbargoAccess";
 import { shareNewBulkPath } from "~/utils/sharePaths";
 import { deleteBulkPosterSubmissionJob } from "~/utils/bulkPosterSubmissionJobClient";
+import { parseApiError } from "~/utils/apiError";
 import type {
   DashboardBulkSubmission,
   DashboardInProgressFeedEntry,
@@ -339,6 +340,39 @@ const profileListing = computed(() =>
     : "the posters you published and claimed",
 );
 
+// Organization pages that show each published poster. Lazy, like the
+// profile settings above.
+const {
+  hasOrganizations,
+  listedOn,
+  refresh: refreshOrganizationListings,
+} = useOrganizationListings();
+const {
+  open: organizationPromptOpen,
+  choices: organizationPromptChoices,
+  loadingPosterId: organizationPromptLoadingId,
+  offer: offerPosterOrganizations,
+  show: showPosterOrganizations,
+} = useOrganizationPosterPrompt();
+
+// True when the modal opened because a save just published the poster.
+const organizationPromptAfterPublish = ref(false);
+
+async function openPosterOrganizations(poster: Poster) {
+  organizationPromptAfterPublish.value = false;
+
+  try {
+    await showPosterOrganizations(poster.rootPosterId);
+  } catch (error) {
+    toast.add({
+      title: "Could not load your organizations",
+      description:
+        parseApiError(error).statusMessage ?? "Something went wrong. Try again.",
+      color: "error",
+    });
+  }
+}
+
 // Removing a claim on an auto-indexed poster
 const removeClaimTarget = ref<Poster | null>(null);
 const removeClaimOpen = computed({
@@ -364,6 +398,8 @@ async function confirmRemoveClaim() {
       (row) => !(row.claimed && row.rootPosterId === poster.rootPosterId),
     );
     removeClaimTarget.value = null;
+    // Listings that depended on the claim were removed with it.
+    refreshOrganizationListings();
     toast.add({
       title: "Claim removed",
       description: "The poster is no longer linked to your account.",
@@ -1493,7 +1529,7 @@ async function deletePoster() {
 
     deleteModalOpen.value = false;
     await refresh();
-    posters.value = data.value as unknown as Poster[];
+    if (data.value) applyDashboardFeed(data.value);
   } catch (err) {
     console.error(err);
     toast.add({
@@ -1523,8 +1559,11 @@ async function savePublicationInfo() {
 
   isSaving.value = true;
 
+  const savedPoster = modalPoster.value;
+  const publishing = savedPoster.status === "downloaded";
+
   try {
-    await $fetch(`/api/poster/${modalPoster.value.id}/publication`, {
+    await $fetch(`/api/poster/${savedPoster.id}/publication`, {
       method: "PATCH",
       body: {
         doi: modalDoi.value ? normalizeDoi(modalDoi.value) : undefined,
@@ -1541,7 +1580,14 @@ async function savePublicationInfo() {
 
     modalOpen.value = false;
     await refresh();
-    posters.value = data.value as unknown as Poster[];
+    if (data.value) applyDashboardFeed(data.value);
+
+    // A downloaded poster is published by this save, so offer the person's
+    // organization pages as the publish page does.
+    if (publishing) {
+      organizationPromptAfterPublish.value = true;
+      offerPosterOrganizations(savedPoster.id);
+    }
   } catch (err) {
     console.error(err);
     toast.add({
@@ -1815,6 +1861,8 @@ function posterMenuItems(poster: Poster) {
 
     <MaintenanceNotice maintenance-key="zenodo" />
 
+    <OrganizationInviteBanner />
+
     <UTabs
       v-model="activeDashboardTab"
       :items="dashboardTabs"
@@ -1940,6 +1988,15 @@ function posterMenuItems(poster: Poster) {
                     >
                       Author
                     </UBadge>
+
+                    <OrganizationListingBadges
+                      v-if="
+                        posterShowsPublishedDashboardActions(poster) &&
+                        poster.isLatestPublished &&
+                        !poster.tombstone
+                      "
+                      :organizations="listedOn(poster.rootPosterId)"
+                    />
 
                     <!-- FEATURE FLAG (versioning) -->
                     <UBadge
@@ -2115,6 +2172,23 @@ function posterMenuItems(poster: Poster) {
                         size="xs"
                         @click="openPoster(poster)"
                       />
+
+                      <UTooltip
+                        v-if="hasOrganizations && poster.isLatestPublished"
+                        text="Choose which of your organizations show this poster on their page."
+                      >
+                        <UButton
+                          color="neutral"
+                          variant="subtle"
+                          label="Organizations"
+                          icon="i-lucide-building-2"
+                          size="xs"
+                          :loading="
+                            organizationPromptLoadingId === poster.rootPosterId
+                          "
+                          @click="openPosterOrganizations(poster)"
+                        />
+                      </UTooltip>
 
                       <UButton
                         v-if="poster.claimed"
@@ -2347,7 +2421,7 @@ function posterMenuItems(poster: Poster) {
     <UModal
       v-model:open="removeClaimOpen"
       title="Remove this claim?"
-      description="The poster will no longer appear on your dashboard or profile. You can claim it again from its page."
+      description="The poster will no longer appear on your dashboard, your profile or any organization page you added it to. You can claim it again from its page."
     >
       <template #footer="{ close }">
         <div class="flex w-full items-center justify-between gap-3">
@@ -2368,6 +2442,23 @@ function posterMenuItems(poster: Poster) {
         </div>
       </template>
     </UModal>
+
+    <OrganizationPosterModal
+      v-model:open="organizationPromptOpen"
+      :choices="organizationPromptChoices"
+      :title="
+        organizationPromptAfterPublish
+          ? 'Show this poster on an organization page?'
+          : 'Organizations'
+      "
+      :description="
+        organizationPromptAfterPublish
+          ? 'Your poster is published. You can also show it on the pages of organizations you belong to.'
+          : 'Choose which of your organizations show this poster on their page.'
+      "
+      :dismiss-label="organizationPromptAfterPublish ? 'Not now' : 'Cancel'"
+      @saved="refreshOrganizationListings()"
+    />
 
     <!-- Delete draft modal -->
     <USlideover

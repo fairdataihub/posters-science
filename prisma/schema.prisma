@@ -59,6 +59,10 @@ model User {
   linkedAccounts LinkedAccount[]
   posterClaims   PosterClaim[]
 
+  organizationMemberships OrganizationMember[]
+  organizationInvitesSent OrganizationInvite[]
+  organizationPosters     OrganizationPoster[]
+
   likes Like[] @relation("UserLikes")
 
   userEmailVerifications UserEmailVerification[]
@@ -151,6 +155,8 @@ model Poster {
   likes Like[] @relation("PosterLikes")
 
   claims PosterClaim[]
+
+  organizationListings OrganizationPoster[]
 
   @@unique([versionRootId, versionSequence])
   @@index([versionRootId, status])
@@ -259,6 +265,96 @@ model PosterClaim {
 
   @@unique([posterId, userId])
   @@index([userId])
+}
+
+// A lab, institute, society or other group with its own public page. An
+// organization never signs in and has no role, so it can't be an admin. It shows
+// posters but never owns them: Poster.userId stays the owner, and only that
+// person can edit or publish the poster.
+model Organization {
+  id String @id @default(cuid(2))
+
+  // The whole public address, /org/<profileId>. It is random and never changes,
+  // so a link keeps working if the organization is renamed.
+  profileId String @unique
+
+  name        String
+  description String @default("")
+  websiteUrl  String @default("")
+
+  // Private until an owner makes it public, like a user profile.
+  profilePublic Boolean @default(false)
+
+  // Set when an admin takes the page down. Wins over profilePublic.
+  hiddenAt     DateTime?
+  hiddenReason String    @default("")
+
+  created DateTime @default(now())
+  updated DateTime @updatedAt
+
+  members OrganizationMember[]
+  invites OrganizationInvite[]
+  posters OrganizationPoster[]
+}
+
+model OrganizationMember {
+  id String @id @default(cuid(2))
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+
+  role String @default("member") // owner | member
+
+  created DateTime @default(now())
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+}
+
+// An invitation to join, accepted by the person whose verified account email
+// matches. Accepting or declining deletes the row.
+model OrganizationInvite {
+  id String @id @default(cuid(2))
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+
+  emailAddress String // lower case
+
+  invitedBy   User   @relation(fields: [invitedById], references: [id], onDelete: Cascade)
+  invitedById String
+
+  expiresAt DateTime
+
+  created DateTime @default(now())
+
+  @@unique([organizationId, emailAddress])
+  @@index([emailAddress])
+}
+
+// A poster shown on an organization's page. This grants the organization no
+// rights over the poster. Removing the row only takes it off the page.
+model OrganizationPoster {
+  id String @id @default(cuid(2))
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+
+  // Always the version root, so a new version appears on the page by itself.
+  poster   Poster @relation(fields: [posterId], references: [id], onDelete: Cascade)
+  posterId Int
+
+  addedBy   User   @relation(fields: [addedById], references: [id], onDelete: Cascade)
+  addedById String
+
+  created DateTime @default(now())
+
+  @@unique([organizationId, posterId])
+  @@index([posterId])
+  @@index([addedById])
 }
 
 model ZenodoToken {

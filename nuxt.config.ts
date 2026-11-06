@@ -7,6 +7,9 @@ const PROTECTED_ROUTES = [
   "/forgot-password",
   "/liked",
   "/login",
+  // Organization pages are kept out of search engines, like user profiles.
+  "/org",
+  "/organizations",
   "/profile",
   "/reset-password",
   "/share",

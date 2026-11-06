@@ -1034,6 +1034,38 @@ const tabItems = [
               :claimed="api?.claimed ?? false"
             />
 
+            <UCard v-if="api?.organizations?.length">
+              <template #header>
+                <h3 class="text-lg font-semibold">Organizations</h3>
+              </template>
+
+              <p class="mb-3 text-sm text-gray-600 dark:text-gray-400">
+                Shown on the pages of these organizations.
+              </p>
+
+              <ul class="space-y-2">
+                <li
+                  v-for="organization in api.organizations"
+                  :key="organization.path"
+                >
+                  <NuxtLink
+                    :to="organization.path"
+                    class="flex items-center gap-2 rounded-md p-1 text-sm font-medium hover:bg-gray-100 dark:hover:bg-gray-800"
+                  >
+                    <UAvatar
+                      :src="organization.avatarUrl"
+                      :alt="organization.name"
+                      size="sm"
+                    />
+
+                    <span class="min-w-0 truncate">{{
+                      organization.name
+                    }}</span>
+                  </NuxtLink>
+                </li>
+              </ul>
+            </UCard>
+
             <UCard>
               <template #header>
                 <h3 class="text-lg font-semibold">Additional Information</h3>

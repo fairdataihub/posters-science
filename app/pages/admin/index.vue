@@ -48,6 +48,18 @@ const tabs = [
   { label: "Audit Log", icon: "material-symbols:history", value: "audit" },
 ];
 
+// Organizations sit under the Users tab, but in their own table: they have no
+// role or email to act on, so the Make Admin and Delete actions never apply.
+const usersView = ref("people");
+const usersViews = [
+  { label: "People", icon: "material-symbols:person", value: "people" },
+  {
+    label: "Organizations",
+    icon: "material-symbols:corporate-fare",
+    value: "organizations",
+  },
+];
+
 const detailPosterId = ref<number | null>(null);
 
 // Clicking a stat tile opens its tab and filters that table to match the tile.
@@ -71,6 +83,7 @@ function selectView(view: AdminView) {
   }
 
   if (view.users) {
+    usersView.value = "people";
     userPreset.value = { token: presetToken, filters: view.users };
   }
 }
@@ -104,8 +117,23 @@ async function onChanged() {
         />
       </div>
 
-      <div v-show="activeTab === 'users'">
-        <AdminUsersTable :preset="userPreset" @changed="onChanged" />
+      <div v-show="activeTab === 'users'" class="space-y-4">
+        <UTabs
+          v-model="usersView"
+          :items="usersViews"
+          :content="false"
+          variant="link"
+          size="sm"
+          class="w-fit"
+        />
+
+        <div v-show="usersView === 'people'">
+          <AdminUsersTable :preset="userPreset" @changed="onChanged" />
+        </div>
+
+        <div v-show="usersView === 'organizations'">
+          <AdminOrganizationsTable @changed="onChanged" />
+        </div>
       </div>
 
       <div v-show="activeTab === 'claims'">

@@ -2,6 +2,7 @@
 import { z } from "zod";
 import type { FormSubmitEvent } from "#ui/types";
 import { emailVerificationTtlLabel } from "#shared/utils/emailVerification";
+import { safeRedirectPath } from "#shared/utils/redirect";
 import { parseApiError } from "~/utils/apiError";
 
 const { loggedIn } = useUserSession();
@@ -11,7 +12,7 @@ const route = useRoute();
 const routeQueryParams = route.query;
 
 if (loggedIn.value) {
-  await navigateTo("/dashboard");
+  await navigateTo(safeRedirectPath(route.query.redirect));
 }
 
 definePageMeta({
@@ -109,13 +110,8 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
       });
 
       window.umami?.track("login_completed");
-      if (routeQueryParams.redirect) {
-        console.log("redirecting to", routeQueryParams.redirect);
-
-        window.location.href = routeQueryParams.redirect as string;
-      } else {
-        window.location.href = "/dashboard";
-      }
+      // Only paths on this site, so a crafted link can't send someone away.
+      window.location.href = safeRedirectPath(routeQueryParams.redirect);
     })
     .catch((error) => {
       console.error(error);
