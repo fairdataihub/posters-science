@@ -31,6 +31,8 @@ const props = defineProps<{
   poster: ProfilePoster;
   /** Search terms to mark, as on the Discover cards. */
   highlight?: { title: string[]; description: string[]; keyword: string[] };
+  /** Whose page the card is on. The badge wording differs for organizations. */
+  audience?: "person" | "organization";
 }>();
 
 const ROLE_BADGES = {
@@ -48,9 +50,30 @@ const ROLE_BADGES = {
   },
 } as const;
 
-const roleBadge = computed(() =>
-  props.poster.role ? ROLE_BADGES[props.poster.role] : null,
-);
+// An organization neither publishes nor authors a poster. These say how the
+// poster reached the page instead.
+const ORGANIZATION_ROLE_BADGES = {
+  publisher: {
+    label: "Shared",
+    color: "success",
+    icon: "i-lucide-upload",
+    tooltip: "Shared on Posters.science by one of its authors.",
+  },
+  author: {
+    label: "Claimed",
+    color: "info",
+    icon: "i-lucide-user-check",
+    tooltip: "Indexed automatically and claimed by one of its authors.",
+  },
+} as const;
+
+const roleBadge = computed(() => {
+  if (!props.poster.role) return null;
+
+  return props.audience === "organization"
+    ? ORGANIZATION_ROLE_BADGES[props.poster.role]
+    : ROLE_BADGES[props.poster.role];
+});
 
 const subtitle = computed(() => {
   const year = props.poster.conferenceYear ?? props.poster.publicationYear;
