@@ -31,6 +31,10 @@ interface FileUploadProps {
    * The native `files` list alone cannot represent a dropped directory tree.
    */
   resolveDroppedFiles?: (dataTransfer: DataTransfer) => Promise<File[]>;
+  /** When true, the drop zone is locked: clicks and drops are ignored. */
+  disabled?: boolean;
+  /** Shown in place of the description while disabled (e.g. what to do first). */
+  disabledMessage?: string;
 }
 
 const props = withDefaults(defineProps<FileUploadProps>(), {
@@ -44,11 +48,15 @@ const props = withDefaults(defineProps<FileUploadProps>(), {
   hideRejections: false,
   enableDirectoryPicker: false,
   resolveDroppedFiles: undefined,
+  disabled: false,
+  disabledMessage: undefined,
 });
 
 const emit = defineEmits<{
   (e: "onChange", files: File[]): void;
   (e: "onReject", rejections: { file: File; reason: string }[]): void;
+  /** A click or drop on the locked zone, so the page can point at what's missing. */
+  (e: "onDisabledInteraction"): void;
 }>();
 
 const fileInputRef = ref<HTMLInputElement | null>(null);
@@ -106,15 +114,24 @@ function onFileChange(e: Event) {
 }
 
 function handleClick() {
+  if (props.disabled) {
+    emit("onDisabledInteraction");
+    return;
+  }
   fileInputRef.value?.click();
 }
 
 function handleFolderClick(event: MouseEvent) {
   event.stopPropagation();
+  if (props.disabled) {
+    emit("onDisabledInteraction");
+    return;
+  }
   folderInputRef.value?.click();
 }
 
 function handleEnter() {
+  if (props.disabled) return;
   isActive.value = true;
 }
 function handleLeave() {
@@ -122,6 +139,10 @@ function handleLeave() {
 }
 function handleDrop(e: DragEvent) {
   isActive.value = false;
+  if (props.disabled) {
+    emit("onDisabledInteraction");
+    return;
+  }
   if (!e.dataTransfer) return;
 
   void (async () => {
@@ -159,7 +180,9 @@ defineExpose({ clearFiles });
       @mouseleave="handleLeave"
     >
       <div
-        class="group/file relative block w-full cursor-pointer overflow-hidden rounded-lg p-10"
+        class="group/file relative block w-full overflow-hidden rounded-lg p-10"
+        :class="disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'"
+        :aria-disabled="disabled || undefined"
         @click="handleClick"
       >
         <input
@@ -199,7 +222,7 @@ defineExpose({ clearFiles });
           <p
             class="relative z-20 mt-2 max-w-lg text-center font-sans text-base font-normal text-neutral-400 dark:text-neutral-400"
           >
-            {{ description }}
+            {{ disabled && disabledMessage ? disabledMessage : description }}
           </p>
 
           <p
@@ -210,7 +233,7 @@ defineExpose({ clearFiles });
           </p>
 
           <p
-            v-if="enableDirectoryPicker"
+            v-if="enableDirectoryPicker && !disabled"
             class="relative z-30 mt-3 font-sans text-sm text-neutral-500 dark:text-neutral-400"
           >
             <button
