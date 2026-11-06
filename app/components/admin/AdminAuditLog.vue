@@ -37,6 +37,8 @@ const actionLabels: Record<string, string> = {
   UPDATE_MAINTENANCE: "Updated maintenance",
   RETRY_EXTRACTION_JOB: "Retried extraction",
   REVOKE_CLAIM: "Revoked claim",
+  HIDE_ORGANIZATION: "Hid organization",
+  RESTORE_ORGANIZATION: "Restored organization",
 };
 
 const actionItems = [
@@ -62,6 +64,7 @@ function actionColor(action: string) {
     return "error" as const;
   }
   if (action === "UPDATE_MAINTENANCE") return "warning" as const;
+  if (action === "HIDE_ORGANIZATION") return "warning" as const;
   if (action.startsWith("UPDATE")) return "warning" as const;
 
   return "neutral" as const;
