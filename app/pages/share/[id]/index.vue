@@ -34,10 +34,6 @@ import {
   shareBulkImportReturnFromQuery,
   shareNewBulkPath,
 } from "~/utils/sharePaths";
-import {
-  conferenceDateRangeFieldErrors,
-  conferenceYearFromStartDate,
-} from "#shared/types/bulkImportConference";
 
 type FundingReference = StrictFormSchema["fundingReferences"][number];
 
@@ -454,12 +450,6 @@ if (data.value) {
         presentedStartDate: meta.conference.presentedStartDate ?? "",
         presentedEndDate: meta.conference.presentedEndDate ?? "",
       };
-      const yearFromStart = conferenceYearFromStartDate(
-        state.conference.conferenceStartDate,
-      );
-      if (yearFromStart != null) {
-        state.conference.conferenceYear = yearFromStart;
-      }
     }
 
     if (meta.posterContent) {
@@ -561,9 +551,6 @@ const conferenceDateRange = computed<DateRange>({
       state.conference.conferenceEndDate = value.end
         ? toW3CDate(value.end)
         : "";
-      state.conference.conferenceYear = conferenceYearFromStartDate(
-        state.conference.conferenceStartDate,
-      );
     }
   },
 });
@@ -572,17 +559,8 @@ function clearConferenceDates() {
   if (state.conference) {
     state.conference.conferenceStartDate = "";
     state.conference.conferenceEndDate = "";
-    state.conference.conferenceYear = undefined;
   }
 }
-
-const conferenceDateRangeError = computed(() => {
-  const errors = conferenceDateRangeFieldErrors(
-    state.conference?.conferenceStartDate,
-    state.conference?.conferenceEndDate,
-  );
-  return errors.start ?? errors.end;
-});
 
 const presentedDate = computed<CalendarDate | undefined>({
   get() {
@@ -608,6 +586,11 @@ function clearPresentedDate() {
 }
 
 /** Extract a year from text (e.g. "ARVO 2025" or "Conference 25") for auto-fill. */
+const conferenceYearOptions = Array.from(
+  { length: new Date().getFullYear() + 1 - 2000 + 1 },
+  (_, i) => new Date().getFullYear() + 1 - i,
+).map((y) => ({ label: String(y), value: y }));
+
 function yearFromText(text: string): number | undefined {
   if (!text || typeof text !== "string") return undefined;
 
@@ -635,10 +618,7 @@ function yearFromText(text: string): number | undefined {
 watch(
   () => state.conference?.conferenceName,
   (name) => {
-    if (!state.conference || state.conference.conferenceStartDate?.trim()) {
-      return;
-    }
-    if (state.conference.conferenceYear != null) return;
+    if (!state.conference || state.conference.conferenceYear != null) return;
 
     const year = yearFromText(name ?? "");
 
@@ -1762,11 +1742,23 @@ const moveCreator = (index: number, direction: "up" | "down") => {
                   name="conference.conferenceName"
                   label="Conference name"
                   required
-                  class="md:col-span-2"
                 >
                   <UInput
                     v-model="state.conference.conferenceName"
                     placeholder="e.g., Association for Research in Vision and Ophthalmology Conference"
+                  />
+                </UFormField>
+
+                <UFormField
+                  name="conference.conferenceYear"
+                  label="Conference year"
+                  required
+                >
+                  <USelect
+                    v-model="state.conference.conferenceYear"
+                    class="w-full"
+                    :items="conferenceYearOptions"
+                    placeholder="Select a year"
                   />
                 </UFormField>
               </div>
@@ -1802,9 +1794,7 @@ const moveCreator = (index: number, direction: "up" | "down") => {
                 <UFormField
                   name="conference.conferenceStartDate"
                   label="Conference dates"
-                  required
-                  :error="conferenceDateRangeError"
-                  description="The full date range of the conference or event. Conference year is taken from the start date. Start and end must be within 365 days."
+                  description="The full date range of the conference or event"
                 >
                   <DateRangePicker
                     v-model="conferenceDateRange"

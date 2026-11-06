@@ -322,7 +322,7 @@ export function posterResponseToStrictFormSchema(
     const yearFromStart = conferenceYearFromStartDate(
       state.conference.conferenceStartDate,
     );
-    if (yearFromStart != null) {
+    if (state.conference.conferenceYear == null && yearFromStart != null) {
       state.conference.conferenceYear = yearFromStart;
     }
   }

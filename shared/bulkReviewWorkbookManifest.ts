@@ -172,7 +172,7 @@ export function bulkReviewWorkbookResolveSheetName(
 }
 
 /** Inline affiliation pairs on the Creators sheet (name + ROR per slot). */
-export const BULK_REVIEW_CONTRIBUTOR_AFFILIATION_SLOT_COUNT = 30;
+export const BULK_REVIEW_CONTRIBUTOR_AFFILIATION_SLOT_COUNT = 10;
 
 export function contributorAffiliationNameFillKey(slot: number): string {
   return `contributor_affiliation_${slot}_name`;
@@ -246,7 +246,7 @@ export const BULK_REVIEW_WORKBOOK_SHEETS: BulkReviewWorkbookSheet[] = [
     name: BULK_REVIEW_WORKBOOK_SHEET_CREATORS,
     rowNoun: "creator",
     description:
-      "Mandatory: one row per contributor per poster. Optional ORCID (or ROR for an organization) plus up to 30 affiliations on the same row.",
+      "Mandatory: one row per contributor per poster. Optional ORCID (or ROR for an organization) plus up to 10 affiliations on the same row.",
     grain: "contributor",
     columns: [
       col("Poster ID", "poster_id", "poster.id", "system", { width: 12 }),
@@ -296,10 +296,7 @@ export const BULK_REVIEW_WORKBOOK_SHEETS: BulkReviewWorkbookSheet[] = [
         "conference_year",
         "conference.conferenceYear",
         "optional",
-        {
-          width: 14,
-          hint: "Optional if start date is set (year is taken from start date on import)",
-        },
+        { width: 14, requirement: "required" },
       ),
       col(
         "Conference location",
@@ -348,7 +345,7 @@ export const BULK_REVIEW_WORKBOOK_SHEETS: BulkReviewWorkbookSheet[] = [
         "conference_start_date",
         "conference.conferenceStartDate",
         "optional",
-        { width: 18, hint: "ISO date YYYY-MM-DD", requirement: "required" },
+        { width: 18, hint: "ISO date YYYY-MM-DD" },
       ),
       col(
         "Conference end date",

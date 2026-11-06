@@ -35,18 +35,18 @@ export const BULK_IMPORT_WIZARD_STEPS: BulkImportWizardStepDefinition[] = [
   },
   {
     id: "submit",
-    label: "AI metadata extraction",
+    label: "AI poster extraction",
     task: "Wait until all posters have had their metadata extracted. You can leave this page and come back later for large batches.",
   },
   {
     id: "review",
-    label: "Supplementary metadata",
+    label: "Review Posters",
     task: "Optionally review and add metadata for every poster in the batch below. You can skip this and edit posters individually on the next step.",
   },
   {
     id: "preview",
     label: "Poster previews",
-    task: "Preview each poster, use Edit metadata for any required fixes, then continue when you are ready to publish.",
+    task: "Preview each poster, use Edit poster for any required fixes, then continue when you are ready to publish.",
   },
   {
     id: "publish",
