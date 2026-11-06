@@ -1,5 +1,7 @@
 <template>
-  <div class="overlay relative flex h-screen items-center justify-center">
+  <div
+    class="overlay relative flex min-h-screen items-center justify-center py-16"
+  >
     <div class="gradient" />
 
     <UButton
