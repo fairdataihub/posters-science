@@ -3,8 +3,9 @@ import { requireOrgMember } from "../../../../utils/organizations";
 import { latestPublicPosterVersions } from "../../../../utils/profilePosters";
 
 /**
- * The posters on an organization's page, and the member's own posters that
- * could be added. Retired posters keep their listing but aren't shown.
+ * The posters on an organization's page, with who added each one, and the
+ * member's own posters that could be added. Retired posters keep their listing
+ * but aren't shown.
  */
 export default defineEventHandler(
   async (event): Promise<OrganizationPosters> => {
@@ -12,14 +13,24 @@ export default defineEventHandler(
     const { session, role } = await requireOrgMember(event, organizationId);
     const userId = session.user.id;
 
-    const [listings, mine] = await Promise.all([
+    const [listings, mine, members] = await Promise.all([
       prisma.organizationPoster.findMany({
         where: { organizationId },
         orderBy: { created: "desc" },
-        select: { posterId: true, created: true, addedById: true },
+        select: {
+          posterId: true,
+          created: true,
+          addedById: true,
+          addedBy: { select: { givenName: true, familyName: true } },
+        },
       }),
       listablePosterRoots(userId),
+      prisma.organizationMember.findMany({
+        where: { organizationId },
+        select: { userId: true },
+      }),
     ]);
+    const memberIds = new Set(members.map((member) => member.userId));
 
     const listedIds = new Set(listings.map((listing) => listing.posterId));
     const availableIds = [...mine.keys()].filter((id) => !listedIds.has(id));
@@ -43,6 +54,9 @@ export default defineEventHandler(
           imageUrl: version.imageUrl,
           addedAt: listing.created.toISOString(),
           addedByMe,
+          // Members can already see each other's names on the Members tab.
+          addedByName: organizationPersonName(listing.addedBy),
+          addedByMember: memberIds.has(listing.addedById),
           canRemove: role === "owner" || addedByMe,
         },
       ];
