@@ -1,5 +1,3 @@
-export type BulkImportConferenceAttendance = "In-person" | "Online";
-
 /** Matches bulk import validation (stricter than poster.json 1000–9999). */
 export const CONFERENCE_YEAR_MIN = 1900;
 export const CONFERENCE_YEAR_MAX = 2100;
@@ -148,14 +146,6 @@ export function conferenceDateRangeFieldErrors(
   return { end: range.message };
 }
 
-export const BULK_IMPORT_CONFERENCE_ATTENDANCE_OPTIONS: {
-  label: string;
-  value: BulkImportConferenceAttendance;
-}[] = [
-  { label: "In-person", value: "In-person" },
-  { label: "Online", value: "Online" },
-];
-
 const ONLINE_CONFERENCE_LOCATION = "Online";
 
 function isOnlineConferenceLocation(value: string | undefined | null): boolean {
@@ -180,7 +170,6 @@ export type BulkImportConferenceMetadata = {
 export type BulkImportConferenceFormState = {
   conferenceName: string;
   conferenceYear: number | undefined;
-  conferenceAttendance: BulkImportConferenceAttendance | undefined;
   conferenceLocation: string;
   conferenceUri: string;
   conferenceIdentifier: string;
@@ -196,7 +185,6 @@ export function emptyBulkImportConferenceForm(): BulkImportConferenceFormState {
   return {
     conferenceName: "",
     conferenceYear: undefined,
-    conferenceAttendance: undefined,
     conferenceLocation: "",
     conferenceUri: "",
     conferenceIdentifier: "",
@@ -230,13 +218,7 @@ export function bulkImportConferenceFormValid(
   if (form.conferenceIdentifier.trim() && !form.conferenceIdentifierType.trim()) {
     return false;
   }
-  if (!form.conferenceAttendance) return false;
-  if (
-    form.conferenceAttendance === "In-person" &&
-    !form.conferenceLocation.trim()
-  ) {
-    return false;
-  }
+  if (!form.conferenceLocation.trim()) return false;
   return true;
 }
 
@@ -252,11 +234,10 @@ export function bulkImportConferenceFromForm(
     conferenceYear: year,
   };
 
-  if (form.conferenceAttendance === "Online") {
-    payload.conferenceLocation = ONLINE_CONFERENCE_LOCATION;
-  } else if (form.conferenceLocation.trim()) {
-    payload.conferenceLocation = form.conferenceLocation.trim();
-  }
+  const location = form.conferenceLocation.trim();
+  payload.conferenceLocation = isOnlineConferenceLocation(location)
+    ? ONLINE_CONFERENCE_LOCATION
+    : location;
 
   const optionalStringFields: (keyof BulkImportConferenceFormState)[] = [
     "conferenceUri",
@@ -287,17 +268,7 @@ export function applyBulkImportConferenceToForm(
 
   form.conferenceName = metadata.conferenceName ?? "";
   form.conferenceYear = metadata.conferenceYear;
-  const location = metadata.conferenceLocation ?? "";
-  if (isOnlineConferenceLocation(location)) {
-    form.conferenceAttendance = "Online";
-    form.conferenceLocation = "";
-  } else if (location.trim()) {
-    form.conferenceAttendance = "In-person";
-    form.conferenceLocation = location;
-  } else {
-    form.conferenceAttendance = undefined;
-    form.conferenceLocation = "";
-  }
+  form.conferenceLocation = metadata.conferenceLocation ?? "";
   form.conferenceUri = metadata.conferenceUri ?? "";
   form.conferenceIdentifier = metadata.conferenceIdentifier ?? "";
   form.conferenceIdentifierType = metadata.conferenceIdentifierType ?? "";
