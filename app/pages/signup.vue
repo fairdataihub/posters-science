@@ -2,14 +2,30 @@
 import { z } from "zod";
 import type { FormSubmitEvent } from "#ui/types";
 import { emailVerificationTtlLabel } from "#shared/utils/emailVerification";
+import { organizationNameSchema } from "#shared/utils/organization";
+import { safeRedirectPath } from "#shared/utils/redirect";
 import { parseApiError } from "~/utils/apiError";
 
 const { loggedIn } = useUserSession();
 const { siteEnv } = useRuntimeConfig().public;
 const isDev = siteEnv === "development" || siteEnv === "dev";
+const route = useRoute();
+
+// Links can preselect the organization option with ?type=organization. Someone
+// already logged in uses their current account, so they go straight to the form.
+const startsWithOrganization = route.query.type === "organization";
+
+// An invite email links here with ?email=<invited address>&redirect=/organizations,
+// so the person signs up with the address the invite was sent to.
+const invitedEmail = z.email().safeParse(route.query.email).data ?? "";
+const redirectAfterLogin = safeRedirectPath(route.query.redirect, "");
 
 if (loggedIn.value) {
-  await navigateTo("/dashboard");
+  await navigateTo(
+    startsWithOrganization
+      ? "/organizations?new=1"
+      : redirectAfterLogin || "/dashboard",
+  );
 }
 
 definePageMeta({
@@ -72,7 +88,26 @@ const resendVerification = async () => {
 
 const showPassword = ref(false);
 
-const schema = z.object({
+// An account always belongs to a person. This only decides whether an
+// organization is created alongside it.
+const signupType = ref(startsWithOrganization ? "organization" : "person");
+const signupTypeItems = [
+  { label: "Myself", icon: "material-symbols:person", value: "person" },
+  {
+    label: "An organization",
+    icon: "material-symbols:corporate-fare",
+    value: "organization",
+  },
+];
+const isOrganizationSignup = computed(
+  () => signupType.value === "organization",
+);
+
+// Set when an organization signup is refused because the address already has a
+// verified account. That person creates the organization after logging in.
+const existingAccountEmail = ref("");
+
+const personSchema = z.object({
   emailAddress: z.string().email(),
   familyName: z.string().trim().min(1, "Enter your last name"),
   givenName: z.string().trim().min(1, "Enter your first name"),
@@ -82,28 +117,40 @@ const schema = z.object({
     .min(12, "Must be at least 12 characters")
     .max(128, "Must be at most 128 characters"),
 });
+const organizationSchema = personSchema.extend({
+  organizationName: organizationNameSchema,
+});
+const schema = computed(() =>
+  isOrganizationSignup.value ? organizationSchema : personSchema,
+);
 
-type Schema = z.output<typeof schema>;
+type Schema = z.output<typeof personSchema> & { organizationName?: string };
 
 const state = reactive({
-  emailAddress: isDev ? "rick@example.com" : "",
+  emailAddress: invitedEmail || (isDev ? "rick@example.com" : ""),
   familyName: isDev ? "Sanchez" : "",
   givenName: isDev ? "Rick" : "",
+  organizationName: "",
   password: isDev ? "123456789012" : "",
 });
 
 async function onSubmit(event: FormSubmitEvent<Schema>) {
+  const organizationName = isOrganizationSignup.value
+    ? event.data.organizationName
+    : undefined;
   const body = {
     emailAddress: event.data.emailAddress,
     familyName: event.data.familyName,
     givenName: event.data.givenName,
     password: event.data.password,
+    ...(organizationName && { organizationName }),
   };
 
   loading.value = true;
   // Clear any notice from a previous attempt so it cannot outlive the address
   // it referred to.
   unverifiedAccountEmail.value = "";
+  existingAccountEmail.value = "";
 
   await $fetch("/api/auth/signup", {
     body,
@@ -111,7 +158,9 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
   })
     .then(() => {
       toast.add({
-        title: "Account created successfully",
+        title: organizationName
+          ? `Account and ${organizationName} created`
+          : "Account created successfully",
         color: "info",
         description: isDev
           ? "You can now log in to your account."
@@ -120,7 +169,11 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
       });
 
       window.umami?.track("signup_completed");
-      navigateTo("/login");
+      const next = organizationName ? "/organizations" : redirectAfterLogin;
+
+      navigateTo(
+        next ? `/login?redirect=${encodeURIComponent(next)}` : "/login",
+      );
     })
     .catch((error) => {
       console.error(error);
@@ -130,6 +183,12 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
       if (reason === "unverified") {
         unverifiedAccountEmail.value = body.emailAddress;
         resent.value = false;
+
+        return;
+      }
+
+      if (reason === "verified" && organizationName) {
+        existingAccountEmail.value = body.emailAddress;
 
         return;
       }
@@ -186,12 +245,55 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
         </template>
       </UAlert>
 
+      <UAlert
+        v-if="existingAccountEmail"
+        class="mt-5"
+        color="info"
+        variant="subtle"
+        icon="material-symbols:corporate-fare"
+        title="This email already has an account"
+        :description="`Log in as ${existingAccountEmail} to create your organization. You can use the same account for it.`"
+      >
+        <template #actions>
+          <UButton
+            :to="{
+              path: '/login',
+              query: { redirect: '/organizations?new=1' },
+            }"
+            color="info"
+            variant="solid"
+            size="xs"
+            label="Log in to continue"
+          />
+        </template>
+      </UAlert>
+
+      <UFormField label="I'm signing up for" class="mt-6">
+        <UTabs
+          v-model="signupType"
+          :items="signupTypeItems"
+          :content="false"
+          size="xs"
+          class="w-full"
+        />
+      </UFormField>
+
       <UForm
         :schema="schema"
         :state="state"
-        class="mt-6 space-y-4"
+        class="mt-4 space-y-4"
         @submit="onSubmit"
       >
+        <UFormField
+          v-if="isOrganizationSignup"
+          label="Organization Name"
+          name="organizationName"
+          help="You sign in with your own account below and become this organization's owner. It stays private until you make it public."
+          required
+        >
+          <UInput v-model="state.organizationName" type="text" class="w-full" />
+        </UFormField>
+
         <UFormField label="Given or First Name" name="givenName" required>
           <UInput v-model="state.givenName" type="text" />
         </UFormField>

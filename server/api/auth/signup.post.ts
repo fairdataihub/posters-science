@@ -1,7 +1,9 @@
 import { z } from "zod";
 import { hash } from "bcrypt";
+import { organizationNameSchema } from "#shared/utils/organization";
 import { issueEmailVerification } from "../../utils/issueEmailVerification";
 import { logwatch } from "../../utils/logwatch";
+import { withNewOrganizationProfileId } from "../../utils/organizations";
 
 const signupSchema = z.object({
   emailAddress: z.email(),
@@ -12,6 +14,8 @@ const signupSchema = z.object({
     .trim()
     .min(12, "Must be at least 12 characters")
     .max(128, "Must be at most 128 characters"),
+  // Set when signing up with an organization. The person is its first owner.
+  organizationName: organizationNameSchema.optional(),
 });
 
 export default defineEventHandler(async (event) => {
@@ -63,20 +67,39 @@ export default defineEventHandler(async (event) => {
 
   const hashedPassword = await hash(body.data.password, 10);
 
-  const user = await prisma.user.create({
-    data: {
-      emailAddress,
-      emailVerified: isDev,
-      emailVerifiedAt: isDev ? new Date() : null,
-      familyName: body.data.familyName,
-      givenName: body.data.givenName,
-      password: hashedPassword,
-    },
-  });
+  const userData = {
+    emailAddress,
+    emailVerified: isDev,
+    emailVerifiedAt: isDev ? new Date() : null,
+    familyName: body.data.familyName,
+    givenName: body.data.givenName,
+    password: hashedPassword,
+  };
+  const { organizationName } = body.data;
+
+  // A nested create runs in one transaction, so the account, organization and
+  // owner membership either all exist or none do.
+  const user = organizationName
+    ? await withNewOrganizationProfileId((profileId) =>
+        prisma.user.create({
+          data: {
+            ...userData,
+            organizationMemberships: {
+              create: {
+                role: "owner",
+                organization: { create: { name: organizationName, profileId } },
+              },
+            },
+          },
+        }),
+      )
+    : await prisma.user.create({ data: userData });
 
   logwatch.info({
     action: "auth.signup",
-    message: "Account created",
+    message: organizationName
+      ? "Account and organization created"
+      : "Account created",
     userId: user.id,
     verificationRequired: !isDev,
   });
