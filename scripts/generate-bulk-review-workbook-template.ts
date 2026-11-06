@@ -90,7 +90,7 @@ function addInstructionsSheet(workbook: ExcelJS.Workbook) {
     ],
     [
       "creators",
-      "Creators: one row per author with ORCID and Affiliation 1–30 (+ ROR). Additional information: one row per poster (abstract, language, domain). Related resources, Funding, Poster content, Table captions, and Image captions are separate sheets.",
+      "Creators: one row per author with ORCID and Affiliation 1–10 (+ ROR). Additional information: one row per poster (abstract, language, domain). Related resources, Funding, Poster content, Table captions, and Image captions are separate sheets.",
     ],
     [
       "links_and_content",
@@ -101,10 +101,9 @@ function addInstructionsSheet(workbook: ExcelJS.Workbook) {
       `Data starts on row ${BULK_REVIEW_WORKBOOK_FIRST_DATA_ROW} on each sheet. Row 1 is the column title; row 2 has field instructions (same as the single-poster metadata form); row 3 shows Required or Optional.`,
     ],
     [
-      "minimal_vs_full",
-      "Downloaded workbooks prefill cells according to this batch's extraction setting (see prefill_level when you download). Column colors distinguish required (blue) and optional (gray) fields. Poster ID and File name are reference columns you can copy when adding rows or moving data between sheets.",
+      "prefill",
+      "Downloaded workbooks prefill every value extracted from each poster. Column colors distinguish required (blue) and optional (gray) fields. Poster ID and File name are reference columns you can copy when adding rows or moving data between sheets.",
     ],
-    ["prefill_level", "Set when you download this template for a batch."],
     ["", ""],
     ["Sheet", "Description"],
   ];

@@ -15,6 +15,7 @@ import {
   getBulkReviewMetadataValidation,
 } from "~/utils/bulkPosterSubmissionJobClient";
 import { bulkReviewGridChoicesForFillKey } from "~/utils/bulkReviewGridFieldChoices";
+import { BULK_REVIEW_CONTRIBUTOR_AFFILIATION_SLOT_COUNT } from "#shared/bulkReviewWorkbookManifest";
 
 /**
  * Spreadsheet-style editor for batch poster metadata. Sheets and columns come
@@ -37,7 +38,7 @@ type EditableRow = BulkReviewGridRow & { _key: string };
 const ALL_POSTERS = "all";
 const CREATORS_SHEET = "Creators";
 const AFFILIATION_SLOT_PATTERN = /^contributor_affiliation_(\d+)_(name|ror)$/;
-const MAX_AFFILIATION_SLOTS = 30;
+const MAX_AFFILIATION_SLOTS = BULK_REVIEW_CONTRIBUTOR_AFFILIATION_SLOT_COUNT;
 
 function cellChoices(fillKey: string): readonly string[] | undefined {
   return bulkReviewGridChoicesForFillKey(fillKey);
@@ -99,6 +100,19 @@ function onCellInput(row: BulkReviewGridRow, fillKey: string, value: string) {
   markDirty();
 }
 watch(dirty, (value) => emit("dirtyChange", value));
+
+/**
+ * True when the rows differ from what was loaded. `dirty` only says a cell was
+ * edited (typing then undoing still sets it), so compare once before saving.
+ */
+function hasUnsavedChanges(): boolean {
+  if (!dirty.value) return false;
+  if (snapshot() !== savedSnapshot.value) return true;
+
+  dirty.value = false;
+
+  return false;
+}
 
 function fetchErrorDescription(error: unknown): string | undefined {
   if (!error || typeof error !== "object") return undefined;
@@ -287,21 +301,29 @@ function cellWidthStyle(column: BulkReviewGridColumn) {
   return { width: "100%", minWidth: `${columnWidthPx(column)}px` };
 }
 
-function isMissingRequired(column: BulkReviewGridColumn, row: EditableRow) {
-  if (column.requirement !== "required") return false;
-  if (currentSheet.value?.name === CREATORS_SHEET) {
-    if (column.fillKey === "family_name" && row.name_type === "Organizational") {
-      return false;
-    }
-  }
-  return !(row[column.fillKey] ?? "").trim();
+function isMissingRequired(
+  column: BulkReviewGridColumn,
+  row: BulkReviewGridRow,
+) {
+  const sheetName = currentSheet.value?.name;
+
+  return sheetName ? cellMissingRequired(sheetName, column, row) : false;
 }
 
+/**
+ * An empty row on a list sheet (creators, funding, identifiers, ...) is
+ * dropped on save, so its required cells are not flagged.
+ */
 function isBlankRepeatableRow(sheetName: string, row: BulkReviewGridRow) {
   if (sheetName === CREATORS_SHEET) {
     return !row.given_name?.trim() && !row.family_name?.trim();
   }
-  return false;
+  const sheet = grid.value?.sheets.find((item) => item.name === sheetName);
+  if (!sheet?.repeatable) return false;
+
+  return sheet.columns.every(
+    (column) => column.system || !(row[column.fillKey] ?? "").trim(),
+  );
 }
 
 function cellMissingRequired(
@@ -310,12 +332,15 @@ function cellMissingRequired(
   row: BulkReviewGridRow,
 ) {
   if (column.requirement !== "required") return false;
-  if (sheetName === CREATORS_SHEET) {
-    if (column.fillKey === "family_name" && row.name_type === "Organizational") {
-      return false;
-    }
-    if (isBlankRepeatableRow(sheetName, row)) return false;
+  if (
+    sheetName === CREATORS_SHEET &&
+    column.fillKey === "family_name" &&
+    row.name_type === "Organizational"
+  ) {
+    return false;
   }
+  if (isBlankRepeatableRow(sheetName, row)) return false;
+
   return !(row[column.fillKey] ?? "").trim();
 }
 
@@ -956,7 +981,7 @@ async function save(): Promise<boolean> {
 
   try {
     const { issues, savedPosterIds, saveAttempted } = await collectAllValidationIssues({
-      attemptSave: dirty.value,
+      attemptSave: hasUnsavedChanges(),
     });
     await showValidationOutcome(issues, "inform", savedPosterIds, saveAttempted);
     return issues.length === 0;
@@ -973,7 +998,7 @@ async function prepareStepTransition(): Promise<boolean> {
 
   try {
     const { issues, savedPosterIds, saveAttempted } = await collectAllValidationIssues({
-      attemptSave: dirty.value,
+      attemptSave: hasUnsavedChanges(),
     });
 
     if (issues.length === 0) {
@@ -1063,7 +1088,7 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
             label="Save metadata"
             :loading="saving"
             :disabled="!dirty || disabled"
-            @click="save"
+            @click="save()"
           />
         </div>
       </div>

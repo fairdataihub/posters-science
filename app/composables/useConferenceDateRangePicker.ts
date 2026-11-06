@@ -3,7 +3,6 @@ import {
   getLocalTimeZone,
   parseDate,
 } from "@internationalized/date";
-import { conferenceYearFromStartDate } from "#shared/types/bulkImportConference";
 
 export type ConferenceDateRangeValue = {
   start: CalendarDate | undefined;
@@ -20,7 +19,6 @@ function calendarDateToW3C(cd: CalendarDate): string {
 export function useConferenceDateRangePicker(options: {
   startDate: Ref<string>;
   endDate: Ref<string>;
-  conferenceYear?: Ref<number | undefined>;
 }) {
   const conferenceDateRange = computed<ConferenceDateRangeValue>({
     get() {
@@ -49,19 +47,12 @@ export function useConferenceDateRangePicker(options: {
         ? calendarDateToW3C(value.start)
         : "";
       options.endDate.value = value.end ? calendarDateToW3C(value.end) : "";
-      if (options.conferenceYear) {
-        options.conferenceYear.value =
-          conferenceYearFromStartDate(options.startDate.value) ?? undefined;
-      }
     },
   });
 
   function clearConferenceDates() {
     options.startDate.value = "";
     options.endDate.value = "";
-    if (options.conferenceYear) {
-      options.conferenceYear.value = undefined;
-    }
   }
 
   return { conferenceDateRange, clearConferenceDates };

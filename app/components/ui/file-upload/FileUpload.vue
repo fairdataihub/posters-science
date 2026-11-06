@@ -27,7 +27,7 @@ interface FileUploadProps {
   /** When true, show a control to pick a folder (`webkitdirectory`). */
   enableDirectoryPicker?: boolean;
   /**
-   * Expand drag-and-drop into individual files (e.g. folders and ZIP archives).
+   * Expand drag-and-drop into individual files (e.g. folders and archives).
    * The native `files` list alone cannot represent a dropped directory tree.
    */
   resolveDroppedFiles?: (dataTransfer: DataTransfer) => Promise<File[]>;
@@ -220,7 +220,7 @@ defineExpose({ clearFiles });
             >
               Select a folder
             </button>
-            <span> or drop a folder or ZIP here.</span>
+            <span> or drop a folder or archive here.</span>
           </p>
 
           <p

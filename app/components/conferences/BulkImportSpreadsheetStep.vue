@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import type { BulkSubmissionExtractionMethod } from "#shared/types/bulkSubmission";
 import BulkImportMetadataGrid from "~/components/conferences/BulkImportMetadataGrid.vue";
 
 /**
@@ -9,7 +8,6 @@ import BulkImportMetadataGrid from "~/components/conferences/BulkImportMetadataG
 const props = defineProps<{
   bulkJobId: string | null;
   completedPosterCount: number;
-  extractionMethod: BulkSubmissionExtractionMethod;
 }>();
 
 const emit = defineEmits<{

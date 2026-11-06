@@ -4,7 +4,6 @@ import type { BulkImportConferenceMetadata } from "#shared/types/bulkImportConfe
 import type { BulkImportSubmissionSummary } from "#shared/types/bulkImportLicenses";
 import prisma from "~~/server/utils/prisma";
 import { getBulkPosterSubmissionJobRepository } from "~~/server/utils/bulkPosterSubmissionJobs";
-import { gateBulkExtractedPosterMetadataForJobPoster } from "~~/server/utils/bulkExtractionMetadataGate";
 import { ensurePostersScienceDiscoverRelatedIdentifier } from "~~/server/utils/postersScienceDiscoverRelatedIdentifier";
 
 function optionalString(value: string | undefined) {
@@ -12,34 +11,37 @@ function optionalString(value: string | undefined) {
   return trimmed ? trimmed : null;
 }
 
-const OPTIONAL_BULK_CONFERENCE_FIELDS: {
-  source: keyof BulkImportConferenceMetadata;
-  target: keyof Prisma.PosterMetadataUpdateInput;
-}[] = [
-  { source: "conferenceLocation", target: "conferenceLocation" },
-  { source: "conferenceUri", target: "conferenceUri" },
-  { source: "conferenceIdentifier", target: "conferenceIdentifier" },
-  {
-    source: "conferenceIdentifierType",
-    target: "conferenceIdentifierType",
-  },
-  { source: "conferenceStartDate", target: "conferenceStartDate" },
-  { source: "conferenceEndDate", target: "conferenceEndDate" },
-  { source: "conferenceAcronym", target: "conferenceAcronym" },
-  { source: "conferenceSeries", target: "conferenceSeries" },
-];
+const OPTIONAL_BULK_CONFERENCE_FIELDS = [
+  "conferenceLocation",
+  "conferenceUri",
+  "conferenceIdentifier",
+  "conferenceIdentifierType",
+  "conferenceStartDate",
+  "conferenceEndDate",
+  "conferenceAcronym",
+  "conferenceSeries",
+] as const satisfies readonly (keyof BulkImportConferenceMetadata &
+  keyof Prisma.PosterMetadataUpdateInput)[];
+
+type OptionalBulkConferenceField =
+  (typeof OPTIONAL_BULK_CONFERENCE_FIELDS)[number];
 
 export function conferenceToPosterMetadataFields(
   conference: BulkImportConferenceMetadata,
-): Prisma.PosterMetadataUpdateInput {
-  const data: Prisma.PosterMetadataUpdateInput = {
+): Pick<BulkImportConferenceMetadata, "conferenceName" | "conferenceYear"> &
+  Partial<Record<OptionalBulkConferenceField, string | null>> {
+  const data: Pick<
+    BulkImportConferenceMetadata,
+    "conferenceName" | "conferenceYear"
+  > &
+    Partial<Record<OptionalBulkConferenceField, string | null>> = {
     conferenceName: conference.conferenceName,
     conferenceYear: conference.conferenceYear,
   };
 
-  for (const { source, target } of OPTIONAL_BULK_CONFERENCE_FIELDS) {
-    if (source in conference) {
-      data[target] = optionalString(conference[source]);
+  for (const field of OPTIONAL_BULK_CONFERENCE_FIELDS) {
+    if (field in conference) {
+      data[field] = optionalString(conference[field]);
     }
   }
 
@@ -155,7 +157,6 @@ export async function applyBulkSubmissionMetadataToPosters(
 
   const config = useRuntimeConfig();
   const siteEnv = config.siteEnv || config.public.siteEnv;
-  const extractionMethod = job.extractionMethod;
 
   async function applyOne(id: number): Promise<boolean> {
     const owned = ownedById.get(id);
@@ -173,13 +174,6 @@ export async function applyBulkSubmissionMetadataToPosters(
         data: { posterId: id, ...createData },
       });
     }
-
-    await gateBulkExtractedPosterMetadataForJobPoster(
-      userId,
-      id,
-      extractionMethod,
-      { jobId },
-    );
 
     if (owned.extractionJob?.completed) {
       await ensurePostersScienceDiscoverRelatedIdentifier(id, { siteEnv });

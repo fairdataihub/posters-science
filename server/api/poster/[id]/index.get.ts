@@ -1,7 +1,3 @@
-import {
-  findBulkSubmissionJobForPoster,
-  gateBulkExtractedPosterMetadata,
-} from "~~/server/utils/bulkExtractionMetadataGate";
 import { zenodoRecordUrlForPoster } from "~~/server/utils/zenodoPosterRecordUrl";
 
 export default defineEventHandler(async (event) => {
@@ -46,38 +42,6 @@ export default defineEventHandler(async (event) => {
       statusCode: 404,
       statusMessage: "Poster not found",
     });
-  }
-
-  if (poster.extractionJob?.completed) {
-    const bulkJob = await findBulkSubmissionJobForPoster(userId, posterId);
-    if (bulkJob) {
-      const gated = await gateBulkExtractedPosterMetadata(
-        userId,
-        posterId,
-        bulkJob.extractionMethod,
-        { jobId: bulkJob.id },
-      );
-      if (gated) {
-        const refreshed = await prisma.poster.findUnique({
-          where: { id: posterId, userId },
-          include: {
-            posterMetadata: true,
-            zenodoDepositions: true,
-            extractionJob: {
-              select: {
-                completed: true,
-                status: true,
-                fileName: true,
-                filePath: true,
-              },
-            },
-          },
-        });
-        if (refreshed) {
-          Object.assign(poster, refreshed);
-        }
-      }
-    }
   }
 
   const meta = poster.posterMetadata;

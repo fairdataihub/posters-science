@@ -20,17 +20,36 @@ const jobIdFromQuery = computed(() => {
   return typeof value === "string" && value.length > 0 ? value : null;
 });
 
-const { data: resumeJob, status: resumeStatus } =
-  await useFetch<BulkPosterSubmissionJob>(
-    () =>
-      jobIdFromQuery.value
-        ? `/api/bulk-poster-submissions/${jobIdFromQuery.value}`
-        : null,
-    { watch: [jobIdFromQuery] },
-  );
+// A new import creates its job on the first upload and then adds ?jobId to
+// the URL. That wizard already has the job, so it must not remount or reload
+// mid-upload: only a jobId it did not create counts as a resume.
+const createdJobId = ref<string | null>(null);
+const resumeJobId = computed(() =>
+  jobIdFromQuery.value && jobIdFromQuery.value !== createdJobId.value
+    ? jobIdFromQuery.value
+    : null,
+);
+const wizardKey = ref(jobIdFromQuery.value ?? "new-bulk");
+
+watch(jobIdFromQuery, (id) => {
+  if (id && id === createdJobId.value) return;
+  createdJobId.value = null;
+  wizardKey.value = id ?? `new-bulk-${Date.now()}`;
+});
+
+// The reactive key refetches when the resumed jobId changes.
+const { data: resumeJob, status: resumeStatus } = await useAsyncData(
+  () => `bulk-import-resume-${resumeJobId.value ?? "new"}`,
+  () =>
+    resumeJobId.value
+      ? $fetch<BulkPosterSubmissionJob>(
+          `/api/bulk-poster-submissions/${resumeJobId.value}`,
+        )
+      : Promise.resolve(null),
+);
 
 const resumeLoading = computed(
-  () => Boolean(jobIdFromQuery.value) && resumeStatus.value === "pending",
+  () => Boolean(resumeJobId.value) && resumeStatus.value === "pending",
 );
 
 const wizardStepFromQuery = computed(() => {
@@ -50,15 +69,16 @@ const initialWizardStep = computed(
 watch(
   () => resumeJob.value?.status,
   async (status) => {
-    if (status !== "completed" || !jobIdFromQuery.value) return;
+    const id = resumeJobId.value;
+    if (status !== "completed" || !id) return;
 
     try {
       const completion = await $fetch<BulkSubmissionCompletionResponse>(
-        `/api/bulk-poster-submissions/${jobIdFromQuery.value}/completion`,
+        `/api/bulk-poster-submissions/${id}/completion`,
       );
       if (completion.awaitingEmbargoRelease) return;
       if (completion.completedAt) {
-        void navigateTo(shareBulkCompletionPath(jobIdFromQuery.value));
+        void navigateTo(shareBulkCompletionPath(id));
       }
     } catch {
       // Resume wizard on publish step instead.
@@ -84,13 +104,13 @@ useSeoMeta({
 <template>
   <div class="mx-auto flex w-full max-w-screen-xl flex-col gap-6 px-6 pt-8 pb-12">
     <ConferenceBulkImport
-      v-if="!jobIdFromQuery || resumeStatus !== 'pending'"
-      :key="jobIdFromQuery ?? 'new-bulk'"
-      :initial-job-id="jobIdFromQuery ?? resumeJob?.id ?? undefined"
+      v-if="!resumeJobId || resumeStatus !== 'pending'"
+      :key="wizardKey"
+      :initial-job-id="resumeJobId ?? undefined"
       :initial-import-name="resumeJob?.name"
       :initial-step="initialWizardStep"
-      :initial-extraction-method="resumeJob?.extractionMethod"
       :resume-loading="resumeLoading"
+      @job-created="createdJobId = $event"
     />
 
     <div

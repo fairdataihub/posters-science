@@ -1,13 +1,7 @@
-import { preserveBulkGatingMarkers } from "~~/server/utils/bulkExtractionGateMarker";
 import { createError } from "h3";
 import { Prisma } from "#shared/generated/client";
 import type { BulkPosterSubmissionJob } from "#shared/types/bulkPosterSubmissionJob";
 import type { BulkImportStagedPoster } from "#shared/types/bulkPosterSubmissionJob";
-import {
-  DEFAULT_BULK_SUBMISSION_EXTRACTION_METHOD,
-  normalizeBulkSubmissionExtractionMethod,
-  type BulkSubmissionExtractionMethod,
-} from "#shared/types/bulkSubmission";
 import prisma from "~~/server/utils/prisma";
 import type {
   BulkPosterSubmissionJobRepository,
@@ -21,7 +15,6 @@ type BulkSubmissionRow = {
   name: string;
   wizardStep: string;
   status: string;
-  extractionMethod: string;
   stagedPosters: unknown;
   licenseMetadataFileName: string | null;
   licenseMetadataFilePath: string | null;
@@ -35,10 +28,6 @@ type BulkSubmissionRow = {
   created: Date;
   updated: Date;
 };
-
-function parseExtractionMethod(value: string): BulkSubmissionExtractionMethod {
-  return normalizeBulkSubmissionExtractionMethod(value);
-}
 
 function parseStagedPosters(value: unknown): BulkImportStagedPoster[] {
   if (!Array.isArray(value)) return [];
@@ -62,7 +51,6 @@ function toApiJob(record: BulkSubmissionRow): BulkPosterSubmissionJob {
     name: record.name,
     wizardStep: record.wizardStep as BulkPosterSubmissionJob["wizardStep"],
     status: record.status as BulkPosterSubmissionJob["status"],
-    extractionMethod: parseExtractionMethod(record.extractionMethod),
     stagedPosters: parseStagedPosters(record.stagedPosters),
     licenseMetadataFileName: record.licenseMetadataFileName,
     licenseMetadataFilePath: record.licenseMetadataFilePath,
@@ -91,9 +79,6 @@ function buildUpdateData(
   }
   if (patch.status !== undefined) {
     data.status = patch.status;
-  }
-  if (patch.extractionMethod !== undefined) {
-    data.extractionMethod = patch.extractionMethod;
   }
   if (patch.stagedPosters !== undefined) {
     data.stagedPosters = patch.stagedPosters as Prisma.InputJsonValue;
@@ -139,16 +124,12 @@ function buildUpdateData(
 export const prismaBulkPosterSubmissionJobRepository: BulkPosterSubmissionJobRepository =
   {
     async create(input: CreateBulkPosterSubmissionJobInput) {
-      const extractionMethod =
-        input.extractionMethod ?? DEFAULT_BULK_SUBMISSION_EXTRACTION_METHOD;
-
       const record = await prisma.bulkSubmission.create({
         data: {
           userId: input.userId,
           name: input.name.trim(),
           wizardStep: "upload",
           status: "draft",
-          extractionMethod,
           managedConferenceId: input.managedConferenceId ?? null,
           stagedPosters: [],
         },
@@ -184,21 +165,9 @@ export const prismaBulkPosterSubmissionJobRepository: BulkPosterSubmissionJobRep
         });
       }
 
-      // Never drop one-time gating markers when the summary is replaced.
-      const safePatch =
-        patch.submissionSummary != null
-          ? {
-              ...patch,
-              submissionSummary: preserveBulkGatingMarkers(
-                patch.submissionSummary,
-                existing.submissionSummary,
-              ),
-            }
-          : patch;
-
       const record = await prisma.bulkSubmission.update({
         where: { id },
-        data: buildUpdateData(safePatch),
+        data: buildUpdateData(patch),
       });
 
       return toApiJob(record);

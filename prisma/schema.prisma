@@ -439,13 +439,10 @@ model BulkSubmission {
 
   name String
 
-  // setup | upload | extraction | conference | submit (legacy: assets, review, metadata)
+  // setup | upload | conference | submit
   wizardStep String @default("upload")
   // draft | processing | completed | failed
   status String @default("draft")
-  // metadata | assisted | full (legacy: minimal, full_fair, full_acknowledged, automated, manual)
-  extractionMethod String @default("full_fair")
-
   stagedPosters Json @default("[]")
 
   licenseMetadataFileName String?

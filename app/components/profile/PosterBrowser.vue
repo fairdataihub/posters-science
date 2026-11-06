@@ -32,7 +32,9 @@ function updateQuery(patch: Record<string, string | string[] | undefined>) {
   router.replace({ query: { ...route.query, ...patch } });
 }
 
-function queryList(value: LocationQueryValue | LocationQueryValue[]) {
+function queryList(
+  value: LocationQueryValue | LocationQueryValue[] | undefined,
+) {
   const values = Array.isArray(value) ? value : [value];
 
   return values.filter((v): v is string => typeof v === "string" && v !== "");

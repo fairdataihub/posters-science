@@ -52,7 +52,6 @@ const bulkDashboardSelect = {
   name: true,
   wizardStep: true,
   status: true,
-  extractionMethod: true,
   posterCount: true,
   submissionSummary: true,
   created: true,
@@ -223,7 +222,6 @@ export default defineEventHandler(async (event) => {
     name: bulk.name,
     wizardStep: bulk.wizardStep,
     status: bulk.status,
-    extractionMethod: bulk.extractionMethod,
     posterCount: bulk.posterCount,
     hasActiveExtraction:
       bulk.status === "processing" &&
