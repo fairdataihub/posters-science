@@ -41,6 +41,22 @@ async function openClaim() {
 const publicPromptOpen = ref(false);
 const makingPublic = ref(false);
 
+// After a claim, organization pages are offered first, then the profile
+// prompt, so the two never open at once.
+const {
+  open: organizationPromptOpen,
+  choices: organizationPromptChoices,
+  offer: offerPosterOrganizations,
+} = useOrganizationPosterPrompt();
+const profilePromptPending = ref(false);
+
+function afterOrganizationPrompt() {
+  if (!profilePromptPending.value) return;
+
+  profilePromptPending.value = false;
+  publicPromptOpen.value = true;
+}
+
 async function submitClaim() {
   if (claiming.value) return;
 
@@ -64,7 +80,9 @@ async function submitClaim() {
       icon: "i-heroicons-check-circle",
     });
 
-    if (!result.profilePublic) {
+    if (await offerPosterOrganizations(props.posterId)) {
+      profilePromptPending.value = !result.profilePublic;
+    } else if (!result.profilePublic) {
       publicPromptOpen.value = true;
     }
   } catch (err: unknown) {
@@ -278,7 +296,7 @@ async function removeClaim() {
     <UModal
       v-model:open="removeOpen"
       title="Remove your claim?"
-      description="The poster will no longer appear on your dashboard or profile. You can claim it again later."
+      description="The poster will no longer appear on your dashboard, your profile or any organization page you added it to. You can claim it again later."
     >
       <template #footer="{ close }">
         <div class="flex w-full items-center justify-between gap-3">
@@ -299,6 +317,14 @@ async function removeClaim() {
         </div>
       </template>
     </UModal>
+
+    <OrganizationPosterModal
+      v-model:open="organizationPromptOpen"
+      :choices="organizationPromptChoices"
+      title="Show this poster on an organization page?"
+      description="You claimed this poster. You can also show it on the pages of organizations you belong to."
+      @closed="afterOrganizationPrompt"
+    />
 
     <UModal
       v-model:open="publicPromptOpen"
