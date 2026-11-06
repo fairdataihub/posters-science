@@ -94,6 +94,11 @@ const profileDropdownItems = computed(() => [
       to: "/liked",
     },
     {
+      icon: "material-symbols:corporate-fare",
+      label: "Organizations",
+      to: "/organizations",
+    },
+    {
       icon: "material-symbols:settings",
       label: "Settings",
       to: "/profile",
@@ -127,6 +132,11 @@ const mobileProfileNavItems = computed<NavigationMenuItem[]>(() => [
     icon: "material-symbols:star",
     label: "Liked posters",
     to: "/liked",
+  },
+  {
+    icon: "material-symbols:corporate-fare",
+    label: "Organizations",
+    to: "/organizations",
   },
   {
     icon: "material-symbols:settings",

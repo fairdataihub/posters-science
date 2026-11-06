@@ -252,6 +252,25 @@ interface ArchiveStep {
 
 const feedbackOpen = useState("feedbackOpen", () => false);
 
+// After publishing, offer the person's organization pages before asking for
+// feedback. Someone without an organization goes straight to feedback.
+const {
+  open: organizationPromptOpen,
+  choices: organizationPromptChoices,
+  offer: offerPosterOrganizations,
+} = useOrganizationPosterPrompt();
+let panelUnmounted = false;
+
+onBeforeUnmount(() => {
+  panelUnmounted = true;
+});
+
+async function afterPublished() {
+  if (panelUnmounted || !(await offerPosterOrganizations(Number(id)))) {
+    feedbackOpen.value = true;
+  }
+}
+
 const isArchiving = ref(false);
 const archiveError = ref("");
 const archiveComplete = ref(false);
@@ -432,9 +451,7 @@ function handleProgressEvent(event: {
     archiveSteps.value.forEach((s) => {
       if (s.status !== "error") s.status = "completed";
     });
-    setTimeout(() => {
-      feedbackOpen.value = true;
-    }, 3000);
+    setTimeout(afterPublished, 3000);
 
     return;
   }
@@ -975,6 +992,14 @@ async function handleArchive() {
         </UButton>
       </template>
     </div>
+
+    <OrganizationPosterModal
+      v-model:open="organizationPromptOpen"
+      :choices="organizationPromptChoices"
+      title="Show this poster on an organization page?"
+      description="Your poster is published. You can also show it on the pages of organizations you belong to."
+      @closed="feedbackOpen = true"
+    />
 
     <UDrawer
       v-model:open="posterJsonDrawerOpen"

@@ -41,7 +41,13 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, statusMessage: "Claim not found" });
   }
 
-  await prisma.posterClaim.delete({ where: { id: claim.id } });
+  // The claimant's organization listings for this poster depended on the claim.
+  const [, listings] = await prisma.$transaction([
+    prisma.posterClaim.delete({ where: { id: claim.id } }),
+    prisma.organizationPoster.deleteMany({
+      where: { posterId: claim.posterId, addedById: claim.userId },
+    }),
+  ]);
 
   await logAdminAction({
     adminUserId: session.user.id,
@@ -54,6 +60,7 @@ export default defineEventHandler(async (event) => {
       claimantId: claim.userId,
       claimantEmail: claim.user.emailAddress,
       claimedAt: claim.created,
+      organizationListingsRemoved: listings.count,
       reason: body.data.reason,
     },
   });

@@ -19,6 +19,10 @@ const props = defineProps<{
   searchMatches: number[] | null;
   kind: "posters" | "liked";
   isOwner: boolean;
+  /** Replaces the default empty message, which assumes a person's profile. */
+  emptyDescription?: string;
+  /** Whose page this is, for the wording on the cards. */
+  audience?: "person" | "organization";
 }>();
 
 const route = useRoute();
@@ -326,13 +330,14 @@ const noun = computed(() =>
     :icon="kind === 'liked' ? 'i-heroicons-heart' : 'i-lucide-file'"
     :title="kind === 'liked' ? 'No liked posters yet' : 'No posters yet'"
     :description="
-      kind === 'liked'
+      emptyDescription ??
+      (kind === 'liked'
         ? isOwner
           ? 'Posters you like on Discover will appear here.'
           : 'Posters this author likes will appear here.'
         : isOwner
           ? 'Share a poster or claim one you authored on Discover and it will appear here.'
-          : 'This author has no public posters yet.'
+          : 'This author has no public posters yet.')
     "
   />
 
@@ -480,6 +485,7 @@ const noun = computed(() =>
         :key="poster.posterId"
         :poster="poster"
         :highlight="highlightTerms"
+        :audience="audience"
       />
     </UPageGrid>
 

@@ -1,4 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import {
+  organizationAvatarUrl,
+  organizationPath,
+} from "#shared/utils/organization";
 
 export default defineEventHandler(async (event) => {
   const { posterid } = event.context.params as { posterid: string };
@@ -103,6 +107,23 @@ export default defineEventHandler(async (event) => {
       )
     : false;
 
+  // Public organization pages that show this poster. Private and hidden
+  // organizations are left out so the poster page never reveals them.
+  const organizationListings = await prisma.organizationPoster.findMany({
+    where: {
+      posterId: rootPosterId,
+      organization: { profilePublic: true, hiddenAt: null },
+    },
+    orderBy: { created: "asc" },
+    select: { organization: { select: { profileId: true, name: true } } },
+  });
+
+  const organizations = organizationListings.map(({ organization }) => ({
+    name: organization.name,
+    path: organizationPath(organization.profileId),
+    avatarUrl: organizationAvatarUrl(organization.profileId),
+  }));
+
   const { umamiWebsiteId } = useRuntimeConfig();
 
   let views: number | null = null;
@@ -147,6 +168,7 @@ export default defineEventHandler(async (event) => {
     automated: poster.automated,
     claimable: isClaimablePoster(root),
     claimed,
+    organizations,
     views,
     likes,
     liked,
