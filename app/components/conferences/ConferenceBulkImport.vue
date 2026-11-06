@@ -78,8 +78,14 @@ import type { PreviewValidationGroup } from "~/components/conferences/BulkImport
 import type { BulkImportStepBlock } from "~/composables/useBulkImportWizard";
 import BulkImportSpreadsheetStep from "~/components/conferences/BulkImportSpreadsheetStep.vue";
 import BulkImportPublishStep from "~/components/conferences/BulkImportPublishStep.vue";
+import BulkPosterSheetMapping from "~/components/conferences/BulkPosterSheetMapping.vue";
+import type { FeatureFlags } from "#shared/utils/features";
 
 const router = useRouter();
+// Optional poster information sheet on the posters step (feature flag).
+const { data: featureFlags } = useLazyFetch<FeatureFlags>("/api/features", {
+  server: false,
+});
 const route = useRoute();
 
 function fetchErrorStatusCode(error: unknown): number | undefined {
@@ -2424,6 +2430,12 @@ async function startImport() {
               </template>
             </div>
           </div>
+
+          <BulkPosterSheetMapping
+            v-if="featureFlags?.poster_sheet_mapping && jobId"
+            :bulk-job-id="jobId"
+            :poster-file-names="stagedPosterFileNames"
+          />
         </div>
 
         <div

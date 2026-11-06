@@ -25,6 +25,11 @@ import {
 import { schemeUriForScheme } from "~/utils/poster_schema";
 import IdentifierOrcidSearch from "~/components/identifier/IdentifierOrcidSearch.vue";
 import IdentifierRorSearch from "~/components/identifier/IdentifierRorSearch.vue";
+import { mergePosterSheetIntoGrid } from "#shared/utils/posterSheetToGrid";
+import {
+  forgetSavedPosterSheetRows,
+  readPendingPosterSheet,
+} from "~/utils/posterSheetPending";
 
 /**
  * Spreadsheet-style editor for batch poster metadata. Sheets and columns come
@@ -328,11 +333,16 @@ async function load(options: { refresh?: boolean } = {}) {
     for (const sheet of data.sheets) {
       rows[sheet.name] = sheet.rows.map(withKey);
     }
+    // Snapshot the saved rows first, so cells filled from the poster sheet
+    // count as unsaved changes and the changed-only save sends them.
     applySheetPosterRanks(data, rows);
     sheetRows.value = rows;
     savedSnapshot.value = snapshot();
     savedPosterSnapshots.value = posterSnapshots();
-    dirty.value = false;
+    const fromSheet = applyPendingPosterSheet(data, rows);
+    applySheetPosterRanks(data, fromSheet.rows);
+    sheetRows.value = fromSheet.rows;
+    dirty.value = fromSheet.changed;
     extraAffiliationSlots.value = 0;
     if (!data.sheets.some((sheet) => sheet.name === activeSheet.value)) {
       activeSheet.value = data.sheets[0]?.name ?? "";
@@ -1403,6 +1413,44 @@ function resetChanges() {
   dirty.value = false;
 }
 
+/* ---------- Organizer poster sheet ---------- */
+
+/** File names merged from the poster sheet and not saved yet. */
+const posterSheetUnsaved = ref<string[]>([]);
+
+/**
+ * Fill the grid from a poster sheet confirmed on the posters step. Merged
+ * cells show as unsaved changes so the user sees and saves them.
+ */
+function applyPendingPosterSheet(
+  data: BulkReviewMetadataGrid,
+  rows: Record<string, EditableRow[]>,
+): { rows: Record<string, EditableRow[]>; changed: boolean } {
+  const pending = readPendingPosterSheet(props.bulkJobId);
+  if (!pending) return { rows, changed: false };
+  const merged = mergePosterSheetIntoGrid(data, rows, pending.sheets);
+  const keyed: Record<string, EditableRow[]> = {};
+  for (const [name, list] of Object.entries(merged.rows)) {
+    keyed[name] = list.map((row) => (row._key ? row : withKey(row)));
+  }
+  posterSheetUnsaved.value = merged.appliedFileNames;
+  if (merged.changedPosterIds.length) {
+    toast.add({
+      title: "Filled from your poster sheet",
+      description: `${merged.changedPosterIds.length} poster(s) updated from ${pending.sheetFileName}. Save to keep these values.`,
+      color: "info",
+    });
+  }
+
+  return { rows: keyed, changed: merged.changedPosterIds.length > 0 };
+}
+
+function onGridSaved(savedPosterIds: number[]) {
+  if (!savedPosterIds.length) return;
+  forgetSavedPosterSheetRows(props.bulkJobId, posterSheetUnsaved.value);
+  posterSheetUnsaved.value = [];
+}
+
 const unsavedOnCloseModalOpen = ref(false);
 
 function requestCloseFullScreen() {
@@ -1445,6 +1493,7 @@ async function save(): Promise<boolean> {
       attemptSave: hasUnsavedChanges(),
       validate: false,
     });
+    if (saveAttempted) onGridSaved(savedPosterIds);
     await showValidationOutcome(issues, "inform", savedPosterIds, saveAttempted);
     return issues.length === 0;
   } finally {
@@ -1476,6 +1525,7 @@ async function prepareStepTransition(): Promise<boolean> {
     const { issues, savedPosterIds, saveAttempted } = await collectAllValidationIssues({
       attemptSave: hasUnsavedChanges(),
     });
+    if (saveAttempted) onGridSaved(savedPosterIds);
 
     if (issues.length === 0) {
       if (saveAttempted) {
