@@ -31,7 +31,7 @@ export default defineEventHandler(async (event) => {
         role: true,
         emailVerified: true,
         created: true,
-        _count: { select: { Poster: true } },
+        _count: { select: { Poster: true, organizationMemberships: true } },
       },
       orderBy: { created: "desc" },
       skip: (page - 1) * limit,

@@ -61,7 +61,19 @@ export type AdminUserRow = {
   role: string;
   emailVerified: boolean;
   created: string;
-  _count: { Poster: number };
+  _count: { Poster: number; organizationMemberships: number };
+};
+
+export type AdminOrganizationRow = {
+  id: string;
+  profileId: string;
+  name: string;
+  profilePublic: boolean;
+  hiddenAt: string | null;
+  hiddenReason: string;
+  created: string;
+  members: { user: PosterOwner }[];
+  _count: { members: number; posters: number };
 };
 
 export type PosterOwner = {
