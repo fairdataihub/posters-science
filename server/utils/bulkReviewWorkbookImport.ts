@@ -1114,9 +1114,10 @@ async function applyPatchToPoster(
   const posterUpdate: Prisma.PosterUpdateInput = {};
 
   if (patch.about) {
+    // Titles are shown across the site, so an empty one keeps the old title.
+    // Everything else saves as entered, including an empty description.
     posterUpdate.title = patch.about.title.trim() || poster.title;
-    posterUpdate.description =
-      patch.about.description.trim() || poster.description;
+    posterUpdate.description = patch.about.description.trim();
     data.subjects = parseKeywords(patch.about.keywords);
   }
 
