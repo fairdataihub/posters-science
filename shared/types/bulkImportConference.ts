@@ -215,10 +215,6 @@ export function bulkImportConferenceFormValid(
   );
   if (!range.valid) return false;
 
-  if (form.conferenceIdentifier.trim() && !form.conferenceIdentifierType.trim()) {
-    return false;
-  }
-  if (!form.conferenceLocation.trim()) return false;
   return true;
 }
 
@@ -235,9 +231,11 @@ export function bulkImportConferenceFromForm(
   };
 
   const location = form.conferenceLocation.trim();
-  payload.conferenceLocation = isOnlineConferenceLocation(location)
-    ? ONLINE_CONFERENCE_LOCATION
-    : location;
+  if (location) {
+    payload.conferenceLocation = isOnlineConferenceLocation(location)
+      ? ONLINE_CONFERENCE_LOCATION
+      : location;
+  }
 
   const optionalStringFields = [
     "conferenceUri",
