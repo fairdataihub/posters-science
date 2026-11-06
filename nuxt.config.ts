@@ -168,6 +168,8 @@ export default defineNuxtConfig({
     },
   },
   vite: {
+    // The libarchive.js worker (bulk 7z/RAR/TAR uploads) is an ES module.
+    worker: { format: "es" },
     optimizeDeps: {
       include: [
         "@inspira-ui/plugins", // CJS
@@ -182,6 +184,7 @@ export default defineNuxtConfig({
         "dayjs/plugin/updateLocale", // CJS
         "dayjs/plugin/utc", // CJS
         "jszip", // CJS
+        "libarchive.js",
         "motion-v",
         "tailwind-merge",
         "vue3-lottie",

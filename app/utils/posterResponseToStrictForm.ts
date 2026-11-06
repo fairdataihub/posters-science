@@ -10,6 +10,7 @@ import {
   strictFormSchema,
   type PosterResponse,
   type StrictFormSchema,
+  type StrictFormState,
 } from "~/utils/poster_schema";
 
 type FundingReference = StrictFormSchema["fundingReferences"][number];
@@ -31,7 +32,7 @@ function syncFunderSchemeUri(
   funder.schemeUri = schemeUriForScheme(type) ?? funder.schemeUri;
 }
 
-function emptyStrictFormDefaults(): StrictFormSchema {
+function emptyStrictFormDefaults(): StrictFormState {
   return {
     title: "",
     description: "",
@@ -89,7 +90,7 @@ function emptyStrictFormDefaults(): StrictFormSchema {
  */
 export function posterResponseToStrictFormSchema(
   poster: PosterResponse,
-): StrictFormSchema {
+): StrictFormState {
   const state = emptyStrictFormDefaults();
 
   if (poster.title) state.title = poster.title;
@@ -173,8 +174,7 @@ export function posterResponseToStrictFormSchema(
             (entry) => entry.nameIdentifier.trim() !== "",
           );
           if (firstNonEmpty > 0) {
-            const [item] = mapped.splice(firstNonEmpty, 1);
-            mapped.unshift(item);
+            mapped.unshift(...mapped.splice(firstNonEmpty, 1));
           }
 
           return mapped.length > 0

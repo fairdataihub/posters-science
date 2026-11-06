@@ -11,34 +11,37 @@ function optionalString(value: string | undefined) {
   return trimmed ? trimmed : null;
 }
 
-const OPTIONAL_BULK_CONFERENCE_FIELDS: {
-  source: keyof BulkImportConferenceMetadata;
-  target: keyof Prisma.PosterMetadataUpdateInput;
-}[] = [
-  { source: "conferenceLocation", target: "conferenceLocation" },
-  { source: "conferenceUri", target: "conferenceUri" },
-  { source: "conferenceIdentifier", target: "conferenceIdentifier" },
-  {
-    source: "conferenceIdentifierType",
-    target: "conferenceIdentifierType",
-  },
-  { source: "conferenceStartDate", target: "conferenceStartDate" },
-  { source: "conferenceEndDate", target: "conferenceEndDate" },
-  { source: "conferenceAcronym", target: "conferenceAcronym" },
-  { source: "conferenceSeries", target: "conferenceSeries" },
-];
+const OPTIONAL_BULK_CONFERENCE_FIELDS = [
+  "conferenceLocation",
+  "conferenceUri",
+  "conferenceIdentifier",
+  "conferenceIdentifierType",
+  "conferenceStartDate",
+  "conferenceEndDate",
+  "conferenceAcronym",
+  "conferenceSeries",
+] as const satisfies readonly (keyof BulkImportConferenceMetadata &
+  keyof Prisma.PosterMetadataUpdateInput)[];
+
+type OptionalBulkConferenceField =
+  (typeof OPTIONAL_BULK_CONFERENCE_FIELDS)[number];
 
 export function conferenceToPosterMetadataFields(
   conference: BulkImportConferenceMetadata,
-): Prisma.PosterMetadataUpdateInput {
-  const data: Prisma.PosterMetadataUpdateInput = {
+): Pick<BulkImportConferenceMetadata, "conferenceName" | "conferenceYear"> &
+  Partial<Record<OptionalBulkConferenceField, string | null>> {
+  const data: Pick<
+    BulkImportConferenceMetadata,
+    "conferenceName" | "conferenceYear"
+  > &
+    Partial<Record<OptionalBulkConferenceField, string | null>> = {
     conferenceName: conference.conferenceName,
     conferenceYear: conference.conferenceYear,
   };
 
-  for (const { source, target } of OPTIONAL_BULK_CONFERENCE_FIELDS) {
-    if (source in conference) {
-      data[target] = optionalString(conference[source]);
+  for (const field of OPTIONAL_BULK_CONFERENCE_FIELDS) {
+    if (field in conference) {
+      data[field] = optionalString(conference[field]);
     }
   }
 

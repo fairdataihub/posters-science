@@ -389,8 +389,12 @@ const zenodo = useZenodoReleaseConnection({
 
     existingDepositions.value = (data.existingDepositions ??
       []) as typeof existingDepositions.value;
-    linkedDepositionId.value = data.linkedDepositionId;
-    linkedDeposition.value = data.linkedDeposition ?? null;
+    linkedDepositionId.value =
+      data.linkedDepositionId == null
+        ? undefined
+        : Number(data.linkedDepositionId);
+    linkedDeposition.value = (data.linkedDeposition ??
+      null) as typeof linkedDeposition.value;
     previousVersionLicense.value = data.suggestedLicense ?? "";
     if (!selectedLicense.value && previousVersionLicense.value) {
       selectedLicense.value = previousVersionLicense.value;

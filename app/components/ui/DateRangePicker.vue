@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import {
   type CalendarDate,
+  type DateValue,
   DateFormatter,
   getLocalTimeZone,
+  toCalendarDate,
 } from "@internationalized/date";
 
 defineOptions({ inheritAttrs: false });
@@ -23,7 +25,9 @@ const props = defineProps<{
 
 const df = new DateFormatter("en-US", { dateStyle: "medium" });
 
-const localRange = ref<{
+// shallowRef: ref() would unwrap CalendarDate and drop its class type.
+// The range is always replaced, never mutated.
+const localRange = shallowRef<{
   start: CalendarDate | undefined;
   end: CalendarDate | undefined;
 }>({
@@ -68,11 +72,13 @@ watch(isOpen, (open) => {
   }
 });
 
-function onCalendarChange(value: {
-  start: CalendarDate | undefined;
-  end: CalendarDate | undefined;
-}) {
-  localRange.value = value;
+function onCalendarChange(
+  value: { start?: DateValue; end?: DateValue } | null,
+) {
+  localRange.value = {
+    start: value?.start ? toCalendarDate(value.start) : undefined,
+    end: value?.end ? toCalendarDate(value.end) : undefined,
+  };
 }
 
 function confirm() {

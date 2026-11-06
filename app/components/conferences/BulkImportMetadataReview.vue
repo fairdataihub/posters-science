@@ -320,7 +320,7 @@ const posterPreviewMissing = computed(() => {
   if (!current?.imageUrl?.trim()) {
     const job = current?.extractionJob;
     if (job?.status === "pending-thumbnail") return false;
-    if (thumbnailPollGeneration.value[current.id]) return false;
+    if (current && thumbnailPollGeneration.value[current.id]) return false;
     return Boolean(
       !job ||
         job.completed ||
@@ -472,7 +472,7 @@ export type PreviewValidationGroup = {
   posterId: number;
   fileName: string;
   issues: string[];
-  editPath: string;
+  editPath: ReturnType<typeof sharePosterEditPath>;
 };
 
 /** Every invalid poster with all of its issues and a link to fix them. */

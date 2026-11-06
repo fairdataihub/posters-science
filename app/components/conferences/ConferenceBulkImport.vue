@@ -50,12 +50,12 @@ import {
 import {
   BULK_POSTER_UPLOAD_ACCEPT,
   expandBulkPosterUploadSelection,
-  MAX_BULK_POSTER_ZIP_BYTES,
-  MAX_BULK_POSTER_ZIP_SIZE_LABEL,
+  isBulkPosterArchive,
   readBulkPosterUploadDataTransfer,
 } from "~/utils/bulkPosterUploadExpansion";
 import { shareBulkCompletionPath, shareNewBulkPath } from "~/utils/sharePaths";
 import BulkImportMetadataReview from "~/components/conferences/BulkImportMetadataReview.vue";
+import type { PreviewValidationGroup } from "~/components/conferences/BulkImportMetadataReview.vue";
 import BulkImportSpreadsheetStep from "~/components/conferences/BulkImportSpreadsheetStep.vue";
 import BulkImportPublishStep from "~/components/conferences/BulkImportPublishStep.vue";
 
@@ -103,7 +103,7 @@ const toast = useToast();
 
 const stagedPosters = ref<BulkImportStagedPoster[]>([]);
 
-const POSTER_ONLY_HINT = `${ALLOWED_POSTER_FILE_LABEL}, ZIP archives, or folders, up to ${MAX_POSTER_FILE_SIZE_LABEL} per poster file and ${MAX_BULK_POSTER_ZIP_SIZE_LABEL} per ZIP`;
+const POSTER_ONLY_HINT = `${ALLOWED_POSTER_FILE_LABEL}, archives (ZIP, 7z, RAR, TAR, TAR.GZ), or folders, up to ${MAX_POSTER_FILE_SIZE_LABEL} per poster file`;
 
 const validatePosterFile = (file: File) =>
   posterFileRejectionReason({
@@ -113,11 +113,7 @@ const validatePosterFile = (file: File) =>
   });
 
 function validatePosterUploadFile(file: File): string | null {
-  const lower = file.name.toLowerCase();
-  if (lower.endsWith(".zip")) {
-    if (file.size > MAX_BULK_POSTER_ZIP_BYTES) {
-      return `ZIP is too large. Maximum size is ${MAX_BULK_POSTER_ZIP_SIZE_LABEL}.`;
-    }
+  if (isBulkPosterArchive(file.name)) {
     if (file.size === 0) {
       return "File is empty. Choose a different file.";
     }
@@ -312,7 +308,8 @@ async function onPosterFilesSelected(files: File[]) {
   } catch {
     toast.add({
       title: "Could not read files",
-      description: "Try again with individual poster files or a smaller ZIP.",
+      description:
+        "Try again with individual poster files or a smaller archive.",
       color: "error",
     });
     return;
@@ -1221,6 +1218,7 @@ type BulkExtractionJobStatusResponse = {
   status: string;
   completed: boolean;
   error: string | null;
+  imageUrl?: string | null;
 };
 
 const batchProgress = computed(() => {
@@ -1810,9 +1808,8 @@ async function finishContinueToReviewMetadata() {
     }
   }
 
-  if (goToStep("review")) {
-    void persistWizardStep("review");
-  }
+  // goToStep persists the step once the move succeeds.
+  void goToStep("review");
 }
 
 const metadataGridStepRef = ref<{
@@ -1821,12 +1818,7 @@ const metadataGridStepRef = ref<{
 } | null>(null);
 const metadataReviewRef = ref<{
   previewValidationLines: () => string[];
-  previewValidationGroups: () => Array<{
-    posterId: number;
-    fileName: string;
-    issues: string[];
-    editPath: string;
-  }>;
+  previewValidationGroups: () => PreviewValidationGroup[];
 } | null>(null);
 const metadataGridSaving = ref(false);
 const previewValidationModalOpen = ref(false);
@@ -1846,10 +1838,8 @@ async function continueToViewMetadata() {
   } finally {
     metadataGridSaving.value = false;
   }
-  if (goToStep("preview")) {
-    void persistWizardStep("preview");
-    metadataRefreshKey.value += 1;
-  }
+  // goToStep persists the step; the step watcher refreshes the previews.
+  void goToStep("preview");
 }
 
 function continueToPublishStep() {
@@ -1869,9 +1859,7 @@ function continueToPublishStep() {
     return;
   }
 
-  if (goToStep("publish")) {
-    void persistWizardStep("publish");
-  }
+  void goToStep("publish");
 }
 
 function onSubmitStepContinue() {
@@ -2159,7 +2147,7 @@ async function startImport() {
               multiple
               enable-directory-picker
               title="Upload all posters for this batch"
-              description="Drag and drop poster files, a folder, or a ZIP archive here, or click to browse."
+              description="Drag and drop poster files, a folder, or an archive (ZIP, 7z, RAR, TAR) here, or click to browse."
               :accept="BULK_POSTER_UPLOAD_ACCEPT"
               :validate-file="validatePosterUploadFile"
               :resolve-dropped-files="readBulkPosterUploadDataTransfer"

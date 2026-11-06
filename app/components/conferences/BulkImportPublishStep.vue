@@ -1264,7 +1264,6 @@ watch(
                           : 'Publish to Zenodo'
                       "
                       :disabled="!canPublishRow(row)"
-                      :loading="row.status === 'publishing'"
                       @click="publishSingle(row)"
                     />
                   </div>

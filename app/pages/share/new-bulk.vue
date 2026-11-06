@@ -20,14 +20,16 @@ const jobIdFromQuery = computed(() => {
   return typeof value === "string" && value.length > 0 ? value : null;
 });
 
-const { data: resumeJob, status: resumeStatus } =
-  await useFetch<BulkPosterSubmissionJob>(
-    () =>
-      jobIdFromQuery.value
-        ? `/api/bulk-poster-submissions/${jobIdFromQuery.value}`
-        : null,
-    { watch: [jobIdFromQuery] },
-  );
+// The reactive key refetches when the jobId query changes.
+const { data: resumeJob, status: resumeStatus } = await useAsyncData(
+  () => `bulk-import-resume-${jobIdFromQuery.value ?? "new"}`,
+  () =>
+    jobIdFromQuery.value
+      ? $fetch<BulkPosterSubmissionJob>(
+          `/api/bulk-poster-submissions/${jobIdFromQuery.value}`,
+        )
+      : Promise.resolve(null),
+);
 
 const resumeLoading = computed(
   () => Boolean(jobIdFromQuery.value) && resumeStatus.value === "pending",

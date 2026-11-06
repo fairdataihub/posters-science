@@ -23,7 +23,7 @@ const options = [
     description:
       "For conference organizers, or if you are sharing several of your own posters and want to upload them as one batch.",
     points: [
-      "Upload files, a folder, or a ZIP",
+      "Upload files, a folder, or an archive",
       "Set conference and license once for the batch",
       "Review all posters in one grid, then publish together",
     ],

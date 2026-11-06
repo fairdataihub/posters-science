@@ -220,7 +220,9 @@ export async function posterIdsHiddenByCompletedBulkEmbargo(
         id: true,
         status: true,
         publishedAt: true,
-        zenodoDepositions: { select: { filesEmbargoUntil: true } },
+        zenodoDepositions: {
+          select: { depositionId: true, filesEmbargoUntil: true },
+        },
       },
     });
 

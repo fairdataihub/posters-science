@@ -5,6 +5,7 @@ import {
   strictFormSchema,
   type PosterResponse,
   type StrictFormSchema,
+  type StrictFormState,
   ISO_LANGUAGE_OPTIONS,
   IDENTIFIER_TYPE_OPTIONS,
   IDENTIFIER_TYPE_PLACEHOLDER_OPTIONS,
@@ -141,7 +142,7 @@ const posterContentOpened = ref(false);
 const subjectInputRefs = ref<{ $el?: HTMLElement; focus?: () => void }[]>([]);
 
 // Initial state (matches PosterMetadata / StrictFormSchema)
-const state = reactive<StrictFormSchema>({
+const state = reactive<StrictFormState>({
   title: "",
   description: "",
   submissionAbstract: "",
@@ -194,7 +195,7 @@ const state = reactive<StrictFormSchema>({
 const { data, error } = await useFetch(`/api/poster/${numericPosterId}`);
 
 if (data.value) {
-  const poster = data.value as PosterResponse;
+  const poster = data.value as unknown as PosterResponse;
   isVersionedPoster.value = poster.versionRootId != null;
 
   // Check if the poster is already published
@@ -308,8 +309,7 @@ if (data.value) {
               (ni) => ni.nameIdentifier.trim() !== "",
             );
             if (firstNonEmpty > 0) {
-              const [item] = mapped.splice(firstNonEmpty, 1);
-              mapped.unshift(item);
+              mapped.unshift(...mapped.splice(firstNonEmpty, 1));
             }
 
             return mapped.length > 0
@@ -1139,10 +1139,11 @@ const moveCreator = (index: number, direction: "up" | "down") => {
       </template>
     </UPageHeader>
 
+    <!-- state holds a draft: the conference year may be blank until validated -->
     <UForm
       ref="formRef"
       :schema="strictFormSchema"
-      :state="state"
+      :state="state as Partial<StrictFormSchema>"
       class="space-y-8"
       :disabled="loading"
       @submit="onSubmit"
