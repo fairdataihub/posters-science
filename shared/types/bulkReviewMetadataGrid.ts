@@ -16,6 +16,8 @@ export type BulkReviewGridColumn = {
   hint?: string;
   width?: number;
   wrapText?: boolean;
+  /** Semicolon-separated list, edited as badges. */
+  list?: boolean;
 };
 
 export type BulkReviewGridSheet = {

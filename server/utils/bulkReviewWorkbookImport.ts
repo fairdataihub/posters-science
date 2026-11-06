@@ -142,7 +142,10 @@ function columnIndexByFillKey(
 
     if (sheetDef.name === BULK_REVIEW_WORKBOOK_SHEET_CREATORS) {
       const normalized = header.trim().toLowerCase();
-      if (normalized === "name identifier") {
+      if (
+        normalized === "name identifier" ||
+        normalized === "orcid identifier"
+      ) {
         indexByFillKey.set("name_identifier", col);
       } else if (
         normalized === "identifier scheme" ||

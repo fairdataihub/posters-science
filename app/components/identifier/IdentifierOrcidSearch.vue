@@ -75,8 +75,8 @@ function selectResult(result: OrcidResult) {
     direction="right"
     handle-only
     :ui="{ content: 'w-[480px] max-w-full' }"
-    title="Find ORCID Identifier"
-    description="Search for the author's ORCID identifier based on their name and affiliation information."
+    title="Find ORCID"
+    description="Search for the author's ORCID based on their name and affiliation information."
     @update:open="$emit('update:open', $event)"
   >
     <template #body>

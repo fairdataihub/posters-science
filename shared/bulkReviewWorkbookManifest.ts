@@ -43,6 +43,11 @@ export type BulkReviewWorkbookColumn = {
    * be optional).
    */
   requirement?: BulkReviewColumnRequirement;
+  /**
+   * A semicolon-separated list (e.g. keywords). The grid edits it as badges;
+   * the workbook keeps the semicolons.
+   */
+  list?: boolean;
 };
 
 type ColOpts = {
@@ -51,6 +56,7 @@ type ColOpts = {
   hint?: string;
   instruction?: string;
   requirement?: BulkReviewColumnRequirement;
+  list?: boolean;
 };
 
 function col(
@@ -232,6 +238,7 @@ export const BULK_REVIEW_WORKBOOK_SHEETS: BulkReviewWorkbookSheet[] = [
       col("Keywords", "keywords", "subjects", "extracted", {
         width: 48,
         hint: "Semicolon-separated keywords (maps to subjects[]).",
+        list: true,
       }),
     ],
   },
@@ -239,7 +246,7 @@ export const BULK_REVIEW_WORKBOOK_SHEETS: BulkReviewWorkbookSheet[] = [
     name: BULK_REVIEW_WORKBOOK_SHEET_CREATORS,
     rowNoun: "creator",
     description:
-      "Mandatory: one row per contributor per poster. ORCID (or org ROR for Organizational) plus up to 30 affiliations on the same row.",
+      "Mandatory: one row per contributor per poster. Optional ORCID (or ROR for an organization) plus up to 30 affiliations on the same row.",
     grain: "contributor",
     columns: [
       col("Poster ID", "poster_id", "poster.id", "system", { width: 12 }),
@@ -250,15 +257,17 @@ export const BULK_REVIEW_WORKBOOK_SHEETS: BulkReviewWorkbookSheet[] = [
         width: 22,
       }),
       col("Name type", "name_type", "creators[].nameType", "extracted", {
+        requirement: "optional",
         width: 16,
         hint: "Personal | Organizational",
       }),
       col(
-        "ORCID identifier",
+        "ORCID",
         "name_identifier",
         "creators[].nameIdentifiers[0].nameIdentifier",
         "extracted",
         {
+          requirement: "optional",
           width: 36,
           hint: "ORCID URL for Personal; organization ROR URL for Organizational",
         },
@@ -280,7 +289,7 @@ export const BULK_REVIEW_WORKBOOK_SHEETS: BulkReviewWorkbookSheet[] = [
         "conference_name",
         "conference.conferenceName",
         "optional",
-        { width: 40 },
+        { width: 40, requirement: "required" },
       ),
       col(
         "Conference year",
@@ -339,7 +348,7 @@ export const BULK_REVIEW_WORKBOOK_SHEETS: BulkReviewWorkbookSheet[] = [
         "conference_start_date",
         "conference.conferenceStartDate",
         "optional",
-        { width: 18, hint: "ISO date YYYY-MM-DD" },
+        { width: 18, hint: "ISO date YYYY-MM-DD", requirement: "required" },
       ),
       col(
         "Conference end date",
@@ -443,6 +452,7 @@ export const BULK_REVIEW_WORKBOOK_SHEETS: BulkReviewWorkbookSheet[] = [
         width: 36,
       }),
       col("Identifier", "identifier", "identifiers[].identifier", "optional", {
+        requirement: "required",
         width: 36,
       }),
       col(
@@ -450,7 +460,7 @@ export const BULK_REVIEW_WORKBOOK_SHEETS: BulkReviewWorkbookSheet[] = [
         "identifier_type",
         "identifiers[].identifierType",
         "optional",
-        { width: 22 },
+        { width: 22, requirement: "required" },
       ),
     ],
   },
@@ -469,7 +479,7 @@ export const BULK_REVIEW_WORKBOOK_SHEETS: BulkReviewWorkbookSheet[] = [
         "funder_name",
         "fundingReferences[].funderName",
         "optional",
-        { width: 32 },
+        { width: 32, requirement: "required" },
       ),
       col(
         "Funder identifier type",

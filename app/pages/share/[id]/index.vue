@@ -901,7 +901,7 @@ function handleNameTypeChange(nameType: string, cIndex: number) {
       identifierTypeErrors.value[key] =
         nameType === "Organizational"
           ? "Only ROR identifiers are accepted for organizational creators."
-          : "Only ORCID identifiers are accepted for personal creators.";
+          : "Only ORCIDs are accepted for personal creators.";
     } else {
       identifierTypeErrors.value[key] = undefined;
     }
@@ -931,7 +931,7 @@ function handleNameIdentifierInput(
       identifierTypeErrors.value[key] =
         nameType === "Organizational"
           ? "Only ROR identifiers are accepted for organizational creators."
-          : "Only ORCID identifiers are accepted for personal creators.";
+          : "Only ORCIDs are accepted for personal creators.";
     } else {
       identifierTypeErrors.value[key] = undefined;
     }
@@ -939,7 +939,7 @@ function handleNameIdentifierInput(
     identifierTypeErrors.value[key] =
       nameType === "Organizational"
         ? "Only ROR identifiers are accepted for organizational creators."
-        : "Only ORCID identifiers are accepted for personal creators.";
+        : "Only ORCIDs are accepted for personal creators.";
   } else {
     identifierTypeErrors.value[key] = undefined;
   }
@@ -1585,7 +1585,7 @@ const moveCreator = (index: number, direction: "up" | "down") => {
                       :label="
                         creator.nameType === 'Organizational'
                           ? 'ROR Identifier'
-                          : 'ORCID Identifier'
+                          : 'ORCID'
                       "
                       :error="
                         orcidErrors[`${cIndex}-0`] ||
