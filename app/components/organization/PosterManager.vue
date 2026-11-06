@@ -46,6 +46,14 @@ function thumbnail(poster: { posterId: number; imageUrl: string }) {
   );
 }
 
+function addedByLabel(poster: OrganizationListedPoster) {
+  if (poster.addedByMe) return "Added by you";
+  if (!poster.addedByMember)
+    return `Added by ${poster.addedByName}, a former member,`;
+
+  return `Added by ${poster.addedByName}`;
+}
+
 function showError(title: string, err: unknown) {
   toast.add({
     title,
@@ -132,6 +140,19 @@ async function addSelected() {
 
 // Taking a poster off the page
 const removeTarget = ref<OrganizationListedPoster | null>(null);
+
+// Only the person who added a listing can add it back, and only while they
+// are still a member.
+const removeDescription = computed(() => {
+  const target = removeTarget.value;
+  const name = target?.addedByName ?? "another member";
+  const comeBack = target?.addedByMember
+    ? "only they can add it back"
+    : "they have left the organization, so it can only come back if they rejoin";
+
+  return `It was added by ${name}, and ${comeBack}. The poster itself stays published and keeps its owner.`;
+});
+
 const removeConfirmOpen = computed({
   get: () => removeTarget.value !== null,
   set: (open) => {
@@ -230,7 +251,7 @@ async function remove(poster: OrganizationListedPoster) {
               </NuxtLink>
 
               <p class="text-muted mt-0.5 text-xs">
-                {{ poster.addedByMe ? "Added by you" : "Added by a member" }}
+                {{ addedByLabel(poster) }}
                 on {{ dayjs(poster.addedAt).format("MMMM D, YYYY") }}
               </p>
             </div>
@@ -337,7 +358,7 @@ async function remove(poster: OrganizationListedPoster) {
     <UModal
       v-model:open="removeConfirmOpen"
       title="Remove this poster from the page?"
-      :description="`It was added by another member, and only they can add it back. The poster itself stays published and keeps its owner.`"
+      :description="removeDescription"
     >
       <template #footer="{ close }">
         <div class="flex w-full items-center justify-between gap-3">
