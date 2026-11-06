@@ -19,9 +19,7 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div
-    class="border-default flex flex-wrap items-start justify-between gap-4 rounded-lg border bg-gray-50/50 p-4 dark:bg-gray-900/30"
-  >
+  <div class="flex flex-wrap items-start justify-between gap-4">
     <div class="min-w-0 space-y-1">
       <UBadge
         color="success"
