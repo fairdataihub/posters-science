@@ -158,7 +158,12 @@ const footerItems: NavigationMenuItem[] = [
 </script>
 
 <template>
-  <div class="relative">
+  <!-- fitViewport pages end at the footer with no scroll: main fills only
+       the space the header and footer leave. -->
+  <div
+    class="relative"
+    :class="{ 'flex min-h-svh flex-col': route.meta.fitViewport }"
+  >
     <!-- <UiAuroraBackground class="absolute inset-0 -z-10 h-full" /> -->
 
     <!-- Press announcement. The id remembers a close, so change it to show a new one. -->
@@ -334,7 +339,7 @@ const footerItems: NavigationMenuItem[] = [
       </template>
     </UHeader>
 
-    <UMain>
+    <UMain :class="{ 'min-h-0 flex-1': route.meta.fitViewport }">
       <slot />
     </UMain>
 

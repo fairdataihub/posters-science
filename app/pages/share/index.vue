@@ -1,9 +1,10 @@
 <script setup lang="ts">
 definePageMeta({
   middleware: ["auth"],
+  fitViewport: true,
 });
 
-const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Share Posters - Posters.science")}&description=${encodeURIComponent("Choose how many posters you want to share")}&app=posters-science&org=fairdataihub`;
+const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Share Posters - Posters.science")}&description=${encodeURIComponent("Choose how you want to share your posters")}&app=posters-science&org=fairdataihub`;
 
 useSeoMeta({
   title: "Share Posters",
@@ -15,8 +16,11 @@ useSeoMeta({
 </script>
 
 <template>
-  <div class="mx-auto flex w-full max-w-3xl flex-col gap-6 px-6 pb-12">
-    <UPageHeader title="How many posters will you be sharing?">
+  <div class="mx-auto flex w-full max-w-3xl flex-col gap-6 px-6 pb-8">
+    <UPageHeader
+      title="One poster or a batch?"
+      :ui="{ root: 'py-4' }"
+    >
       <template #headline>
         <UBreadcrumb
           :items="[
