@@ -2104,8 +2104,11 @@ async function startImport() {
               :validate-file="validatePosterUploadFile"
               :resolve-dropped-files="readBulkPosterUploadDataTransfer"
               :hint="`${POSTER_ONLY_HINT}. Files upload as soon as you add them.`"
+              :disabled="!jobId && !importNameValid"
+              disabled-message="Name your batch above to start uploading posters."
               @on-change="onPosterFilesSelected"
               @on-reject="onPosterFilesRejected"
+              @on-disabled-interaction="batchNameAttempted = true"
             >
               <UiFileUploadGrid />
             </UiFileUpload>
