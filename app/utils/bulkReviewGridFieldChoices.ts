@@ -20,7 +20,10 @@ function optionValues(
 export const BULK_REVIEW_GRID_FIELD_CHOICES: Record<string, readonly string[]> =
   {
     name_type: optionValues(NAME_TYPE_OPTIONS),
-    language: optionValues(ISO_LANGUAGE_OPTIONS),
+    // Sorted by language name, since the dropdown shows names.
+    language: optionValues(
+      [...ISO_LANGUAGE_OPTIONS].sort((a, b) => a.label.localeCompare(b.label)),
+    ),
     identifier_type: optionValues(IDENTIFIER_TYPE_OPTIONS),
     related_identifier_type: optionValues(IDENTIFIER_TYPE_OPTIONS),
     relation_type: optionValues(RELATION_TYPE_OPTIONS),
@@ -28,6 +31,19 @@ export const BULK_REVIEW_GRID_FIELD_CHOICES: Record<string, readonly string[]> =
     funder_identifier_type: [...FUNDER_IDENTIFIER_TYPE_OPTIONS],
     conference_identifier_type: identifierTypes.map((entry) => entry.value),
   };
+
+/** Display text for stored values, where it differs (the stored value is unchanged). */
+const BULK_REVIEW_GRID_CHOICE_LABELS: Record<string, ReadonlyMap<string, string>> =
+  {
+    language: new Map(
+      ISO_LANGUAGE_OPTIONS.map((option) => [option.value, option.label]),
+    ),
+  };
+
+/** Text to show for a dropdown value, e.g. "English" for language "en". */
+export function bulkReviewGridChoiceLabel(fillKey: string, value: string): string {
+  return BULK_REVIEW_GRID_CHOICE_LABELS[fillKey]?.get(value) ?? value;
+}
 
 export function bulkReviewGridChoicesForFillKey(
   fillKey: string,

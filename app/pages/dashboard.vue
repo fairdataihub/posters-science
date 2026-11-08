@@ -2429,6 +2429,12 @@ function posterMenuItems(poster: Poster) {
               />
             </UFormField>
 
+            <ExtractionAccuracyNotice
+              v-if="
+                versionFileMode === 'upload' && versionMetadataMode === 'extract'
+              "
+            />
+
             <UAlert
               v-if="versionError"
               color="error"

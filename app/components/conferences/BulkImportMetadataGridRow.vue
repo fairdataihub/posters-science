@@ -24,6 +24,10 @@ const props = defineProps<{
   canMoveDown: boolean;
   posterNameClass: string;
   cellChoices: (fillKey: string) => readonly string[] | undefined;
+  /** Text shown for a dropdown value (the stored value is unchanged). */
+  choiceLabel: (fillKey: string, value: string) => string;
+  /** Every other poster's rows are shaded so posters are easy to tell apart. */
+  shaded: boolean;
   cellStyle: (column: BulkReviewGridColumn) => Record<string, string>;
   isMissingRequired: (
     column: BulkReviewGridColumn,
@@ -54,7 +58,10 @@ function onInput(fillKey: string, event: Event) {
 <template>
   <tr
     class="group"
-    :class="{ 'border-accented border-t-2': rowPos > 0 && firstOfPoster }"
+    :class="{
+      'border-accented border-t-2': rowPos > 0 && firstOfPoster,
+      'bg-muted': shaded,
+    }"
   >
     <th scope="row" :class="posterNameClass">
       <span class="block text-sm font-normal [overflow-wrap:anywhere]">
@@ -85,7 +92,7 @@ function onInput(fillKey: string, event: Event) {
           :key="choice"
           :value="choice"
         >
-          {{ choice }}
+          {{ choiceLabel(column.fillKey, choice) }}
         </option>
       </select>
       <BulkImportMetadataGridListCell
