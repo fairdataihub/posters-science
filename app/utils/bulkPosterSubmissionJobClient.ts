@@ -1,4 +1,5 @@
 import type {
+  BulkImportExtractionStatusResponse,
   BulkImportStagedPoster,
   BulkPosterSubmissionJob,
   CreateBulkPosterSubmissionJobBody,
@@ -28,6 +29,13 @@ export async function createBulkPosterSubmissionJob(
 export async function getBulkPosterSubmissionJob(jobId: string) {
   return $fetch<BulkPosterSubmissionJob>(
     `/api/bulk-poster-submissions/${jobId}`,
+  );
+}
+
+/** Status of every extraction job in this bulk import, in one request. */
+export async function getBulkImportExtractionStatus(jobId: string) {
+  return $fetch<BulkImportExtractionStatusResponse>(
+    `/api/bulk-poster-submissions/${jobId}/extraction-status`,
   );
 }
 

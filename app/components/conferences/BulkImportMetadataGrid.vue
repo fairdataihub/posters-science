@@ -14,7 +14,10 @@ import {
   saveBulkReviewMetadataGrid,
   getBulkReviewMetadataValidation,
 } from "~/utils/bulkPosterSubmissionJobClient";
-import { bulkReviewGridChoicesForFillKey } from "~/utils/bulkReviewGridFieldChoices";
+import {
+  bulkReviewGridChoiceLabel,
+  bulkReviewGridChoicesForFillKey,
+} from "~/utils/bulkReviewGridFieldChoices";
 import { BULK_REVIEW_CONTRIBUTOR_AFFILIATION_SLOT_COUNT } from "#shared/bulkReviewWorkbookManifest";
 
 /**
@@ -859,8 +862,13 @@ function addButtonLabelStyle(leftOffsetPx: number) {
   return { left: `${leftOffsetPx}px`, width: `${width}px`, maxWidth: "100%" };
 }
 
-const posterNameColumnClass =
-  "bg-default border-default group-hover:bg-elevated sticky left-0 z-10 max-w-[320px] w-[320px] border-r border-b px-2 py-1.5 text-left align-top font-normal shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]";
+const POSTER_NAME_COLUMN_BASE_CLASS =
+  "border-default group-hover:bg-elevated sticky left-0 z-10 max-w-[320px] w-[320px] border-r border-b px-2 py-1.5 text-left align-top font-normal shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]";
+
+/** The sticky poster column needs an opaque background, matching its row's shade. */
+function posterNameColumnClass(shaded: boolean) {
+  return `${shaded ? "bg-muted" : "bg-default"} ${POSTER_NAME_COLUMN_BASE_CLASS}`;
+}
 
 const tableBodyColumnCount = computed(() => {
   const sheet = currentSheet.value;
@@ -1259,12 +1267,16 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
             </thead>
 
             <tbody>
-              <template v-for="group in displayGroups" :key="group.posterId">
+              <template
+                v-for="(group, groupIndex) in displayGroups"
+                :key="group.posterId"
+              >
               <tr
                 v-if="group.entries.length === 0"
                 class="group"
+                :class="{ 'bg-muted': groupIndex % 2 === 1 }"
               >
-                <th scope="row" :class="posterNameColumnClass">
+                <th scope="row" :class="posterNameColumnClass(groupIndex % 2 === 1)">
                   <span
                     class="block text-sm font-normal [overflow-wrap:anywhere]"
                   >
@@ -1273,7 +1285,8 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
                 </th>
                 <td
                   :colspan="tableBodyColumnCount - 1"
-                  class="border-default bg-default border-b px-2 py-1 align-middle"
+                  class="border-default border-b px-2 py-1 align-middle"
+                  :class="groupIndex % 2 === 1 ? 'bg-muted' : 'bg-default'"
                 >
                   <button
                     type="button"
@@ -1308,8 +1321,10 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
                 :show-reorder="showReorderButtons"
                 :can-move-up="canMove(index, -1)"
                 :can-move-down="canMove(index, 1)"
-                :poster-name-class="posterNameColumnClass"
+                :poster-name-class="posterNameColumnClass(groupIndex % 2 === 1)"
                 :cell-choices="cellChoices"
+                :choice-label="bulkReviewGridChoiceLabel"
+                :shaded="groupIndex % 2 === 1"
                 :cell-style="cellWidthStyle"
                 :is-missing-required="isMissingRequired"
                 @cell-input="onCellInput"
@@ -1329,7 +1344,8 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
               >
                 <td
                   :colspan="tableBodyColumnCount"
-                  class="border-default bg-default border-b px-2 py-1"
+                  class="border-default border-b px-2 py-1"
+                  :class="groupIndex % 2 === 1 ? 'bg-muted' : 'bg-default'"
                 >
                   <button
                     type="button"

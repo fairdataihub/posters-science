@@ -57,3 +57,17 @@ export type UpdateBulkPosterSubmissionJobBody = {
   managedConferenceId?: string | null;
   completedAt?: string | null;
 };
+
+/** One extraction job's status, as returned by the bulk extraction-status endpoint. */
+export type BulkImportExtractionJobStatus = {
+  jobId: string;
+  posterId: number;
+  status: string;
+  completed: boolean;
+  error: string | null;
+  imageUrl: string | null;
+};
+
+export type BulkImportExtractionStatusResponse = {
+  jobs: BulkImportExtractionJobStatus[];
+};

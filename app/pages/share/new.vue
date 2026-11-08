@@ -284,6 +284,8 @@ onUnmounted(() => {
           <div class="space-y-6">
             <MaintenanceNotice maintenance-key="extraction" />
 
+            <ExtractionAccuracyNotice />
+
             <UiFileUpload
               :accept="POSTER_FILE_ACCEPT"
               :validate-file="validatePosterFile"
