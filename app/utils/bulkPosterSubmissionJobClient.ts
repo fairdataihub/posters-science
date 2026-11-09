@@ -1,4 +1,5 @@
 import type {
+  BulkImportExtractionStatusResponse,
   BulkImportStagedPoster,
   BulkPosterSubmissionJob,
   CreateBulkPosterSubmissionJobBody,
@@ -28,6 +29,13 @@ export async function createBulkPosterSubmissionJob(
 export async function getBulkPosterSubmissionJob(jobId: string) {
   return $fetch<BulkPosterSubmissionJob>(
     `/api/bulk-poster-submissions/${jobId}`,
+  );
+}
+
+/** Status of every extraction job in this bulk import, in one request. */
+export async function getBulkImportExtractionStatus(jobId: string) {
+  return $fetch<BulkImportExtractionStatusResponse>(
+    `/api/bulk-poster-submissions/${jobId}/extraction-status`,
   );
 }
 
@@ -113,6 +121,23 @@ export async function getBulkReviewMetadataGrid(
 }
 
 /** Strict-form validation for every poster in the batch, in one request. */
+/** One poster's preview status and required-field issues (Poster Previews). */
+export type BulkPosterPreviewSummary = {
+  posterId: number;
+  found: boolean;
+  imageUrl: string;
+  status: string;
+  extractionJob: { status: string; completed: boolean } | null;
+  issues: Array<{ path: string; message: string }>;
+};
+
+/** Thumbnail / extraction status and validation for every poster, in one request. */
+export async function getBulkPosterPreviewSummaries(jobId: string) {
+  return $fetch<{ posters: BulkPosterPreviewSummary[] }>(
+    `/api/bulk-poster-submissions/${jobId}/poster-summaries`,
+  );
+}
+
 export async function getBulkReviewMetadataValidation(jobId: string) {
   return $fetch<{
     posters: Array<{

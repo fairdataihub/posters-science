@@ -22,6 +22,26 @@ function quoteIfSpaced(value: string): string {
   return value.includes(" ") ? `"${value}"` : value;
 }
 
+/**
+ * Extracted affiliations are often "Department, Institution, City, ST, USA",
+ * and several can be sent joined with ";". ORCID org names never match that
+ * whole string, so split it into parts, drop address bits (postcodes, state or
+ * country codes) and match any remaining part.
+ */
+function affiliationTerms(raw: string): string[] {
+  const terms = raw
+    .split(/[;,]/)
+    .map((part) => part.replace(/["\\]/g, "").replace(/\s+/g, " ").trim())
+    .filter(
+      (part) =>
+        (part.match(/\p{L}/gu)?.length ?? 0) >= 3 &&
+        !/\d/.test(part) &&
+        !/^\p{Lu}{2,3}$/u.test(part),
+    );
+
+  return [...new Set(terms)].slice(0, 8);
+}
+
 export default defineEventHandler(async (event) => {
   const result = querySchema.safeParse(getQuery(event));
   if (!result.success) {
@@ -33,8 +53,9 @@ export default defineEventHandler(async (event) => {
   setResponseHeader(event, "Cache-Control", "no-store");
 
   let q = `given-names:${quoteIfSpaced(givenName)} AND family-name:${quoteIfSpaced(familyName)}`;
-  if (affiliation?.trim()) {
-    q += ` AND affiliation-org-name:${quoteIfSpaced(affiliation.trim())}`;
+  const terms = affiliationTerms(affiliation ?? "");
+  if (terms.length > 0) {
+    q += ` AND affiliation-org-name:(${terms.map((term) => `"${term}"`).join(" OR ")})`;
   }
 
   const response = await $fetch<OrcidExpandedResponse>(

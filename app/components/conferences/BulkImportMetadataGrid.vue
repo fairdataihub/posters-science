@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import BulkImportMetadataGridRow from "~/components/conferences/BulkImportMetadataGridRow.vue";
 import { strictIssueMessage } from "~/utils/strictIssueLabel";
-import { useElementSize } from "@vueuse/core";
+import { onKeyStroke, useElementSize, useScrollLock } from "@vueuse/core";
 import type {
   BulkReviewGridColumn,
   BulkReviewGridRow,
@@ -14,8 +14,17 @@ import {
   saveBulkReviewMetadataGrid,
   getBulkReviewMetadataValidation,
 } from "~/utils/bulkPosterSubmissionJobClient";
-import { bulkReviewGridChoicesForFillKey } from "~/utils/bulkReviewGridFieldChoices";
-import { BULK_REVIEW_CONTRIBUTOR_AFFILIATION_SLOT_COUNT } from "#shared/bulkReviewWorkbookManifest";
+import {
+  bulkReviewGridChoiceLabel,
+  bulkReviewGridChoicesForFillKey,
+} from "~/utils/bulkReviewGridFieldChoices";
+import {
+  BULK_REVIEW_CONTRIBUTOR_AFFILIATION_SLOT_COUNT,
+  BULK_REVIEW_WORKBOOK_SHEET_FUNDING,
+} from "#shared/bulkReviewWorkbookManifest";
+import { schemeUriForScheme } from "~/utils/poster_schema";
+import IdentifierOrcidSearch from "~/components/identifier/IdentifierOrcidSearch.vue";
+import IdentifierRorSearch from "~/components/identifier/IdentifierRorSearch.vue";
 
 /**
  * Spreadsheet-style editor for batch poster metadata. Sheets and columns come
@@ -79,6 +88,37 @@ function stripKeys(rows: EditableRow[]): BulkReviewGridRow[] {
   return rows.map(({ _key, ...rest }) => rest);
 }
 
+/** Each poster's rows on every tab, serialized, so a save can send only changed posters. */
+function posterSnapshots(): Map<string, string> {
+  const byPoster = new Map<string, Record<string, BulkReviewGridRow[]>>();
+  for (const [name, rows] of Object.entries(sheetRows.value)) {
+    for (const row of stripKeys(rows)) {
+      const id = String(row.poster_id ?? "");
+      const sheets = byPoster.get(id) ?? {};
+      (sheets[name] ??= []).push(row);
+      byPoster.set(id, sheets);
+    }
+  }
+
+  return new Map(
+    [...byPoster].map(([id, sheets]) => [id, JSON.stringify(sheets)]),
+  );
+}
+
+/** Snapshots from the last load; a poster is saved only if its rows differ. */
+const savedPosterSnapshots = ref(new Map<string, string>());
+
+function changedPosterIds(): Set<string> {
+  const current = posterSnapshots();
+  const saved = savedPosterSnapshots.value;
+  const changed = new Set<string>();
+  for (const id of new Set([...current.keys(), ...saved.keys()])) {
+    if (current.get(id) !== saved.get(id)) changed.add(id);
+  }
+
+  return changed;
+}
+
 function snapshot(): string {
   const out: Record<string, BulkReviewGridRow[]> = {};
   for (const [name, rows] of Object.entries(sheetRows.value)) {
@@ -101,6 +141,292 @@ function markDirty() {
 function onCellInput(row: BulkReviewGridRow, fillKey: string, value: string) {
   row[fillKey] = value;
   markDirty();
+}
+
+// ---------------------------------------------------------------------------
+// ORCID / ROR lookup: the single-poster search drawers, opened from a cell.
+// Each lookup fills the same fields the single-poster editor does.
+// ---------------------------------------------------------------------------
+
+type CellLookup =
+  | {
+      kind: "orcid";
+      row: BulkReviewGridRow;
+      idKey: string;
+      givenName: string;
+      familyName: string;
+      affiliations: string[];
+    }
+  | {
+      kind: "ror";
+      row: BulkReviewGridRow;
+      idKey: string;
+      nameKey: string;
+      query: string;
+      nameLabel: string;
+    };
+
+const activeLookup = ref<CellLookup | null>(null);
+
+function rowAffiliationNames(row: BulkReviewGridRow): string[] {
+  const names: string[] = [];
+  for (let slot = 1; slot <= MAX_AFFILIATION_SLOTS; slot++) {
+    const name = (row[`contributor_affiliation_${slot}_name`] ?? "").trim();
+    if (name) names.push(name);
+  }
+
+  return names;
+}
+
+/** Which lookup a cell offers, or null; built on demand when the button is clicked. */
+function cellLookup(
+  column: BulkReviewGridColumn,
+  row: BulkReviewGridRow,
+): CellLookup | null {
+  const sheetName = currentSheet.value?.name;
+  const value = (key: string) => (row[key] ?? "").trim();
+
+  if (sheetName === CREATORS_SHEET && column.fillKey === "name_identifier") {
+    if (row.name_type === "Organizational") {
+      return {
+        kind: "ror",
+        row,
+        idKey: "name_identifier",
+        nameKey: "given_name",
+        query: value("given_name"),
+        nameLabel: "organization",
+      };
+    }
+
+    return {
+      kind: "orcid",
+      row,
+      idKey: "name_identifier",
+      givenName: value("given_name"),
+      familyName: value("family_name"),
+      affiliations: rowAffiliationNames(row),
+    };
+  }
+
+  const slot = affiliationSlot(column.fillKey);
+  if (sheetName === CREATORS_SHEET && slot != null && column.fillKey.endsWith("_ror")) {
+    const nameKey = `contributor_affiliation_${slot}_name`;
+
+    return {
+      kind: "ror",
+      row,
+      idKey: column.fillKey,
+      nameKey,
+      query: value(nameKey),
+      nameLabel: "affiliation",
+    };
+  }
+
+  // Like single-poster editing: only while the funder is empty or already ROR.
+  if (
+    sheetName === BULK_REVIEW_WORKBOOK_SHEET_FUNDING &&
+    column.fillKey === "funder_identifier" &&
+    (!value("funder_identifier_type") || value("funder_identifier_type") === "ROR")
+  ) {
+    return {
+      kind: "ror",
+      row,
+      idKey: "funder_identifier",
+      nameKey: "funder_name",
+      query: value("funder_name"),
+      nameLabel: "funder",
+    };
+  }
+
+  return null;
+}
+
+function cellLookupKind(column: BulkReviewGridColumn, row: BulkReviewGridRow) {
+  return cellLookup(column, row)?.kind ?? null;
+}
+
+/** The search needs something to search for, as in single-poster editing. */
+function canRunCellLookup(column: BulkReviewGridColumn, row: BulkReviewGridRow) {
+  const lookup = cellLookup(column, row);
+  if (!lookup) return false;
+
+  return lookup.kind === "orcid" ? Boolean(lookup.givenName) : Boolean(lookup.query);
+}
+
+function openCellLookup(row: BulkReviewGridRow, column: BulkReviewGridColumn) {
+  activeLookup.value = cellLookup(column, row);
+}
+
+function onOrcidLookupSelect(orcidUrl: string) {
+  const lookup = activeLookup.value;
+  if (lookup?.kind !== "orcid") return;
+  onCellInput(lookup.row, lookup.idKey, orcidUrl);
+  activeLookup.value = null;
+}
+
+// ---------------------------------------------------------------------------
+// ORCID auto-fill (Creators tab): fill an ORCID only when exactly one ORCID
+// record has the same given and family name within the creator's affiliations.
+// ---------------------------------------------------------------------------
+
+const orcidAutoFill = reactive({ running: false, done: 0, total: 0 });
+const ORCID_AUTO_FILL_CONCURRENCY = 4;
+
+type OrcidSearchResult = {
+  orcidId: string;
+  givenName: string;
+  familyName: string;
+};
+
+/** Case-, accent- and punctuation-insensitive name for exact matching. */
+function normalizePersonName(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+}
+
+/** Visible person creators with a name and affiliation but no ORCID yet. */
+function orcidAutoFillCandidates(): BulkReviewGridRow[] {
+  if (currentSheet.value?.name !== CREATORS_SHEET) return [];
+
+  return visibleRows.value
+    .map(({ row }) => row)
+    .filter(
+      (row) =>
+        row.name_type !== "Organizational" &&
+        !(row.name_identifier ?? "").trim() &&
+        (row.given_name ?? "").trim() &&
+        (row.family_name ?? "").trim() &&
+        rowAffiliationNames(row).length > 0,
+    );
+}
+
+async function autoFillOrcids() {
+  if (orcidAutoFill.running) return;
+
+  const candidates = orcidAutoFillCandidates();
+  if (candidates.length === 0) {
+    toast.add({
+      title: "Nothing to auto-fill",
+      description:
+        "Auto-fill needs person creators with a given name, family name and affiliation, and no ORCID yet.",
+      color: "info",
+    });
+
+    return;
+  }
+
+  // One search per distinct name + affiliations (the same person often
+  // appears on several posters).
+  const groups = new Map<string, BulkReviewGridRow[]>();
+  for (const row of candidates) {
+    const key = [
+      normalizePersonName(row.given_name ?? ""),
+      normalizePersonName(row.family_name ?? ""),
+      rowAffiliationNames(row).join("; "),
+    ].join("|");
+    groups.set(key, [...(groups.get(key) ?? []), row]);
+  }
+
+  const queue = [...groups.values()];
+  let filledRows = 0;
+  let noMatch = 0;
+  let ambiguous = 0;
+  let failed = 0;
+
+  orcidAutoFill.running = true;
+  orcidAutoFill.done = 0;
+  orcidAutoFill.total = queue.length;
+
+  async function worker() {
+    for (let rows = queue.shift(); rows; rows = queue.shift()) {
+      const first = rows[0]!;
+      const givenName = (first.given_name ?? "").trim();
+      const familyName = (first.family_name ?? "").trim();
+      try {
+        const results = await $fetch<OrcidSearchResult[]>("/api/orcid/search", {
+          query: {
+            givenName,
+            familyName,
+            affiliation: rowAffiliationNames(first).join("; "),
+          },
+        });
+        const exactIds = new Set(
+          results
+            .filter(
+              (result) =>
+                normalizePersonName(result.givenName) ===
+                  normalizePersonName(givenName) &&
+                normalizePersonName(result.familyName) ===
+                  normalizePersonName(familyName),
+            )
+            .map((result) => result.orcidId),
+        );
+
+        if (exactIds.size === 1) {
+          const orcidUrl = `https://orcid.org/${[...exactIds][0]}`;
+          for (const row of rows) {
+            // Skip a cell the user filled while the search ran.
+            if ((row.name_identifier ?? "").trim()) continue;
+            onCellInput(row, "name_identifier", orcidUrl);
+            filledRows++;
+          }
+        } else if (exactIds.size === 0) {
+          noMatch += rows.length;
+        } else {
+          ambiguous += rows.length;
+        }
+      } catch {
+        failed += rows.length;
+      } finally {
+        orcidAutoFill.done++;
+      }
+    }
+  }
+
+  try {
+    await Promise.all(
+      Array.from({ length: ORCID_AUTO_FILL_CONCURRENCY }, () => worker()),
+    );
+  } finally {
+    orcidAutoFill.running = false;
+  }
+
+  const skipped = [
+    noMatch && `${noMatch} with no exact match`,
+    ambiguous && `${ambiguous} with more than one match`,
+    failed && `${failed} that could not be searched`,
+  ].filter(Boolean);
+
+  toast.add({
+    title:
+      filledRows > 0
+        ? `Filled ${filledRows} ORCID${filledRows === 1 ? "" : "s"}`
+        : "No ORCIDs filled",
+    description: [
+      filledRows > 0 ? "Review them, then save." : "",
+      skipped.length ? `Left empty: ${skipped.join(", ")}.` : "",
+    ]
+      .filter(Boolean)
+      .join(" "),
+    color: filledRows > 0 ? "success" : "info",
+  });
+}
+
+/** Fill the ROR URL and replace the typed name with the registry's formal name. */
+function onRorLookupSelect(rorUrl: string, displayName: string) {
+  const lookup = activeLookup.value;
+  if (lookup?.kind !== "ror") return;
+  onCellInput(lookup.row, lookup.idKey, rorUrl);
+  onCellInput(lookup.row, lookup.nameKey, displayName);
+  if (lookup.idKey === "funder_identifier") {
+    onCellInput(lookup.row, "funder_identifier_type", "ROR");
+    onCellInput(lookup.row, "scheme_uri", schemeUriForScheme("ROR") ?? "");
+  }
+  activeLookup.value = null;
 }
 watch(dirty, (value) => emit("dirtyChange", value));
 
@@ -157,6 +483,7 @@ async function load(options: { refresh?: boolean } = {}) {
     applySheetPosterRanks(data, rows);
     sheetRows.value = rows;
     savedSnapshot.value = snapshot();
+    savedPosterSnapshots.value = posterSnapshots();
     dirty.value = false;
     extraAffiliationSlots.value = 0;
     if (!data.sheets.some((sheet) => sheet.name === activeSheet.value)) {
@@ -168,6 +495,8 @@ async function load(options: { refresh?: boolean } = {}) {
     ) {
       posterFilter.value = ALL_POSTERS;
     }
+    // Tab warnings for required-field issues (also refreshed after each save).
+    void refreshStrictTabIssues();
   } catch (error) {
     loadError.value =
       fetchErrorDescription(error) ?? "Could not load poster metadata.";
@@ -282,11 +611,27 @@ const shownAffiliationSlots = computed(() =>
 const editableColumns = computed<BulkReviewGridColumn[]>(() => {
   const sheet = currentSheet.value;
   if (!sheet) return [];
-  return sheet.columns.filter((column) => {
+  const columns = sheet.columns.filter((column) => {
     if (column.system) return false;
     const slot = affiliationSlot(column.fillKey);
     return slot == null || slot <= shownAffiliationSlots.value;
   });
+
+  // Creators: affiliations before ORCID, matching the lookup flow (find the
+  // affiliation's ROR first, then ORCID searches within those affiliations).
+  // Grid only; the workbook keeps the manifest order.
+  if (sheet.name !== CREATORS_SHEET) return columns;
+  const orcid = columns.find((column) => column.fillKey === "name_identifier");
+  if (!orcid) return columns;
+  const rest = columns.filter((column) => column !== orcid);
+  let lastAffiliation = -1;
+  rest.forEach((column, index) => {
+    if (affiliationSlot(column.fillKey) != null) lastAffiliation = index;
+  });
+  if (lastAffiliation === -1) return columns;
+  rest.splice(lastAffiliation + 1, 0, orcid);
+
+  return rest;
 });
 
 const MAX_COLUMN_WIDTH_PX = 500;
@@ -528,6 +873,114 @@ const validationIssueGroups = computed(() =>
 );
 const saveIssueGroups = computed(() => groupIssuesBySheet(saveIssues.value));
 
+/**
+ * Required-field issues (the ones "Fix metadata before publishing" lists),
+ * checked against saved data when the grid loads and after every save.
+ */
+const strictTabIssues = ref<GridValidationIssue[]>([]);
+
+async function refreshStrictTabIssues() {
+  const issues = await collectStrictFormIssues();
+  strictTabIssues.value = issues.filter((issue) => issue.code === "strict_form");
+}
+
+/**
+ * Tabs that need attention: missing required cells (live), required-field
+ * issues from the last check, or issues from the last save.
+ */
+const sheetsWithIssues = computed(
+  () =>
+    new Set([
+      ...collectGridRequiredIssues().map((issue) => issue.sheet),
+      ...strictTabIssues.value.map((issue) => issue.sheet),
+      ...saveIssueGroups.value
+        .filter((group) => group.isTab)
+        .map((group) => group.name),
+    ]),
+);
+
+// ---------------------------------------------------------------------------
+// Opened tabs: every tab holds AI-extracted metadata, so tabs stay grey until
+// opened, and Save and Continue asks before skipping unopened ones (like the
+// single-poster editor's "Sections Not Reviewed" check). Remembered per batch
+// in this browser.
+// ---------------------------------------------------------------------------
+
+const openedSheets = ref(new Set<string>());
+
+function openedSheetsStorageKey() {
+  return props.bulkJobId ? `bulk-review-opened-tabs:${props.bulkJobId}` : "";
+}
+
+function restoreOpenedSheets() {
+  const key = openedSheetsStorageKey();
+  if (!key) return;
+  try {
+    const saved = JSON.parse(localStorage.getItem(key) ?? "[]");
+    if (Array.isArray(saved)) {
+      openedSheets.value = new Set([
+        ...openedSheets.value,
+        ...saved.filter((name): name is string => typeof name === "string"),
+      ]);
+    }
+  } catch {
+    // Storage unavailable or corrupt: start with no opened tabs.
+  }
+}
+
+function markSheetsOpened(names: string[]) {
+  const next = new Set([...openedSheets.value, ...names.filter(Boolean)]);
+  if (next.size === openedSheets.value.size) return;
+  openedSheets.value = next;
+  const key = openedSheetsStorageKey();
+  if (!key) return;
+  try {
+    localStorage.setItem(key, JSON.stringify([...next]));
+  } catch {
+    // Not persisted; still tracked for this visit.
+  }
+}
+
+onMounted(restoreOpenedSheets);
+watch(activeSheet, (name) => markSheetsOpened([name]), { immediate: true });
+
+function unopenedSheetNames(): string[] {
+  return (grid.value?.sheets ?? [])
+    .map((sheet) => sheet.name)
+    .filter((name) => !openedSheets.value.has(name));
+}
+
+const unreviewedModalOpen = ref(false);
+const unreviewedSheets = ref<string[]>([]);
+let unreviewedModalResolver: ((choice: "review" | "continue") => void) | null =
+  null;
+
+function askAboutUnopenedSheets(names: string[]): Promise<"review" | "continue"> {
+  unreviewedSheets.value = names;
+  unreviewedModalOpen.value = true;
+
+  return new Promise((resolve) => {
+    unreviewedModalResolver = resolve;
+  });
+}
+
+function closeUnreviewedModal(choice: "review" | "continue") {
+  unreviewedModalOpen.value = false;
+  unreviewedModalResolver?.(choice);
+  unreviewedModalResolver = null;
+}
+
+/** "the Creators and Funding tabs" / "the Funding tab" */
+const unreviewedSheetsLabel = computed(() => {
+  const names = unreviewedSheets.value;
+  const list =
+    names.length <= 1
+      ? (names[0] ?? "")
+      : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+
+  return `the ${list} ${names.length === 1 ? "tab" : "tabs"}`;
+});
+
 function goToIssueSheet(sheetName: string) {
   activeSheet.value = sheetName;
   if (validationModalOpen.value) closeValidationModal("dismiss");
@@ -575,25 +1028,18 @@ async function collectAllValidationIssues(options: {
   let savedPosterIds: number[] = [];
   let saveAttempted = false;
 
-  // Everything saves as entered except an empty title: titles are shown across
-  // the site, so the server keeps the old one, and the reload after saving would
-  // put it back over the user's edit. Don't save; leave the edits and show why.
-  const emptyTitleIssues = collectGridRequiredIssues().filter(
-    (issue) => issue.field === "title",
-  );
-  if (emptyTitleIssues.length > 0) {
-    return {
-      issues: dedupeValidationIssues(emptyTitleIssues),
-      savedPosterIds,
-      saveAttempted,
-    };
-  }
-
+  // Everything saves as entered, even when it leaves a required field empty
+  // (e.g. a deleted title); the issues below then say what still needs fixing.
   if (options.attemptSave && dirty.value) {
     saveAttempted = true;
+    // Only posters whose rows changed; every tab is still sent (possibly
+    // empty) so a poster's deleted rows clear on the server.
+    const changed = changedPosterIds();
     const sheets: Record<string, BulkReviewGridRow[]> = {};
     for (const [name, rows] of Object.entries(sheetRows.value)) {
-      sheets[name] = stripKeys(rows);
+      sheets[name] = stripKeys(rows).filter((row) =>
+        changed.has(String(row.poster_id ?? "")),
+      );
     }
 
     try {
@@ -716,7 +1162,11 @@ function posterRank(sheetName: string, posterId: string): number {
   return posterOrder.value.get(posterId) ?? Number.MAX_SAFE_INTEGER;
 }
 
-/** Posters (passing the filter) with their visible rows, in display order. */
+/**
+ * Posters (passing the filter) with their visible rows, in display order.
+ * Every other poster is `shaded`, all of its rows alike, so each poster
+ * reads as one block.
+ */
 const displayGroups = computed(() => {
   const sheet = currentSheet.value;
   if (!sheet || !grid.value) return [];
@@ -742,7 +1192,8 @@ const displayGroups = computed(() => {
       posterId,
       entries: entriesByPoster.get(posterId) ?? [],
     }))
-    .filter((group) => group.entries.length > 0 || sheet.repeatable);
+    .filter((group) => group.entries.length > 0 || sheet.repeatable)
+    .map((group, groupIndex) => ({ ...group, shaded: groupIndex % 2 === 1 }));
 });
 
 function insertionIndex(rows: EditableRow[], posterId: string): number {
@@ -851,6 +1302,31 @@ const POSTER_COLUMN_WIDTH_PX = 320;
 const { width: gridViewportWidth } = useElementSize(gridRoot);
 
 /**
+ * Full screen pins this component over the window (same elements, so the
+ * toolbar, tabs and save keep working) and stops the page behind scrolling.
+ */
+const fullScreen = ref(false);
+const pageBody = ref<HTMLElement | null>(null);
+const pageScrollLocked = useScrollLock(pageBody);
+
+onMounted(() => {
+  pageBody.value = document.body;
+});
+
+watch(fullScreen, (on) => {
+  pageScrollLocked.value = on;
+});
+
+onBeforeUnmount(() => {
+  pageScrollLocked.value = false;
+});
+
+// Esc leaves full screen, unless it is closing the issues dialog.
+onKeyStroke("Escape", () => {
+  if (fullScreen.value && !validationModalOpen.value) fullScreen.value = false;
+});
+
+/**
  * Full-width add buttons span the whole (wide) table; pin their label to the
  * visible part of the scroll area so it stays readable while scrolling sideways.
  */
@@ -859,8 +1335,15 @@ function addButtonLabelStyle(leftOffsetPx: number) {
   return { left: `${leftOffsetPx}px`, width: `${width}px`, maxWidth: "100%" };
 }
 
-const posterNameColumnClass =
-  "bg-default border-default group-hover:bg-elevated sticky left-0 z-10 max-w-[320px] w-[320px] border-r border-b px-2 py-1.5 text-left align-top font-normal shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]";
+// Rows are tinted with the primary colour on hover. It is mixed into the page
+// background (not transparent) so the sticky poster column stays opaque.
+const POSTER_NAME_COLUMN_BASE_CLASS =
+  "border-default group-hover:bg-[color-mix(in_oklab,var(--ui-primary)_12%,var(--ui-bg))] sticky left-0 z-10 max-w-[320px] w-[320px] border-r border-b px-2 py-1.5 text-left align-top font-normal shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]";
+
+/** The sticky poster column needs an opaque background, matching its row's stripe. */
+function posterNameColumnClass(shaded: boolean) {
+  return `${shaded ? "bg-elevated" : "bg-default"} ${POSTER_NAME_COLUMN_BASE_CLASS}`;
+}
 
 const tableBodyColumnCount = computed(() => {
   const sheet = currentSheet.value;
@@ -1053,6 +1536,19 @@ async function save(): Promise<boolean> {
 /** Save pending edits, validate, and optionally let the user continue to poster previews anyway. */
 async function prepareStepTransition(): Promise<boolean> {
   if (!props.bulkJobId || saving.value || !grid.value) return true;
+
+  // Like the single-poster editor: ask before skipping unreviewed tabs.
+  const unopened = unopenedSheetNames();
+  if (unopened.length > 0) {
+    const choice = await askAboutUnopenedSheets(unopened);
+    if (choice === "review") {
+      activeSheet.value = unopened[0]!;
+
+      return false;
+    }
+    markSheetsOpened(unopened);
+  }
+
   saving.value = true;
   saveIssues.value = [];
 
@@ -1088,7 +1584,14 @@ async function prepareStepTransition(): Promise<boolean> {
   }
 }
 
-defineExpose({ reload: load, save, prepareStepTransition, dirty });
+defineExpose({
+  reload: load,
+  save,
+  discard: resetChanges,
+  prepareStepTransition,
+  dirty,
+  saving,
+});
 
 function onBeforeUnload(event: BeforeUnloadEvent) {
   if (dirty.value) {
@@ -1102,7 +1605,12 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
 </script>
 
 <template>
-  <div class="space-y-4">
+  <div
+    class="space-y-4"
+    :class="{
+      'bg-default fixed inset-0 z-50 overflow-y-auto p-4 sm:p-6': fullScreen,
+    }"
+  >
     <div v-if="loading && !grid" class="flex items-center gap-2 py-6" aria-busy="true">
       <UIcon name="i-lucide-loader-circle" class="text-primary size-5 animate-spin" />
       <span class="text-muted text-sm">Loading poster metadata…</span>
@@ -1136,6 +1644,14 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
           <UBadge v-if="dirty" color="warning" variant="subtle" label="Unsaved changes" />
           <UButton
             color="neutral"
+            variant="outline"
+            :icon="fullScreen ? 'i-lucide-minimize-2' : 'i-lucide-maximize-2'"
+            :label="fullScreen ? 'Exit full screen' : 'Full screen'"
+            :aria-pressed="fullScreen"
+            @click="fullScreen = !fullScreen"
+          />
+          <UButton
+            color="neutral"
             variant="ghost"
             icon="i-lucide-rotate-ccw"
             label="Discard changes"
@@ -1143,9 +1659,10 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
             @click="resetChanges"
           />
           <UButton
-            color="primary"
+            color="neutral"
+            variant="outline"
             icon="i-lucide-save"
-            label="Save metadata"
+            label="Save draft"
             :loading="saving"
             :disabled="!dirty || disabled"
             @click="save()"
@@ -1164,7 +1681,35 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
             trigger: 'shrink-0 whitespace-nowrap',
             label: 'whitespace-nowrap',
           }"
-        />
+        >
+          <!-- Grey until opened: every tab holds AI-extracted metadata to review. -->
+          <template #default="{ item }">
+            <span
+              :class="{
+                'text-dimmed italic': !openedSheets.has(String(item.value)),
+              }"
+              :title="
+                openedSheets.has(String(item.value))
+                  ? undefined
+                  : 'Not opened yet: review this AI-extracted metadata'
+              "
+            >
+              {{ item.label }}
+            </span>
+          </template>
+          <template #trailing="{ item }">
+            <UTooltip
+              v-if="sheetsWithIssues.has(String(item.value))"
+              text="Has required fields to fix"
+            >
+              <UIcon
+                name="i-lucide-triangle-alert"
+                class="text-warning size-4 shrink-0"
+                aria-label="Has required fields to fix"
+              />
+            </UTooltip>
+          </template>
+        </UTabs>
       </div>
 
       <div v-if="currentSheet" class="space-y-3">
@@ -1185,7 +1730,7 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
               <UButton
                 v-if="posterFilter !== ALL_POSTERS"
                 size="sm"
-                color="neutral"
+                color="primary"
                 variant="outline"
                 icon="i-lucide-plus"
                 :label="`Add ${addRowNoun}`"
@@ -1200,7 +1745,7 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
               >
                 <UButton
                   size="sm"
-                  color="neutral"
+                  color="primary"
                   variant="outline"
                   icon="i-lucide-plus"
                   trailing-icon="i-lucide-chevron-down"
@@ -1218,7 +1763,8 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
         >
           <div
             ref="gridRoot"
-            class="max-h-[65vh] min-w-0 overflow-x-auto overflow-y-auto overscroll-x-contain"
+            class="min-w-0 overflow-x-auto overflow-y-auto overscroll-x-contain"
+            :class="fullScreen ? 'max-h-[calc(100dvh-14rem)]' : 'max-h-[65vh]'"
           >
             <table class="w-max border-separate border-spacing-0 text-sm">
             <thead class="bg-elevated sticky top-0 z-20">
@@ -1229,6 +1775,12 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
                   Poster
                 </th>
                 <th
+                  v-if="currentSheet.repeatable"
+                  class="bg-elevated border-default sticky left-[320px] z-30 w-px border-r border-b px-1 py-2"
+                >
+                  <span class="sr-only">Row actions</span>
+                </th>
+                <th
                   v-for="column in editableColumns"
                   :key="column.fillKey"
                   class="border-default border-r border-b px-2 py-2 text-left align-top font-semibold"
@@ -1237,34 +1789,65 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
                     minWidth: `${columnWidthPx(column)}px`,
                     maxWidth: `${MAX_COLUMN_WIDTH_PX}px`,
                   }"
-                  :title="column.instruction || column.hint"
                 >
-                  <span class="inline-flex items-center gap-1 whitespace-nowrap">
+                  <span class="flex items-center gap-1 whitespace-nowrap">
                     {{ column.header }}
                     <span v-if="column.requirement === 'required'" class="text-error" aria-label="required">*</span>
-                    <UIcon
+                    <!-- Help text only on the info icon, not the whole header. -->
+                    <UTooltip
                       v-if="column.instruction || column.hint"
-                      name="i-lucide-info"
-                      class="text-dimmed size-3.5"
-                    />
+                      :text="column.instruction || column.hint"
+                      :content="{ side: 'top' }"
+                      :ui="{
+                        content: 'h-auto max-w-xs py-1.5',
+                        text: 'whitespace-normal',
+                      }"
+                    >
+                      <UIcon
+                        name="i-lucide-info"
+                        class="text-dimmed hover:text-default size-3.5 cursor-help"
+                        tabindex="0"
+                        :aria-label="column.instruction || column.hint"
+                      />
+                    </UTooltip>
+                    <UTooltip
+                      v-if="
+                        currentSheet.name === CREATORS_SHEET &&
+                        column.fillKey === 'name_identifier'
+                      "
+                      text="Fill ORCIDs that have exactly one match for the creator's name and affiliation"
+                    >
+                      <UButton
+                        size="xs"
+                        color="primary"
+                        variant="soft"
+                        icon="i-lucide-wand-sparkles"
+                        class="mr-auto ml-1.5 font-normal"
+                        :label="
+                          orcidAutoFill.running
+                            ? `${orcidAutoFill.done}/${orcidAutoFill.total}`
+                            : 'Auto-fill'
+                        "
+                        :loading="orcidAutoFill.running"
+                        :disabled="disabled || saving"
+                        @click="autoFillOrcids"
+                      />
+                    </UTooltip>
                   </span>
-                </th>
-                <th
-                  v-if="currentSheet.repeatable"
-                  class="border-default border-b px-2 py-2 text-left font-semibold"
-                >
-                  <span class="sr-only">Row actions</span>
                 </th>
               </tr>
             </thead>
 
             <tbody>
-              <template v-for="group in displayGroups" :key="group.posterId">
+              <template
+                v-for="group in displayGroups"
+                :key="group.posterId"
+              >
               <tr
                 v-if="group.entries.length === 0"
                 class="group"
               >
-                <th scope="row" :class="posterNameColumnClass">
+                <th scope="row" :class="posterNameColumnClass(group.shaded)">
                   <span
                     class="block text-sm font-normal [overflow-wrap:anywhere]"
                   >
@@ -1273,11 +1856,12 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
                 </th>
                 <td
                   :colspan="tableBodyColumnCount - 1"
-                  class="border-default bg-default border-b px-2 py-1 align-middle"
+                  class="border-default border-b px-2 py-1 align-middle"
+                  :class="group.shaded ? 'bg-elevated' : 'bg-default'"
                 >
                   <button
                     type="button"
-                    class="text-muted hover:text-default hover:bg-elevated/70 border-default block w-full rounded-md border border-dashed py-1.5 text-xs font-normal transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                    class="text-primary border-primary/50 hover:border-primary hover:bg-primary/10 block w-full rounded-md border py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                     :disabled="disabled || saving"
                     @click="addRow(group.posterId)"
                   >
@@ -1308,11 +1892,16 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
                 :show-reorder="showReorderButtons"
                 :can-move-up="canMove(index, -1)"
                 :can-move-down="canMove(index, 1)"
-                :poster-name-class="posterNameColumnClass"
+                :poster-name-class="posterNameColumnClass(group.shaded)"
                 :cell-choices="cellChoices"
+                :choice-label="bulkReviewGridChoiceLabel"
+                :shaded="group.shaded"
                 :cell-style="cellWidthStyle"
                 :is-missing-required="isMissingRequired"
+                :lookup-kind="cellLookupKind"
+                :can-lookup="canRunCellLookup"
                 @cell-input="onCellInput"
+                @lookup="openCellLookup"
                 @cell-keydown="onCellKeydown"
                 @cell-paste="onCellPaste"
                 @cell-area-mouse-down="onCellAreaMouseDown"
@@ -1329,11 +1918,12 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
               >
                 <td
                   :colspan="tableBodyColumnCount"
-                  class="border-default bg-default border-b px-2 py-1"
+                  class="border-default border-b px-2 py-1"
+                  :class="group.shaded ? 'bg-elevated' : 'bg-default'"
                 >
                   <button
                     type="button"
-                    class="text-muted hover:text-default hover:bg-elevated/70 border-default block w-full rounded-md border border-dashed py-1.5 text-xs font-normal transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                    class="text-primary border-primary/50 hover:border-primary hover:bg-primary/10 block w-full rounded-md border py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                     :aria-label="`Add ${addRowNoun} to ${posterDisplayName(row.poster_id ?? '')}`"
                     @click="addRow(row.poster_id ?? '')"
                   >
@@ -1387,10 +1977,11 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
                 <UButton
                   v-if="group.isTab && group.name !== activeSheet"
                   size="xs"
-                  color="neutral"
-                  variant="link"
+                  color="primary"
+                  variant="soft"
                   trailing-icon="i-lucide-arrow-right"
                   :label="`Go to ${group.name}`"
+                  class="shrink-0"
                   @click="goToIssueSheet(group.name)"
                 />
               </div>
@@ -1458,10 +2049,11 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
               <UButton
                 v-if="group.isTab"
                 size="xs"
-                color="neutral"
-                variant="link"
+                color="primary"
+                variant="soft"
                 trailing-icon="i-lucide-arrow-right"
                 :label="`Go to ${group.name}`"
+                class="shrink-0"
                 @click="goToIssueSheet(group.name)"
               />
             </div>
@@ -1494,5 +2086,71 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
         </div>
       </template>
     </UModal>
+
+    <!-- Same check as the single-poster editor's "Sections Not Reviewed". -->
+    <UModal
+      v-model:open="unreviewedModalOpen"
+      :title="
+        unreviewedSheets.length > 1
+          ? 'Sections Not Reviewed'
+          : 'AI-Extracted Content Not Reviewed'
+      "
+      @update:open="(open) => !open && closeUnreviewedModal('review')"
+    >
+      <template #body>
+        <div class="space-y-4">
+          <UAlert
+            color="warning"
+            variant="subtle"
+            :title="`You haven't opened ${unreviewedSheetsLabel}`"
+            description="These tabs contain metadata and content extracted from your posters by AI. Reviewing them helps ensure accuracy before publishing."
+          />
+
+          <p class="text-sm text-gray-600 dark:text-gray-400">
+            We recommend opening
+            {{ unreviewedSheets.length > 1 ? "each tab" : "the tab" }} and
+            checking the extracted values before continuing.
+          </p>
+        </div>
+      </template>
+
+      <template #footer>
+        <div class="flex w-full justify-between gap-3">
+          <UButton
+            variant="outline"
+            icon="i-lucide-eye"
+            :label="unreviewedSheets.length > 1 ? 'Review Tabs' : 'Review Tab'"
+            @click="closeUnreviewedModal('review')"
+          />
+
+          <UButton
+            color="primary"
+            label="Continue Anyway"
+            @click="closeUnreviewedModal('continue')"
+          />
+        </div>
+      </template>
+    </UModal>
+
+    <!-- One shared lookup drawer; remounted per lookup so it searches on open. -->
+    <IdentifierOrcidSearch
+      v-if="activeLookup?.kind === 'orcid'"
+      :key="`orcid-${activeLookup.idKey}-${String(activeLookup.row.poster_id)}`"
+      open
+      :given-name="activeLookup.givenName"
+      :family-name="activeLookup.familyName"
+      :affiliations="activeLookup.affiliations"
+      @update:open="(open) => !open && (activeLookup = null)"
+      @select="onOrcidLookupSelect"
+    />
+    <IdentifierRorSearch
+      v-if="activeLookup?.kind === 'ror'"
+      :key="`ror-${activeLookup.idKey}-${String(activeLookup.row.poster_id)}`"
+      open
+      :initial-query="activeLookup.query"
+      :name-label="activeLookup.nameLabel"
+      @update:open="(open) => !open && (activeLookup = null)"
+      @select="onRorLookupSelect"
+    />
   </div>
 </template>

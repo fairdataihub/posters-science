@@ -787,6 +787,24 @@ async function onError(event: {
   const errorCount = event.errors.length;
   const firstError = event.errors[0];
 
+  // From a bulk import the Conference card is hidden (set for the batch), so
+  // point to where it can be fixed instead of at a field you can't see.
+  const hiddenConferenceError = bulkImportReturn.value
+    ? event.errors.find((error) =>
+        (error.path ?? error.id ?? "").startsWith("conference."),
+      )
+    : undefined;
+  if (hiddenConferenceError) {
+    toast.add({
+      title: "Batch conference information needs fixing",
+      description: `${hiddenConferenceError.message ?? "A conference field is invalid."} Fix it on the batch's Conference Information step.`,
+      color: "error",
+      icon: "material-symbols:error",
+    });
+
+    return;
+  }
+
   toast.add({
     title: "Validation Error",
     description:
@@ -1731,7 +1749,10 @@ const moveCreator = (index: number, direction: "up" | "down") => {
             </div>
           </CardCollapsibleContent>
 
+          <!-- From a bulk import the batch's conference (and its dates as the
+               presentation date) is applied to every poster, so it isn't shown. -->
           <CardCollapsibleContent
+            v-if="!bulkImportReturn"
             title="Conference"
             :collapse="false"
             description="The conference or event where the poster was presented"

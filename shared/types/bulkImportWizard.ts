@@ -25,17 +25,17 @@ export const BULK_IMPORT_WIZARD_STEPS: BulkImportWizardStepDefinition[] = [
   },
   {
     id: "conference",
-    label: "Conference information",
+    label: "Conference Information",
     task: "Enter conference information that will be shared across every poster in this batch.",
   },
   {
     id: "license",
-    label: "License information",
+    label: "License Information",
     task: "Choose the license you would like to apply to all posters in the batch. You must have the rights or permission from each author to share every poster under the license you select.",
   },
   {
     id: "submit",
-    label: "AI poster extraction",
+    label: "AI Poster Extraction",
     task: "Wait until all posters have had their metadata extracted. You can leave this page and come back later for large batches.",
   },
   {
@@ -45,7 +45,7 @@ export const BULK_IMPORT_WIZARD_STEPS: BulkImportWizardStepDefinition[] = [
   },
   {
     id: "preview",
-    label: "Poster previews",
+    label: "Poster Previews",
     task: "Preview each poster, use Edit poster for any required fixes, then continue when you are ready to publish.",
   },
   {
