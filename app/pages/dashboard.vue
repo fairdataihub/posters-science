@@ -13,7 +13,6 @@ import {
   formatZenodoFileEmbargoUntilLabel,
   isZenodoFileEmbargoActive,
 } from "#shared/utils/zenodoFileEmbargoAccess";
-import { shareNewBulkPath } from "~/utils/sharePaths";
 import { deleteBulkPosterSubmissionJob } from "~/utils/bulkPosterSubmissionJobClient";
 import { parseApiError } from "~/utils/apiError";
 import type {
@@ -35,8 +34,6 @@ useSeoMeta({
   ogDescription: "Manage and track your scientific posters.",
   ogImage,
 });
-
-const bulkAddPostersPath = shareNewBulkPath();
 
 type Poster = {
   id: number;
@@ -1802,17 +1799,14 @@ function posterMenuItems(poster: Poster) {
       title="Dashboard"
       :links="[
         {
-          label: 'Share a Poster',
+          // /share lets people choose one poster or a batch.
+          // Same as the home page's Share Posters button, but solid.
+          label: 'Share Posters',
           to: '/share',
-          icon: 'heroicons:plus',
+          size: 'xl' as const,
+          trailingIcon: 'line-md:file-upload',
           color: 'primary' as const,
-        },
-        {
-          label: 'Share Posters in bulk',
-          to: bulkAddPostersPath,
-          icon: 'line-md:file-upload',
-          color: 'neutral' as const,
-          variant: 'outline' as const,
+          variant: 'solid' as const,
         },
       ]"
     >
