@@ -53,10 +53,11 @@ watch(
     <p class="text-muted text-sm">
       Review the metadata for each poster and fill in anything missing. Use the
       tabs to move between sections, such as creators, funding and poster
-      content, and add rows where a poster needs additional metadata. You can
-      continue without
-      filling in every required field here, but anything still missing will
-      need to be added on the next step before you can publish.
+      content, and add rows where a poster needs additional metadata. Use
+      <strong class="text-default font-medium">Full screen</strong> to see more
+      of the spreadsheet at once. You can continue without filling in every
+      required field here, but anything still missing will need to be added on
+      the next step before you can publish.
     </p>
 
     <UAlert

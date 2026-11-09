@@ -26,7 +26,7 @@ const props = defineProps<{
   cellChoices: (fillKey: string) => readonly string[] | undefined;
   /** Text shown for a dropdown value (the stored value is unchanged). */
   choiceLabel: (fillKey: string, value: string) => string;
-  /** Every other row is shaded so rows are easy to follow across the grid. */
+  /** Every other poster's rows are shaded so posters are easy to tell apart. */
   shaded: boolean;
   cellStyle: (column: BulkReviewGridColumn) => Record<string, string>;
   isMissingRequired: (
@@ -60,7 +60,7 @@ function onInput(fillKey: string, event: Event) {
     class="group hover:bg-[color-mix(in_oklab,var(--ui-primary)_12%,var(--ui-bg))]"
     :class="{
       'border-accented border-t-2': rowPos > 0 && firstOfPoster,
-      'bg-muted': shaded,
+      'bg-elevated': shaded,
     }"
   >
     <th scope="row" :class="posterNameClass">

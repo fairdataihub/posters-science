@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import BulkImportMetadataGridRow from "~/components/conferences/BulkImportMetadataGridRow.vue";
 import { strictIssueMessage } from "~/utils/strictIssueLabel";
-import { useElementSize } from "@vueuse/core";
+import { onKeyStroke, useElementSize, useScrollLock } from "@vueuse/core";
 import type {
   BulkReviewGridColumn,
   BulkReviewGridRow,
@@ -531,6 +531,17 @@ const validationIssueGroups = computed(() =>
 );
 const saveIssueGroups = computed(() => groupIssuesBySheet(saveIssues.value));
 
+/** Tabs that need attention: missing required cells, or issues from the last save. */
+const sheetsWithIssues = computed(
+  () =>
+    new Set([
+      ...collectGridRequiredIssues().map((issue) => issue.sheet),
+      ...saveIssueGroups.value
+        .filter((group) => group.isTab)
+        .map((group) => group.name),
+    ]),
+);
+
 function goToIssueSheet(sheetName: string) {
   activeSheet.value = sheetName;
   if (validationModalOpen.value) closeValidationModal("dismiss");
@@ -719,7 +730,11 @@ function posterRank(sheetName: string, posterId: string): number {
   return posterOrder.value.get(posterId) ?? Number.MAX_SAFE_INTEGER;
 }
 
-/** Posters (passing the filter) with their visible rows, in display order. */
+/**
+ * Posters (passing the filter) with their visible rows, in display order.
+ * Every other poster is `shaded`, all of its rows alike, so each poster
+ * reads as one block.
+ */
 const displayGroups = computed(() => {
   const sheet = currentSheet.value;
   if (!sheet || !grid.value) return [];
@@ -745,7 +760,8 @@ const displayGroups = computed(() => {
       posterId,
       entries: entriesByPoster.get(posterId) ?? [],
     }))
-    .filter((group) => group.entries.length > 0 || sheet.repeatable);
+    .filter((group) => group.entries.length > 0 || sheet.repeatable)
+    .map((group, groupIndex) => ({ ...group, shaded: groupIndex % 2 === 1 }));
 });
 
 function insertionIndex(rows: EditableRow[], posterId: string): number {
@@ -854,6 +870,31 @@ const POSTER_COLUMN_WIDTH_PX = 320;
 const { width: gridViewportWidth } = useElementSize(gridRoot);
 
 /**
+ * Full screen pins this component over the window (same elements, so the
+ * toolbar, tabs and save keep working) and stops the page behind scrolling.
+ */
+const fullScreen = ref(false);
+const pageBody = ref<HTMLElement | null>(null);
+const pageScrollLocked = useScrollLock(pageBody);
+
+onMounted(() => {
+  pageBody.value = document.body;
+});
+
+watch(fullScreen, (on) => {
+  pageScrollLocked.value = on;
+});
+
+onBeforeUnmount(() => {
+  pageScrollLocked.value = false;
+});
+
+// Esc leaves full screen, unless it is closing the issues dialog.
+onKeyStroke("Escape", () => {
+  if (fullScreen.value && !validationModalOpen.value) fullScreen.value = false;
+});
+
+/**
  * Full-width add buttons span the whole (wide) table; pin their label to the
  * visible part of the scroll area so it stays readable while scrolling sideways.
  */
@@ -869,7 +910,7 @@ const POSTER_NAME_COLUMN_BASE_CLASS =
 
 /** The sticky poster column needs an opaque background, matching its row's stripe. */
 function posterNameColumnClass(shaded: boolean) {
-  return `${shaded ? "bg-muted" : "bg-default"} ${POSTER_NAME_COLUMN_BASE_CLASS}`;
+  return `${shaded ? "bg-elevated" : "bg-default"} ${POSTER_NAME_COLUMN_BASE_CLASS}`;
 }
 
 const tableBodyColumnCount = computed(() => {
@@ -1112,7 +1153,12 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
 </script>
 
 <template>
-  <div class="space-y-4">
+  <div
+    class="space-y-4"
+    :class="{
+      'bg-default fixed inset-0 z-50 overflow-y-auto p-4 sm:p-6': fullScreen,
+    }"
+  >
     <div v-if="loading && !grid" class="flex items-center gap-2 py-6" aria-busy="true">
       <UIcon name="i-lucide-loader-circle" class="text-primary size-5 animate-spin" />
       <span class="text-muted text-sm">Loading poster metadata…</span>
@@ -1146,6 +1192,14 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
           <UBadge v-if="dirty" color="warning" variant="subtle" label="Unsaved changes" />
           <UButton
             color="neutral"
+            variant="outline"
+            :icon="fullScreen ? 'i-lucide-minimize-2' : 'i-lucide-maximize-2'"
+            :label="fullScreen ? 'Exit full screen' : 'Full screen'"
+            :aria-pressed="fullScreen"
+            @click="fullScreen = !fullScreen"
+          />
+          <UButton
+            color="neutral"
             variant="ghost"
             icon="i-lucide-rotate-ccw"
             label="Discard changes"
@@ -1155,7 +1209,7 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
           <UButton
             color="primary"
             icon="i-lucide-save"
-            label="Save metadata"
+            label="Save Spreadsheet"
             :loading="saving"
             :disabled="!dirty || disabled"
             @click="save()"
@@ -1174,7 +1228,16 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
             trigger: 'shrink-0 whitespace-nowrap',
             label: 'whitespace-nowrap',
           }"
-        />
+        >
+          <template #trailing="{ item }">
+            <UIcon
+              v-if="sheetsWithIssues.has(String(item.value))"
+              name="i-lucide-triangle-alert"
+              class="text-warning size-4 shrink-0"
+              aria-label="Has issues to fix"
+            />
+          </template>
+        </UTabs>
       </div>
 
       <div v-if="currentSheet" class="space-y-3">
@@ -1228,7 +1291,8 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
         >
           <div
             ref="gridRoot"
-            class="max-h-[65vh] min-w-0 overflow-x-auto overflow-y-auto overscroll-x-contain"
+            class="min-w-0 overflow-x-auto overflow-y-auto overscroll-x-contain"
+            :class="fullScreen ? 'max-h-[calc(100dvh-14rem)]' : 'max-h-[65vh]'"
           >
             <table class="w-max border-separate border-spacing-0 text-sm">
             <thead class="bg-elevated sticky top-0 z-20">
@@ -1277,7 +1341,7 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
                 v-if="group.entries.length === 0"
                 class="group"
               >
-                <th scope="row" :class="posterNameColumnClass(false)">
+                <th scope="row" :class="posterNameColumnClass(group.shaded)">
                   <span
                     class="block text-sm font-normal [overflow-wrap:anywhere]"
                   >
@@ -1286,7 +1350,8 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
                 </th>
                 <td
                   :colspan="tableBodyColumnCount - 1"
-                  class="border-default bg-default border-b px-2 py-1 align-middle"
+                  class="border-default border-b px-2 py-1 align-middle"
+                  :class="group.shaded ? 'bg-elevated' : 'bg-default'"
                 >
                   <button
                     type="button"
@@ -1321,10 +1386,10 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
                 :show-reorder="showReorderButtons"
                 :can-move-up="canMove(index, -1)"
                 :can-move-down="canMove(index, 1)"
-                :poster-name-class="posterNameColumnClass(rowPos % 2 === 1)"
+                :poster-name-class="posterNameColumnClass(group.shaded)"
                 :cell-choices="cellChoices"
                 :choice-label="bulkReviewGridChoiceLabel"
-                :shaded="rowPos % 2 === 1"
+                :shaded="group.shaded"
                 :cell-style="cellWidthStyle"
                 :is-missing-required="isMissingRequired"
                 @cell-input="onCellInput"
@@ -1344,7 +1409,8 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
               >
                 <td
                   :colspan="tableBodyColumnCount"
-                  class="border-default bg-default border-b px-2 py-1"
+                  class="border-default border-b px-2 py-1"
+                  :class="group.shaded ? 'bg-elevated' : 'bg-default'"
                 >
                   <button
                     type="button"
