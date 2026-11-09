@@ -18,8 +18,10 @@ const emit = defineEmits<{
 const gridRef = ref<{
   reload: () => Promise<void>;
   save: () => Promise<boolean>;
+  discard: () => void;
   prepareStepTransition: () => Promise<boolean>;
   dirty: boolean;
+  saving: boolean;
 } | null>(null);
 
 /** Save pending grid edits; resolves false if saving failed. */
@@ -32,12 +34,28 @@ async function prepareStepTransition(): Promise<boolean> {
   return (await gridRef.value?.prepareStepTransition()) ?? true;
 }
 
-defineExpose({ saveIfDirty, prepareStepTransition });
+/** Save draft (wizard footer): save edits and show any issues, stay on the step. */
+async function saveDraft(): Promise<boolean> {
+  return (await gridRef.value?.save()) ?? true;
+}
+
+/** Discard changes (wizard footer): same as the grid toolbar button. */
+function discardChanges() {
+  gridRef.value?.discard();
+}
+
+defineExpose({
+  saveIfDirty,
+  saveDraft,
+  discardChanges,
+  prepareStepTransition,
+  dirty: computed(() => gridRef.value?.dirty ?? false),
+  saving: computed(() => gridRef.value?.saving ?? false),
+});
 
 const disabled = computed(
   () => !props.bulkJobId || props.completedPosterCount === 0,
 );
-
 
 // Reload when more posters finish extracting.
 watch(
@@ -51,12 +69,16 @@ watch(
 <template>
   <div class="space-y-4">
     <p class="text-muted text-sm">
-      Review the metadata for each poster and fill in anything missing. Use the
-      tabs to move between sections, such as creators, funding and poster
-      content, and add rows where a poster needs additional metadata. You can
-      continue without
-      filling in every required field here, but anything still missing will
-      need to be added on the next step before you can publish.
+      Review the metadata (use
+      <strong class="text-default font-medium">Full screen</strong> to see more
+      of the spreadsheet at once) for each poster. At a minimum, fill in every
+      required field (marked <span class="text-error">*</span>), and add
+      anything else that is missing.
+      Use the tabs to move between sections, such as creators, funding and
+      poster content, and add rows where a poster needs additional metadata.
+      You can continue without filling in every
+      required field here, but anything required and still missing will need to
+      be added on the next step before you can publish.
     </p>
 
     <UAlert

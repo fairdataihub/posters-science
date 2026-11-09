@@ -48,6 +48,45 @@ export function conferenceToPosterMetadataFields(
   return data;
 }
 
+/** A "Presented" date value: one day, or "start/end" for a range. */
+function presentedDateValue(start?: string | null, end?: string | null): string {
+  const from = start?.trim() ?? "";
+  const to = end?.trim() ?? "";
+  if (!from) return "";
+
+  return to && to !== from ? `${from}/${to}` : from;
+}
+
+type PosterDate = { date?: string; dateType?: string };
+
+/**
+ * A batch poster's presentation date defaults to the conference's dates
+ * (presented during the conference). Returns the poster's new `dates`, or
+ * undefined to leave them alone: a date someone set themselves (it no longer
+ * equals the conference dates applied before) is never overwritten.
+ */
+function datesWithConferencePresented(
+  existingDates: unknown,
+  previousConference: { start?: string | null; end?: string | null },
+  nextConference: { start?: string | null; end?: string | null },
+): PosterDate[] | undefined {
+  const dates = Array.isArray(existingDates) ? (existingDates as PosterDate[]) : [];
+  const current =
+    dates.find((entry) => entry.dateType === "Presented")?.date?.trim() ?? "";
+  const previous = presentedDateValue(
+    previousConference.start,
+    previousConference.end,
+  );
+  const next = presentedDateValue(nextConference.start, nextConference.end);
+
+  const setFromConference = !current || current === previous;
+  if (!setFromConference || current === next) return undefined;
+
+  const others = dates.filter((entry) => entry.dateType !== "Presented");
+
+  return next ? [{ date: next, dateType: "Presented" }, ...others] : others;
+}
+
 export function posterMetadataCreateFromBulkSubmissionSummary(
   summary: BulkImportSubmissionSummary,
 ): Prisma.PosterMetadataCreateWithoutPosterInput | null {
@@ -57,9 +96,15 @@ export function posterMetadataCreateFromBulkSubmissionSummary(
     return null;
   }
 
+  const presented = presentedDateValue(
+    conference.conferenceStartDate,
+    conference.conferenceEndDate,
+  );
+
   return {
     license,
     ...conferenceToPosterMetadataFields(conference),
+    ...(presented && { dates: [{ date: presented, dateType: "Presented" }] }),
   };
 }
 
@@ -149,7 +194,14 @@ export async function applyBulkSubmissionMetadataToPosters(
     where: { id: { in: targetIds }, userId },
     select: {
       id: true,
-      posterMetadata: { select: { posterId: true } },
+      posterMetadata: {
+        select: {
+          posterId: true,
+          dates: true,
+          conferenceStartDate: true,
+          conferenceEndDate: true,
+        },
+      },
       extractionJob: { select: { completed: true } },
     },
   });
@@ -163,9 +215,22 @@ export async function applyBulkSubmissionMetadataToPosters(
     if (!owned) return false;
 
     if (owned.posterMetadata) {
+      const dates = summary.conference
+        ? datesWithConferencePresented(
+            owned.posterMetadata.dates,
+            {
+              start: owned.posterMetadata.conferenceStartDate,
+              end: owned.posterMetadata.conferenceEndDate,
+            },
+            {
+              start: summary.conference.conferenceStartDate,
+              end: summary.conference.conferenceEndDate,
+            },
+          )
+        : undefined;
       await prisma.posterMetadata.update({
         where: { posterId: id },
-        data: updateData,
+        data: { ...updateData, ...(dates && { dates }) },
       });
     } else {
       const createData = posterMetadataCreateFromBulkSubmissionSummary(summary);

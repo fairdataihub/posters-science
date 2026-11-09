@@ -13,11 +13,15 @@ import {
   applyBulkImportConferenceToForm,
   bulkImportConferenceFormValid,
   bulkImportConferenceFromForm,
+  bulkImportConferenceYearMismatch,
   emptyBulkImportConferenceForm,
   type BulkImportConferenceFormState,
 } from "#shared/types/bulkImportConference";
 import { bulkImportNameSchema } from "#shared/types/bulkImportWizard";
-import { StrictConferenceSchema } from "~/utils/poster_schema";
+import {
+  StrictConferenceSchema,
+  SUGGESTED_LICENSE_IDS,
+} from "~/utils/poster_schema";
 import DateRangePicker from "~/components/ui/DateRangePicker.vue";
 import { useConferenceDateRangePicker } from "~/composables/useConferenceDateRangePicker";
 import type { BulkImportSubmissionSummary } from "#shared/types/bulkImportLicenses";
@@ -47,6 +51,7 @@ import {
   submitBulkPosterSubmissionJob,
   applyBulkSubmissionMetadataToPosters,
   discardFailedBulkExtractions,
+  getBulkImportExtractionStatus,
 } from "~/utils/bulkPosterSubmissionJobClient";
 import {
   BULK_POSTER_UPLOAD_ACCEPT,
@@ -389,17 +394,36 @@ async function onPosterFilesSelected(files: File[]) {
 
 const uniformLicense = ref<string>("");
 
-const uniformLicenseOptions = computed(() => BULK_IMPORT_ACCEPTABLE_LICENSES);
+/**
+ * Bulk keeps its own acceptable license list, grouped like the single-poster
+ * picker (LICENSE_OPTIONS_WITH_SUGGESTED): "Suggested" first, then all.
+ */
+const uniformLicenseSelectItems: {
+  type?: "label" | "separator";
+  label?: string;
+  value?: string;
+}[] = (() => {
+  const items = BULK_IMPORT_ACCEPTABLE_LICENSES.map(({ label, value }) => ({
+    label,
+    value,
+  }));
+  const suggested = SUGGESTED_LICENSE_IDS.flatMap((id) =>
+    items.filter((item) => item.value === id),
+  );
 
-const uniformLicenseSelectItems = computed(() =>
-  uniformLicenseOptions.value.map((option) => ({
-    label: option.label,
-    value: option.value,
-  })),
-);
+  return [
+    { type: "label" as const, label: "Suggested" },
+    ...suggested,
+    { type: "separator" as const },
+    { type: "label" as const, label: "All Licenses" },
+    ...items,
+  ];
+})();
 
 const submissionRows = ref<BulkImportSubmissionRow[]>([]);
 const submissionLoading = ref(false);
+/** User confirmed extracted metadata may be inaccurate and needs review. */
+const extractionAccuracyConfirmed = ref(false);
 
 const uploadStepComplete = computed(() => stagedPosters.value.length > 0);
 
@@ -467,6 +491,13 @@ const conferenceYearError = computed(() =>
     : undefined,
 );
 
+const conferenceDatesError = computed(() =>
+  conferenceStepAttempted.value &&
+  bulkImportConferenceYearMismatch(conferenceForm)
+    ? "The conference date range (specifically the start date) must match the selected conference year"
+    : undefined,
+);
+
 const conferenceYearOptions = Array.from(
   { length: new Date().getFullYear() + 1 - 2000 + 1 },
   (_, i) => new Date().getFullYear() + 1 - i,
@@ -484,10 +515,11 @@ const licenseSelectError = computed(() =>
   licenseFieldError(!uniformLicense.value.trim(), "License is required"),
 );
 
+/** Saves `patch` into the job summary and returns the summary as it was before. */
 async function mergeJobSubmissionSummary(
   patch: Partial<BulkImportSubmissionSummary>,
-) {
-  if (!jobId.value) return;
+): Promise<BulkImportSubmissionSummary | undefined> {
+  if (!jobId.value) return undefined;
 
   const job = await getBulkPosterSubmissionJob(jobId.value);
   const existing = (job.submissionSummary ?? {}) as BulkImportSubmissionSummary;
@@ -495,6 +527,8 @@ async function mergeJobSubmissionSummary(
   await updateBulkPosterSubmissionJob(jobId.value, {
     submissionSummary: { ...existing, ...patch },
   });
+
+  return existing;
 }
 
 /** Declared before wizard composable (step completion reads batch state). */
@@ -523,6 +557,11 @@ const canContinueFromPreviewStep = computed(
 const batchImportFinished = ref(false);
 const batchImportRunning = ref(false);
 const batchExtractionStatusesLoading = ref(false);
+/**
+ * Rows are first built from the saved job (all "waiting in queue"), so the
+ * table waits for the first status check instead of flashing those.
+ */
+const batchExtractionStatusesFetched = ref(false);
 const batchHasCompletedExtractions = computed(() =>
   batchItems.value.some((item) => item.status === "completed"),
 );
@@ -1107,7 +1146,7 @@ async function removeStagedPoster(poster: BulkImportStagedPoster) {
   }
 }
 
-const BULK_BATCH_EXTRACTION_POLL_MS = 3000;
+const BULK_BATCH_EXTRACTION_POLL_MS = 10_000;
 let batchExtractionPollTimer: ReturnType<typeof setTimeout> | undefined;
 
 type BulkExtractionJobStatusResponse = {
@@ -1234,65 +1273,86 @@ function batchExtractionPollPending() {
 }
 
 async function refreshBatchExtractionStatuses() {
-  const withJobs = batchItems.value.filter((item) => item.extractionJobId);
-  if (withJobs.length === 0) return;
+  if (!jobId.value) return;
+  if (!batchItems.value.some((item) => item.extractionJobId)) return;
+
+  let statusByJobId: Map<string, BulkExtractionJobStatusResponse>;
+  try {
+    const { jobs } = await getBulkImportExtractionStatus(jobId.value);
+    statusByJobId = new Map(jobs.map((job) => [job.jobId, job]));
+  } catch {
+    // Keep last known statuses if this poll fails; the next poll retries.
+    batchExtractionStatusesFetched.value = true;
+    return;
+  }
 
   const newlyCompletedPosterIds: number[] = [];
+  const thumbnailPosterIds: number[] = [];
+
+  for (const row of batchItems.value) {
+    if (!row.extractionJobId) continue;
+    const response = statusByJobId.get(row.extractionJobId);
+    if (!response) continue;
+
+    const wasTerminal = row.status === "completed" || row.status === "failed";
+    const nextStatus = batchStatusFromExtractionJob(response);
+    const nextError = response.error?.trim() ? response.error : undefined;
+    if (row.status !== nextStatus) row.status = nextStatus;
+    if (row.error !== nextError) row.error = nextError;
+    if (!wasTerminal && row.status === "completed" && row.posterId != null) {
+      newlyCompletedPosterIds.push(row.posterId);
+      if (!response.imageUrl?.trim()) thumbnailPosterIds.push(row.posterId);
+    }
+  }
+  batchExtractionStatusesFetched.value = true;
 
   await Promise.all(
-    withJobs.map(async (item) => {
+    thumbnailPosterIds.map(async (posterId) => {
       try {
-        const response = await $fetch<BulkExtractionJobStatusResponse>(
-          `/api/poster/job/${item.extractionJobId}`,
-        );
-        const row = batchItems.value.find((entry) => entry.id === item.id);
-        if (!row) return;
-        const wasTerminal =
-          row.status === "completed" || row.status === "failed";
-        const nextStatus = batchStatusFromExtractionJob(response);
-        const nextError = response.error?.trim() ? response.error : undefined;
-        if (row.status !== nextStatus) row.status = nextStatus;
-        if (row.error !== nextError) row.error = nextError;
-        if (
-          !wasTerminal &&
-          row.status === "completed" &&
-          row.posterId != null
-        ) {
-          newlyCompletedPosterIds.push(row.posterId);
-          if (!response.imageUrl?.trim()) {
-            try {
-              await $fetch(`/api/poster/${row.posterId}/thumbnail`, {
-                method: "POST",
-              });
-            } catch {
-              // Preview step can retry; path copy + worker wake happen in POST.
-            }
-          }
-        }
+        await $fetch(`/api/poster/${posterId}/thumbnail`, { method: "POST" });
       } catch {
-        // Keep last known status if a single poll fails.
+        // Preview step can retry; path copy + worker wake happen in POST.
       }
     }),
   );
 
-  if (newlyCompletedPosterIds.length > 0 && jobId.value) {
-    for (const posterId of newlyCompletedPosterIds) {
-      try {
-        await applyBulkSubmissionMetadataToPosters(jobId.value, posterId);
-      } catch {
-        // Non-fatal; review step can retry apply for the whole batch.
-      }
-    }
+  // Extraction overwrites license and conference, so restore them once the
+  // whole batch is done instead of once per poster.
+  if (newlyCompletedPosterIds.length > 0 && !batchExtractionPollPending()) {
+    await applyBatchLicenseAndConferenceToPosters();
   }
 }
 
-async function applyBatchLicenseAndConferenceToPosters() {
-  if (!jobId.value || !batchImportFinished.value) return;
+/** A license or conference edit was saved but not yet copied to the posters. */
+const batchMetadataApplyPending = ref(false);
+
+/** Copies the batch license and conference onto every poster in the batch. */
+async function applyBatchLicenseAndConferenceToPosters(): Promise<boolean> {
+  if (!jobId.value || !batchImportFinished.value) return true;
   try {
     await applyBulkSubmissionMetadataToPosters(jobId.value);
+    batchMetadataApplyPending.value = false;
+    // Poster previews show these fields, so reload them.
+    metadataRefreshKey.value += 1;
+
+    return true;
   } catch {
     // Summary may be incomplete if user has not finished the conference step.
+    batchMetadataApplyPending.value = true;
+
+    return false;
   }
+}
+
+/** After a license or conference edit; the change is saved either way. */
+async function reapplyBatchMetadataAfterEdit() {
+  if (await applyBatchLicenseAndConferenceToPosters()) return;
+  toast.add({
+    title: "Posters not updated yet",
+    description:
+      "Your change was saved but could not be copied to the posters yet. It will be retried the next time you save this step.",
+    color: "warning",
+  });
 }
 
 function scheduleBatchExtractionPolling() {
@@ -1340,10 +1400,10 @@ const submitStepIntro = computed(() => {
     if (submissionLoading.value) {
       return "Preparing your batch for AI poster extraction…";
     }
-    return "Starting AI poster extraction for each poster in this batch…";
+    return "Confirm the notice below, then start AI poster extraction for each poster in this batch.";
   }
   if (hasUnsubmittedStagedPosters.value) {
-    return "Submitting new poster files for AI poster extraction…";
+    return "Confirm the notice below, then start AI poster extraction for the new poster files.";
   }
   if (batchExtractionsInProgress.value) {
     return "Wait until all posters have had their metadata extracted. You can leave this page and come back later if you are submitting a large batch.";
@@ -1356,23 +1416,19 @@ const submitStepIntro = computed(() => {
 
 const submitStepContinueLabel = computed(() => "Save and Continue");
 
-const submitStepShowManualStartButton = computed(
-  () =>
-    !batchImportFinished.value &&
-    !batchImportRunning.value &&
-    !submissionLoading.value &&
-    hasUnsubmittedStagedPosters.value &&
-    !canProceedFromReview.value,
-);
-
-const submitStepAutoStartPending = computed(
+/** Staged posters are waiting for the user to confirm and start extraction. */
+const submitStepAwaitingStart = computed(
   () =>
     currentStep.value === "submit" &&
     !batchImportRunning.value &&
     !submissionLoading.value &&
-    hasUnsubmittedStagedPosters.value &&
-    canProceedFromReview.value,
+    hasUnsubmittedStagedPosters.value,
 );
+
+async function startExtractionAfterConfirm() {
+  if (!extractionAccuracyConfirmed.value) return;
+  await startImport();
+}
 
 function batchStatusLabel(status: BulkImportBatchItemStatus) {
   switch (status) {
@@ -1496,19 +1552,9 @@ const hasUnsubmittedStagedPosters = computed(() =>
 );
 
 async function enterSubmitStep() {
+  extractionAccuracyConfirmed.value = false;
   await refreshStagedPostersFromStorage();
   await onEnterSubmitStep();
-}
-
-async function tryAutoStartBulkExtraction(options?: {
-  skipStepCheck?: boolean;
-}) {
-  if (!options?.skipStepCheck && currentStep.value !== "submit") return;
-  if (batchImportRunning.value || submissionLoading.value) return;
-  if (!hasUnsubmittedStagedPosters.value) return;
-  if (!canProceedFromReview.value) return;
-
-  await startImport();
 }
 
 async function onEnterSubmitStep() {
@@ -1536,28 +1582,12 @@ async function onEnterSubmitStep() {
     return;
   }
 
-  await tryAutoStartBulkExtraction();
-
   if (batchImportFinished.value) {
     await loadBatchExtractionStatusesFromItems();
   } else if (!batchImportRunning.value) {
     batchExtractionStatusesLoading.value = false;
   }
 }
-
-watch(
-  () =>
-    [
-      currentStep.value,
-      submissionLoading.value,
-      canProceedFromReview.value,
-      hasUnsubmittedStagedPosters.value,
-      batchImportRunning.value,
-    ] as const,
-  () => {
-    void tryAutoStartBulkExtraction();
-  },
-);
 
 function applyBatchStateFromJob(job: BulkPosterSubmissionJob) {
   const summary = job.submissionSummary as BulkImportSubmissionSummary | null;
@@ -1618,14 +1648,25 @@ async function saveUploadStep(): Promise<boolean> {
 
 async function saveConferenceStep(): Promise<boolean> {
   conferenceStepAttempted.value = true;
+  if (bulkImportConferenceYearMismatch(conferenceForm)) {
+    toast.add({
+      title: "Conference dates don't match the year",
+      description:
+        "The conference date range (specifically the start date) must match the selected conference year.",
+      color: "warning",
+    });
+
+    return false;
+  }
   if (!conferenceStepComplete.value) return false;
   if (conferenceSchemaIssues.value.length > 0) return false;
 
   const conference = bulkImportConferenceFromForm(conferenceForm);
   if (!conference || !jobId.value) return true;
 
+  let previous: BulkImportSubmissionSummary | undefined;
   try {
-    await mergeJobSubmissionSummary({ conference });
+    previous = await mergeJobSubmissionSummary({ conference });
   } catch (error) {
     toast.add({
       title: "Could not save conference information",
@@ -1635,6 +1676,14 @@ async function saveConferenceStep(): Promise<boolean> {
     });
 
     return false;
+  }
+
+  // Posters already extracted pick up the changed conference.
+  if (
+    batchMetadataApplyPending.value ||
+    JSON.stringify(previous?.conference) !== JSON.stringify(conference)
+  ) {
+    await reapplyBatchMetadataAfterEdit();
   }
 
   return true;
@@ -1647,16 +1696,15 @@ async function saveLicenseStep(): Promise<boolean> {
   const license = uniformLicense.value.trim();
   if (!license || !jobId.value) return true;
 
+  let previous: BulkImportSubmissionSummary | undefined;
   try {
-    await mergeJobSubmissionSummary({
+    previous = await mergeJobSubmissionSummary({
       uniformLicense: license,
       licenseSpreadsheetRows: buildSpreadsheetRowsForUniformLicense(
         stagedPosterFileNames.value,
         license,
       ),
     });
-    // Posters already extracted pick up a changed license or conference.
-    await applyBatchLicenseAndConferenceToPosters();
   } catch (error) {
     toast.add({
       title: "Could not save license",
@@ -1668,6 +1716,14 @@ async function saveLicenseStep(): Promise<boolean> {
     return false;
   }
 
+  // Posters already extracted pick up the changed license.
+  if (
+    batchMetadataApplyPending.value ||
+    previous?.uniformLicense?.trim() !== license
+  ) {
+    await reapplyBatchMetadataAfterEdit();
+  }
+
   return true;
 }
 
@@ -1677,7 +1733,16 @@ async function saveLicenseStep(): Promise<boolean> {
  */
 function saveSubmitStep(): boolean {
   if (hasUnsubmittedStagedPosters.value || !batchImportFinished.value) {
-    void startImport();
+    if (extractionAccuracyConfirmed.value) {
+      void startImport();
+    } else {
+      toast.add({
+        title: "Confirm before extracting",
+        description:
+          "Check the box confirming you will review the extracted data, then start extraction.",
+        color: "warning",
+      });
+    }
 
     return false;
   }
@@ -1732,7 +1797,11 @@ async function discardFailedAndContinue() {
 
 const metadataGridStepRef = ref<{
   saveIfDirty: () => Promise<boolean>;
+  saveDraft: () => Promise<boolean>;
+  discardChanges: () => void;
   prepareStepTransition: () => Promise<boolean>;
+  dirty: boolean;
+  saving: boolean;
 } | null>(null);
 const metadataReviewRef = ref<{
   previewValidationLines: () => string[];
@@ -1993,17 +2062,17 @@ async function startImport() {
         >
           <ol
             ref="stepperScrollRef"
-            class="flex [scrollbar-width:thin] flex-row items-start gap-3 overflow-x-auto overflow-y-visible overscroll-x-contain scroll-smooth px-0.5 py-1.5 pb-2"
+            class="flex [scrollbar-width:thin] flex-row items-stretch gap-2 overflow-x-auto overflow-y-visible overscroll-x-contain scroll-smooth px-0.5 py-1.5 pb-2"
           >
             <li
               v-for="(step, index) in wizardSteps"
               :key="step.id"
               :ref="(el) => setStepItemEl(el, index)"
-              class="w-[12.5rem] shrink-0 sm:w-[14rem]"
+              class="min-w-[10rem] flex-1"
             >
               <button
                 type="button"
-                class="hover:bg-muted/40 flex w-full items-start gap-3 rounded-lg p-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                class="hover:bg-muted/40 flex h-full w-full items-center gap-2 rounded-lg p-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                 :class="
                   stepShownActive(step.id)
                     ? 'bg-muted/30 ring-primary/30 ring-1 ring-inset'
@@ -2031,9 +2100,9 @@ async function startImport() {
                   <span v-else>{{ index + 1 }}</span>
                 </span>
 
-                <div class="min-w-0 pt-0.5">
+                <div class="min-w-0">
                   <p
-                    class="text-sm font-medium"
+                    class="text-sm leading-tight font-medium"
                     :class="
                       stepShownActive(step.id)
                         ? 'text-highlighted'
@@ -2186,7 +2255,7 @@ async function startImport() {
                         v-if="row.status !== 'stored'"
                         :color="row.status === 'uploading' ? 'info' : 'error'"
                         variant="soft"
-                        size="xs"
+                        size="md"
                       >
                         {{
                           row.status === "uploading"
@@ -2244,7 +2313,7 @@ async function startImport() {
         <div class="space-y-4">
           <div>
             <h3 class="text-base font-semibold">
-              Step {{ currentStepNumber }}: Conference information
+              Step {{ currentStepNumber }}: Conference Information
             </h3>
             <p class="text-muted mt-1 text-sm">
               {{ currentStepTask }}
@@ -2299,6 +2368,7 @@ async function startImport() {
             <UFormField
               label="Conference dates"
               description="The full date range of the conference or event"
+              :error="conferenceDatesError"
             >
               <DateRangePicker
                 v-model="conferenceDateRange"
@@ -2384,7 +2454,7 @@ async function startImport() {
         <div class="space-y-4">
           <div>
             <h3 class="text-base font-semibold">
-              Step {{ currentStepNumber }}: License information
+              Step {{ currentStepNumber }}: License Information
             </h3>
             <p class="text-muted mt-1 text-sm">
               {{ currentStepTask }}
@@ -2437,7 +2507,7 @@ async function startImport() {
         <div class="space-y-4">
           <div>
             <h3 class="text-base font-semibold">
-              Step {{ currentStepNumber }}: AI poster extraction
+              Step {{ currentStepNumber }}: AI Poster Extraction
             </h3>
             <p class="text-muted mt-1 text-sm">
               {{ submitStepIntro }}
@@ -2448,7 +2518,9 @@ async function startImport() {
             v-if="
               batchExtractionStatusesLoading ||
               batchImportRunning ||
-              submitStepAutoStartPending
+              (batchImportFinished &&
+                !batchExtractionStatusesFetched &&
+                batchItems.some((item) => item.extractionJobId))
             "
             class="flex flex-col items-center justify-center gap-3 py-12"
             aria-live="polite"
@@ -2459,12 +2531,34 @@ async function startImport() {
               name="i-lucide-loader-circle"
               class="text-primary size-10 animate-spin"
             />
-            <p
-              v-if="batchImportRunning || submitStepAutoStartPending"
-              class="text-muted text-sm"
-            >
+            <p v-if="batchImportRunning" class="text-muted text-sm">
               Starting metadata extraction for your posters…
             </p>
+          </div>
+
+          <div v-else-if="submitStepAwaitingStart" class="space-y-4">
+            <ExtractionAccuracyNotice
+              title="Please review the extracted data on the next page after extraction"
+              description="Data is extracted automatically and may contain mistakes. Once extraction finishes, you will review and correct the extracted data on the next page, before anything is published."
+            />
+
+            <UCheckbox
+              v-model="extractionAccuracyConfirmed"
+              label="I understand the extracted data may be inaccurate and that I need to review it on the next page."
+            />
+
+            <UButton
+              color="primary"
+              icon="i-lucide-sparkles"
+              label="Start extraction"
+              :disabled="
+                !extractionAccuracyConfirmed ||
+                !canProceedFromReview ||
+                submissionLoading
+              "
+              :loading="batchImportRunning"
+              @click="startExtractionAfterConfirm"
+            />
           </div>
 
           <template
@@ -2522,7 +2616,7 @@ async function startImport() {
                           class="shrink-0"
                           :color="batchStatusColor(row.original.status)"
                           variant="solid"
-                          size="xs"
+                          size="md"
                           :icon="batchStatusIcon(row.original.status)"
                         >
                           {{ batchStatusLabel(row.original.status) }}
@@ -2615,23 +2709,15 @@ async function startImport() {
           />
 
           <UButton
-            v-if="batchImportFinished || submitStepShowManualStartButton"
+            v-if="batchImportFinished && !submitStepAwaitingStart"
             color="primary"
             icon="i-lucide-arrow-right"
             trailing
-            :label="
-              submitStepShowManualStartButton
-                ? 'Start extraction'
-                : submitStepContinueLabel
-            "
+            :label="submitStepContinueLabel"
             :disabled="
               batchImportRunning ||
               continueToReviewSaving ||
-              (batchImportFinished &&
-                !hasUnsubmittedStagedPosters &&
-                batchExtractionsInProgress) ||
-              (submitStepShowManualStartButton &&
-                (!canProceedFromReview || submissionLoading))
+              batchExtractionsInProgress
             "
             :loading="batchImportRunning || continueToReviewSaving"
             @click="continueStep()"
@@ -2668,14 +2754,37 @@ async function startImport() {
             @click="backStep()"
           />
 
-          <UButton
-            color="primary"
-            icon="i-lucide-arrow-right"
-            trailing
-            label="Save and Continue"
-            :loading="stepTransitionPending"
-            @click="continueStep()"
-          />
+          <div class="flex flex-wrap items-center gap-2">
+            <UButton
+              color="neutral"
+              variant="ghost"
+              icon="i-lucide-rotate-ccw"
+              label="Discard changes"
+              :disabled="
+                !metadataGridStepRef?.dirty ||
+                metadataGridStepRef?.saving ||
+                stepTransitionPending
+              "
+              @click="metadataGridStepRef?.discardChanges()"
+            />
+            <UButton
+              color="neutral"
+              variant="outline"
+              icon="i-lucide-save"
+              label="Save draft"
+              :loading="metadataGridStepRef?.saving"
+              :disabled="!metadataGridStepRef?.dirty || stepTransitionPending"
+              @click="metadataGridStepRef?.saveDraft()"
+            />
+            <UButton
+              color="primary"
+              icon="i-lucide-arrow-right"
+              trailing
+              label="Save and Continue"
+              :loading="stepTransitionPending"
+              @click="continueStep()"
+            />
+          </div>
         </div>
       </template>
 
@@ -2686,7 +2795,7 @@ async function startImport() {
               id="bulk-poster-previews-heading"
               class="text-base font-semibold"
             >
-              Step {{ currentStepNumber }}: Poster previews
+              Step {{ currentStepNumber }}: Poster Previews
             </h3>
             <p class="text-muted mt-1 text-sm">
               {{ currentStepTask }}
@@ -2941,8 +3050,8 @@ async function startImport() {
             </h4>
             <UButton
               size="xs"
-              color="neutral"
-              variant="link"
+              color="primary"
+              variant="soft"
               trailing-icon="i-lucide-arrow-right"
               label="Edit poster"
               :to="group.editPath"

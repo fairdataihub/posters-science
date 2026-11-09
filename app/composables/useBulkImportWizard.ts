@@ -175,7 +175,7 @@ export function useBulkImportWizard(options: {
   }
 
   const headerTitle = computed(() =>
-    setupSaved.value ? importNameTrimmed.value : "Bulk import",
+    setupSaved.value ? importNameTrimmed.value : "Bulk Import",
   );
 
   return {

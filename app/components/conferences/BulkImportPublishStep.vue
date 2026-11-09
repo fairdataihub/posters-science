@@ -598,52 +598,6 @@ function rowIsOnZenodo(row: PublishRow) {
   return Boolean(row.recordUrl);
 }
 
-function canPublishRow(row: PublishRow) {
-  return (
-    !zenodoPaused.value &&
-    !rowIsOnZenodo(row) &&
-    row.status !== "publishing" &&
-    !batchPublishing.value &&
-    zenodo.zenodoTokenExists.value &&
-    Boolean(licenseForPublish.value) &&
-    zenodoEmbargoReady.value
-  );
-}
-
-async function publishSingle(row: PublishRow) {
-  if (!licenseForPublish.value) {
-    toast.add({
-      title: "License required",
-      description:
-        "Go back to the license step and choose a license for this batch.",
-      color: "warning",
-    });
-    return;
-  }
-
-  if (zenodoPaused.value) {
-    toast.add({
-      title: "Zenodo is paused",
-      description: "Publishing is temporarily unavailable. Try again later.",
-      color: "warning",
-    });
-    return;
-  }
-
-  if (!zenodo.zenodoTokenExists.value) {
-    toast.add({
-      title: "Sign in to Zenodo",
-      description: "Connect your Zenodo account before publishing.",
-      color: "warning",
-    });
-    return;
-  }
-
-  if (!ensureZenodoEmbargoChosen()) return;
-
-  await publishRow(row);
-}
-
 watch(
   completedItems,
   (items) => {
@@ -1218,6 +1172,13 @@ watch(
 
                 <template v-else-if="selectedRepository === 'zenodo'">
                   <div v-if="rowIsOnZenodo(row)" class="flex flex-col gap-1">
+                    <UBadge
+                      color="success"
+                      variant="subtle"
+                      icon="i-lucide-circle-check"
+                      label="Published"
+                      class="self-start"
+                    />
                     <UButton
                       color="primary"
                       variant="soft"
@@ -1246,27 +1207,22 @@ watch(
                     Publishing…
                   </div>
 
-                  <div v-else class="flex flex-col items-start gap-2">
-                    <p
-                      v-if="row.status === 'failed' && row.error"
-                      class="text-error max-w-md text-xs"
-                    >
+                  <div
+                    v-else-if="row.status === 'failed'"
+                    class="flex flex-col items-start gap-1"
+                  >
+                    <UBadge
+                      color="error"
+                      variant="subtle"
+                      icon="i-lucide-circle-alert"
+                      label="Not published"
+                    />
+                    <p v-if="row.error" class="text-error max-w-md text-xs">
                       {{ row.error }}
                     </p>
-                    <UButton
-                      color="primary"
-                      variant="outline"
-                      size="sm"
-                      icon="i-lucide-upload-cloud"
-                      :label="
-                        row.status === 'failed'
-                          ? 'Retry publish'
-                          : 'Publish to Zenodo'
-                      "
-                      :disabled="!canPublishRow(row)"
-                      @click="publishSingle(row)"
-                    />
                   </div>
+
+                  <p v-else class="text-muted text-sm">Not published yet</p>
                 </template>
               </td>
             </tr>
@@ -1280,7 +1236,7 @@ watch(
         variant="soft"
         icon="i-lucide-info"
         title="Publishing paused"
-        description="Fix the failed poster and use Retry publish on that row, or run Publish all again for the rest."
+        description="Fix the failed poster, then use Publish all to Zenodo again. Posters already on Zenodo are skipped."
       />
     </template>
   </div>
