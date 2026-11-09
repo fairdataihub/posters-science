@@ -1172,13 +1172,6 @@ watch(
 
                 <template v-else-if="selectedRepository === 'zenodo'">
                   <div v-if="rowIsOnZenodo(row)" class="flex flex-col gap-1">
-                    <UBadge
-                      color="success"
-                      variant="subtle"
-                      icon="i-lucide-circle-check"
-                      label="Published"
-                      class="self-start"
-                    />
                     <UButton
                       color="primary"
                       variant="soft"
