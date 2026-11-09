@@ -69,6 +69,50 @@ function onInput(fillKey: string, event: Event) {
       </span>
     </th>
 
+    <!-- Row actions: own untitled column, sticky beside the poster name. -->
+    <td
+      v-if="repeatable"
+      class="border-default sticky left-[320px] z-10 w-px border-r border-b px-1 py-1 align-top whitespace-nowrap group-hover:bg-[color-mix(in_oklab,var(--ui-primary)_12%,var(--ui-bg))]"
+      :class="shaded ? 'bg-elevated' : 'bg-default'"
+    >
+      <div
+        class="flex items-center opacity-60 group-hover:opacity-100 focus-within:opacity-100"
+      >
+        <UTooltip v-if="showReorder" text="Move up">
+          <UButton
+            size="xs"
+            color="neutral"
+            variant="ghost"
+            icon="i-lucide-arrow-up"
+            aria-label="Move up"
+            :disabled="!canMoveUp"
+            @click="emit('move', index, -1)"
+          />
+        </UTooltip>
+        <UTooltip v-if="showReorder" text="Move down">
+          <UButton
+            size="xs"
+            color="neutral"
+            variant="ghost"
+            icon="i-lucide-arrow-down"
+            aria-label="Move down"
+            :disabled="!canMoveDown"
+            @click="emit('move', index, 1)"
+          />
+        </UTooltip>
+        <UTooltip text="Delete row">
+          <UButton
+            size="xs"
+            color="error"
+            variant="ghost"
+            icon="i-lucide-trash-2"
+            aria-label="Delete row"
+            @click="emit('remove', index)"
+          />
+        </UTooltip>
+      </div>
+    </td>
+
     <td
       v-for="(column, colPos) in columns"
       :key="column.fillKey"
@@ -112,7 +156,7 @@ function onInput(fillKey: string, event: Event) {
         :value="row[column.fillKey] ?? ''"
         :data-cell="`${rowPos}:${colPos}`"
         rows="3"
-        class="block min-h-16 resize-y bg-transparent px-2 py-1.5 break-words whitespace-pre-wrap outline-none [field-sizing:content]"
+        class="block [field-sizing:content] min-h-16 resize-y bg-transparent px-2 py-1.5 break-words whitespace-pre-wrap outline-none"
         :style="cellStyle(column)"
         :aria-label="`${column.header}, ${posterName}`"
         @input="onInput(column.fillKey, $event)"
@@ -126,55 +170,13 @@ function onInput(fillKey: string, event: Event) {
         :value="row[column.fillKey] ?? ''"
         rows="1"
         :data-cell="`${rowPos}:${colPos}`"
-        class="block resize-none overflow-hidden bg-transparent px-2 py-1.5 break-words outline-none [field-sizing:content]"
+        class="block [field-sizing:content] resize-none overflow-hidden bg-transparent px-2 py-1.5 break-words outline-none"
         :style="cellStyle(column)"
         :aria-label="`${column.header}, ${posterName}`"
         @input="onInput(column.fillKey, $event)"
         @keydown="emit('cellKeydown', $event, rowPos, colPos, false)"
         @paste="emit('cellPaste', $event, rowPos, colPos)"
       />
-    </td>
-
-    <td
-      v-if="repeatable"
-      class="border-default border-b px-1 py-1 align-top whitespace-nowrap"
-    >
-      <div
-        class="flex items-center gap-0.5 opacity-60 group-hover:opacity-100 focus-within:opacity-100"
-      >
-        <UTooltip v-if="showReorder" text="Move up">
-          <UButton
-            size="xs"
-            color="neutral"
-            variant="ghost"
-            icon="i-lucide-arrow-up"
-            aria-label="Move up"
-            :disabled="!canMoveUp"
-            @click="emit('move', index, -1)"
-          />
-        </UTooltip>
-        <UTooltip v-if="showReorder" text="Move down">
-          <UButton
-            size="xs"
-            color="neutral"
-            variant="ghost"
-            icon="i-lucide-arrow-down"
-            aria-label="Move down"
-            :disabled="!canMoveDown"
-            @click="emit('move', index, 1)"
-          />
-        </UTooltip>
-        <UTooltip text="Delete row">
-          <UButton
-            size="xs"
-            color="error"
-            variant="ghost"
-            icon="i-lucide-trash-2"
-            aria-label="Delete row"
-            @click="emit('remove', index)"
-          />
-        </UTooltip>
-      </div>
     </td>
   </tr>
 </template>

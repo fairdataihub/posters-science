@@ -18,7 +18,10 @@ import {
   type BulkImportConferenceFormState,
 } from "#shared/types/bulkImportConference";
 import { bulkImportNameSchema } from "#shared/types/bulkImportWizard";
-import { StrictConferenceSchema } from "~/utils/poster_schema";
+import {
+  StrictConferenceSchema,
+  SUGGESTED_LICENSE_IDS,
+} from "~/utils/poster_schema";
 import DateRangePicker from "~/components/ui/DateRangePicker.vue";
 import { useConferenceDateRangePicker } from "~/composables/useConferenceDateRangePicker";
 import type { BulkImportSubmissionSummary } from "#shared/types/bulkImportLicenses";
@@ -391,14 +394,31 @@ async function onPosterFilesSelected(files: File[]) {
 
 const uniformLicense = ref<string>("");
 
-const uniformLicenseOptions = computed(() => BULK_IMPORT_ACCEPTABLE_LICENSES);
+/**
+ * Bulk keeps its own acceptable license list, grouped like the single-poster
+ * picker (LICENSE_OPTIONS_WITH_SUGGESTED): "Suggested" first, then all.
+ */
+const uniformLicenseSelectItems: {
+  type?: "label" | "separator";
+  label?: string;
+  value?: string;
+}[] = (() => {
+  const items = BULK_IMPORT_ACCEPTABLE_LICENSES.map(({ label, value }) => ({
+    label,
+    value,
+  }));
+  const suggested = SUGGESTED_LICENSE_IDS.flatMap((id) =>
+    items.filter((item) => item.value === id),
+  );
 
-const uniformLicenseSelectItems = computed(() =>
-  uniformLicenseOptions.value.map((option) => ({
-    label: option.label,
-    value: option.value,
-  })),
-);
+  return [
+    { type: "label" as const, label: "Suggested" },
+    ...suggested,
+    { type: "separator" as const },
+    { type: "label" as const, label: "All Licenses" },
+    ...items,
+  ];
+})();
 
 const submissionRows = ref<BulkImportSubmissionRow[]>([]);
 const submissionLoading = ref(false);
@@ -537,6 +557,11 @@ const canContinueFromPreviewStep = computed(
 const batchImportFinished = ref(false);
 const batchImportRunning = ref(false);
 const batchExtractionStatusesLoading = ref(false);
+/**
+ * Rows are first built from the saved job (all "waiting in queue"), so the
+ * table waits for the first status check instead of flashing those.
+ */
+const batchExtractionStatusesFetched = ref(false);
 const batchHasCompletedExtractions = computed(() =>
   batchItems.value.some((item) => item.status === "completed"),
 );
@@ -1257,6 +1282,7 @@ async function refreshBatchExtractionStatuses() {
     statusByJobId = new Map(jobs.map((job) => [job.jobId, job]));
   } catch {
     // Keep last known statuses if this poll fails; the next poll retries.
+    batchExtractionStatusesFetched.value = true;
     return;
   }
 
@@ -1278,6 +1304,7 @@ async function refreshBatchExtractionStatuses() {
       if (!response.imageUrl?.trim()) thumbnailPosterIds.push(row.posterId);
     }
   }
+  batchExtractionStatusesFetched.value = true;
 
   await Promise.all(
     thumbnailPosterIds.map(async (posterId) => {
@@ -2221,7 +2248,7 @@ async function startImport() {
                         v-if="row.status !== 'stored'"
                         :color="row.status === 'uploading' ? 'info' : 'error'"
                         variant="soft"
-                        size="xs"
+                        size="md"
                       >
                         {{
                           row.status === "uploading"
@@ -2481,7 +2508,13 @@ async function startImport() {
           </div>
 
           <div
-            v-if="batchExtractionStatusesLoading || batchImportRunning"
+            v-if="
+              batchExtractionStatusesLoading ||
+              batchImportRunning ||
+              (batchImportFinished &&
+                !batchExtractionStatusesFetched &&
+                batchItems.some((item) => item.extractionJobId))
+            "
             class="flex flex-col items-center justify-center gap-3 py-12"
             aria-live="polite"
             aria-busy="true"
@@ -2576,7 +2609,7 @@ async function startImport() {
                           class="shrink-0"
                           :color="batchStatusColor(row.original.status)"
                           variant="solid"
-                          size="xs"
+                          size="md"
                           :icon="batchStatusIcon(row.original.status)"
                         >
                           {{ batchStatusLabel(row.original.status) }}
