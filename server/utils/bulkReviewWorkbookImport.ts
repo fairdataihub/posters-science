@@ -64,6 +64,8 @@ type PosterImportPatch = {
 };
 
 type BulkReviewClearableList =
+  | "creators"
+  | "identifiers"
   | "related"
   | "funding"
   | "sections"
@@ -1114,9 +1116,9 @@ async function applyPatchToPoster(
   const posterUpdate: Prisma.PosterUpdateInput = {};
 
   if (patch.about) {
-    // Titles are shown across the site, so an empty one keeps the old title.
-    // Everything else saves as entered, including an empty description.
-    posterUpdate.title = patch.about.title.trim() || poster.title;
+    // Everything saves as entered, including an empty title or description;
+    // required-field validation then asks for them before publishing.
+    posterUpdate.title = patch.about.title.trim();
     posterUpdate.description = patch.about.description.trim();
     data.subjects = parseKeywords(patch.about.keywords);
   }
@@ -1177,13 +1179,15 @@ async function applyPatchToPoster(
     data.domain = a.domain?.trim() || null;
   }
 
-  if (patch.identifierRows.length > 0) {
+  if (patch.identifierRows.length > 0 || patch.clearWhenEmpty?.has("identifiers")) {
     data.identifiers = buildIdentifiersFromRows(
       patch.identifierRows,
     ) as Prisma.InputJsonValue;
   }
 
-  if (patch.contributorRows.length > 0) {
+  // Every creator row deleted in the grid clears the list (validation then
+  // asks for at least one), instead of silently keeping the old creators.
+  if (patch.contributorRows.length > 0 || patch.clearWhenEmpty?.has("creators")) {
     data.creators = buildCreatorsFromContributorsAndAffiliations(
       patch.contributorRows,
       patch.affiliationRows,
@@ -1471,10 +1475,15 @@ export async function importBulkReviewGridRows(
     });
   }
 
-  // The grid shows every stored row, so an empty list for a sheet that was sent
-  // means the user removed every row for that poster.
+  // The grid shows every stored row, so for a poster that was sent, an empty
+  // list on a sent sheet means the user removed every row. Posters with no
+  // rows in the request (unchanged; the grid sends only changed posters) are
+  // left alone.
+  const sentPosterIds = [...patches.keys()];
   const clearable = new Set<BulkReviewClearableList>();
   const sentSheet = (name: string) => Array.isArray(sheets[name]);
+  if (sentSheet(BULK_REVIEW_WORKBOOK_SHEET_CREATORS)) clearable.add("creators");
+  if (sentSheet(BULK_REVIEW_WORKBOOK_SHEET_IDENTIFIERS)) clearable.add("identifiers");
   if (sentSheet(BULK_REVIEW_WORKBOOK_SHEET_RELATED_RESOURCES)) clearable.add("related");
   if (sentSheet(BULK_REVIEW_WORKBOOK_SHEET_FUNDING)) clearable.add("funding");
   if (sentSheet(BULK_REVIEW_WORKBOOK_SHEET_POSTER_CONTENT)) clearable.add("sections");
@@ -1482,9 +1491,13 @@ export async function importBulkReviewGridRows(
   if (sentSheet(BULK_REVIEW_WORKBOOK_SHEET_IMAGE_CAPTIONS)) clearable.add("imageCaptions");
 
   if (clearable.size > 0) {
-    for (const posterId of allowedPosterIds) {
+    for (const posterId of sentPosterIds) {
       const patch = patchFor(posterId);
       const clear = new Set<BulkReviewClearableList>();
+      if (clearable.has("creators") && patch.contributorRows.length === 0) clear.add("creators");
+      if (clearable.has("identifiers") && patch.identifierRows.length === 0) {
+        clear.add("identifiers");
+      }
       if (clearable.has("related") && patch.relatedResourceRows.length === 0) clear.add("related");
       if (clearable.has("funding") && patch.fundingRows.length === 0) clear.add("funding");
       if (clearable.has("sections") && patch.sectionRows.length === 0) clear.add("sections");

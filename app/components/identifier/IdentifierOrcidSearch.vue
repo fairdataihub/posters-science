@@ -49,8 +49,9 @@ async function runSearch() {
       query: {
         givenName,
         familyName,
-        ...(useAffiliationFilter.value && props.affiliations[0]
-          ? { affiliation: props.affiliations[0] }
+        // Every affiliation; the server splits them into org-name parts.
+        ...(useAffiliationFilter.value && props.affiliations.length > 0
+          ? { affiliation: props.affiliations.join("; ") }
           : {}),
       },
     });
@@ -97,7 +98,7 @@ function selectResult(result: OrcidResult) {
             </p>
 
             <p class="truncate text-xs text-gray-500 dark:text-gray-400">
-              {{ affiliations[0] }}
+              {{ affiliations.join("; ") }}
             </p>
           </div>
         </div>

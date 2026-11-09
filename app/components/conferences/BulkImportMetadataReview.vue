@@ -3,10 +3,11 @@ import { strictIssueMessage } from "~/utils/strictIssueLabel";
 import type { BulkImportBatchItem } from "#shared/types/conferenceBulkImport";
 import type { PosterResponse } from "@/utils/poster_schema";
 import { sharePosterEditPath } from "~/utils/sharePaths";
+import type { PosterStrictValidationResult } from "~/utils/posterResponseToStrictForm";
 import {
-  validatePosterResponseStrictForm,
-  type PosterStrictValidationResult,
-} from "~/utils/posterResponseToStrictForm";
+  getBulkPosterPreviewSummaries,
+  type BulkPosterPreviewSummary,
+} from "~/utils/bulkPosterSubmissionJobClient";
 
 const props = defineProps<{
   items: BulkImportBatchItem[];
@@ -40,129 +41,6 @@ type ReviewPoster = PosterResponse & {
 
 const toast = useToast();
 
-const selectedPosterId = ref<number | null>(null);
-const posterCache = ref<Record<number, ReviewPoster>>({});
-const posterErrors = ref<Record<number, string>>({});
-const fetchingPosterIds = ref<Set<number>>(new Set());
-const thumbnailCacheBustById = ref<Record<number, number>>({});
-const regeneratingPreview = ref(false);
-const thumbnailQueueAttempted = ref<Set<number>>(new Set());
-const thumbnailPollGeneration = ref<Record<number, number>>({});
-
-const posterInFlight = new Map<number, Promise<void>>();
-const thumbnailPollTimers = new Map<number, ReturnType<typeof setInterval>>();
-
-const THUMBNAIL_POLL_MS = 3_000;
-const THUMBNAIL_POLL_MAX_MS = 120_000;
-
-function stopThumbnailPoll(posterId: number) {
-  const timer = thumbnailPollTimers.get(posterId);
-  if (timer) {
-    clearInterval(timer);
-    thumbnailPollTimers.delete(posterId);
-  }
-  if (thumbnailPollGeneration.value[posterId]) {
-    const { [posterId]: _drop, ...rest } = thumbnailPollGeneration.value;
-    thumbnailPollGeneration.value = rest;
-  }
-}
-
-function stopAllThumbnailPolls() {
-  for (const posterId of thumbnailPollTimers.keys()) {
-    stopThumbnailPoll(posterId);
-  }
-}
-
-async function refreshPosterFromApi(posterId: number) {
-  const data = await $fetch<ReviewPoster>(`/api/poster/${posterId}`);
-  patchPosterCache(posterId, data);
-  if (data.imageUrl?.trim()) {
-    stopThumbnailPoll(posterId);
-    thumbnailCacheBustById.value = {
-      ...thumbnailCacheBustById.value,
-      [posterId]: Date.now(),
-    };
-    preloadPosterPreview(data);
-    return true;
-  }
-  return false;
-}
-
-function startThumbnailPoll(posterId: number) {
-  if (thumbnailPollTimers.has(posterId)) return;
-
-  const startedAt = Date.now();
-  thumbnailPollGeneration.value = {
-    ...thumbnailPollGeneration.value,
-    [posterId]: startedAt,
-  };
-
-  const timer = setInterval(() => {
-    if (Date.now() - startedAt > THUMBNAIL_POLL_MAX_MS) {
-      stopThumbnailPoll(posterId);
-      return;
-    }
-
-    void refreshPosterFromApi(posterId).catch(() => {
-      // Keep polling until timeout; user can use Generate again.
-    });
-  }, THUMBNAIL_POLL_MS);
-
-  thumbnailPollTimers.set(posterId, timer);
-}
-
-async function queueThumbnailGeneration(posterId: number) {
-  if (thumbnailQueueAttempted.value.has(posterId)) return;
-
-  const cached = posterCache.value[posterId];
-  if (cached?.imageUrl?.trim()) return;
-
-  thumbnailQueueAttempted.value = new Set([
-    ...thumbnailQueueAttempted.value,
-    posterId,
-  ]);
-
-  try {
-    await $fetch(`/api/poster/${posterId}/thumbnail`, { method: "POST" });
-    await refreshPosterFromApi(posterId).catch(() => undefined);
-    startThumbnailPoll(posterId);
-  } catch {
-    const next = new Set(thumbnailQueueAttempted.value);
-    next.delete(posterId);
-    thumbnailQueueAttempted.value = next;
-  }
-}
-
-async function ensureThumbnailIfMissing(posterId: number) {
-  const cached = posterCache.value[posterId];
-  if (!cached || cached.imageUrl?.trim()) return;
-
-  const job = cached.extractionJob;
-  const extractionDone =
-    job?.completed === true || job?.status === "completed";
-  if (!extractionDone) return;
-
-  await queueThumbnailGeneration(posterId);
-}
-
-const poster = computed(() => {
-  const id = selectedPosterId.value;
-  if (id == null) return null;
-  return posterCache.value[id] ?? null;
-});
-
-const posterError = computed(() => {
-  const id = selectedPosterId.value;
-  if (id == null) return null;
-  return posterErrors.value[id] ?? null;
-});
-
-const posterLoading = computed(() => {
-  const id = selectedPosterId.value;
-  if (id == null) return false;
-  return fetchingPosterIds.value.has(id) && posterCache.value[id] == null;
-});
-
 const reviewableItems = computed(() =>
   props.items.filter(
     (item) => item.posterId != null && item.status === "completed",
@@ -179,21 +57,168 @@ const failedItems = computed(() =>
   props.items.filter((item) => item.status === "failed"),
 );
 
-function patchPosterCache(posterId: number, data: ReviewPoster) {
-  posterCache.value = { ...posterCache.value, [posterId]: data };
+// ---------------------------------------------------------------------------
+// Batch summary: one request for every poster's thumbnail / extraction status
+// and required-field validation (the list, checkmarks and issue alerts).
+// Full metadata is only loaded for the poster you open (see below).
+// ---------------------------------------------------------------------------
+
+const summaryById = ref<Record<number, BulkPosterPreviewSummary>>({});
+const summaryLoading = ref(false);
+const summaryLoaded = ref(false);
+const summaryError = ref(false);
+let summaryRequest: Promise<void> | null = null;
+
+async function loadSummaries() {
+  if (!props.bulkImportJobId) return;
+  if (summaryRequest) return summaryRequest;
+
+  summaryLoading.value = true;
+  summaryRequest = (async () => {
+    try {
+      const { posters } = await getBulkPosterPreviewSummaries(
+        props.bulkImportJobId!,
+      );
+      const previous = summaryById.value;
+      const next: Record<number, BulkPosterPreviewSummary> = {};
+      const bust = { ...thumbnailCacheBustById.value };
+      for (const summary of posters) {
+        next[summary.posterId] = summary;
+        const hadImage = Boolean(previous[summary.posterId]?.imageUrl?.trim());
+        if (!hadImage && summary.imageUrl.trim()) {
+          bust[summary.posterId] = Date.now();
+          thumbnailPending.value.delete(summary.posterId);
+        }
+      }
+      summaryById.value = next;
+      thumbnailCacheBustById.value = bust;
+      summaryLoaded.value = true;
+      summaryError.value = false;
+      queueMissingThumbnails();
+    } catch {
+      summaryError.value = true;
+    } finally {
+      summaryLoading.value = false;
+      summaryRequest = null;
+    }
+  })();
+
+  return summaryRequest;
 }
 
-function preloadPosterPreview(data: ReviewPoster) {
-  if (!data.imageUrl?.trim()) return;
+function validationForPosterId(
+  posterId: number,
+): PosterStrictValidationResult | null {
+  const summary = summaryById.value[posterId];
+  if (!summary) return null;
+  return { valid: summary.issues.length === 0, issues: summary.issues };
+}
 
-  const url =
-    data.status === "published"
-      ? data.imageUrl
-      : `/api/poster/${data.id}/thumbnail`;
+const validationByPosterId = computed(() => {
+  const map: Record<number, PosterStrictValidationResult> = {};
+  for (const item of reviewableItems.value) {
+    if (item.posterId == null) continue;
+    const result = validationForPosterId(item.posterId);
+    if (result) map[item.posterId] = result;
+  }
+  return map;
+});
 
-  const img = new Image();
-  img.decoding = "async";
-  img.src = url;
+const metadataValidationPending = computed(
+  () =>
+    reviewableItems.value.length > 0 &&
+    !summaryError.value &&
+    (!summaryLoaded.value ||
+      reviewableItems.value.some(
+        (item) =>
+          item.posterId != null && summaryById.value[item.posterId] == null,
+      )),
+);
+
+// ---------------------------------------------------------------------------
+// Thumbnails: queue missing previews once, then re-read the batch summary
+// (one request) until they appear, instead of polling each poster.
+// ---------------------------------------------------------------------------
+
+const thumbnailCacheBustById = ref<Record<number, number>>({});
+const thumbnailQueueAttempted = new Set<number>();
+/** Posters whose preview is being generated (shown as "Generating preview…"). */
+const thumbnailPending = ref(new Set<number>());
+const regeneratingPreview = ref(false);
+
+const THUMBNAIL_POLL_MS = 3_000;
+const THUMBNAIL_POLL_MAX_MS = 120_000;
+let thumbnailPollTimer: ReturnType<typeof setTimeout> | undefined;
+let thumbnailPollStartedAt = 0;
+
+function stopThumbnailPolling() {
+  if (thumbnailPollTimer) clearTimeout(thumbnailPollTimer);
+  thumbnailPollTimer = undefined;
+}
+
+function scheduleThumbnailPoll() {
+  if (thumbnailPollTimer || thumbnailPending.value.size === 0) return;
+  if (!thumbnailPollStartedAt) thumbnailPollStartedAt = Date.now();
+
+  thumbnailPollTimer = setTimeout(async () => {
+    thumbnailPollTimer = undefined;
+    if (Date.now() - thumbnailPollStartedAt > THUMBNAIL_POLL_MAX_MS) {
+      // Give up; the poster shows "Preview unavailable" with Generate.
+      thumbnailPending.value = new Set();
+      thumbnailPollStartedAt = 0;
+      return;
+    }
+    await loadSummaries();
+    if (thumbnailPending.value.size > 0) scheduleThumbnailPoll();
+    else thumbnailPollStartedAt = 0;
+  }, THUMBNAIL_POLL_MS);
+}
+
+function markThumbnailPending(posterId: number) {
+  thumbnailPending.value = new Set([...thumbnailPending.value, posterId]);
+  scheduleThumbnailPoll();
+}
+
+function extractionDone(summary: BulkPosterPreviewSummary | undefined) {
+  const job = summary?.extractionJob;
+  return job?.completed === true || job?.status === "completed";
+}
+
+/** Ask the worker for previews of extracted posters that have none (once each). */
+function queueMissingThumbnails() {
+  for (const item of reviewableItems.value) {
+    const posterId = item.posterId;
+    if (posterId == null || thumbnailQueueAttempted.has(posterId)) continue;
+    const summary = summaryById.value[posterId];
+    if (!summary?.found || summary.imageUrl.trim() || !extractionDone(summary)) {
+      continue;
+    }
+
+    thumbnailQueueAttempted.add(posterId);
+    markThumbnailPending(posterId);
+    $fetch(`/api/poster/${posterId}/thumbnail`, { method: "POST" }).catch(
+      () => {
+        thumbnailQueueAttempted.delete(posterId);
+        const next = new Set(thumbnailPending.value);
+        next.delete(posterId);
+        thumbnailPending.value = next;
+      },
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Selected poster: full metadata (title, creators, description) on demand.
+// ---------------------------------------------------------------------------
+
+const selectedPosterId = ref<number | null>(null);
+const posterCache = ref<Record<number, ReviewPoster>>({});
+const posterErrors = ref<Record<number, string>>({});
+const fetchingPosterIds = ref<Set<number>>(new Set());
+const posterInFlight = new Map<number, Promise<void>>();
+
+function patchPosterCache(posterId: number, data: ReviewPoster) {
+  posterCache.value = { ...posterCache.value, [posterId]: data };
 }
 
 async function ensurePosterInCache(posterId: number) {
@@ -211,10 +236,8 @@ async function ensurePosterInCache(posterId: number) {
     try {
       const data = await $fetch<ReviewPoster>(`/api/poster/${posterId}`);
       patchPosterCache(posterId, data);
-      preloadPosterPreview(data);
       const { [posterId]: _removed, ...rest } = posterErrors.value;
       posterErrors.value = rest;
-      await ensureThumbnailIfMissing(posterId);
     } catch {
       posterErrors.value = {
         ...posterErrors.value,
@@ -232,24 +255,57 @@ async function ensurePosterInCache(posterId: number) {
   return promise;
 }
 
+/** Load the selected poster, then quietly prefetch the next one in the list. */
+async function loadSelectedAndNext(posterId: number) {
+  await ensurePosterInCache(posterId);
+  const ids = reviewableItems.value.map((item) => item.posterId);
+  const nextId = ids[ids.indexOf(posterId) + 1];
+  if (nextId != null) void ensurePosterInCache(nextId);
+}
+
+const poster = computed(() => {
+  const id = selectedPosterId.value;
+  if (id == null) return null;
+  return posterCache.value[id] ?? null;
+});
+
+const selectedSummary = computed(() => {
+  const id = selectedPosterId.value;
+  return id == null ? null : (summaryById.value[id] ?? null);
+});
+
+const posterError = computed(() => {
+  const id = selectedPosterId.value;
+  if (id == null) return null;
+  return posterErrors.value[id] ?? null;
+});
+
+const posterLoading = computed(() => {
+  const id = selectedPosterId.value;
+  if (id == null) return false;
+  return fetchingPosterIds.value.has(id) && posterCache.value[id] == null;
+});
+
 watch(
   () => props.metadataRefreshKey,
   () => {
-    stopAllThumbnailPolls();
-    thumbnailQueueAttempted.value = new Set();
+    stopThumbnailPolling();
+    thumbnailQueueAttempted.clear();
+    thumbnailPending.value = new Set();
+    thumbnailPollStartedAt = 0;
     posterCache.value = {};
     posterErrors.value = {};
-    for (const item of reviewableItems.value) {
-      if (item.posterId != null) {
-        void ensurePosterInCache(item.posterId);
-      }
+    void loadSummaries();
+    if (selectedPosterId.value != null) {
+      void loadSelectedAndNext(selectedPosterId.value);
     }
   },
 );
 
 watch(
-  reviewableItems,
-  (items) => {
+  () => reviewableItems.value.map((item) => item.posterId).join(","),
+  (ids, previousIds) => {
+    const items = reviewableItems.value;
     if (items.length === 0) {
       selectedPosterId.value = null;
       return;
@@ -260,11 +316,9 @@ watch(
     ) {
       selectedPosterId.value = items[0]!.posterId!;
     }
-    for (const item of items) {
-      if (item.posterId != null) {
-        void ensurePosterInCache(item.posterId);
-      }
-    }
+    void loadSelectedAndNext(selectedPosterId.value!);
+    // More posters finished extracting: refresh the summary for them.
+    if (ids !== previousIds) void loadSummaries();
   },
   { immediate: true },
 );
@@ -272,7 +326,7 @@ watch(
 function selectPoster(posterId: number) {
   if (posterId === selectedPosterId.value) return;
   selectedPosterId.value = posterId;
-  void ensurePosterInCache(posterId);
+  void loadSelectedAndNext(posterId);
 }
 
 const meta = computed(() => poster.value?.posterMetadata ?? null);
@@ -303,36 +357,34 @@ const editMetadataPath = computed(() => {
 });
 
 const posterPreviewSrc = computed(() => {
-  if (!poster.value?.imageUrl?.trim()) return "";
+  const summary = selectedSummary.value;
+  if (!summary?.imageUrl.trim()) return "";
 
-  const bustMs = thumbnailCacheBustById.value[poster.value.id];
+  const bustMs = thumbnailCacheBustById.value[summary.posterId];
   const bust = bustMs ? `?t=${bustMs}` : "";
 
-  if (poster.value.status === "published") {
-    return `${poster.value.imageUrl}${bust}`;
+  if (summary.status === "published") {
+    return `${summary.imageUrl}${bust}`;
   }
 
-  return `/api/poster/${poster.value.id}/thumbnail${bust}`;
+  return `/api/poster/${summary.posterId}/thumbnail${bust}`;
 });
 
 const posterPreviewMissing = computed(() => {
-  const current = poster.value;
-  if (!current?.imageUrl?.trim()) {
-    const job = current?.extractionJob;
-    if (job?.status === "pending-thumbnail") return false;
-    if (current && thumbnailPollGeneration.value[current.id]) return false;
-    return Boolean(
-      !job ||
-        job.completed ||
-        job.status === "completed" ||
-        job.status === "failed",
-    );
-  }
-  return false;
+  const summary = selectedSummary.value;
+  if (!summary || summary.imageUrl.trim()) return false;
+  if (summary.extractionJob?.status === "pending-thumbnail") return false;
+  if (thumbnailPending.value.has(summary.posterId)) return false;
+  const job = summary.extractionJob;
+  return Boolean(
+    !job || job.completed || job.status === "completed" || job.status === "failed",
+  );
 });
 
 async function regeneratePreview() {
-  if (!poster.value) return;
+  const summary = selectedSummary.value;
+  if (!summary) return;
+  const posterId = summary.posterId;
 
   regeneratingPreview.value = true;
   try {
@@ -340,15 +392,13 @@ async function regeneratePreview() {
       success: boolean;
       queued?: boolean;
       imageUrl?: string | null;
-    }>(`/api/poster/${poster.value.id}/thumbnail`, { method: "POST" });
-
-    const posterId = poster.value.id;
+    }>(`/api/poster/${posterId}/thumbnail`, { method: "POST" });
 
     if (response.imageUrl) {
-      patchPosterCache(posterId, {
-        ...poster.value,
-        imageUrl: response.imageUrl,
-      });
+      summaryById.value = {
+        ...summaryById.value,
+        [posterId]: { ...summary, imageUrl: response.imageUrl },
+      };
       thumbnailCacheBustById.value = {
         ...thumbnailCacheBustById.value,
         [posterId]: Date.now(),
@@ -360,17 +410,14 @@ async function regeneratePreview() {
       return;
     }
 
+    markThumbnailPending(posterId);
     if (response.queued) {
-      startThumbnailPoll(posterId);
       toast.add({
         title: "Generating preview",
         description: "The thumbnail will appear here when it is ready.",
         color: "info",
       });
-      return;
     }
-
-    await refreshPosterFromApi(posterId);
   } catch {
     toast.add({
       title: "Could not generate preview",
@@ -394,33 +441,6 @@ const creators = computed(() => {
     .filter(Boolean);
 });
 
-function validationForPosterId(
-  posterId: number,
-): PosterStrictValidationResult | null {
-  const data = posterCache.value[posterId];
-  if (!data) return null;
-  return validatePosterResponseStrictForm(data);
-}
-
-const validationByPosterId = computed(() => {
-  const map: Record<number, PosterStrictValidationResult> = {};
-  for (const item of reviewableItems.value) {
-    if (item.posterId == null) continue;
-    const result = validationForPosterId(item.posterId);
-    if (result) map[item.posterId] = result;
-  }
-  return map;
-});
-
-const metadataValidationPending = computed(() =>
-  reviewableItems.value.some(
-    (item) =>
-      item.posterId != null &&
-      (fetchingPosterIds.value.has(item.posterId) ||
-        posterCache.value[item.posterId] == null),
-  ),
-);
-
 const invalidMetadataItems = computed(() =>
   reviewableItems.value.filter((item) => {
     if (item.posterId == null) return false;
@@ -431,7 +451,7 @@ const invalidMetadataItems = computed(() =>
 
 const allReviewableMetadataValid = computed(() => {
   if (reviewableItems.value.length === 0) return false;
-  if (metadataValidationPending.value) return false;
+  if (metadataValidationPending.value || summaryError.value) return false;
   return invalidMetadataItems.value.length === 0;
 });
 
@@ -512,7 +532,7 @@ defineExpose({
 });
 
 onUnmounted(() => {
-  stopAllThumbnailPolls();
+  stopThumbnailPolling();
 });
 </script>
 
@@ -562,12 +582,22 @@ onUnmounted(() => {
     </UAlert>
 
     <UAlert
-      v-if="reviewableItems.length > 0 && metadataValidationPending"
+      v-if="reviewableItems.length > 0 && summaryError"
+      color="error"
+      variant="soft"
+      icon="i-lucide-circle-alert"
+      title="Could not check required metadata"
+      description="The posters' required fields could not be checked."
+      :actions="[{ label: 'Retry', onClick: () => loadSummaries() }]"
+    />
+
+    <UAlert
+      v-else-if="reviewableItems.length > 0 && metadataValidationPending"
       color="neutral"
       variant="soft"
       icon="i-lucide-loader-circle"
       title="Checking required metadata"
-      description="Loading each poster to verify mandatory fields match the single-poster editor."
+      description="Checking every poster's mandatory fields against the single-poster editor."
     />
 
     <UAlert

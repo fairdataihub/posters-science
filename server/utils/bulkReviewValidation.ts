@@ -68,15 +68,24 @@ function posterResponseFromRecord(poster: {
   } as unknown as PosterResponse;
 }
 
+/** One poster's preview status plus its strict-form validation. */
+export type BulkPosterPreviewSummary = BulkPosterValidationResult & {
+  /** False when the poster is not in this database (deleted or not owned). */
+  found: boolean;
+  imageUrl: string;
+  status: string;
+  extractionJob: { status: string; completed: boolean } | null;
+};
+
 /**
- * Strict-form validation for every poster in a bulk job, in one query.
- * Replaces one GET /api/poster/[id] per poster from the metadata grid.
- * Validates stored data as-is, matching what the poster editor shows.
+ * Preview status and strict-form validation for every poster in a bulk job,
+ * from one poster query. Validates stored data as-is, matching what the
+ * poster editor shows.
  */
-export async function validateBulkJobPosters(
+export async function bulkJobPosterSummaries(
   userId: string,
   jobId: string,
-): Promise<BulkPosterValidationResult[]> {
+): Promise<BulkPosterPreviewSummary[]> {
   const repository = getBulkPosterSubmissionJobRepository();
   const job = await repository.getByIdForUser(jobId, userId);
   if (!job) {
@@ -91,32 +100,53 @@ export async function validateBulkJobPosters(
     where: { id: { in: posterIds }, userId },
     include: {
       posterMetadata: true,
+      extractionJob: { select: { status: true, completed: true } },
     },
   });
   const byId = new Map(posters.map((poster) => [poster.id, poster]));
 
-  const results: BulkPosterValidationResult[] = [];
-  for (const posterId of posterIds) {
+  return posterIds.map((posterId): BulkPosterPreviewSummary => {
     const poster = byId.get(posterId);
     if (!poster) {
-      results.push({
+      return {
         posterId,
+        found: false,
+        imageUrl: "",
+        status: "",
+        extractionJob: null,
         issues: [{ path: "", message: "Poster could not be found." }],
-      });
-      continue;
+      };
     }
 
-    // Stored data is the source of truth: validate exactly what the poster
-    // editor shows.
-    const title = poster.title;
-    const description = poster.description;
-    const meta = poster.posterMetadata as Record<string, unknown> | null;
-
     const result = validatePosterResponseStrictForm(
-      posterResponseFromRecord({ id: poster.id, title, description, posterMetadata: meta }),
+      posterResponseFromRecord({
+        id: poster.id,
+        title: poster.title,
+        description: poster.description,
+        posterMetadata: poster.posterMetadata as Record<string, unknown> | null,
+      }),
     );
-    results.push({ posterId, issues: result.valid ? [] : result.issues });
-  }
 
-  return results;
+    return {
+      posterId,
+      found: true,
+      imageUrl: poster.imageUrl ?? "",
+      status: poster.status,
+      extractionJob: poster.extractionJob,
+      issues: result.valid ? [] : result.issues,
+    };
+  });
+}
+
+/**
+ * Strict-form validation for every poster in a bulk job, in one query.
+ * Replaces one GET /api/poster/[id] per poster from the metadata grid.
+ */
+export async function validateBulkJobPosters(
+  userId: string,
+  jobId: string,
+): Promise<BulkPosterValidationResult[]> {
+  const summaries = await bulkJobPosterSummaries(userId, jobId);
+
+  return summaries.map(({ posterId, issues }) => ({ posterId, issues }));
 }

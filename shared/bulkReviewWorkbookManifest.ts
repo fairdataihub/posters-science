@@ -246,7 +246,7 @@ export const BULK_REVIEW_WORKBOOK_SHEETS: BulkReviewWorkbookSheet[] = [
     name: BULK_REVIEW_WORKBOOK_SHEET_CREATORS,
     rowNoun: "creator",
     description:
-      "Mandatory: one row per contributor per poster. Optional ORCID (or ROR for an organization) plus up to 10 affiliations on the same row.",
+      "Mandatory: one row per creator per poster. Optional ORCID (or ROR for an organization) and affiliations on the same row; use Add affiliation column for more affiliations. Auto-fill in the ORCID column fills ORCIDs that exactly match a creator's name and affiliations.",
     grain: "contributor",
     columns: [
       col("Poster ID", "poster_id", "poster.id", "system", { width: 12 }),
@@ -268,7 +268,7 @@ export const BULK_REVIEW_WORKBOOK_SHEETS: BulkReviewWorkbookSheet[] = [
         "extracted",
         {
           requirement: "optional",
-          width: 36,
+          width: 52,
           hint: "ORCID URL for Personal; organization ROR URL for Organizational",
         },
       ),
