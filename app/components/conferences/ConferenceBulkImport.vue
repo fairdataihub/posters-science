@@ -17,6 +17,7 @@ import {
   emptyBulkImportConferenceForm,
   type BulkImportConferenceFormState,
 } from "#shared/types/bulkImportConference";
+import { z } from "zod";
 import { bulkImportNameSchema } from "#shared/types/bulkImportWizard";
 import {
   StrictConferenceSchema,
@@ -445,9 +446,6 @@ const { conferenceDateRange } = useConferenceDateRangePicker({
   startDate: toRef(conferenceForm, "conferenceStartDate"),
   endDate: toRef(conferenceForm, "conferenceEndDate"),
 });
-const conferenceStepAttempted = ref(false);
-const licenseStepAttempted = ref(false);
-
 const showConferenceIdentifierDetails = computed(
   () => conferenceForm.conferenceIdentifier.trim().length > 0,
 );
@@ -470,50 +468,44 @@ watch(
   },
 );
 
-const conferenceSchemaIssues = computed(
-  () => StrictConferenceSchema.safeParse(conferenceForm).error?.issues ?? [],
-);
-
-function conferenceFieldError(field: keyof BulkImportConferenceFormState) {
-  if (!conferenceStepAttempted.value) return undefined;
-
-  return conferenceSchemaIssues.value.find((issue) => issue.path[0] === field)
-    ?.message;
-}
-
-const conferenceNameError = computed(() =>
-  conferenceFieldError("conferenceName"),
-);
-
-const conferenceYearError = computed(() =>
-  conferenceFieldError("conferenceYear")
-    ? "Conference year is required"
-    : undefined,
-);
-
-const conferenceDatesError = computed(() =>
-  conferenceStepAttempted.value &&
-  bulkImportConferenceYearMismatch(conferenceForm)
-    ? "The conference date range (specifically the start date) must match the selected conference year"
-    : undefined,
-);
-
 const conferenceYearOptions = Array.from(
   { length: new Date().getFullYear() + 1 - 2000 + 1 },
   (_, i) => new Date().getFullYear() + 1 - i,
 ).map((y) => ({ label: String(y), value: y }));
 
-const conferenceUriError = computed(() =>
-  conferenceFieldError("conferenceUri"),
+const batchNameFormSchema = z.object({ importName: bulkImportNameSchema });
+
+const conferenceFormSchema = StrictConferenceSchema.extend({
+  conferenceYear: z.number({ error: "Conference year is required" }),
+}).refine(
+  (form) =>
+    !bulkImportConferenceYearMismatch(form as BulkImportConferenceFormState),
+  {
+    path: ["conferenceStartDate"],
+    error:
+      "The conference date range (specifically the start date) must match the selected conference year",
+  },
 );
 
-function licenseFieldError(condition: boolean, message: string) {
-  return licenseStepAttempted.value && condition ? message : undefined;
+const licenseFormSchema = z.object({
+  uniformLicense: z.string().trim().min(1, { error: "License is required" }),
+});
+
+/** The UForm methods the step save handlers use. */
+type StepForm = { validate: (opts?: { silent?: boolean }) => Promise<unknown> };
+const batchNameFormRef = ref<StepForm | null>(null);
+const conferenceFormRef = ref<StepForm | null>(null);
+const licenseFormRef = ref<StepForm | null>(null);
+
+/** Show the form's field errors; true when valid (or the form isn't shown). */
+async function validateStepForm(form: StepForm | null, valid: boolean) {
+  if (!form) return valid;
+
+  return (await form.validate({ silent: true })) !== false;
 }
 
-const licenseSelectError = computed(() =>
-  licenseFieldError(!uniformLicense.value.trim(), "License is required"),
-);
+/** UForm state; reactive() keeps it linked to the wizard's own ref. */
+const licenseFormState = reactive({ uniformLicense });
 
 /** Saves `patch` into the job summary and returns the summary as it was before. */
 async function mergeJobSubmissionSummary(
@@ -600,13 +592,8 @@ const {
     }),
 });
 
-// Shows the batch name error once the user tries to upload or continue.
-const batchNameAttempted = ref(false);
-const batchNameError = computed(() =>
-  batchNameAttempted.value
-    ? bulkImportNameSchema.safeParse(importName.value).error?.issues[0]?.message
-    : undefined,
-);
+/** Batch name UForm state; reactive() keeps it linked to the wizard's ref. */
+const batchNameFormState = reactive({ importName });
 
 watch(
   () => props.initialJobId,
@@ -934,8 +921,11 @@ async function persistSetupJob(): Promise<string> {
 async function ensureJobForUploads(): Promise<boolean> {
   if (jobId.value) return true;
 
-  batchNameAttempted.value = true;
-  if (!importNameValid.value) return false;
+  if (
+    !(await validateStepForm(batchNameFormRef.value, importNameValid.value))
+  ) {
+    return false;
+  }
 
   batchNameSaving.value = true;
   let savedJobId: string;
@@ -1607,8 +1597,11 @@ function applyBatchStateFromJob(job: BulkPosterSubmissionJob) {
 async function saveUploadStep(): Promise<boolean> {
   if (posterUploadRunning.value || batchNameSaving.value) return false;
 
-  batchNameAttempted.value = true;
-  if (!importNameValid.value) return false;
+  if (
+    !(await validateStepForm(batchNameFormRef.value, importNameValid.value))
+  ) {
+    return false;
+  }
 
   if (posterStorageListLoading.value) {
     toast.add({
@@ -1647,19 +1640,22 @@ async function saveUploadStep(): Promise<boolean> {
 }
 
 async function saveConferenceStep(): Promise<boolean> {
-  conferenceStepAttempted.value = true;
-  if (bulkImportConferenceYearMismatch(conferenceForm)) {
-    toast.add({
-      title: "Conference dates don't match the year",
-      description:
-        "The conference date range (specifically the start date) must match the selected conference year.",
-      color: "warning",
-    });
+  const valid = await validateStepForm(
+    conferenceFormRef.value,
+    conferenceFormSchema.safeParse(conferenceForm).success,
+  );
+  if (!valid) {
+    if (bulkImportConferenceYearMismatch(conferenceForm)) {
+      toast.add({
+        title: "Conference dates don't match the year",
+        description:
+          "The conference date range (specifically the start date) must match the selected conference year.",
+        color: "warning",
+      });
+    }
 
     return false;
   }
-  if (!conferenceStepComplete.value) return false;
-  if (conferenceSchemaIssues.value.length > 0) return false;
 
   const conference = bulkImportConferenceFromForm(conferenceForm);
   if (!conference || !jobId.value) return true;
@@ -1690,8 +1686,11 @@ async function saveConferenceStep(): Promise<boolean> {
 }
 
 async function saveLicenseStep(): Promise<boolean> {
-  licenseStepAttempted.value = true;
-  if (!licenseStepComplete.value) return false;
+  if (
+    !(await validateStepForm(licenseFormRef.value, licenseStepComplete.value))
+  ) {
+    return false;
+  }
 
   const license = uniformLicense.value.trim();
   if (!license || !jobId.value) return true;
@@ -2144,20 +2143,27 @@ async function startImport() {
             </p>
           </div>
 
-          <UFormField
-            label="Batch name"
-            required
-            :hint="`${BULK_IMPORT_NAME_MIN_LENGTH}–${BULK_IMPORT_NAME_MAX_LENGTH} characters`"
-            :error="batchNameError"
+          <UForm
+            ref="batchNameFormRef"
+            :schema="batchNameFormSchema"
+            :state="batchNameFormState"
+            @submit.prevent
           >
-            <UInput
-              v-model="importName"
-              placeholder="e.g. Posters from the 2026 International Research Conference"
-              :maxlength="BULK_IMPORT_NAME_MAX_LENGTH"
-              autocomplete="off"
-              class="w-full"
-            />
-          </UFormField>
+            <UFormField
+              label="Batch name"
+              name="importName"
+              required
+              :hint="`${BULK_IMPORT_NAME_MIN_LENGTH}–${BULK_IMPORT_NAME_MAX_LENGTH} characters`"
+            >
+              <UInput
+                v-model="batchNameFormState.importName"
+                placeholder="e.g. Posters from the 2026 International Research Conference"
+                :maxlength="BULK_IMPORT_NAME_MAX_LENGTH"
+                autocomplete="off"
+                class="w-full"
+              />
+            </UFormField>
+          </UForm>
 
           <div
             class="space-y-4 rounded-lg border border-gray-200 p-4 dark:border-gray-800"
@@ -2177,7 +2183,9 @@ async function startImport() {
               disabled-message="Name your batch above to start uploading posters."
               @on-change="onPosterFilesSelected"
               @on-reject="onPosterFilesRejected"
-              @on-disabled-interaction="batchNameAttempted = true"
+              @on-disabled-interaction="
+                validateStepForm(batchNameFormRef, importNameValid)
+              "
             >
               <UiFileUploadGrid />
             </UiFileUpload>
@@ -2320,12 +2328,14 @@ async function startImport() {
             </p>
           </div>
 
-          <div class="space-y-4">
-            <UFormField
-              label="Conference name"
-              required
-              :error="conferenceNameError"
-            >
+          <UForm
+            ref="conferenceFormRef"
+            :schema="conferenceFormSchema"
+            :state="conferenceForm"
+            class="space-y-4"
+            @submit.prevent
+          >
+            <UFormField label="Conference name" name="conferenceName" required>
               <UInput
                 v-model="conferenceForm.conferenceName"
                 placeholder="e.g., Association for Research in Vision and Ophthalmology Conference"
@@ -2333,11 +2343,7 @@ async function startImport() {
               />
             </UFormField>
 
-            <UFormField
-              label="Conference year"
-              required
-              :error="conferenceYearError"
-            >
+            <UFormField label="Conference year" name="conferenceYear" required>
               <USelect
                 v-model="conferenceForm.conferenceYear"
                 class="w-full"
@@ -2356,6 +2362,7 @@ async function startImport() {
 
             <UFormField
               label="Conference location"
+              name="conferenceLocation"
               description="Use “Online” if the conference was conducted virtually."
             >
               <UInput
@@ -2367,8 +2374,8 @@ async function startImport() {
 
             <UFormField
               label="Conference dates"
+              name="conferenceStartDate"
               description="The full date range of the conference or event"
-              :error="conferenceDatesError"
             >
               <DateRangePicker
                 v-model="conferenceDateRange"
@@ -2380,7 +2387,7 @@ async function startImport() {
               />
             </UFormField>
 
-            <UFormField label="Conference website" :error="conferenceUriError">
+            <UFormField label="Conference website" name="conferenceUri">
               <UInput
                 v-model="conferenceForm.conferenceUri"
                 type="url"
@@ -2389,7 +2396,10 @@ async function startImport() {
               />
             </UFormField>
 
-            <UFormField label="Conference identifier">
+            <UFormField
+              label="Conference identifier"
+              name="conferenceIdentifier"
+            >
               <UInput
                 v-model="conferenceForm.conferenceIdentifier"
                 placeholder="Optional external identifier"
@@ -2398,7 +2408,10 @@ async function startImport() {
             </UFormField>
 
             <template v-if="showConferenceIdentifierDetails">
-              <UFormField label="Conference identifier type">
+              <UFormField
+                label="Conference identifier type"
+                name="conferenceIdentifierType"
+              >
                 <USelectMenu
                   v-model="conferenceForm.conferenceIdentifierType"
                   :items="conferenceIdentifierTypeOptions"
@@ -2409,7 +2422,10 @@ async function startImport() {
                 />
               </UFormField>
 
-              <UFormField label="Conference schema URI">
+              <UFormField
+                label="Conference schema URI"
+                name="conferenceSchemaUri"
+              >
                 <UInput
                   v-model="conferenceForm.conferenceSchemaUri"
                   type="url"
@@ -2419,14 +2435,14 @@ async function startImport() {
               </UFormField>
             </template>
 
-            <UFormField label="Conference series">
+            <UFormField label="Conference series" name="conferenceSeries">
               <UInput
                 v-model="conferenceForm.conferenceSeries"
                 placeholder="Optional series name"
                 class="w-full"
               />
             </UFormField>
-          </div>
+          </UForm>
         </div>
 
         <div
@@ -2461,25 +2477,32 @@ async function startImport() {
             </p>
           </div>
 
-          <UFormField
-            label="License for all posters"
-            required
-            :error="licenseSelectError"
+          <UForm
+            ref="licenseFormRef"
+            :schema="licenseFormSchema"
+            :state="licenseFormState"
+            @submit.prevent
           >
-            <USelectMenu
-              v-model="uniformLicense"
-              :items="uniformLicenseSelectItems"
-              value-key="value"
-              searchable
-              :search-input="{
-                placeholder: 'Search licenses…',
-                icon: 'i-lucide-search',
-              }"
-              placeholder="Choose a license…"
-              class="w-full"
-              :virtualize="true"
-            />
-          </UFormField>
+            <UFormField
+              label="License for all posters"
+              name="uniformLicense"
+              required
+            >
+              <USelectMenu
+                v-model="licenseFormState.uniformLicense"
+                :items="uniformLicenseSelectItems"
+                value-key="value"
+                searchable
+                :search-input="{
+                  placeholder: 'Search licenses…',
+                  icon: 'i-lucide-search',
+                }"
+                placeholder="Choose a license…"
+                class="w-full"
+                :virtualize="true"
+              />
+            </UFormField>
+          </UForm>
         </div>
 
         <div

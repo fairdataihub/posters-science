@@ -4,9 +4,13 @@ import {
 } from "#shared/types/bulkImportWizard";
 import type { CreateBulkPosterSubmissionJobBody } from "#shared/types/bulkPosterSubmissionJob";
 import { getBulkPosterSubmissionJobRepository } from "~~/server/utils/bulkPosterSubmissionJobs";
+import { requireFeature } from "~~/server/utils/features";
 
 export default defineEventHandler(async (event) => {
   const session = await requireDbUserSession(event);
+  // Starting a new batch is staging-only (NUXT_FEATURES); batches already
+  // started can still be finished.
+  requireFeature("bulk_extraction", event);
   const body = await readBody<CreateBulkPosterSubmissionJobBody>(event);
 
   const name = body?.name?.trim() ?? "";
