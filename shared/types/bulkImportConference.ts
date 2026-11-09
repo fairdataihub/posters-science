@@ -184,10 +184,24 @@ export function emptyBulkImportConferenceForm(): BulkImportConferenceFormState {
   };
 }
 
+/** True when a start date is set and its year differs from the conference year. */
+export function bulkImportConferenceYearMismatch(
+  form: BulkImportConferenceFormState,
+): boolean {
+  const start = form.conferenceStartDate.trim();
+  if (!start || form.conferenceYear == null) return false;
+
+  return Number(start.slice(0, 4)) !== form.conferenceYear;
+}
+
 export function bulkImportConferenceFormValid(
   form: BulkImportConferenceFormState,
 ): boolean {
-  return form.conferenceName.trim().length > 0 && form.conferenceYear != null;
+  return (
+    form.conferenceName.trim().length > 0 &&
+    form.conferenceYear != null &&
+    !bulkImportConferenceYearMismatch(form)
+  );
 }
 
 export function bulkImportConferenceFromForm(

@@ -862,10 +862,12 @@ function addButtonLabelStyle(leftOffsetPx: number) {
   return { left: `${leftOffsetPx}px`, width: `${width}px`, maxWidth: "100%" };
 }
 
+// Rows are tinted with the primary colour on hover. It is mixed into the page
+// background (not transparent) so the sticky poster column stays opaque.
 const POSTER_NAME_COLUMN_BASE_CLASS =
-  "border-default group-hover:bg-elevated sticky left-0 z-10 max-w-[320px] w-[320px] border-r border-b px-2 py-1.5 text-left align-top font-normal shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]";
+  "border-default group-hover:bg-[color-mix(in_oklab,var(--ui-primary)_12%,var(--ui-bg))] sticky left-0 z-10 max-w-[320px] w-[320px] border-r border-b px-2 py-1.5 text-left align-top font-normal shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]";
 
-/** The sticky poster column needs an opaque background, matching its row's shade. */
+/** The sticky poster column needs an opaque background, matching its row's stripe. */
 function posterNameColumnClass(shaded: boolean) {
   return `${shaded ? "bg-muted" : "bg-default"} ${POSTER_NAME_COLUMN_BASE_CLASS}`;
 }
@@ -1268,15 +1270,14 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
 
             <tbody>
               <template
-                v-for="(group, groupIndex) in displayGroups"
+                v-for="group in displayGroups"
                 :key="group.posterId"
               >
               <tr
                 v-if="group.entries.length === 0"
                 class="group"
-                :class="{ 'bg-muted': groupIndex % 2 === 1 }"
               >
-                <th scope="row" :class="posterNameColumnClass(groupIndex % 2 === 1)">
+                <th scope="row" :class="posterNameColumnClass(false)">
                   <span
                     class="block text-sm font-normal [overflow-wrap:anywhere]"
                   >
@@ -1285,8 +1286,7 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
                 </th>
                 <td
                   :colspan="tableBodyColumnCount - 1"
-                  class="border-default border-b px-2 py-1 align-middle"
-                  :class="groupIndex % 2 === 1 ? 'bg-muted' : 'bg-default'"
+                  class="border-default bg-default border-b px-2 py-1 align-middle"
                 >
                   <button
                     type="button"
@@ -1321,10 +1321,10 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
                 :show-reorder="showReorderButtons"
                 :can-move-up="canMove(index, -1)"
                 :can-move-down="canMove(index, 1)"
-                :poster-name-class="posterNameColumnClass(groupIndex % 2 === 1)"
+                :poster-name-class="posterNameColumnClass(rowPos % 2 === 1)"
                 :cell-choices="cellChoices"
                 :choice-label="bulkReviewGridChoiceLabel"
-                :shaded="groupIndex % 2 === 1"
+                :shaded="rowPos % 2 === 1"
                 :cell-style="cellWidthStyle"
                 :is-missing-required="isMissingRequired"
                 @cell-input="onCellInput"
@@ -1344,8 +1344,7 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
               >
                 <td
                   :colspan="tableBodyColumnCount"
-                  class="border-default border-b px-2 py-1"
-                  :class="groupIndex % 2 === 1 ? 'bg-muted' : 'bg-default'"
+                  class="border-default bg-default border-b px-2 py-1"
                 >
                   <button
                     type="button"
@@ -1403,10 +1402,11 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
                 <UButton
                   v-if="group.isTab && group.name !== activeSheet"
                   size="xs"
-                  color="neutral"
-                  variant="link"
+                  color="primary"
+                  variant="soft"
                   trailing-icon="i-lucide-arrow-right"
                   :label="`Go to ${group.name}`"
+                  class="shrink-0"
                   @click="goToIssueSheet(group.name)"
                 />
               </div>
@@ -1474,10 +1474,11 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
               <UButton
                 v-if="group.isTab"
                 size="xs"
-                color="neutral"
-                variant="link"
+                color="primary"
+                variant="soft"
                 trailing-icon="i-lucide-arrow-right"
                 :label="`Go to ${group.name}`"
+                class="shrink-0"
                 @click="goToIssueSheet(group.name)"
               />
             </div>
