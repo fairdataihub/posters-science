@@ -13,6 +13,7 @@ import {
   applyBulkImportConferenceToForm,
   bulkImportConferenceFormValid,
   bulkImportConferenceFromForm,
+  bulkImportConferenceYearMismatch,
   emptyBulkImportConferenceForm,
   type BulkImportConferenceFormState,
 } from "#shared/types/bulkImportConference";
@@ -470,6 +471,13 @@ const conferenceYearError = computed(() =>
     : undefined,
 );
 
+const conferenceDatesError = computed(() =>
+  conferenceStepAttempted.value &&
+  bulkImportConferenceYearMismatch(conferenceForm)
+    ? "The conference date range (specifically the start date) must match the selected conference year"
+    : undefined,
+);
+
 const conferenceYearOptions = Array.from(
   { length: new Date().getFullYear() + 1 - 2000 + 1 },
   (_, i) => new Date().getFullYear() + 1 - i,
@@ -487,10 +495,11 @@ const licenseSelectError = computed(() =>
   licenseFieldError(!uniformLicense.value.trim(), "License is required"),
 );
 
+/** Saves `patch` into the job summary and returns the summary as it was before. */
 async function mergeJobSubmissionSummary(
   patch: Partial<BulkImportSubmissionSummary>,
-) {
-  if (!jobId.value) return;
+): Promise<BulkImportSubmissionSummary | undefined> {
+  if (!jobId.value) return undefined;
 
   const job = await getBulkPosterSubmissionJob(jobId.value);
   const existing = (job.submissionSummary ?? {}) as BulkImportSubmissionSummary;
@@ -498,6 +507,8 @@ async function mergeJobSubmissionSummary(
   await updateBulkPosterSubmissionJob(jobId.value, {
     submissionSummary: { ...existing, ...patch },
   });
+
+  return existing;
 }
 
 /** Declared before wizard composable (step completion reads batch state). */
@@ -1278,24 +1289,43 @@ async function refreshBatchExtractionStatuses() {
     }),
   );
 
-  if (newlyCompletedPosterIds.length > 0 && jobId.value) {
-    for (const posterId of newlyCompletedPosterIds) {
-      try {
-        await applyBulkSubmissionMetadataToPosters(jobId.value, posterId);
-      } catch {
-        // Non-fatal; review step can retry apply for the whole batch.
-      }
-    }
+  // Extraction overwrites license and conference, so restore them once the
+  // whole batch is done instead of once per poster.
+  if (newlyCompletedPosterIds.length > 0 && !batchExtractionPollPending()) {
+    await applyBatchLicenseAndConferenceToPosters();
   }
 }
 
-async function applyBatchLicenseAndConferenceToPosters() {
-  if (!jobId.value || !batchImportFinished.value) return;
+/** A license or conference edit was saved but not yet copied to the posters. */
+const batchMetadataApplyPending = ref(false);
+
+/** Copies the batch license and conference onto every poster in the batch. */
+async function applyBatchLicenseAndConferenceToPosters(): Promise<boolean> {
+  if (!jobId.value || !batchImportFinished.value) return true;
   try {
     await applyBulkSubmissionMetadataToPosters(jobId.value);
+    batchMetadataApplyPending.value = false;
+    // Poster previews show these fields, so reload them.
+    metadataRefreshKey.value += 1;
+
+    return true;
   } catch {
     // Summary may be incomplete if user has not finished the conference step.
+    batchMetadataApplyPending.value = true;
+
+    return false;
   }
+}
+
+/** After a license or conference edit; the change is saved either way. */
+async function reapplyBatchMetadataAfterEdit() {
+  if (await applyBatchLicenseAndConferenceToPosters()) return;
+  toast.add({
+    title: "Posters not updated yet",
+    description:
+      "Your change was saved but could not be copied to the posters yet. It will be retried the next time you save this step.",
+    color: "warning",
+  });
 }
 
 function scheduleBatchExtractionPolling() {
@@ -1591,14 +1621,25 @@ async function saveUploadStep(): Promise<boolean> {
 
 async function saveConferenceStep(): Promise<boolean> {
   conferenceStepAttempted.value = true;
+  if (bulkImportConferenceYearMismatch(conferenceForm)) {
+    toast.add({
+      title: "Conference dates don't match the year",
+      description:
+        "The conference date range (specifically the start date) must match the selected conference year.",
+      color: "warning",
+    });
+
+    return false;
+  }
   if (!conferenceStepComplete.value) return false;
   if (conferenceSchemaIssues.value.length > 0) return false;
 
   const conference = bulkImportConferenceFromForm(conferenceForm);
   if (!conference || !jobId.value) return true;
 
+  let previous: BulkImportSubmissionSummary | undefined;
   try {
-    await mergeJobSubmissionSummary({ conference });
+    previous = await mergeJobSubmissionSummary({ conference });
   } catch (error) {
     toast.add({
       title: "Could not save conference information",
@@ -1608,6 +1649,14 @@ async function saveConferenceStep(): Promise<boolean> {
     });
 
     return false;
+  }
+
+  // Posters already extracted pick up the changed conference.
+  if (
+    batchMetadataApplyPending.value ||
+    JSON.stringify(previous?.conference) !== JSON.stringify(conference)
+  ) {
+    await reapplyBatchMetadataAfterEdit();
   }
 
   return true;
@@ -1620,16 +1669,15 @@ async function saveLicenseStep(): Promise<boolean> {
   const license = uniformLicense.value.trim();
   if (!license || !jobId.value) return true;
 
+  let previous: BulkImportSubmissionSummary | undefined;
   try {
-    await mergeJobSubmissionSummary({
+    previous = await mergeJobSubmissionSummary({
       uniformLicense: license,
       licenseSpreadsheetRows: buildSpreadsheetRowsForUniformLicense(
         stagedPosterFileNames.value,
         license,
       ),
     });
-    // Posters already extracted pick up a changed license or conference.
-    await applyBatchLicenseAndConferenceToPosters();
   } catch (error) {
     toast.add({
       title: "Could not save license",
@@ -1639,6 +1687,14 @@ async function saveLicenseStep(): Promise<boolean> {
     });
 
     return false;
+  }
+
+  // Posters already extracted pick up the changed license.
+  if (
+    batchMetadataApplyPending.value ||
+    previous?.uniformLicense?.trim() !== license
+  ) {
+    await reapplyBatchMetadataAfterEdit();
   }
 
   return true;
@@ -1975,17 +2031,17 @@ async function startImport() {
         >
           <ol
             ref="stepperScrollRef"
-            class="flex [scrollbar-width:thin] flex-row items-start gap-3 overflow-x-auto overflow-y-visible overscroll-x-contain scroll-smooth px-0.5 py-1.5 pb-2"
+            class="flex [scrollbar-width:thin] flex-row items-stretch gap-2 overflow-x-auto overflow-y-visible overscroll-x-contain scroll-smooth px-0.5 py-1.5 pb-2"
           >
             <li
               v-for="(step, index) in wizardSteps"
               :key="step.id"
               :ref="(el) => setStepItemEl(el, index)"
-              class="w-[12.5rem] shrink-0 sm:w-[14rem]"
+              class="min-w-[10rem] flex-1"
             >
               <button
                 type="button"
-                class="hover:bg-muted/40 flex w-full items-start gap-3 rounded-lg p-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                class="hover:bg-muted/40 flex h-full w-full items-center gap-2 rounded-lg p-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                 :class="
                   stepShownActive(step.id)
                     ? 'bg-muted/30 ring-primary/30 ring-1 ring-inset'
@@ -2013,9 +2069,9 @@ async function startImport() {
                   <span v-else>{{ index + 1 }}</span>
                 </span>
 
-                <div class="min-w-0 pt-0.5">
+                <div class="min-w-0">
                   <p
-                    class="text-sm font-medium"
+                    class="text-sm leading-tight font-medium"
                     :class="
                       stepShownActive(step.id)
                         ? 'text-highlighted'
@@ -2223,7 +2279,7 @@ async function startImport() {
         <div class="space-y-4">
           <div>
             <h3 class="text-base font-semibold">
-              Step {{ currentStepNumber }}: Conference information
+              Step {{ currentStepNumber }}: Conference Information
             </h3>
             <p class="text-muted mt-1 text-sm">
               {{ currentStepTask }}
@@ -2278,6 +2334,7 @@ async function startImport() {
             <UFormField
               label="Conference dates"
               description="The full date range of the conference or event"
+              :error="conferenceDatesError"
             >
               <DateRangePicker
                 v-model="conferenceDateRange"
@@ -2363,7 +2420,7 @@ async function startImport() {
         <div class="space-y-4">
           <div>
             <h3 class="text-base font-semibold">
-              Step {{ currentStepNumber }}: License information
+              Step {{ currentStepNumber }}: License Information
             </h3>
             <p class="text-muted mt-1 text-sm">
               {{ currentStepTask }}
@@ -2416,7 +2473,7 @@ async function startImport() {
         <div class="space-y-4">
           <div>
             <h3 class="text-base font-semibold">
-              Step {{ currentStepNumber }}: AI poster extraction
+              Step {{ currentStepNumber }}: AI Poster Extraction
             </h3>
             <p class="text-muted mt-1 text-sm">
               {{ submitStepIntro }}
@@ -2675,7 +2732,7 @@ async function startImport() {
               id="bulk-poster-previews-heading"
               class="text-base font-semibold"
             >
-              Step {{ currentStepNumber }}: Poster previews
+              Step {{ currentStepNumber }}: Poster Previews
             </h3>
             <p class="text-muted mt-1 text-sm">
               {{ currentStepTask }}
@@ -2930,8 +2987,8 @@ async function startImport() {
             </h4>
             <UButton
               size="xs"
-              color="neutral"
-              variant="link"
+              color="primary"
+              variant="soft"
               trailing-icon="i-lucide-arrow-right"
               label="Edit poster"
               :to="group.editPath"

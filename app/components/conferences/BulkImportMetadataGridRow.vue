@@ -26,7 +26,7 @@ const props = defineProps<{
   cellChoices: (fillKey: string) => readonly string[] | undefined;
   /** Text shown for a dropdown value (the stored value is unchanged). */
   choiceLabel: (fillKey: string, value: string) => string;
-  /** Every other poster's rows are shaded so posters are easy to tell apart. */
+  /** Every other row is shaded so rows are easy to follow across the grid. */
   shaded: boolean;
   cellStyle: (column: BulkReviewGridColumn) => Record<string, string>;
   isMissingRequired: (
@@ -57,7 +57,7 @@ function onInput(fillKey: string, event: Event) {
 
 <template>
   <tr
-    class="group"
+    class="group hover:bg-[color-mix(in_oklab,var(--ui-primary)_12%,var(--ui-bg))]"
     :class="{
       'border-accented border-t-2': rowPos > 0 && firstOfPoster,
       'bg-muted': shaded,
@@ -72,7 +72,7 @@ function onInput(fillKey: string, event: Event) {
     <td
       v-for="(column, colPos) in columns"
       :key="column.fillKey"
-      class="border-default focus-within:ring-primary hover:bg-elevated/40 cursor-text border-r border-b p-0 align-top focus-within:ring-2 focus-within:ring-inset"
+      class="border-default focus-within:ring-primary hover:bg-primary/10 cursor-text border-r border-b p-0 align-top focus-within:ring-2 focus-within:ring-inset"
       :class="{ 'bg-error/5': isMissingRequired(column, row) }"
       @mousedown="emit('cellAreaMouseDown', $event)"
     >

@@ -1,16 +1,13 @@
-import {
-  type CalendarDate,
-  getLocalTimeZone,
-  parseDate,
-} from "@internationalized/date";
+import { type CalendarDate, parseDate } from "@internationalized/date";
 
 export type ConferenceDateRangeValue = {
   start: CalendarDate | undefined;
   end: CalendarDate | undefined;
 };
 
+/** YYYY-MM-DD as picked; going through a UTC Date shifted it a day east of UTC. */
 function calendarDateToW3C(cd: CalendarDate): string {
-  return cd.toDate(getLocalTimeZone()).toISOString().slice(0, 10);
+  return cd.toString();
 }
 
 /**
