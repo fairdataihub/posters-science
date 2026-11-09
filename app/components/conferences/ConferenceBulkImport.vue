@@ -1797,7 +1797,11 @@ async function discardFailedAndContinue() {
 
 const metadataGridStepRef = ref<{
   saveIfDirty: () => Promise<boolean>;
+  saveDraft: () => Promise<boolean>;
+  discardChanges: () => void;
   prepareStepTransition: () => Promise<boolean>;
+  dirty: boolean;
+  saving: boolean;
 } | null>(null);
 const metadataReviewRef = ref<{
   previewValidationLines: () => string[];
@@ -2747,14 +2751,37 @@ async function startImport() {
             @click="backStep()"
           />
 
-          <UButton
-            color="primary"
-            icon="i-lucide-arrow-right"
-            trailing
-            label="Save and Continue"
-            :loading="stepTransitionPending"
-            @click="continueStep()"
-          />
+          <div class="flex flex-wrap items-center gap-2">
+            <UButton
+              color="neutral"
+              variant="ghost"
+              icon="i-lucide-rotate-ccw"
+              label="Discard changes"
+              :disabled="
+                !metadataGridStepRef?.dirty ||
+                metadataGridStepRef?.saving ||
+                stepTransitionPending
+              "
+              @click="metadataGridStepRef?.discardChanges()"
+            />
+            <UButton
+              color="neutral"
+              variant="outline"
+              icon="i-lucide-save"
+              label="Save draft"
+              :loading="metadataGridStepRef?.saving"
+              :disabled="!metadataGridStepRef?.dirty || stepTransitionPending"
+              @click="metadataGridStepRef?.saveDraft()"
+            />
+            <UButton
+              color="primary"
+              icon="i-lucide-arrow-right"
+              trailing
+              label="Save and Continue"
+              :loading="stepTransitionPending"
+              @click="continueStep()"
+            />
+          </div>
         </div>
       </template>
 
