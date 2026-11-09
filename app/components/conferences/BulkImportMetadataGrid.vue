@@ -1076,7 +1076,7 @@ async function showValidationOutcome(
   if (issues.length === 0) {
     if (saveAttempted) {
       toast.add({
-        title: "Metadata saved",
+        title: "Poster data saved",
         description:
           savedPosterIds.length === 1
             ? "Updated 1 poster."
@@ -1560,7 +1560,7 @@ async function prepareStepTransition(): Promise<boolean> {
     if (issues.length === 0) {
       if (saveAttempted) {
         toast.add({
-          title: "Metadata saved",
+          title: "Poster data saved",
           description:
             savedPosterIds.length === 1
               ? "Updated 1 poster."
