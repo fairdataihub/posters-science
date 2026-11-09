@@ -303,7 +303,8 @@ export const LICENSE_OPTIONS = licenses.map((lic) => ({
   value: lic.licenseId,
 }));
 
-const SUGGESTED_LICENSE_IDS = ["CC-BY-4.0", "CC0-1.0"];
+/** Shown first, under "Suggested", in license pickers (single and bulk). */
+export const SUGGESTED_LICENSE_IDS = ["CC-BY-4.0", "CC0-1.0"];
 
 const suggestedLicenses = SUGGESTED_LICENSE_IDS.flatMap((id) => {
   const lic = licenses.find((l) => l.licenseId === id);

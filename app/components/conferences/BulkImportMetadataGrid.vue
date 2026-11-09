@@ -1303,6 +1303,12 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
                   Poster
                 </th>
                 <th
+                  v-if="currentSheet.repeatable"
+                  class="bg-elevated border-default sticky left-[320px] z-30 w-px border-r border-b px-1 py-2"
+                >
+                  <span class="sr-only">Row actions</span>
+                </th>
+                <th
                   v-for="column in editableColumns"
                   :key="column.fillKey"
                   class="border-default border-r border-b px-2 py-2 text-left align-top font-semibold"
@@ -1322,12 +1328,6 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
                       class="text-dimmed size-3.5"
                     />
                   </span>
-                </th>
-                <th
-                  v-if="currentSheet.repeatable"
-                  class="border-default border-b px-2 py-2 text-left font-semibold"
-                >
-                  <span class="sr-only">Row actions</span>
                 </th>
               </tr>
             </thead>
