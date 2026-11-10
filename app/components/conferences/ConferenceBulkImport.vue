@@ -45,6 +45,7 @@ import {
 } from "#shared/types/conferenceBulkImport";
 import { buildSubmissionRowsFromSeparateUpload } from "~/utils/conferenceBulkImportSubmissions";
 import { buildSpreadsheetRowsForUniformLicense } from "~/utils/conferenceImportSpreadsheet";
+import type { UpdateBulkJobBody } from "~~/server/utils/bulkJobPatchBody";
 import {
   createBulkPosterSubmissionJob,
   getBulkPosterSubmissionJob,
@@ -511,18 +512,19 @@ async function validateStepForm(form: StepForm | null, valid: boolean) {
 /** UForm state; reactive() keeps it linked to the wizard's own ref. */
 const licenseFormState = reactive({ uniformLicense });
 
-/** Saves `patch` into the job summary and returns the summary as it was before. */
+/**
+ * Saves the conference or license (the server merges it into the job summary)
+ * and returns the summary as it was before, to tell whether it changed.
+ */
 async function mergeJobSubmissionSummary(
-  patch: Partial<BulkImportSubmissionSummary>,
+  patch: Pick<UpdateBulkJobBody, "conference" | "uniformLicense">,
 ): Promise<BulkImportSubmissionSummary | undefined> {
   if (!jobId.value) return undefined;
 
   const job = await getBulkPosterSubmissionJob(jobId.value);
   const existing = (job.submissionSummary ?? {}) as BulkImportSubmissionSummary;
 
-  await updateBulkPosterSubmissionJob(jobId.value, {
-    submissionSummary: { ...existing, ...patch },
-  });
+  await updateBulkPosterSubmissionJob(jobId.value, patch);
 
   return existing;
 }
@@ -1712,13 +1714,7 @@ async function saveLicenseStep(): Promise<boolean> {
 
   let previous: BulkImportSubmissionSummary | undefined;
   try {
-    previous = await mergeJobSubmissionSummary({
-      uniformLicense: license,
-      licenseSpreadsheetRows: buildSpreadsheetRowsForUniformLicense(
-        stagedPosterFileNames.value,
-        license,
-      ),
-    });
+    previous = await mergeJobSubmissionSummary({ uniformLicense: license });
   } catch (error) {
     toast.add({
       title: "Could not save license",

@@ -111,18 +111,15 @@ async function loadZenodoEmbargoFromJob() {
 async function persistZenodoEmbargoSettings(): Promise<boolean> {
   if (!props.bulkJobId || !zenodoEmbargoReady.value) return false;
 
-  const job = await getBulkPosterSubmissionJob(props.bulkJobId);
-  const existing = (job.submissionSummary ?? {}) as BulkImportSubmissionSummary;
-  const embargoEnabled = reviewEmbargoChoice.value === "yes";
-
+  // The server merges this into the job summary.
   await updateBulkPosterSubmissionJob(props.bulkJobId, {
-    submissionSummary: {
-      ...existing,
-      reviewEmbargoEnabled: embargoEnabled,
-      reviewEmbargoDays: embargoEnabled
-        ? normalizeBulkImportReviewEmbargoDays(reviewEmbargoDays.value)
-        : undefined,
-    },
+    reviewEmbargo:
+      reviewEmbargoChoice.value === "yes"
+        ? {
+            enabled: true,
+            days: normalizeBulkImportReviewEmbargoDays(reviewEmbargoDays.value),
+          }
+        : { enabled: false },
   });
 
   return true;
