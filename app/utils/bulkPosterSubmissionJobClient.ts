@@ -3,8 +3,8 @@ import type {
   BulkImportStagedPoster,
   BulkPosterSubmissionJob,
   CreateBulkPosterSubmissionJobBody,
-  UpdateBulkPosterSubmissionJobBody,
 } from "#shared/types/bulkPosterSubmissionJob";
+import type { UpdateBulkJobBody } from "~~/server/utils/bulkJobPatchBody";
 import {
   posterUploadBaseName,
   posterUploadPathHint,
@@ -51,7 +51,7 @@ export async function syncBulkStagedPostersFromStorage(jobId: string) {
 
 export async function updateBulkPosterSubmissionJob(
   jobId: string,
-  body: UpdateBulkPosterSubmissionJobBody,
+  body: UpdateBulkJobBody,
 ) {
   return $fetch<BulkPosterSubmissionJob>(
     `/api/bulk-poster-submissions/${jobId}`,
