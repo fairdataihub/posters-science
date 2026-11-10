@@ -264,158 +264,6 @@ function onOrcidLookupSelect(orcidUrl: string) {
   activeLookup.value = null;
 }
 
-// ---------------------------------------------------------------------------
-// ORCID auto-fill (Creators tab): fill an ORCID only when exactly one ORCID
-// record has the same given and family name within the creator's affiliations.
-// ---------------------------------------------------------------------------
-
-const orcidAutoFill = reactive({ running: false, done: 0, total: 0 });
-const ORCID_AUTO_FILL_CONCURRENCY = 4;
-
-type OrcidSearchResult = {
-  orcidId: string;
-  givenName: string;
-  familyName: string;
-};
-
-/** Case-, accent- and punctuation-insensitive name for exact matching. */
-function normalizePersonName(value: string) {
-  return value
-    .normalize("NFD")
-    .replace(/\p{M}/gu, "")
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .trim();
-}
-
-/** Visible person creators with a name and affiliation but no ORCID yet. */
-function orcidAutoFillCandidates(): BulkReviewGridRow[] {
-  if (currentSheet.value?.name !== CREATORS_SHEET) return [];
-
-  return visibleRows.value
-    .map(({ row }) => row)
-    .filter(
-      (row) =>
-        row.name_type !== "Organizational" &&
-        !(row.name_identifier ?? "").trim() &&
-        (row.given_name ?? "").trim() &&
-        (row.family_name ?? "").trim() &&
-        rowAffiliationNames(row).length > 0,
-    );
-}
-
-async function autoFillOrcids() {
-  if (orcidAutoFill.running) return;
-
-  const candidates = orcidAutoFillCandidates();
-  if (candidates.length === 0) {
-    toast.add({
-      title: "Nothing to auto-fill",
-      description:
-        "Auto-fill needs person creators with a given name, family name and affiliation, and no ORCID yet.",
-      color: "info",
-    });
-
-    return;
-  }
-
-  // One search per distinct name + affiliations (the same person often
-  // appears on several posters).
-  const groups = new Map<string, BulkReviewGridRow[]>();
-  for (const row of candidates) {
-    const key = [
-      normalizePersonName(row.given_name ?? ""),
-      normalizePersonName(row.family_name ?? ""),
-      rowAffiliationNames(row).join("; "),
-    ].join("|");
-    groups.set(key, [...(groups.get(key) ?? []), row]);
-  }
-
-  const queue = [...groups.values()];
-  let filledRows = 0;
-  let noMatch = 0;
-  let ambiguous = 0;
-  let failed = 0;
-
-  orcidAutoFill.running = true;
-  orcidAutoFill.done = 0;
-  orcidAutoFill.total = queue.length;
-
-  async function worker() {
-    for (let rows = queue.shift(); rows; rows = queue.shift()) {
-      const first = rows[0]!;
-      const givenName = (first.given_name ?? "").trim();
-      const familyName = (first.family_name ?? "").trim();
-      try {
-        const results = await $fetch<OrcidSearchResult[]>("/api/orcid/search", {
-          query: {
-            givenName,
-            familyName,
-            affiliation: rowAffiliationNames(first).join("; "),
-          },
-        });
-        const exactIds = new Set(
-          results
-            .filter(
-              (result) =>
-                normalizePersonName(result.givenName) ===
-                  normalizePersonName(givenName) &&
-                normalizePersonName(result.familyName) ===
-                  normalizePersonName(familyName),
-            )
-            .map((result) => result.orcidId),
-        );
-
-        if (exactIds.size === 1) {
-          const orcidUrl = `https://orcid.org/${[...exactIds][0]}`;
-          for (const row of rows) {
-            // Skip a cell the user filled while the search ran.
-            if ((row.name_identifier ?? "").trim()) continue;
-            onCellInput(row, "name_identifier", orcidUrl);
-            filledRows++;
-          }
-        } else if (exactIds.size === 0) {
-          noMatch += rows.length;
-        } else {
-          ambiguous += rows.length;
-        }
-      } catch {
-        failed += rows.length;
-      } finally {
-        orcidAutoFill.done++;
-      }
-    }
-  }
-
-  try {
-    await Promise.all(
-      Array.from({ length: ORCID_AUTO_FILL_CONCURRENCY }, () => worker()),
-    );
-  } finally {
-    orcidAutoFill.running = false;
-  }
-
-  const skipped = [
-    noMatch && `${noMatch} with no exact match`,
-    ambiguous && `${ambiguous} with more than one match`,
-    failed && `${failed} that could not be searched`,
-  ].filter(Boolean);
-
-  toast.add({
-    title:
-      filledRows > 0
-        ? `Filled ${filledRows} ORCID${filledRows === 1 ? "" : "s"}`
-        : "No ORCIDs filled",
-    description: [
-      filledRows > 0 ? "Review them, then save." : "",
-      skipped.length ? `Left empty: ${skipped.join(", ")}.` : "",
-    ]
-      .filter(Boolean)
-      .join(" "),
-    color: filledRows > 0 ? "success" : "info",
-  });
-}
-
 /** Fill the ROR URL and replace the typed name with the registry's formal name. */
 function onRorLookupSelect(rorUrl: string, displayName: string) {
   const lookup = activeLookup.value;
@@ -1019,6 +867,8 @@ function closeValidationModal(choice: "dismiss" | "continue") {
 
 async function collectAllValidationIssues(options: {
   attemptSave: boolean;
+  /** Also check required fields (off for Save draft: only continuing needs them). */
+  validate?: boolean;
 }): Promise<{
   issues: GridValidationIssue[];
   savedPosterIds: number[];
@@ -1052,11 +902,13 @@ async function collectAllValidationIssues(options: {
     }
   }
 
-  const gridIssues = collectGridRequiredIssues();
-  issues.push(...gridIssues);
+  if (options.validate !== false) {
+    const gridIssues = collectGridRequiredIssues();
+    issues.push(...gridIssues);
 
-  const strictIssues = await collectStrictFormIssues();
-  issues.push(...withoutGridDuplicates(strictIssues, gridIssues));
+    const strictIssues = await collectStrictFormIssues();
+    issues.push(...withoutGridDuplicates(strictIssues, gridIssues));
+  }
 
   return {
     issues: dedupeValidationIssues(issues.filter((issue) => issue.severity === "error")),
@@ -1526,6 +1378,10 @@ function resetChanges() {
   dirty.value = false;
 }
 
+/**
+ * Save draft: save as entered without checking required fields (that happens
+ * on continue). Only a failed save shows the issues modal.
+ */
 async function save(): Promise<boolean> {
   if (!props.bulkJobId || saving.value || !grid.value) return false;
   saving.value = true;
@@ -1534,6 +1390,7 @@ async function save(): Promise<boolean> {
   try {
     const { issues, savedPosterIds, saveAttempted } = await collectAllValidationIssues({
       attemptSave: hasUnsavedChanges(),
+      validate: false,
     });
     await showValidationOutcome(issues, "inform", savedPosterIds, saveAttempted);
     return issues.length === 0;
@@ -1817,29 +1674,6 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
                         class="text-dimmed hover:text-default size-3.5 cursor-help"
                         tabindex="0"
                         :aria-label="column.instruction || column.hint"
-                      />
-                    </UTooltip>
-                    <UTooltip
-                      v-if="
-                        currentSheet.name === CREATORS_SHEET &&
-                        column.fillKey === 'name_identifier'
-                      "
-                      text="Fill ORCIDs that have exactly one match for the creator's name and affiliation"
-                    >
-                      <UButton
-                        size="xs"
-                        color="primary"
-                        variant="soft"
-                        icon="i-lucide-wand-sparkles"
-                        class="mr-auto ml-1.5 font-normal"
-                        :label="
-                          orcidAutoFill.running
-                            ? `${orcidAutoFill.done}/${orcidAutoFill.total}`
-                            : 'Auto-fill'
-                        "
-                        :loading="orcidAutoFill.running"
-                        :disabled="disabled || saving"
-                        @click="autoFillOrcids"
                       />
                     </UTooltip>
                   </span>
