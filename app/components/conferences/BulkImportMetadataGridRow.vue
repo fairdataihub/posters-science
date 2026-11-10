@@ -23,6 +23,8 @@ const props = defineProps<{
   canMoveUp: boolean;
   canMoveDown: boolean;
   posterNameClass: string;
+  /** Rows the poster name cell spans (merged like Excel); 0 = covered by a row above. */
+  posterRowSpan: number;
   cellChoices: (fillKey: string) => readonly string[] | undefined;
   /** Text shown for a dropdown value (the stored value is unchanged). */
   choiceLabel: (fillKey: string, value: string) => string;
@@ -93,8 +95,16 @@ function onInput(fillKey: string, event: Event) {
       'bg-elevated': shaded,
     }"
   >
-    <th scope="row" :class="posterNameClass">
-      <span class="block text-sm font-normal [overflow-wrap:anywhere]">
+    <th
+      v-if="posterRowSpan > 0"
+      scope="row"
+      :rowspan="posterRowSpan"
+      :class="posterNameClass"
+    >
+      <!-- Stays in view below the sticky header while scrolling a long group. -->
+      <span
+        class="sticky top-12 block text-sm font-normal [overflow-wrap:anywhere]"
+      >
         {{ posterName }}
       </span>
     </th>
