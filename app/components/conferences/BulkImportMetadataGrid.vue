@@ -1290,14 +1290,6 @@ function isFirstRowOfPoster(visibleIndex: number): boolean {
   return prev?.row.poster_id !== current?.row.poster_id;
 }
 
-function isLastRowOfPoster(visibleIndex: number): boolean {
-  const rows = visibleRows.value;
-  if (visibleIndex >= rows.length - 1) return true;
-  const next = rows[visibleIndex + 1];
-  const current = rows[visibleIndex];
-  return next?.row.poster_id !== current?.row.poster_id;
-}
-
 const POSTER_COLUMN_WIDTH_PX = 320;
 const { width: gridViewportWidth } = useElementSize(gridRoot);
 
@@ -1338,11 +1330,28 @@ function addButtonLabelStyle(leftOffsetPx: number) {
 // Rows are tinted with the primary colour on hover. It is mixed into the page
 // background (not transparent) so the sticky poster column stays opaque.
 const POSTER_NAME_COLUMN_BASE_CLASS =
-  "border-default group-hover:bg-[color-mix(in_oklab,var(--ui-primary)_12%,var(--ui-bg))] sticky left-0 z-10 max-w-[320px] w-[320px] border-r border-b px-2 py-1.5 text-left align-top font-normal shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]";
+  "border-default sticky left-0 z-10 max-w-[320px] w-[320px] border-r border-b px-2 py-1.5 text-center align-top font-normal shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]";
 
-/** The sticky poster column needs an opaque background, matching its row's stripe. */
-function posterNameColumnClass(shaded: boolean) {
-  return `${shaded ? "bg-elevated" : "bg-default"} ${POSTER_NAME_COLUMN_BASE_CLASS}`;
+/**
+ * The sticky poster column needs an opaque background, matching its row's
+ * stripe. A merged cell spans several rows, so it skips the row hover tint.
+ */
+function posterNameColumnClass(shaded: boolean, merged = false) {
+  const hover = merged
+    ? ""
+    : "group-hover:bg-[color-mix(in_oklab,var(--ui-primary)_12%,var(--ui-bg))]";
+  return `${shaded ? "bg-elevated" : "bg-default"} ${hover} ${POSTER_NAME_COLUMN_BASE_CLASS}`;
+}
+
+/** Whether a repeatable tab shows the "Add …" row under each poster's rows. */
+const showAddRowUnderPoster = computed(
+  () => Boolean(currentSheet.value?.repeatable) && !props.disabled && !saving.value,
+);
+
+/** The first row of a poster spans its rows plus the "Add …" row below them. */
+function posterRowSpan(entryIndex: number, entryCount: number): number {
+  if (entryIndex > 0) return 0;
+  return entryCount + (showAddRowUnderPoster.value ? 1 : 0);
 }
 
 const tableBodyColumnCount = computed(() => {
@@ -1878,7 +1887,7 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
               </tr>
 
               <template
-                v-for="{ row, index, rowPos } in group.entries"
+                v-for="({ row, index, rowPos }, entryIndex) in group.entries"
                 :key="row._key"
               >
               <BulkImportMetadataGridRow
@@ -1892,7 +1901,13 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
                 :show-reorder="showReorderButtons"
                 :can-move-up="canMove(index, -1)"
                 :can-move-down="canMove(index, 1)"
-                :poster-name-class="posterNameColumnClass(group.shaded)"
+                :poster-name-class="
+                  posterNameColumnClass(
+                    group.shaded,
+                    posterRowSpan(entryIndex, group.entries.length) > 1,
+                  )
+                "
+                :poster-row-span="posterRowSpan(entryIndex, group.entries.length)"
                 :cell-choices="cellChoices"
                 :choice-label="bulkReviewGridChoiceLabel"
                 :shaded="group.shaded"
@@ -1910,14 +1925,13 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
               />
               <tr
                 v-if="
-                  currentSheet.repeatable &&
-                  isLastRowOfPoster(rowPos) &&
-                  !disabled &&
-                  !saving
+                  showAddRowUnderPoster &&
+                  entryIndex === group.entries.length - 1
                 "
               >
+                <!-- The poster name cell above spans this row, so skip its column. -->
                 <td
-                  :colspan="tableBodyColumnCount"
+                  :colspan="tableBodyColumnCount - 1"
                   class="border-default border-b px-2 py-1"
                   :class="group.shaded ? 'bg-elevated' : 'bg-default'"
                 >
@@ -1929,7 +1943,7 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
                   >
                     <span
                       class="sticky flex items-center justify-center gap-1.5"
-                      :style="addButtonLabelStyle(8)"
+                      :style="addButtonLabelStyle(POSTER_COLUMN_WIDTH_PX + 8)"
                     >
                       <UIcon name="i-lucide-plus" class="size-3.5 shrink-0 opacity-70" />
                       <span>Add {{ addRowNoun }}</span>
