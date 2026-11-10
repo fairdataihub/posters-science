@@ -1,7 +1,8 @@
 <script setup lang="ts">
 /**
  * A grid cell for a semicolon-separated list (keywords). Each item shows as a
- * badge; type and press Enter (or the Add button) to add one. The cell value
+ * badge. An "Add keywords" link under them opens an input; type and press
+ * Enter (or the Add button) to add one. The cell value
  * stays a "; "-joined string, as in the downloaded workbook.
  */
 const props = defineProps<{
@@ -64,7 +65,38 @@ watch(draft, (text) => {
   draft.value = text.slice(end + 1).trimStart();
 });
 
+// The input stays hidden behind an "Add keywords" link until asked for.
+const adding = ref(false);
+const input = useTemplateRef<HTMLInputElement>("input");
+
+async function openInput() {
+  adding.value = true;
+  await nextTick();
+  input.value?.focus();
+}
+
+function onInputBlur() {
+  addDraft();
+  adding.value = false;
+}
+
+function onOpenKeydown(event: KeyboardEvent) {
+  if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    openInput();
+
+    return;
+  }
+  emit("keydown", event);
+}
+
 function onKeydown(event: KeyboardEvent) {
+  if (event.key === "Escape") {
+    draft.value = "";
+    input.value?.blur();
+
+    return;
+  }
   if (event.key === "Enter" && draft.value.trim()) {
     event.preventDefault();
     addDraft();
@@ -83,33 +115,6 @@ function onKeydown(event: KeyboardEvent) {
 
 <template>
   <div class="flex flex-col gap-1.5 px-2 py-1.5">
-    <input
-      v-model="draft"
-      type="text"
-      :data-cell="dataCell"
-      class="placeholder:text-dimmed bg-default ring-accented focus-visible:ring-primary w-full rounded-md px-2.5 py-1.5 text-sm ring outline-none ring-inset focus-visible:ring-2"
-      :placeholder="`Type a ${itemNoun} and press Enter`"
-      :aria-label="label"
-      @keydown="onKeydown"
-      @paste="emit('paste', $event)"
-      @blur="addDraft"
-    />
-
-    <UButton
-      v-if="draft.trim()"
-      size="xs"
-      color="primary"
-      variant="soft"
-      icon="i-lucide-plus"
-      class="self-start"
-      @mousedown.prevent
-      @click="addDraft"
-    >
-      <span class="[overflow-wrap:anywhere] break-words"
-        >Add “{{ draft.trim() }}”</span
-      >
-    </UButton>
-
     <div v-if="items.length > 0" class="flex flex-wrap gap-1">
       <UBadge
         v-for="(item, index) in items"
@@ -130,5 +135,49 @@ function onKeydown(event: KeyboardEvent) {
         </button>
       </UBadge>
     </div>
+
+    <template v-if="adding">
+      <input
+        ref="input"
+        v-model="draft"
+        type="text"
+        :data-cell="dataCell"
+        class="placeholder:text-dimmed bg-default ring-accented focus-visible:ring-primary w-full rounded-md px-2.5 py-1.5 text-sm ring outline-none ring-inset focus-visible:ring-2"
+        :placeholder="`Type a ${itemNoun} and press Enter`"
+        :aria-label="label"
+        @keydown="onKeydown"
+        @paste="emit('paste', $event)"
+        @blur="onInputBlur"
+      />
+
+      <UButton
+        v-if="draft.trim()"
+        size="xs"
+        color="primary"
+        variant="soft"
+        icon="i-lucide-plus"
+        class="self-start"
+        @mousedown.prevent
+        @click="addDraft"
+      >
+        <span class="[overflow-wrap:anywhere] break-words"
+          >Add “{{ draft.trim() }}”</span
+        >
+      </UButton>
+    </template>
+
+    <button
+      v-else
+      type="button"
+      :data-cell="dataCell"
+      class="text-muted hover:text-primary focus-visible:ring-primary flex items-center gap-1 self-start rounded text-xs focus-visible:ring-2 focus-visible:outline-none"
+      :aria-label="`Add ${itemNoun}s, ${label}`"
+      @click="openInput"
+      @keydown="onOpenKeydown"
+      @paste="emit('paste', $event)"
+    >
+      <UIcon name="i-lucide-plus" class="size-3.5 shrink-0" />
+      Add {{ itemNoun }}s
+    </button>
   </div>
 </template>
