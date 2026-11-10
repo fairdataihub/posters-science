@@ -1766,7 +1766,7 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
             class="min-w-0 overflow-x-auto overflow-y-auto overscroll-x-contain"
             :class="fullScreen ? 'max-h-[calc(100dvh-14rem)]' : 'max-h-[65vh]'"
           >
-            <table class="w-max border-separate border-spacing-0 text-sm">
+            <table class="w-max min-w-full border-separate border-spacing-0 text-sm">
             <thead class="bg-elevated sticky top-0 z-20">
               <tr>
                 <th
