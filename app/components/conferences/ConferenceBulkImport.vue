@@ -931,12 +931,6 @@ async function ensureJobForUploads(): Promise<boolean> {
 
   if (!importNameValid.value) {
     void validateStepForm(batchNameFormRef.value, false);
-    toast.add({
-      title: "Batch name required",
-      description:
-        "Your posters are uploading. Add a batch name above before continuing.",
-      color: "warning",
-    });
   }
 
   batchNameSaving.value = true;
@@ -1621,14 +1615,6 @@ async function saveUploadStep(): Promise<boolean> {
   if (
     !(await validateStepForm(batchNameFormRef.value, importNameValid.value))
   ) {
-    if (stagedPosters.value.length > 0) {
-      toast.add({
-        title: "Batch name required",
-        description: "Add a batch name above to continue.",
-        color: "warning",
-      });
-    }
-
     return false;
   }
 
