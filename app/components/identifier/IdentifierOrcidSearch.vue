@@ -6,6 +6,8 @@ interface OrcidResult {
   affiliations: string[];
 }
 
+type OrcidMatch = OrcidResult & { matchesAffiliation: boolean };
+
 const props = defineProps<{
   open: boolean;
   givenName: string;
@@ -21,50 +23,62 @@ const emit = defineEmits<{
 const query = ref(
   [props.givenName, props.familyName].filter(Boolean).join(" "),
 );
-const results = ref<OrcidResult[]>([]);
+const results = ref<OrcidMatch[]>([]);
 const loading = ref(false);
 const searched = ref(false);
-const useAffiliationFilter = ref(false);
+const searchFailed = ref(false);
 
 onMounted(() => {
-  useAffiliationFilter.value = props.affiliations.length > 0;
   if (query.value) runSearch();
 });
 
-watch(useAffiliationFilter, () => {
-  if (searched.value || loading.value) runSearch();
-});
-
+/**
+ * Search by name alone and, when the author has affiliations, by name within
+ * them at the same time. Affiliation matches come first and are highlighted;
+ * everyone else follows, so a profile with no affiliation listed is not missed.
+ */
 async function runSearch() {
   const parts = query.value.trim().split(/\s+/).filter(Boolean);
   if (!parts.length) return;
 
   const givenName = parts[0]!;
   const familyName = parts.length > 1 ? parts.slice(1).join(" ") : parts[0]!;
+  const search = (affiliation?: string) =>
+    $fetch<OrcidResult[]>("/api/orcid/search", {
+      query: { givenName, familyName, ...(affiliation ? { affiliation } : {}) },
+    });
 
   loading.value = true;
   searched.value = false;
+  searchFailed.value = false;
   try {
-    const data = await $fetch<OrcidResult[]>("/api/orcid/search", {
-      query: {
-        givenName,
-        familyName,
-        // Every affiliation; the server splits them into org-name parts.
-        ...(useAffiliationFilter.value && props.affiliations.length > 0
-          ? { affiliation: props.affiliations.join("; ") }
-          : {}),
-      },
-    });
-    results.value = data;
-  } catch {
-    results.value = [];
+    const [byAffiliation, byName] = await Promise.allSettled([
+      // Every affiliation; the server splits them into org-name parts.
+      props.affiliations.length > 0
+        ? search(props.affiliations.join("; "))
+        : Promise.resolve([]),
+      search(),
+    ]);
+    const matched =
+      byAffiliation.status === "fulfilled" ? byAffiliation.value : [];
+    const all = byName.status === "fulfilled" ? byName.value : [];
+    const matchedIds = new Set(matched.map((result) => result.orcidId));
+
+    results.value = [
+      ...matched.map((result) => ({ ...result, matchesAffiliation: true })),
+      ...all
+        .filter((result) => !matchedIds.has(result.orcidId))
+        .map((result) => ({ ...result, matchesAffiliation: false })),
+    ];
+    searchFailed.value =
+      byAffiliation.status === "rejected" && byName.status === "rejected";
   } finally {
     loading.value = false;
     searched.value = true;
   }
 }
 
-function selectResult(result: OrcidResult) {
+function selectResult(result: OrcidMatch) {
   emit("select", `https://orcid.org/${result.orcidId}`);
   emit("update:open", false);
 }
@@ -84,23 +98,15 @@ function selectResult(result: OrcidResult) {
       <div class="flex h-full w-full flex-col gap-4">
         <div
           v-if="affiliations.length > 0"
-          class="flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 dark:border-gray-700 dark:bg-gray-800/50"
+          class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 dark:border-gray-700 dark:bg-gray-800/50"
         >
-          <UToggle
-            :model-value="useAffiliationFilter"
-            size="sm"
-            @update:model-value="useAffiliationFilter = $event"
-          />
+          <p class="text-xs font-medium text-gray-700 dark:text-gray-300">
+            Matching affiliations shown first
+          </p>
 
-          <div class="min-w-0">
-            <p class="text-xs font-medium text-gray-700 dark:text-gray-300">
-              Filter by affiliation
-            </p>
-
-            <p class="truncate text-xs text-gray-500 dark:text-gray-400">
-              {{ affiliations.join("; ") }}
-            </p>
-          </div>
+          <p class="truncate text-xs text-gray-500 dark:text-gray-400">
+            {{ affiliations.join("; ") }}
+          </p>
         </div>
 
         <div class="flex gap-2">
@@ -142,21 +148,27 @@ function selectResult(result: OrcidResult) {
             v-else-if="searched && results.length === 0"
             class="flex h-full flex-col items-center justify-center gap-3 py-16 text-center"
           >
-            <p class="text-sm text-gray-500 dark:text-gray-400">
+            <template v-if="searchFailed">
+              <p class="text-sm text-gray-500 dark:text-gray-400">
+                Couldn't reach ORCID.
+              </p>
+
+              <UButton
+                size="sm"
+                variant="outline"
+                color="neutral"
+                icon="i-lucide-refresh-cw"
+                @click="runSearch"
+              >
+                Try again
+              </UButton>
+            </template>
+
+            <p v-else class="text-sm text-gray-500 dark:text-gray-400">
               No results found.
             </p>
 
-            <UButton
-              v-if="useAffiliationFilter && affiliations.length > 0"
-              size="sm"
-              variant="outline"
-              color="neutral"
-              @click="useAffiliationFilter = false"
-            >
-              Remove affiliation filter and retry
-            </UButton>
-
-            <p v-else class="text-xs text-gray-400 dark:text-gray-500">
+            <p v-if="!searchFailed" class="text-xs text-gray-400 dark:text-gray-500">
               Check the name spelling or search directly on
               <a
                 href="https://orcid.org/orcid-search/search"
@@ -182,10 +194,24 @@ function selectResult(result: OrcidResult) {
               v-for="result in results"
               :key="result.orcidId"
               type="button"
-              class="group hover:border-primary-300 hover:bg-primary-50 dark:hover:border-primary-700 dark:hover:bg-primary-900/20 w-full cursor-pointer rounded-lg border border-gray-200 p-3 text-left transition-colors dark:border-gray-700"
+              class="group hover:border-primary-300 hover:bg-primary-50 dark:hover:border-primary-700 dark:hover:bg-primary-900/20 w-full cursor-pointer rounded-lg border p-3 text-left transition-colors"
+              :class="
+                result.matchesAffiliation
+                  ? 'border-primary-300 bg-primary-50/50 dark:border-primary-700 dark:bg-primary-900/10'
+                  : 'border-gray-200 dark:border-gray-700'
+              "
               @click="selectResult(result)"
             >
               <div class="flex flex-col gap-1">
+                <UBadge
+                  v-if="result.matchesAffiliation"
+                  color="primary"
+                  variant="subtle"
+                  size="sm"
+                  icon="i-lucide-building-2"
+                  label="Matches affiliation"
+                  class="self-start"
+                />
                 <div class="flex items-center justify-between gap-2">
                   <p class="font-medium text-gray-900 dark:text-white">
                     {{ result.givenName }} {{ result.familyName }}
