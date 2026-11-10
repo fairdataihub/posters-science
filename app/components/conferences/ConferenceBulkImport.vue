@@ -1162,9 +1162,18 @@ const batchFailedCount = computed(
   () => batchItems.value.filter((item) => item.status === "failed").length,
 );
 
-const batchInProgressItems = computed(() =>
-  batchItems.value.filter((item) => item.status !== "failed"),
-);
+// The worker extracts a batch in upload order, so list it that way (top first).
+const batchInProgressItems = computed(() => {
+  const uploadedAt = new Map(
+    stagedPosters.value.map((poster) => [poster.filePath, poster.uploadedAt]),
+  );
+  const uploadTime = (item: BulkImportBatchItem) =>
+    uploadedAt.get(item.filePath ?? "") ?? "";
+
+  return batchItems.value
+    .filter((item) => item.status !== "failed")
+    .sort((a, b) => uploadTime(a).localeCompare(uploadTime(b)));
+});
 
 const batchFailedItems = computed(() =>
   batchItems.value.filter((item) => item.status === "failed"),
@@ -1390,10 +1399,10 @@ const submitStepIntro = computed(() => {
     if (submissionLoading.value) {
       return "Preparing your batch for AI poster extraction…";
     }
-    return "Confirm the notice below, then start AI poster extraction for each poster in this batch.";
+    return "AI extraction fills in each poster's details. Once it finishes, you'll review and correct them on the next step, before anything is published.";
   }
   if (hasUnsubmittedStagedPosters.value) {
-    return "Confirm the notice below, then start AI poster extraction for the new poster files.";
+    return "AI extraction fills in the details for the new poster files. Once it finishes, you'll review and correct them on the next step, before anything is published.";
   }
   if (batchExtractionsInProgress.value) {
     return "Wait until all posters have had their metadata extracted. You can leave this page and come back later if you are submitting a large batch.";
@@ -2560,28 +2569,37 @@ async function startImport() {
           </div>
 
           <div v-else-if="submitStepAwaitingStart" class="space-y-4">
-            <ExtractionAccuracyNotice
-              title="Please review the extracted data on the next page after extraction"
-              description="Data is extracted automatically and may contain mistakes. Once extraction finishes, you will review and correct the extracted data on the next page, before anything is published."
-            />
-
             <UCheckbox
               v-model="extractionAccuracyConfirmed"
-              label="I understand the extracted data may be inaccurate and that I need to review it on the next page."
+              label="I understand that due to the nature and unstructured variability of conference posters, there may be minor defects in the extraction of my posters, and it is my responsibility to review them after extraction."
             />
 
-            <UButton
-              color="primary"
-              icon="i-lucide-sparkles"
-              label="Start extraction"
-              :disabled="
-                !extractionAccuracyConfirmed ||
-                !canProceedFromReview ||
-                submissionLoading
-              "
-              :loading="batchImportRunning"
-              @click="startExtractionAfterConfirm"
-            />
+            <div class="flex flex-wrap items-center gap-3">
+              <UButton
+                color="primary"
+                icon="i-lucide-sparkles"
+                label="Start extraction"
+                :disabled="
+                  !extractionAccuracyConfirmed ||
+                  !canProceedFromReview ||
+                  submissionLoading
+                "
+                :loading="batchImportRunning"
+                @click="startExtractionAfterConfirm"
+              />
+
+              <span class="text-muted flex items-center gap-1 text-sm">
+                <UIcon name="i-lucide-chart-bar" class="size-4 shrink-0" />
+                <ULink
+                  to="https://github.com/fairdataihub/poster2json/blob/main/docs/evaluation.md"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="text-primary font-medium hover:underline"
+                >
+                  Learn more about extraction accuracy
+                </ULink>
+              </span>
+            </div>
           </div>
 
           <template

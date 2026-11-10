@@ -8,17 +8,17 @@ const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURICo
 
 useSeoMeta({
   title: "Share Posters",
-  description: "Choose whether to share one poster or upload a batch.",
+  description: "Share a single poster, or submit a conference's posters together.",
   ogTitle: "Share Posters - Posters.science",
-  ogDescription: "Choose whether to share one poster or upload a batch.",
+  ogDescription: "Share a single poster, or submit a conference's posters together.",
   ogImage,
 });
 </script>
 
 <template>
-  <div class="mx-auto flex w-full max-w-3xl flex-col gap-6 px-6 pb-8">
+  <div class="mx-auto flex w-full max-w-4xl flex-col gap-6 px-6 pb-8">
     <UPageHeader
-      title="One poster or a batch?"
+      title="How would you like to share?"
       :ui="{ root: 'py-4' }"
     >
       <template #headline>

@@ -18,13 +18,13 @@ const options = [
   },
   {
     key: "batch",
-    title: "Batch submission",
+    title: "Conference Organizer Submission",
     icon: "material-symbols:library-add",
     description:
-      "Share one or more posters to be displayed on Posters.Science and archived on Zenodo. Ideal for conference organizers.",
+      "Share your conference's posters together, displayed on Posters.Science and archived on Zenodo.",
     points: [
-      "Upload your poster files",
-      "Tell us about the conference and pick a license. AI fills in the rest for you to review",
+      "Upload the conference's poster files",
+      "Add the conference details and one license for every poster. AI fills in the rest for you to review",
       "Publish them all together, each with its own DOI",
     ],
     action: goSharePosterBatch,
@@ -33,15 +33,17 @@ const options = [
 </script>
 
 <template>
+  <!-- Cards share four subgrid rows (header, description, steps, arrow) so the
+       rows line up side by side even when one header is taller. -->
   <div class="grid gap-4 sm:grid-cols-2">
     <button
       v-for="option in options"
       :key="option.key"
       type="button"
-      class="group border-default bg-default hover:border-primary/60 focus-visible:ring-primary relative flex h-full flex-col items-start gap-3 rounded-2xl border p-5 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md focus-visible:ring-2 focus-visible:outline-none"
+      class="group border-default bg-default hover:border-primary/60 focus-visible:ring-primary relative row-span-4 grid grid-rows-subgrid gap-3 rounded-2xl border p-5 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md focus-visible:ring-2 focus-visible:outline-none"
       @click="option.action"
     >
-      <div class="flex items-center gap-3">
+      <div class="flex items-start gap-3">
         <span
           class="bg-primary/10 text-primary group-hover:bg-primary/15 flex size-10 shrink-0 items-center justify-center rounded-xl transition-colors"
         >
@@ -72,7 +74,7 @@ const options = [
 
       <UIcon
         name="i-lucide-arrow-right"
-        class="text-primary mt-auto size-5 self-end transition-transform duration-200 group-hover:translate-x-0.5"
+        class="text-primary size-5 self-end justify-self-end transition-transform duration-200 group-hover:translate-x-0.5"
         aria-hidden="true"
       />
     </button>
