@@ -18,7 +18,11 @@ import {
   type BulkImportConferenceFormState,
 } from "#shared/types/bulkImportConference";
 import { z } from "zod";
-import { bulkImportNameSchema } from "#shared/types/bulkImportWizard";
+import {
+  BULK_IMPORT_UNTITLED_NAME,
+  bulkImportEditableName,
+  bulkImportNameSchema,
+} from "#shared/types/bulkImportWizard";
 import {
   StrictConferenceSchema,
   SUGGESTED_LICENSE_IDS,
@@ -607,7 +611,7 @@ watch(
   () => props.initialImportName,
   (name) => {
     if (typeof name === "string" && name.length > 0) {
-      importName.value = name;
+      importName.value = bulkImportEditableName(name);
     }
   },
   { immediate: true },
@@ -648,7 +652,7 @@ function applyLicenseSummaryFromJob(job: BulkPosterSubmissionJob) {
 
 function applyJobSnapshot(job: BulkPosterSubmissionJob) {
   jobId.value = job.id;
-  importName.value = job.name;
+  importName.value = bulkImportEditableName(job.name);
   applyLicenseSummaryFromJob(job);
   applyBatchStateFromJob(job);
 }
@@ -895,7 +899,10 @@ onBeforeUnmount(() => {
 });
 
 async function persistSetupJob(): Promise<string> {
-  const name = importNameTrimmed.value;
+  // Posters can be added before the batch is named; save a placeholder until then.
+  const name = importNameValid.value
+    ? importNameTrimmed.value
+    : BULK_IMPORT_UNTITLED_NAME;
 
   if (jobId.value) {
     try {
@@ -915,16 +922,21 @@ async function persistSetupJob(): Promise<string> {
 }
 
 /**
- * The job row is created on the first upload, once the batch has a name.
- * Returns false (and shows why) when uploads cannot start yet.
+ * The job row is created on the first upload. Uploads don't wait for a batch
+ * name: without one it is saved as untitled, and the name field asks for one
+ * (it is required before continuing). Returns false when the job can't be saved.
  */
 async function ensureJobForUploads(): Promise<boolean> {
   if (jobId.value) return true;
 
-  if (
-    !(await validateStepForm(batchNameFormRef.value, importNameValid.value))
-  ) {
-    return false;
+  if (!importNameValid.value) {
+    void validateStepForm(batchNameFormRef.value, false);
+    toast.add({
+      title: "Batch name required",
+      description:
+        "Your posters are uploading. Add a batch name above before continuing.",
+      color: "warning",
+    });
   }
 
   batchNameSaving.value = true;
@@ -1609,6 +1621,14 @@ async function saveUploadStep(): Promise<boolean> {
   if (
     !(await validateStepForm(batchNameFormRef.value, importNameValid.value))
   ) {
+    if (stagedPosters.value.length > 0) {
+      toast.add({
+        title: "Batch name required",
+        description: "Add a batch name above to continue.",
+        color: "warning",
+      });
+    }
+
     return false;
   }
 
@@ -2188,13 +2208,8 @@ async function startImport() {
               :validate-file="validatePosterUploadFile"
               :resolve-dropped-files="readBulkPosterUploadDataTransfer"
               :hint="`${POSTER_ONLY_HINT}. Files upload as soon as you add them.`"
-              :disabled="!jobId && !importNameValid"
-              disabled-message="Name your batch above to start uploading posters."
               @on-change="onPosterFilesSelected"
               @on-reject="onPosterFilesRejected"
-              @on-disabled-interaction="
-                validateStepForm(batchNameFormRef, importNameValid)
-              "
             >
               <UiFileUploadGrid />
             </UiFileUpload>

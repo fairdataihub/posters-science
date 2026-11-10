@@ -58,12 +58,25 @@ export const BULK_IMPORT_WIZARD_STEPS: BulkImportWizardStepDefinition[] = [
 export const BULK_IMPORT_NAME_MIN_LENGTH = 2;
 export const BULK_IMPORT_NAME_MAX_LENGTH = 120;
 
+/**
+ * Saved as the name when posters are added before the batch is named (the
+ * database needs one). The name field shows it as empty, so it still has to
+ * be filled in before continuing.
+ */
+export const BULK_IMPORT_UNTITLED_NAME = "Untitled batch";
+
+/** The batch name to show in the name field ("" while it is still untitled). */
+export function bulkImportEditableName(name: string | null | undefined): string {
+  return !name || name === BULK_IMPORT_UNTITLED_NAME ? "" : name;
+}
+
 /** Batch name rules for the upload step. */
 export const bulkImportNameSchema = z
   .string()
   .trim()
+  .min(1, { message: "Batch name is required" })
   .min(BULK_IMPORT_NAME_MIN_LENGTH, {
-    message: `Batch name must be at least ${BULK_IMPORT_NAME_MIN_LENGTH} characters`,
+    message: `Batch name must be ${BULK_IMPORT_NAME_MIN_LENGTH}–${BULK_IMPORT_NAME_MAX_LENGTH} characters`,
   })
   .max(BULK_IMPORT_NAME_MAX_LENGTH, {
     message: `Batch name must be ${BULK_IMPORT_NAME_MAX_LENGTH} characters or fewer`,

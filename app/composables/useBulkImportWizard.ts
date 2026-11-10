@@ -2,6 +2,7 @@ import {
   BULK_IMPORT_NAME_MAX_LENGTH,
   BULK_IMPORT_NAME_MIN_LENGTH,
   BULK_IMPORT_WIZARD_STEPS,
+  bulkImportEditableName,
   bulkImportNameSchema,
   type BulkImportWizardStep,
 } from "#shared/types/bulkImportWizard";
@@ -46,7 +47,7 @@ export function useBulkImportWizard(options: {
   const currentStep = ref<BulkImportWizardStep>(
     options.initialStep ?? "upload",
   );
-  const importName = ref(options.initialImportName ?? "");
+  const importName = ref(bulkImportEditableName(options.initialImportName));
   const jobId = ref<string | null>(options.initialJobId ?? null);
 
   const importNameTrimmed = computed(() => importName.value.trim());
