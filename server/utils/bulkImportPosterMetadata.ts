@@ -145,7 +145,8 @@ function posterIdsFromBulkSummary(summary: BulkImportSubmissionSummary | null) {
 
 /**
  * Applies batch license + conference from the bulk wizard onto poster metadata.
- * Safe to call after extraction (restores fields the worker may have overwritten).
+ * Called after extraction (the worker blanks these fields) and when the
+ * conference or license step changes. Posters that already match are skipped.
  */
 export async function applyBulkSubmissionMetadataToPosters(
   userId: string,
@@ -189,6 +190,9 @@ export async function applyBulkSubmissionMetadataToPosters(
 
   const updatedPosterIds: number[] = [];
 
+  // The fields this copy writes, read back so posters that already match are skipped.
+  const copiedFields = Object.keys(updateData);
+
   // One query for ownership/state of every poster in the batch.
   const ownedRows = await prisma.poster.findMany({
     where: { id: { in: targetIds }, userId },
@@ -196,6 +200,9 @@ export async function applyBulkSubmissionMetadataToPosters(
       id: true,
       posterMetadata: {
         select: {
+          ...(Object.fromEntries(
+            copiedFields.map((field) => [field, true]),
+          ) as Prisma.PosterMetadataSelect),
           posterId: true,
           dates: true,
           conferenceStartDate: true,
@@ -228,6 +235,19 @@ export async function applyBulkSubmissionMetadataToPosters(
             },
           )
         : undefined;
+
+      // Already has the batch license and conference: nothing to write.
+      const current = owned.posterMetadata as Record<string, unknown>;
+      const fieldsMatch = copiedFields.every(
+        (field) =>
+          (current[field] ?? null) ===
+          ((updateData as Record<string, unknown>)[field] ?? null),
+      );
+      const datesMatch =
+        !dates ||
+        JSON.stringify(dates) === JSON.stringify(owned.posterMetadata.dates);
+      if (fieldsMatch && datesMatch) return false;
+
       await prisma.posterMetadata.update({
         where: { posterId: id },
         data: { ...updateData, ...(dates && { dates }) },
