@@ -790,7 +790,15 @@ function markSheetsOpened(names: string[]) {
 }
 
 onMounted(restoreOpenedSheets);
-watch(activeSheet, (name) => markSheetsOpened([name]), { immediate: true });
+// Tabs are marked opened by a watcher after `fullScreen` below: a tab only
+// counts while the spreadsheet editor is open.
+
+/** No tab opened yet: the organizer never opened the spreadsheet editor. */
+const unreviewedAllSheets = computed(
+  () =>
+    unreviewedSheets.value.length > 0 &&
+    unreviewedSheets.value.length === (grid.value?.sheets.length ?? 0),
+);
 
 function unopenedSheetNames(): string[] {
   return (grid.value?.sheets ?? [])
@@ -831,6 +839,7 @@ const unreviewedSheetsLabel = computed(() => {
 
 function goToIssueSheet(sheetName: string) {
   activeSheet.value = sheetName;
+  fullScreen.value = true;
   if (validationModalOpen.value) closeValidationModal("dismiss");
 }
 
@@ -1146,10 +1155,20 @@ const POSTER_COLUMN_WIDTH_PX = 320;
 const { width: gridViewportWidth } = useElementSize(gridRoot);
 
 /**
- * Full screen pins this component over the window (same elements, so the
- * toolbar, tabs and save keep working) and stops the page behind scrolling.
+ * The spreadsheet opens over the whole window (the step itself shows only a
+ * summary and an open button) and stops the page behind scrolling.
  */
 const fullScreen = ref(false);
+
+// A tab only counts as opened (see openedSheets) while the editor is open.
+watch(
+  [activeSheet, fullScreen],
+  ([name, open]) => {
+    if (open) markSheetsOpened([name]);
+  },
+  { immediate: true },
+);
+
 const pageBody = ref<HTMLElement | null>(null);
 const pageScrollLocked = useScrollLock(pageBody);
 
@@ -1165,7 +1184,8 @@ onBeforeUnmount(() => {
   pageScrollLocked.value = false;
 });
 
-// Esc leaves full screen, unless it is closing the issues dialog.
+// The spreadsheet only opens as a full-window editor; Esc closes it,
+// unless it is closing the issues dialog.
 onKeyStroke("Escape", () => {
   if (fullScreen.value && !validationModalOpen.value) fullScreen.value = false;
 });
@@ -1409,6 +1429,7 @@ async function prepareStepTransition(): Promise<boolean> {
     const choice = await askAboutUnopenedSheets(unopened);
     if (choice === "review") {
       activeSheet.value = unopened[0]!;
+      fullScreen.value = true;
 
       return false;
     }
@@ -1492,6 +1513,65 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
       :actions="[{ label: 'Retry', onClick: () => load() }]"
     />
 
+    <!-- Closed: what to do, and a button that opens the full-window editor. -->
+    <div
+      v-else-if="grid && !fullScreen"
+      class="border-default space-y-5 rounded-xl border p-5 sm:p-6"
+    >
+      <div class="flex items-start gap-3">
+        <span
+          class="bg-primary/10 text-primary flex size-10 shrink-0 items-center justify-center rounded-xl"
+        >
+          <UIcon name="i-lucide-table-2" class="size-5" />
+        </span>
+        <div class="min-w-0">
+          <h4 class="text-base font-semibold">
+            {{ grid.posters.length }}
+            {{ grid.posters.length === 1 ? "poster" : "posters" }} to review
+          </h4>
+          <p class="text-muted text-sm">
+            Check the details AI extracted from each poster before publishing.
+          </p>
+        </div>
+      </div>
+
+      <div class="space-y-2 text-sm">
+        <p>
+          Fill in every required field (marked
+          <span class="text-error">*</span>) and add anything that's missing.
+          Use the tabs to move between sections such as creators, funding and
+          poster content, and add rows where a poster needs more.
+        </p>
+        <p class="text-muted">
+          You can continue with gaps, but any missing required fields must be
+          added on the next step before you can publish.
+        </p>
+      </div>
+
+      <div class="border-default flex flex-col items-center gap-3 border-t pt-5">
+        <div
+          v-if="sheetsWithIssues.size > 0 || dirty"
+          class="flex flex-wrap items-center justify-center gap-2"
+        >
+          <UBadge
+            v-if="sheetsWithIssues.size > 0"
+            color="warning"
+            variant="subtle"
+            icon="i-lucide-triangle-alert"
+            :label="`Required fields to fix in ${sheetsWithIssues.size} ${sheetsWithIssues.size === 1 ? 'section' : 'sections'}`"
+          />
+          <UBadge v-if="dirty" color="warning" variant="subtle" label="Unsaved changes" />
+        </div>
+        <UButton
+          color="primary"
+          size="lg"
+          icon="i-lucide-table-2"
+          label="Open poster spreadsheet"
+          @click="fullScreen = true"
+        />
+      </div>
+    </div>
+
     <template v-else-if="grid">
       <!-- Toolbar -->
       <div class="flex flex-wrap items-center gap-3">
@@ -1511,10 +1591,9 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
           <UButton
             color="neutral"
             variant="outline"
-            :icon="fullScreen ? 'i-lucide-minimize-2' : 'i-lucide-maximize-2'"
-            :label="fullScreen ? 'Exit full screen' : 'Full screen'"
-            :aria-pressed="fullScreen"
-            @click="fullScreen = !fullScreen"
+            icon="i-lucide-x"
+            label="Close"
+            @click="fullScreen = false"
           />
           <UButton
             color="neutral"
@@ -1629,8 +1708,7 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
         >
           <div
             ref="gridRoot"
-            class="min-w-0 overflow-x-auto overflow-y-auto overscroll-x-contain pb-3"
-            :class="fullScreen ? 'max-h-[calc(100dvh-14rem)]' : 'max-h-[65vh]'"
+            class="max-h-[calc(100dvh-14rem)] min-w-0 overflow-x-auto overflow-y-auto overscroll-x-contain pb-3"
           >
             <table class="w-max min-w-full border-separate border-spacing-0 text-sm">
             <thead class="bg-elevated sticky top-0 z-20">
@@ -1939,9 +2017,11 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
     <UModal
       v-model:open="unreviewedModalOpen"
       :title="
-        unreviewedSheets.length > 1
-          ? 'Sections Not Reviewed'
-          : 'AI-Extracted Content Not Reviewed'
+        unreviewedAllSheets
+          ? 'Poster Spreadsheet Not Reviewed'
+          : unreviewedSheets.length > 1
+            ? 'Sections Not Reviewed'
+            : 'AI-Extracted Content Not Reviewed'
       "
       @update:open="(open) => !open && closeUnreviewedModal('review')"
     >
@@ -1950,14 +2030,24 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
           <UAlert
             color="warning"
             variant="subtle"
-            :title="`You haven't opened ${unreviewedSheetsLabel}`"
-            description="These tabs contain metadata and content extracted from your posters by AI. Reviewing them helps ensure accuracy before publishing."
+            :title="
+              unreviewedAllSheets
+                ? `You haven't opened the poster spreadsheet yet`
+                : `You haven't opened ${unreviewedSheetsLabel}`
+            "
+            :description="
+              unreviewedAllSheets
+                ? 'It holds the details extracted from your posters by AI. Reviewing them helps ensure accuracy before publishing.'
+                : 'These tabs contain metadata and content extracted from your posters by AI. Reviewing them helps ensure accuracy before publishing.'
+            "
           />
 
           <p class="text-sm text-gray-600 dark:text-gray-400">
-            We recommend opening
-            {{ unreviewedSheets.length > 1 ? "each tab" : "the tab" }} and
-            checking the extracted values before continuing.
+            {{
+              unreviewedAllSheets
+                ? "We recommend opening it and checking each section before continuing."
+                : `We recommend opening ${unreviewedSheets.length > 1 ? "each tab" : "the tab"} and checking the extracted values before continuing.`
+            }}
           </p>
         </div>
       </template>
@@ -1966,8 +2056,14 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
         <div class="flex w-full justify-between gap-3">
           <UButton
             variant="outline"
-            icon="i-lucide-eye"
-            :label="unreviewedSheets.length > 1 ? 'Review Tabs' : 'Review Tab'"
+            :icon="unreviewedAllSheets ? 'i-lucide-table-2' : 'i-lucide-eye'"
+            :label="
+              unreviewedAllSheets
+                ? 'Open Poster Spreadsheet'
+                : unreviewedSheets.length > 1
+                  ? 'Review Tabs'
+                  : 'Review Tab'
+            "
             @click="closeUnreviewedModal('review')"
           />
 
