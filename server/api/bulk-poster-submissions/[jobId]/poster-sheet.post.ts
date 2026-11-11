@@ -11,8 +11,9 @@ const MAX_SHEET_BYTES = 10 * 1024 * 1024;
  * extraction API's POST /sheets/map and returns its result unchanged; nothing
  * is stored here. The wizard shows the result on its confirm screen.
  *
- * multipart/form-data: sheet (file), mapping (optional JSON of confirmed
- * column choices).
+ * multipart/form-data: sheet (file; several for an export split over files,
+ * such as EasyChair submission.csv plus author.csv), mapping (optional JSON of
+ * confirmed column choices).
  */
 export default defineEventHandler(
   async (event): Promise<PosterSheetMappingResult> => {
@@ -47,26 +48,36 @@ export default defineEventHandler(
     }
 
     const parts = (await readMultipartFormData(event)) ?? [];
-    const sheet = parts.find((part) => part.name === "sheet" && part.filename);
+    const sheets = parts.filter(
+      (part) => part.name === "sheet" && part.filename,
+    );
     const mapping = parts
       .find((part) => part.name === "mapping")
       ?.data.toString("utf8");
 
-    if (!sheet?.filename) {
+    if (!sheets.length) {
       throw createError({
         statusCode: 400,
         statusMessage: "Choose a spreadsheet to upload",
       });
     }
-    const lower = sheet.filename.toLowerCase();
-    if (!SHEET_EXTENSIONS.some((ext) => lower.endsWith(ext))) {
+    const wrongType = sheets.some((sheet) => {
+      const lower = (sheet.filename ?? "").toLowerCase();
+
+      return !SHEET_EXTENSIONS.some((ext) => lower.endsWith(ext));
+    });
+    if (wrongType) {
       throw createError({
         statusCode: 400,
         statusMessage:
           "Poster information must be an .xlsx, .xls, .csv or .tsv file",
       });
     }
-    if (sheet.data.length > MAX_SHEET_BYTES) {
+    const totalBytes = sheets.reduce(
+      (sum, sheet) => sum + sheet.data.length,
+      0,
+    );
+    if (totalBytes > MAX_SHEET_BYTES) {
       throw createError({
         statusCode: 413,
         statusMessage: "Spreadsheet is larger than 10 MB",
@@ -88,13 +99,15 @@ export default defineEventHandler(
     );
 
     const form = new FormData();
-    form.append(
-      "sheet",
-      new Blob([new Uint8Array(sheet.data)], {
-        type: sheet.type || "application/octet-stream",
-      }),
-      sheet.filename,
-    );
+    for (const sheet of sheets) {
+      form.append(
+        "sheet",
+        new Blob([new Uint8Array(sheet.data)], {
+          type: sheet.type || "application/octet-stream",
+        }),
+        sheet.filename,
+      );
+    }
     form.append("file_names", JSON.stringify(fileNames));
     if (mapping) form.append("mapping", mapping);
 

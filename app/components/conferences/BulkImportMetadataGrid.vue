@@ -28,8 +28,16 @@ import IdentifierRorSearch from "~/components/identifier/IdentifierRorSearch.vue
 import { mergePosterSheetIntoGrid } from "#shared/utils/posterSheetToGrid";
 import {
   forgetSavedPosterSheetRows,
+  matchPendingPosterSheetByTitle,
   readPendingPosterSheet,
+  unlinkPendingTitleMatch,
 } from "~/utils/posterSheetPending";
+import {
+  rowsWithoutPoster,
+  titleMatchesToReview,
+} from "#shared/utils/posterSheetTitleMatch";
+import type { PosterSheetTitleMatch } from "#shared/types/posterSheetMapping";
+import BulkPosterSheetTitleMatches from "~/components/conferences/BulkPosterSheetTitleMatches.vue";
 
 /**
  * Spreadsheet-style editor for batch poster metadata. Sheets and columns come
@@ -333,6 +341,7 @@ async function load(options: { refresh?: boolean } = {}) {
     for (const sheet of data.sheets) {
       rows[sheet.name] = sheet.rows.map(withKey);
     }
+    await matchPendingPosterSheetByTitle(props.bulkJobId, data);
     // Snapshot the saved rows first, so cells filled from the poster sheet
     // count as unsaved changes and the changed-only save sends them.
     applySheetPosterRanks(data, rows);
@@ -1417,6 +1426,9 @@ function resetChanges() {
 
 /** File names merged from the poster sheet and not saved yet. */
 const posterSheetUnsaved = ref<string[]>([]);
+/** Title matches to check, and sheet rows still without a poster. */
+const posterSheetReview = ref<PosterSheetTitleMatch[]>([]);
+const posterSheetWaiting = ref(0);
 
 /**
  * Fill the grid from a poster sheet confirmed on the posters step. Merged
@@ -1427,6 +1439,8 @@ function applyPendingPosterSheet(
   rows: Record<string, EditableRow[]>,
 ): { rows: Record<string, EditableRow[]>; changed: boolean } {
   const pending = readPendingPosterSheet(props.bulkJobId);
+  posterSheetReview.value = titleMatchesToReview(pending);
+  posterSheetWaiting.value = rowsWithoutPoster(pending);
   if (!pending) return { rows, changed: false };
   const merged = mergePosterSheetIntoGrid(data, rows, pending.sheets);
   const keyed: Record<string, EditableRow[]> = {};
@@ -1449,6 +1463,12 @@ function onGridSaved(savedPosterIds: number[]) {
   if (!savedPosterIds.length) return;
   forgetSavedPosterSheetRows(props.bulkJobId, posterSheetUnsaved.value);
   posterSheetUnsaved.value = [];
+  posterSheetReview.value = [];
+}
+
+function onUnlinkTitleMatch(rowKey: string) {
+  unlinkPendingTitleMatch(props.bulkJobId, rowKey);
+  load();
 }
 
 const unsavedOnCloseModalOpen = ref(false);
@@ -1660,6 +1680,14 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
           save a draft or continue to poster previews.
         </p>
       </div>
+
+      <BulkPosterSheetTitleMatches
+        v-if="posterSheetReview.length || posterSheetWaiting"
+        :matches="posterSheetReview"
+        :waiting="posterSheetWaiting"
+        :dirty="dirty"
+        @unlink="onUnlinkTitleMatch"
+      />
 
       <!-- Toolbar -->
       <div class="flex shrink-0 flex-wrap items-center gap-3">

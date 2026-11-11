@@ -12,11 +12,14 @@ import {
 /**
  * Optional second drop zone on the posters step: the organizer's own poster
  * information sheet (Curious, EasyChair, our template; .xlsx, .xls, .csv,
- * .tsv). The sheet is mapped to our fields by the extraction API. A confirm
- * panel shows the mapping, the file name column and any warnings; once
- * confirmed, the rows fill the metadata grid as posters finish extracting.
+ * .tsv; an EasyChair export split over CSV files can be dropped together).
+ * The sheet is mapped to our fields by the extraction API. A confirm panel
+ * shows the mapping, how rows link to files and any warnings; once confirmed,
+ * the rows fill the metadata grid as posters finish extracting.
  *
- * A column with each poster's file name is required.
+ * Rows link to files by a file name column, or by a submission number in the
+ * file names. Rows left over are matched by title after extraction, and the
+ * grid lists those matches for the organizer to check.
  */
 
 const props = defineProps<{
@@ -44,11 +47,19 @@ const FIELD_LABELS: Record<string, string> = {
   poster_number: "Poster number (not stored)",
   social: "Social media (not stored)",
   comment: "Comment (not stored)",
+  decision: "Decision (only accepted rows are used)",
+  deleted: "Deleted (these rows are skipped)",
+  form_fields: "EasyChair form fields",
+  ignored: "Not used",
 };
 
 const toast = useToast();
 const uploadRef = ref<{ clearFiles: () => void } | null>(null);
-const sheetFile = ref<File | null>(null);
+/** One sheet, or an export split over files (EasyChair submission.csv + author.csv). */
+const sheetFiles = ref<File[]>([]);
+const sheetName = computed(() =>
+  sheetFiles.value.map((file) => file.name).join(" + "),
+);
 const result = ref<PosterSheetMappingResult | null>(null);
 const choices = ref<Record<string, string | null>>({});
 const loading = ref(false);
@@ -105,12 +116,12 @@ function sourceLabel(source: string) {
 }
 
 async function mapSheet(overrides?: Record<string, string | null>) {
-  if (!props.bulkJobId || !sheetFile.value) return;
+  if (!props.bulkJobId || !sheetFiles.value.length) return;
   loading.value = true;
   errorMessage.value = null;
   try {
     const form = new FormData();
-    form.append("sheet", sheetFile.value, sheetFile.value.name);
+    for (const file of sheetFiles.value) form.append("sheet", file, file.name);
     if (overrides) form.append("mapping", JSON.stringify(overrides));
     const data = await $fetch<PosterSheetMappingResult>(
       `/api/bulk-poster-submissions/${props.bulkJobId}/poster-sheet`,
@@ -135,9 +146,11 @@ async function mapSheet(overrides?: Record<string, string | null>) {
 }
 
 function onSheetSelected(files: File[]) {
-  const file = files[files.length - 1];
-  if (!file) return;
-  sheetFile.value = file;
+  if (!files.length) return;
+  // Several files only make sense as one export split over CSV/TSV files.
+  const split =
+    files.length > 1 && files.every((f) => /\.(csv|tsv)$/i.test(f.name));
+  sheetFiles.value = split ? files.slice(0, 3) : files.slice(-1);
   confirmedName.value = null;
   mapSheet();
 }
@@ -158,26 +171,39 @@ function applyChoices() {
 }
 
 function confirm(options: { silent?: boolean } = {}) {
-  if (!props.bulkJobId || !result.value?.ok || !sheetFile.value) return;
+  if (!props.bulkJobId || !result.value?.ok || !sheetFiles.value.length) return;
   reviewing.value = false;
   writePendingPosterSheet(props.bulkJobId, {
-    sheetFileName: sheetFile.value.name,
+    sheetFileName: sheetName.value,
     confirmedAt: new Date().toISOString(),
     template: result.value.template,
     sheets: result.value.sheets,
+    matchRows: result.value.match_rows,
+    titleMatches: {},
+    rejectedMatches: [],
   });
-  confirmedName.value = sheetFile.value.name;
+  confirmedName.value = sheetName.value;
   if (options.silent) return;
+  const linked = result.value.file_column?.matched_rows ?? 0;
+  const byTitle = result.value.match_rows.length;
+  const parts = [
+    linked
+      ? `${linked} poster(s) will be filled as they finish extracting`
+      : "",
+    byTitle
+      ? `${byTitle} row(s) will be matched to posters by title after extraction`
+      : "",
+  ].filter(Boolean);
   toast.add({
     title: "Poster information added",
-    description: `${result.value.file_column?.matched_rows ?? 0} poster(s) will be filled from ${sheetFile.value.name} as they finish extracting.`,
+    description: `${sheetName.value}: ${parts.join("; ")}.`,
     color: "success",
   });
 }
 
 function removeSheet() {
   if (props.bulkJobId) clearPendingPosterSheet(props.bulkJobId);
-  sheetFile.value = null;
+  sheetFiles.value = [];
   result.value = null;
   reviewing.value = false;
   confirmedName.value = null;
@@ -189,7 +215,7 @@ function removeSheet() {
 watch(
   () => props.posterFileNames.join("\n"),
   () => {
-    if (!sheetFile.value || !result.value) return;
+    if (!sheetFiles.value.length || !result.value) return;
     const userChoices = result.value.mapping.some(
       (column) => column.source === "user",
     );
@@ -207,8 +233,10 @@ watch(
 
       <p class="text-muted mt-1 text-sm">
         Already have a spreadsheet of your posters, such as titles, authors and
-        abstracts? Add it here and we will use it instead of extracting those
-        fields. It needs a column with each poster's file name.
+        abstracts (your own, Curious or an EasyChair download)? Add it here and
+        we will use it instead of extracting those fields. A column with each
+        poster's file name links rows exactly. Without one, we match rows to
+        posters by title after extraction and you check the matches.
       </p>
     </div>
 
@@ -218,7 +246,7 @@ watch(
       variant="subtle"
       icon="i-lucide-check"
       :title="`Using ${confirmedName}`"
-      description="Its rows fill the metadata as posters finish extracting."
+      description="Its rows fill the metadata as posters finish extracting. Rows matched by title are listed in the metadata step for you to check."
     >
       <template #actions>
         <UButton
@@ -243,9 +271,10 @@ watch(
     <UiFileUpload
       v-else-if="!reviewing && !loading"
       ref="uploadRef"
+      multiple
       hide-file-list
       title="Add your poster information sheet"
-      description="Drag and drop an .xlsx, .xls, .csv or .tsv file here, or click to browse."
+      description="Drag and drop an .xlsx, .xls, .csv or .tsv file here, or click to browse. For an EasyChair export in CSV files, add submission.csv and author.csv together."
       :accept="SHEET_ACCEPT"
       @on-change="onSheetSelected"
     >
@@ -258,7 +287,7 @@ watch(
       aria-live="polite"
     >
       <UIcon name="i-lucide-loader-circle" class="size-4 animate-spin" />
-      Reading {{ sheetFile?.name }}…
+      Reading {{ sheetName }}…
     </div>
 
     <UAlert
@@ -283,7 +312,7 @@ watch(
       <div class="flex flex-wrap items-center gap-2 text-sm">
         <UIcon name="i-lucide-file-spreadsheet" class="size-4" />
 
-        <span class="font-medium">{{ sheetFile?.name }}</span>
+        <span class="font-medium">{{ sheetName }}</span>
 
         <UBadge
           v-if="result.template.known"
@@ -303,7 +332,25 @@ watch(
           v-if="result.file_column"
           color="neutral"
           variant="subtle"
-          :label="`${result.file_column.matched_rows} of ${result.file_column.rows} rows linked by '${result.file_column.column}'`"
+          :label="
+            result.file_column.method === 'number'
+              ? `${result.file_column.matched_rows} of ${result.file_column.rows} rows linked by the number in '${result.file_column.column}'`
+              : `${result.file_column.matched_rows} of ${result.file_column.rows} rows linked by '${result.file_column.column}'`
+          "
+        />
+
+        <UBadge
+          v-if="result.match_rows.length"
+          color="neutral"
+          variant="subtle"
+          :label="`${result.match_rows.length} row(s) to match by title`"
+        />
+
+        <UBadge
+          v-if="result.authors_table"
+          color="neutral"
+          variant="subtle"
+          :label="`Authors from '${result.authors_table}'`"
         />
       </div>
 
@@ -400,7 +447,8 @@ watch(
         <div class="mt-2 grid gap-4 sm:grid-cols-2">
           <div v-if="result.unmatched_rows.length">
             <p class="text-muted mb-1 text-xs">
-              Rows with no matching poster file
+              Rows whose file name matches no poster (matched by title after
+              extraction)
             </p>
 
             <ul class="space-y-0.5">
@@ -415,7 +463,7 @@ watch(
 
           <div v-if="result.unmatched_files.length">
             <p class="text-muted mb-1 text-xs">
-              Poster files with no row (extraction fills these)
+              Poster files with no linked row yet
             </p>
 
             <ul class="space-y-0.5">
