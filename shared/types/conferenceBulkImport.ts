@@ -59,7 +59,9 @@ export type BulkImportBatchItemStatus =
   | "waitingInQueue"
   | "extracting"
   | "completed"
-  | "failed";
+  | "failed"
+  /** The user stopped extraction before this poster was processed. */
+  | "stopped";
 
 export type BulkImportBatchItem = {
   id: string;
