@@ -1530,21 +1530,26 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
             {{ grid.posters.length === 1 ? "poster" : "posters" }} to review
           </h4>
           <p class="text-muted text-sm">
-            Check the details AI extracted from each poster before publishing.
+            Review the AI-extracted details for each poster before publishing.
           </p>
         </div>
       </div>
 
       <div class="space-y-2 text-sm">
         <p>
-          Fill in every required field (marked
-          <span class="text-error">*</span>) and add anything that's missing.
-          Use the tabs to move between sections such as creators, funding and
-          poster content, and add rows where a poster needs more.
+          Click <strong class="font-medium">Open poster spreadsheet</strong> to
+          review and edit the extracted information. Fill in required fields
+          (marked <span class="text-error">*</span>) and add any missing
+          information. Use the tabs to navigate sections and add rows where
+          needed.
+        </p>
+        <p>
+          Click <strong class="font-medium">Save draft</strong> in the top-right
+          corner to save your progress.
         </p>
         <p class="text-muted">
-          You can continue with gaps, but any missing required fields must be
-          added on the next step before you can publish.
+          You can leave required fields incomplete for now, but they must be
+          completed in the next step before publishing.
         </p>
       </div>
 
@@ -2057,7 +2062,7 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
       </template>
 
       <template #footer>
-        <div class="flex w-full justify-between gap-3">
+        <div class="flex w-full flex-wrap justify-between gap-3">
           <UButton
             variant="outline"
             :icon="unreviewedAllSheets ? 'i-lucide-table-2' : 'i-lucide-eye'"

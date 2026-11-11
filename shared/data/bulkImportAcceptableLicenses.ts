@@ -2233,3 +2233,19 @@ export const BULK_IMPORT_ACCEPTABLE_LICENSES: BulkImportUniformLicenseOption[] =
     "description": "Zope Public License 2.1"
   }
 ];
+
+/**
+ * Where to read about a license: the plain-language Creative Commons summary
+ * for CC licenses, otherwise the license's SPDX page.
+ */
+export function bulkImportLicenseInfoUrl(licenseId: string): string {
+  if (licenseId === "CC0-1.0") {
+    return "https://creativecommons.org/publicdomain/zero/1.0/";
+  }
+  const cc = licenseId.match(/^CC-(BY(?:-[A-Z]+)*)-(\d+\.\d+)$/);
+  if (cc) {
+    return `https://creativecommons.org/licenses/${cc[1]!.toLowerCase()}/${cc[2]}/`;
+  }
+
+  return `https://spdx.org/licenses/${encodeURIComponent(licenseId)}.html`;
+}
