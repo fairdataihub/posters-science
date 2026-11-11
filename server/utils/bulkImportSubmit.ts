@@ -219,19 +219,35 @@ export async function submitBulkPosterSubmissionJob(
             ? !alreadyTracked(p.posterId)
             : !existingJobByPath.has(p.filePath)),
       ).length;
-      const extractionBatch =
-        newPosterCount > 0
-          ? await tx.extractionBatch.create({
-              data: {
-                userId,
-                requestKey: `bulk-submission:${jobId}:${crypto.randomUUID()}`,
-                name: job.name,
-                totalFiles: newPosterCount,
-              },
-              select: { id: true },
-            })
-          : null;
+      // One extraction batch row per wizard batch: posters added later (back
+      // to step 1, then Start extraction again) join the same row, numbered
+      // after the ones already there. Safe under the row lock above.
+      let extractionBatch: { id: string } | null = null;
       let nextBatchIndex = 0;
+      if (newPosterCount > 0) {
+        const requestKey = `bulk-submission:${jobId}`;
+        const existingBatch = await tx.extractionBatch.findUnique({
+          where: { userId_requestKey: { userId, requestKey } },
+          select: { id: true },
+        });
+        if (existingBatch) {
+          extractionBatch = await tx.extractionBatch.update({
+            where: { id: existingBatch.id },
+            data: { name: job.name, totalFiles: { increment: newPosterCount } },
+            select: { id: true },
+          });
+          const last = await tx.extractionJob.aggregate({
+            where: { batchId: existingBatch.id },
+            _max: { batchIndex: true },
+          });
+          nextBatchIndex = (last._max.batchIndex ?? -1) + 1;
+        } else {
+          extractionBatch = await tx.extractionBatch.create({
+            data: { userId, requestKey, name: job.name, totalFiles: newPosterCount },
+            select: { id: true },
+          });
+        }
+      }
 
       for (const stagedPoster of staged) {
         if (trackedPaths.has(stagedPoster.filePath)) continue;

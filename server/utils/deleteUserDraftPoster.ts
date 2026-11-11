@@ -15,7 +15,7 @@ export async function deleteUserDraftPoster(
       status: true,
       versionRootId: true,
       extractionJob: {
-        select: { filePath: true, status: true, completed: true },
+        select: { filePath: true, status: true, completed: true, batchId: true },
       },
       zenodoDepositions: {
         select: { depositionId: true, status: true },
@@ -63,8 +63,20 @@ export async function deleteUserDraftPoster(
   }
 
   const filePath = poster.extractionJob?.filePath;
+  const batchId = poster.extractionJob?.batchId;
 
-  await prisma.poster.delete({ where: { id: posterId } });
+  // The extraction job goes with the poster, so its batch has one file fewer.
+  await prisma.$transaction([
+    prisma.poster.delete({ where: { id: posterId } }),
+    ...(batchId
+      ? [
+          prisma.extractionBatch.updateMany({
+            where: { id: batchId, totalFiles: { gt: 0 } },
+            data: { totalFiles: { decrement: 1 } },
+          }),
+        ]
+      : []),
+  ]);
 
   const config = useRuntimeConfig();
   if (filePath && config.bunnyPrivateStorage && config.bunnyPrivateStorageKey) {
