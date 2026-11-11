@@ -1,6 +1,5 @@
 import type { H3Event } from "h3";
 import { orderedBulkImportPosterEntries } from "~~/server/utils/bulkImportOrderedPosters";
-import { applyBulkSubmissionMetadataToPosters } from "~~/server/utils/bulkImportPosterMetadata";
 import { ensurePostersScienceDiscoverRelatedIdentifier } from "~~/server/utils/postersScienceDiscoverRelatedIdentifier";
 import { getBulkPosterSubmissionJobRepository } from "~~/server/utils/bulkPosterSubmissionJobs";
 import type { BulkReviewPosterRow } from "~~/server/utils/bulkReviewWorkbookFill";
@@ -16,8 +15,8 @@ export async function loadBulkReviewJobPosters(
   jobId: string,
   options: { prepare?: boolean } = {},
 ) {
-  // First open applies batch metadata and discover links per poster; a reload
-  // right after saving the grid can skip that work.
+  // First open adds discover links per poster; a reload right after saving
+  // the grid can skip that work.
   const prepare = options.prepare ?? true;
   const repository = getBulkPosterSubmissionJobRepository();
   const job = await repository.getByIdForUser(jobId, userId);
@@ -40,21 +39,11 @@ export async function loadBulkReviewJobPosters(
   const summary = (job.submissionSummary ?? {}) as BulkImportSubmissionSummary;
   const batchConference = summary.conference ?? null;
 
-  // applyBulkSubmissionMetadataToPosters also adds discover links for
-  // completed posters, so the separate pass below only runs if it failed.
-  let discoverLinksEnsured = false;
-  if (prepare) {
-    try {
-      await applyBulkSubmissionMetadataToPosters(userId, jobId);
-      discoverLinksEnsured = true;
-    } catch {
-      // Review data still uses batch conference from summary when apply is not ready.
-    }
-  }
-
+  // The batch license and conference are copied onto posters after extraction
+  // and when the conference or license step changes, not on every load.
   const posterIds = ordered.map((entry) => entry.posterId);
 
-  if (prepare && !discoverLinksEnsured) {
+  if (prepare) {
     const config = useRuntimeConfig(event);
     const siteEnv = config.siteEnv || config.public.siteEnv;
 
