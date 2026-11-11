@@ -956,7 +956,7 @@ watch(
           class="mb-5"
           label="Put the poster files under a Zenodo embargo?"
           required
-          description="If yes, each poster's record is published right away, but its files can't be downloaded until the embargo ends. This is helpful if you want to review your posters on Zenodo before others can download them. You can lift the embargo early from this page at any time."
+          description="If yes, each poster's record is published right away, but its files can't be downloaded until the embargo ends. This is helpful if you want to review your posters on Zenodo before making them available for downloads to others. You can lift the embargo early from this page at any time."
         >
           <div class="space-y-3">
             <URadioGroup
