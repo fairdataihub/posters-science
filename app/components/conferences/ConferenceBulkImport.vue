@@ -18,6 +18,7 @@ import {
   type BulkImportConferenceFormState,
 } from "#shared/types/bulkImportConference";
 import { z } from "zod";
+import { CalendarDate } from "@internationalized/date";
 import {
   BULK_IMPORT_UNTITLED_NAME,
   bulkImportEditableName,
@@ -477,6 +478,13 @@ const conferenceYearOptions = Array.from(
   { length: new Date().getFullYear() + 1 - 2000 + 1 },
   (_, i) => new Date().getFullYear() + 1 - i,
 ).map((y) => ({ label: String(y), value: y }));
+
+/** Once a year is picked, the date picker opens on January 1 of it and hides earlier dates. */
+const conferenceYearStart = computed(() =>
+  conferenceForm.conferenceYear
+    ? new CalendarDate(conferenceForm.conferenceYear, 1, 1)
+    : undefined,
+);
 
 const batchNameFormSchema = z.object({ importName: bulkImportNameSchema });
 
@@ -2349,20 +2357,32 @@ async function startImport() {
               />
             </UFormField>
 
+            <UFormField label="Conference acronym" name="conferenceAcronym">
+              <UInput
+                v-model="conferenceForm.conferenceAcronym"
+                placeholder="e.g., ARVO"
+                class="w-full"
+              />
+            </UFormField>
+
+            <UFormField
+              label="Conference series"
+              name="conferenceSeries"
+              description="The recurring event without the year, such as ISMB"
+            >
+              <UInput
+                v-model="conferenceForm.conferenceSeries"
+                placeholder="Optional series name"
+                class="w-full"
+              />
+            </UFormField>
+
             <UFormField label="Conference year" name="conferenceYear" required>
               <USelect
                 v-model="conferenceForm.conferenceYear"
                 class="w-full"
                 :items="conferenceYearOptions"
                 placeholder="Select a year"
-              />
-            </UFormField>
-
-            <UFormField label="Conference acronym" name="conferenceAcronym">
-              <UInput
-                v-model="conferenceForm.conferenceAcronym"
-                placeholder="e.g., ARVO"
-                class="w-full"
               />
             </UFormField>
 
@@ -2388,6 +2408,8 @@ async function startImport() {
                 label="Conference dates"
                 variant="subtle"
                 placeholder="Pick a date range"
+                :min-value="conferenceYearStart"
+                :default-placeholder="conferenceYearStart"
                 clearable
                 class="w-full"
               />
@@ -2405,6 +2427,7 @@ async function startImport() {
             <UFormField
               label="Conference identifier"
               name="conferenceIdentifier"
+              description="A persistent ID for the conference itself, such as a DOI or a Wikidata link. Most conferences do not have one, so leave blank if unsure."
             >
               <UInput
                 v-model="conferenceForm.conferenceIdentifier"
@@ -2440,14 +2463,6 @@ async function startImport() {
                 />
               </UFormField>
             </template>
-
-            <UFormField label="Conference series" name="conferenceSeries">
-              <UInput
-                v-model="conferenceForm.conferenceSeries"
-                placeholder="Optional series name"
-                class="w-full"
-              />
-            </UFormField>
           </UForm>
         </div>
 
