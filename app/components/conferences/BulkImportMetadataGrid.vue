@@ -1623,16 +1623,14 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
           class="w-max min-w-full"
           :ui="{
             list: 'inline-flex w-max flex-nowrap',
-            trigger: 'shrink-0 whitespace-nowrap',
+            trigger:
+              'shrink-0 whitespace-nowrap data-[state=inactive]:text-toned',
             label: 'whitespace-nowrap',
           }"
         >
-          <!-- Grey until opened: every tab holds AI-extracted metadata to review. -->
+          <!-- Unopened tabs say so on hover: each holds AI-extracted metadata to review. -->
           <template #default="{ item }">
             <span
-              :class="{
-                'text-dimmed italic': !openedSheets.has(String(item.value)),
-              }"
               :title="
                 openedSheets.has(String(item.value))
                   ? undefined
@@ -1647,11 +1645,17 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
               v-if="sheetsWithIssues.has(String(item.value))"
               text="Has required fields to fix"
             >
-              <UIcon
-                name="i-lucide-triangle-alert"
-                class="text-warning size-4 shrink-0"
-                aria-label="Has required fields to fix"
-              />
+              <!-- Red on a page-colored circle: readable on the pink
+                   (selected) and gray (unselected) tab backgrounds. -->
+              <span
+                class="bg-default flex size-5 shrink-0 items-center justify-center rounded-full"
+              >
+                <UIcon
+                  name="i-lucide-triangle-alert"
+                  class="text-error size-3.5"
+                  aria-label="Has required fields to fix"
+                />
+              </span>
             </UTooltip>
           </template>
         </UTabs>
