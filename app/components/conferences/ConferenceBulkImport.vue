@@ -1481,6 +1481,13 @@ function batchStatusColor(
   }
 }
 
+/** Waiting states use a quiet gray; active and finished states stay solid. */
+function batchStatusVariant(
+  status: BulkImportBatchItemStatus,
+): "solid" | "soft" {
+  return status === "waitingInQueue" || status === "queued" ? "soft" : "solid";
+}
+
 function batchStatusIcon(
   status: BulkImportBatchItemStatus,
 ): string | undefined {
@@ -2688,7 +2695,7 @@ async function startImport() {
                         <UBadge
                           class="shrink-0"
                           :color="batchStatusColor(row.original.status)"
-                          variant="solid"
+                          :variant="batchStatusVariant(row.original.status)"
                           size="md"
                           :icon="batchStatusIcon(row.original.status)"
                         >
