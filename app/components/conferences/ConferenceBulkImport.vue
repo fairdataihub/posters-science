@@ -2349,15 +2349,24 @@ async function startImport() {
             class="space-y-4"
             @submit.prevent
           >
-            <UFormField label="Conference name" name="conferenceName" required>
+            <UFormField
+              label="Conference name"
+              name="conferenceName"
+              description="The full official name, as shown on the conference website."
+              required
+            >
               <UInput
                 v-model="conferenceForm.conferenceName"
-                placeholder="e.g., Association for Research in Vision and Ophthalmology Conference"
+                placeholder="e.g., Association for Research in Vision and Ophthalmology Annual Meeting"
                 class="w-full"
               />
             </UFormField>
 
-            <UFormField label="Conference acronym" name="conferenceAcronym">
+            <UFormField
+              label="Conference acronym"
+              name="conferenceAcronym"
+              description="The abbreviation for the conference, without the year."
+            >
               <UInput
                 v-model="conferenceForm.conferenceAcronym"
                 placeholder="e.g., ARVO"
@@ -2368,11 +2377,11 @@ async function startImport() {
             <UFormField
               label="Conference series"
               name="conferenceSeries"
-              description="The recurring event without the year, such as ISMB"
+              description="The recurring event without the year, such as ARVO Annual Meeting."
             >
               <UInput
                 v-model="conferenceForm.conferenceSeries"
-                placeholder="Optional series name"
+                placeholder="e.g., ARVO Annual Meeting"
                 class="w-full"
               />
             </UFormField>
@@ -2387,21 +2396,9 @@ async function startImport() {
             </UFormField>
 
             <UFormField
-              label="Conference location"
-              name="conferenceLocation"
-              description="Use “Online” if the conference was conducted virtually."
-            >
-              <UInput
-                v-model="conferenceForm.conferenceLocation"
-                placeholder="e.g., Seattle, WA, USA"
-                class="w-full"
-              />
-            </UFormField>
-
-            <UFormField
               label="Conference dates"
               name="conferenceStartDate"
-              description="The full date range of the conference or event"
+              description="The first and last day of the conference."
             >
               <DateRangePicker
                 v-model="conferenceDateRange"
@@ -2411,6 +2408,18 @@ async function startImport() {
                 :min-value="conferenceYearStart"
                 :default-placeholder="conferenceYearStart"
                 clearable
+                class="w-full"
+              />
+            </UFormField>
+
+            <UFormField
+              label="Conference location"
+              name="conferenceLocation"
+              description="City, state or region, and country. Use “Online” for a virtual conference."
+            >
+              <UInput
+                v-model="conferenceForm.conferenceLocation"
+                placeholder="e.g., Seattle, WA, USA"
                 class="w-full"
               />
             </UFormField>
@@ -2431,7 +2440,7 @@ async function startImport() {
             >
               <UInput
                 v-model="conferenceForm.conferenceIdentifier"
-                placeholder="Optional external identifier"
+                placeholder="e.g., https://www.wikidata.org/wiki/Q…"
                 class="w-full"
               />
             </UFormField>
@@ -2440,6 +2449,7 @@ async function startImport() {
               <UFormField
                 label="Conference identifier type"
                 name="conferenceIdentifierType"
+                description="The kind of ID entered above."
               >
                 <USelectMenu
                   v-model="conferenceForm.conferenceIdentifierType"
@@ -2454,6 +2464,7 @@ async function startImport() {
               <UFormField
                 label="Conference schema URI"
                 name="conferenceSchemaUri"
+                description="The web address of the ID's system, if it has one, such as https://www.wikidata.org."
               >
                 <UInput
                   v-model="conferenceForm.conferenceSchemaUri"
