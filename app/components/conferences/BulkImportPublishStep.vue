@@ -8,6 +8,7 @@ import {
   zenodoPublicationDoiForPoster,
   zenodoPublicationUrlForPoster,
 } from "~/utils/zenodoPublicationUrl";
+import ZenodoAccountStatus from "~/components/share/ZenodoAccountStatus.vue";
 import ZenodoConnectPanel from "~/components/share/ZenodoConnectPanel.vue";
 import { useZenodoReleaseConnection } from "~/composables/useZenodoReleaseConnection";
 import {
@@ -399,6 +400,15 @@ const rowsHydrating = ref(0);
  */
 const showZenodoPublishControls = computed(
   () => rowsHydrating.value === 0 && !allPublished.value,
+);
+
+/** The connected-account card sits above the embargo question, not in the panel. */
+const showZenodoAccountCard = computed(
+  () =>
+    showZenodoConnectPanel.value &&
+    !zenodo.zenodoLoading.value &&
+    !zenodo.zenodoConfigError.value &&
+    zenodo.zenodoTokenExists.value,
 );
 
 /** Still show the connect panel when files are embargoed but Zenodo is not
@@ -951,6 +961,14 @@ watch(
           }}). Posters are processed one at a time.
         </p>
 
+        <ZenodoAccountStatus
+          v-if="showZenodoAccountCard"
+          class="mb-5"
+          :account="zenodo.zenodoAccount.value"
+          :disconnecting="zenodo.zenodoDisconnecting.value"
+          @disconnect="zenodo.handleZenodoDisconnect"
+        />
+
         <UFormField
           v-if="zenodoEmbargoLoaded && showZenodoPublishControls"
           class="mb-5"
@@ -1003,7 +1021,11 @@ watch(
           :description="zenodoFileEmbargoNotice"
         />
 
-        <ZenodoConnectPanel v-if="showZenodoConnectPanel" :zenodo="zenodo">
+        <ZenodoConnectPanel
+          v-if="showZenodoConnectPanel"
+          :zenodo="zenodo"
+          hide-account-status
+        >
           <div class="flex flex-wrap items-center gap-3">
             <UButton
               color="primary"
