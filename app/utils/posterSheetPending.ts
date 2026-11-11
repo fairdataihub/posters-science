@@ -1,7 +1,15 @@
+import type { BulkReviewMetadataGrid } from "#shared/types/bulkReviewMetadataGrid";
 import type {
   PendingPosterSheet,
+  PosterSheetMatchResult,
   PosterSheetRow,
+  PosterSheetTitleMatch,
 } from "#shared/types/posterSheetMapping";
+import {
+  applyTitleMatches,
+  titleMatchInput,
+  unlinkTitleMatch,
+} from "#shared/utils/posterSheetTitleMatch";
 
 /**
  * Keeps a confirmed poster sheet until its rows are saved into the metadata
@@ -80,4 +88,42 @@ export function forgetSavedPosterSheetRows(
       // ignore
     }
   }
+}
+
+/**
+ * Link sheet rows that have no file name to extracted posters by title (and
+ * authors when titles are close). Runs whenever the grid loads, so posters
+ * that finish extracting later are matched on a later load. Returns the
+ * matches applied in this pass.
+ */
+export async function matchPendingPosterSheetByTitle(
+  jobId: string | null,
+  grid: BulkReviewMetadataGrid,
+): Promise<PosterSheetTitleMatch[]> {
+  const pending = readPendingPosterSheet(jobId);
+  if (!jobId || !pending?.matchRows?.length) return [];
+  const input = titleMatchInput(pending, grid);
+  if (!input.rows.length || !input.posters.length) return [];
+  try {
+    const result = await $fetch<PosterSheetMatchResult>(
+      `/api/bulk-poster-submissions/${jobId}/poster-sheet-match`,
+      { method: "POST", body: input },
+    );
+    const { pending: next, applied } = applyTitleMatches(
+      pending,
+      result.matches,
+    );
+    if (applied.length) writePendingPosterSheet(jobId, next);
+
+    return applied;
+  } catch {
+    // Matching is a helper: the grid still loads, and rows wait for the next try.
+    return [];
+  }
+}
+
+export function unlinkPendingTitleMatch(jobId: string | null, rowKey: string) {
+  const pending = readPendingPosterSheet(jobId);
+  if (!jobId || !pending) return;
+  writePendingPosterSheet(jobId, unlinkTitleMatch(pending, rowKey));
 }
