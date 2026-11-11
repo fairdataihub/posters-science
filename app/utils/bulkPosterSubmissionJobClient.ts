@@ -194,6 +194,20 @@ export async function discardFailedBulkExtractions(jobId: string) {
   );
 }
 
+export async function stopBulkExtractions(jobId: string) {
+  return $fetch<{ stoppedCount: number }>(
+    `/api/bulk-poster-submissions/${jobId}/stop-extraction`,
+    { method: "POST" },
+  );
+}
+
+export async function resumeBulkExtractions(jobId: string) {
+  return $fetch<{ resumedCount: number }>(
+    `/api/bulk-poster-submissions/${jobId}/resume-extraction`,
+    { method: "POST" },
+  );
+}
+
 export type BulkPosterSubmissionUploadResponse = {
   role: "poster";
   fileName: string;
