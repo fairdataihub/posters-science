@@ -68,19 +68,6 @@ watch(
 
 <template>
   <div class="space-y-4">
-    <p class="text-muted text-sm">
-      Review the metadata (use
-      <strong class="text-default font-medium">Full screen</strong> to see more
-      of the spreadsheet at once) for each poster. At a minimum, fill in every
-      required field (marked <span class="text-error">*</span>), and add
-      anything else that is missing.
-      Use the tabs to move between sections, such as creators, funding and
-      poster content, and add rows where a poster needs additional metadata.
-      You can continue without filling in every
-      required field here, but anything required and still missing will need to
-      be added on the next step before you can publish.
-    </p>
-
     <UAlert
       v-if="disabled"
       color="neutral"
