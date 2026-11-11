@@ -21,6 +21,10 @@ const props = defineProps<{
   placeholder?: string;
   clearable?: boolean;
   label?: string;
+  /** Earliest selectable date; earlier dates are disabled. */
+  minValue?: CalendarDate;
+  /** Month the calendar opens on when no range is picked yet. */
+  defaultPlaceholder?: CalendarDate;
 }>();
 
 const df = new DateFormatter("en-US", { dateStyle: "medium" });
@@ -127,6 +131,8 @@ const buttonLabel = computed(() => {
             class="p-2"
             :model-value="localRange"
             :number-of-months="props.numberOfMonths ?? 2"
+            :min-value="props.minValue"
+            :default-placeholder="props.defaultPlaceholder"
             range
             @update:model-value="onCalendarChange"
           />
