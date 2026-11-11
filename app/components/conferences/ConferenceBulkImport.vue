@@ -1570,6 +1570,15 @@ async function enterSubmitStep() {
   extractionAccuracyConfirmed.value = false;
   await refreshStagedPostersFromStorage();
   await onEnterSubmitStep();
+
+  // The organizer confirmed before the first extraction, so posters added
+  // later start extracting on arrival without asking again.
+  if (batchImportFinished.value) {
+    extractionAccuracyConfirmed.value = true;
+    if (hasUnsubmittedStagedPosters.value && !batchImportRunning.value) {
+      void startImport();
+    }
+  }
 }
 
 async function onEnterSubmitStep() {
