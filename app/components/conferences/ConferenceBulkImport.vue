@@ -31,7 +31,10 @@ import {
 import DateRangePicker from "~/components/ui/DateRangePicker.vue";
 import { useConferenceDateRangePicker } from "~/composables/useConferenceDateRangePicker";
 import type { BulkImportSubmissionSummary } from "#shared/types/bulkImportLicenses";
-import { BULK_IMPORT_ACCEPTABLE_LICENSES } from "#shared/data/bulkImportAcceptableLicenses";
+import {
+  BULK_IMPORT_ACCEPTABLE_LICENSES,
+  bulkImportLicenseInfoUrl,
+} from "#shared/data/bulkImportAcceptableLicenses";
 import identifierTypes from "@/assets/data/identifier-types.json";
 import type { BulkImportWizardStep } from "#shared/types/bulkImportWizard";
 import { normalizeBulkImportWizardStep } from "#shared/types/bulkImportWizard";
@@ -409,10 +412,13 @@ const uniformLicenseSelectItems: {
   type?: "label" | "separator";
   label?: string;
   value?: string;
+  /** Page explaining the license, linked from the dropdown. */
+  url?: string;
 }[] = (() => {
   const items = BULK_IMPORT_ACCEPTABLE_LICENSES.map(({ label, value }) => ({
     label,
     value,
+    url: bulkImportLicenseInfoUrl(value),
   }));
   const suggested = SUGGESTED_LICENSE_IDS.flatMap((id) =>
     items.filter((item) => item.value === id),
@@ -2523,6 +2529,17 @@ async function startImport() {
             <p class="text-muted mt-1 text-sm">
               {{ currentStepTask }}
             </p>
+            <p class="text-muted mt-2 text-sm">
+              Not sure which license to pick? Compare common licenses at
+              <ULink
+                to="https://choosealicense.com/"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-primary font-medium hover:underline"
+              >
+                choosealicense.com</ULink
+              >.
+            </p>
           </div>
 
           <UForm
@@ -2548,7 +2565,25 @@ async function startImport() {
                 placeholder="Choose a license…"
                 class="w-full"
                 :virtualize="true"
-              />
+              >
+                <!-- Opens the license page without selecting the option. -->
+                <template #item-trailing="{ item }">
+                  <a
+                    v-if="typeof item === 'object' && item.url"
+                    :href="item.url"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="text-muted hover:text-primary ms-auto flex shrink-0 items-center gap-1 rounded px-1 py-0.5 text-xs font-medium whitespace-nowrap hover:underline"
+                    :aria-label="`View the ${item.label} license (opens in a new tab)`"
+                    @click.stop
+                    @pointerdown.stop
+                    @pointerup.stop
+                  >
+                    View license
+                    <UIcon name="i-lucide-external-link" class="size-3.5" />
+                  </a>
+                </template>
+              </USelectMenu>
             </UFormField>
           </UForm>
         </div>
