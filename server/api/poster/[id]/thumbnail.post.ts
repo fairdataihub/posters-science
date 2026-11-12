@@ -1,5 +1,5 @@
 import { queueDraftPosterThumbnail } from "~~/server/utils/queueDraftPosterThumbnail";
-import { ensureThumbnailServicePosterPath } from "../../../utils/posterObjectPath";
+import { resolveThumbnailServicePosterPath } from "../../../utils/posterObjectPath";
 import { copyThumbnailToPublicZone } from "../../../utils/zenodo";
 
 export default defineEventHandler(async (event) => {
@@ -70,8 +70,7 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  const resolvedPath = await ensureThumbnailServicePosterPath(
-    posterId,
+  const resolvedPath = resolveThumbnailServicePosterPath(
     poster.extractionJob.filePath,
   );
   if (!resolvedPath.ok) {
@@ -91,6 +90,10 @@ export default defineEventHandler(async (event) => {
       statusMessage: "Extraction API not configured",
     });
   }
+
+  console.log(
+    `[poster/thumbnail] Requesting thumbnail for poster ${posterId} from ${filePath}`,
+  );
 
   let response: Response;
 

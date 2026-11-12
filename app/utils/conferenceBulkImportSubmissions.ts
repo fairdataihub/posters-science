@@ -72,20 +72,6 @@ export function buildSubmissionRowsFromSeparateUpload(input: {
   );
 }
 
-/** Placeholder rows until the server unpacks a prepared ZIP. */
-export function buildSubmissionRowsForZipBundle(zipFileName: string) {
-  return [
-    {
-      id: "zip-bundle",
-      rowNumber: 1,
-      fileName: zipFileName,
-      license: "See license_metadata in ZIP",
-      filePresent: true,
-      status: "pending_unpack" as const,
-    },
-  ] satisfies BulkImportSubmissionRow[];
-}
-
 export function submissionRowStatusLabel(
   status: BulkImportSubmissionRowStatus,
 ): string {
@@ -98,8 +84,6 @@ export function submissionRowStatusLabel(
       return "Missing license";
     case "invalid_license":
       return "Invalid SPDX license";
-    case "pending_unpack":
-      return "Pending unpack";
   }
 }
 
@@ -109,8 +93,6 @@ export function submissionRowStatusColor(
   switch (status) {
     case "ready":
       return "success";
-    case "pending_unpack":
-      return "info";
     case "missing_license":
     case "missing_file":
       return "warning";

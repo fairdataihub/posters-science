@@ -86,12 +86,26 @@ export default defineEventHandler(async (event) => {
   const folderExtension = bulkImportFolderExtension(siteEnv);
   const jobPrefix = bulkImportJobPrefix(folderExtension, jobId);
 
-  if (bunnyPrivateStorage && bunnyPrivateStorageKey) {
+  // Draft posters' folders were removed above. Wiping the whole job folder also
+  // clears staged files that never became posters, but it would take published
+  // posters' files with it, so skip it when any were kept.
+  if (
+    bunnyPrivateStorage &&
+    bunnyPrivateStorageKey &&
+    keptPublishedPosterCount === 0
+  ) {
+    console.log(`[bulk-import/delete] Deleting job folder ${jobPrefix}/`);
     await deleteBunnyBulkImportJobFolder({
       bunnyPrivateStorage,
       bunnyPrivateStorageKey,
       jobPrefix,
     });
+  }
+
+  if (keptPublishedPosterCount > 0) {
+    console.log(
+      `[bulk-import/delete] Kept job folder ${jobPrefix}/ (${keptPublishedPosterCount} published poster(s))`,
+    );
   }
 
   await repository.deleteForUser(jobId, session.user.id);

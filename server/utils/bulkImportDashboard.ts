@@ -190,13 +190,6 @@ export function posterIdsHiddenByInProgressBulkBatches(
   return hidden;
 }
 
-/** @deprecated Use posterIdsHiddenByInProgressBulkBatches after dashboard split. */
-export function posterIdsHiddenByBulkImport(
-  bulkRows: BulkRowWithSummary[],
-): Set<number> {
-  return posterIdsHiddenByInProgressBulkBatches(bulkRows);
-}
-
 /**
  * Poster IDs from a bulk batch marked completed while Zenodo file embargoes
  * are still active. Those posters stay tied to the batch card, not as

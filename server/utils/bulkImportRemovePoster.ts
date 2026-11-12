@@ -126,6 +126,8 @@ async function deleteBunnyObjectIfConfigured(filePath: string, jobId: string) {
     return;
   }
 
+  console.log(`[bulk-import/remove] Deleting poster folder for ${filePath}`);
+
   await deleteBunnyPosterObjectFolder({
     bunnyPrivateStorage,
     bunnyPrivateStorageKey,

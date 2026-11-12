@@ -105,6 +105,8 @@ export default defineEventHandler(async (event) => {
     });
   }
 
+  console.log(`[upload/bunny] Stored poster file at ${filePath}`);
+
   // Create a poster and extraction job
   const poster = await prisma.poster.create({
     data: {

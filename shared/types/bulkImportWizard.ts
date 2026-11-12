@@ -90,8 +90,7 @@ export function normalizeBulkImportWizardStep(
   step: string | undefined | null,
 ): BulkImportWizardStep | undefined {
   if (!step) return undefined;
-  // Steps no longer in the wizard (e.g. the removed "setup" and "extraction"
-  // steps) return undefined, so callers fall back to the first step.
+  // Unknown steps return undefined, so callers fall back to the first step.
   if (BULK_IMPORT_WIZARD_STEP_SET.has(step)) {
     return step as BulkImportWizardStep;
   }

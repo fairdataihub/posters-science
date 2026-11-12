@@ -1,15 +1,24 @@
 export function bulkImportFolderExtension(siteEnv: string | undefined) {
   if (siteEnv === "production") return "p";
   if (siteEnv === "staging") return "s";
+
   return "d";
 }
 
+/**
+ * Root folder for one bulk submission: `posters/b/<env>/<jobId>`.
+ * Bulk posters live at `posters/b/<env>/<jobId>/<posterId>/<file>`, kept apart
+ * from single uploads (`posters/<env>/<uid>/<file>`).
+ */
 export function bulkImportJobPrefix(folderExtension: string, jobId: string) {
-  return `bulk-imports/${folderExtension}/${jobId}`;
+  return `posters/b/${folderExtension}/${jobId}`;
 }
 
-export function bulkImportPostersPrefix(folderExtension: string, jobId: string) {
-  return `posters/${folderExtension}/b/${jobId}/`;
+export function bulkImportPostersPrefix(
+  folderExtension: string,
+  jobId: string,
+) {
+  return `${bulkImportJobPrefix(folderExtension, jobId)}/`;
 }
 
 /** Guard deletes so paths cannot escape this job's poster prefix. */
@@ -19,7 +28,12 @@ export function isBulkImportPosterObjectPath(
   jobId: string,
 ): boolean {
   const prefix = bulkImportPostersPrefix(folderExtension, jobId);
-  return filePath.startsWith(prefix) && filePath.length > prefix.length;
+
+  return (
+    filePath.startsWith(prefix) &&
+    filePath.length > prefix.length &&
+    !filePath.split("/").includes("..")
+  );
 }
 
 export function bulkImportPosterObjectPath(
@@ -29,14 +43,6 @@ export function bulkImportPosterObjectPath(
   originalFileName: string,
 ) {
   const safeName = originalFileName.replace(/[^a-zA-Z0-9._-]/g, "_");
-  return `${bulkImportPostersPrefix(folderExtension, jobId)}${posterId}/${safeName}`;
-}
 
-export function bulkImportLicenseMetadataObjectPath(
-  folderExtension: string,
-  jobId: string,
-  basename: string,
-  extension: "xlsx" | "csv" = "xlsx",
-) {
-  return `${bulkImportJobPrefix(folderExtension, jobId)}/${basename}.${extension}`;
+  return `${bulkImportPostersPrefix(folderExtension, jobId)}${posterId}/${safeName}`;
 }

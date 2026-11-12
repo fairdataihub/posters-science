@@ -320,6 +320,8 @@ export default defineEventHandler(async (event) => {
     });
   }
 
+  console.log(`[poster/version] Stored version file at ${filePath}`);
+
   const meta = source.posterMetadata;
   const previousDoi = meta.doi?.trim();
   const identifiers = Array.isArray(meta.identifiers)

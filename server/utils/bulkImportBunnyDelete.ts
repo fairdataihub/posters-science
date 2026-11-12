@@ -1,4 +1,4 @@
-/** Deletes all objects under a bulk import job prefix (posters, license file, etc.). */
+/** Deletes all objects under a bulk import job prefix (`posters/b/<env>/<jobId>/`). */
 export async function deleteBunnyBulkImportJobFolder(input: {
   bunnyPrivateStorage: string;
   bunnyPrivateStorageKey: string;
