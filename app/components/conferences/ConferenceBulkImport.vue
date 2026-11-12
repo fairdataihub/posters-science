@@ -1410,6 +1410,12 @@ const batchFailedColumns: ColumnDef<BulkImportBatchItem>[] = [
   { id: "batchFailedActions", header: "", enableSorting: false },
 ];
 
+const { user: sessionUser } = useUserSession();
+// The extraction worker emails this address once every poster has finished.
+const completionEmailAddress = computed(
+  () => sessionUser.value?.emailAddress || "",
+);
+
 const submitStepIntro = computed(() => {
   if (batchImportRunning.value) {
     return "Starting metadata extraction for your posters…";
@@ -2617,6 +2623,25 @@ async function startImport() {
             </h3>
             <p class="text-muted mt-1 text-sm">
               {{ submitStepIntro }}
+            </p>
+
+            <p
+              v-if="
+                completionEmailAddress &&
+                batchImportFinished &&
+                batchExtractionsInProgress
+              "
+              class="text-muted mt-2 flex items-start gap-1.5 text-sm"
+            >
+              <UIcon name="i-lucide-mail" class="mt-0.5 size-4 shrink-0" />
+
+              <span>
+                We'll email you at
+                <span class="text-highlighted font-medium">{{
+                  completionEmailAddress
+                }}</span>
+                once extraction is complete.
+              </span>
             </p>
           </div>
 
