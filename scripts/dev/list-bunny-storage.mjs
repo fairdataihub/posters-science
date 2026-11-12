@@ -4,7 +4,7 @@
  * Usage:
  *   node scripts/dev/list-bunny-storage.mjs
  *   node scripts/dev/list-bunny-storage.mjs --prefix posters/d
- *   node scripts/dev/list-bunny-storage.mjs --prefix bulk-imports/d --depth 5
+ *   node scripts/dev/list-bunny-storage.mjs --prefix posters/b/d --depth 5
  *   node scripts/dev/list-bunny-storage.mjs --json
  *
  * Env: NUXT_BUNNY_PRIVATE_STORAGE, NUXT_BUNNY_PRIVATE_STORAGE_KEY
@@ -32,7 +32,7 @@ function parseArgs(argv) {
       console.log(`List Bunny storage tree (private zone).
 
 Options:
-  --prefix <path>     Start under this path (e.g. posters/d, bulk-imports/d)
+  --prefix <path>     Start under this path (e.g. posters/d, posters/b/d)
   --depth <n>         Max directory depth from prefix (default: 4)
   --max-files <n>     Stop after listing this many files (default: 500)
   --json              Print JSON tree instead of ASCII

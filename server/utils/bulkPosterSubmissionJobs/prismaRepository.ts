@@ -16,10 +16,6 @@ type BulkSubmissionRow = {
   wizardStep: string;
   status: string;
   stagedPosters: unknown;
-  licenseMetadataFileName: string | null;
-  licenseMetadataFilePath: string | null;
-  zipFileName: string | null;
-  zipFilePath: string | null;
   posterCount: number | null;
   submissionSummary: unknown;
   error: string | null;
@@ -52,10 +48,6 @@ function toApiJob(record: BulkSubmissionRow): BulkPosterSubmissionJob {
     wizardStep: record.wizardStep as BulkPosterSubmissionJob["wizardStep"],
     status: record.status as BulkPosterSubmissionJob["status"],
     stagedPosters: parseStagedPosters(record.stagedPosters),
-    licenseMetadataFileName: record.licenseMetadataFileName,
-    licenseMetadataFilePath: record.licenseMetadataFilePath,
-    zipFileName: record.zipFileName,
-    zipFilePath: record.zipFilePath,
     posterCount: record.posterCount,
     submissionSummary: record.submissionSummary ?? null,
     error: record.error,
@@ -82,18 +74,6 @@ function buildUpdateData(
   }
   if (patch.stagedPosters !== undefined) {
     data.stagedPosters = patch.stagedPosters as Prisma.InputJsonValue;
-  }
-  if (patch.licenseMetadataFileName !== undefined) {
-    data.licenseMetadataFileName = patch.licenseMetadataFileName;
-  }
-  if (patch.licenseMetadataFilePath !== undefined) {
-    data.licenseMetadataFilePath = patch.licenseMetadataFilePath;
-  }
-  if (patch.zipFileName !== undefined) {
-    data.zipFileName = patch.zipFileName;
-  }
-  if (patch.zipFilePath !== undefined) {
-    data.zipFilePath = patch.zipFilePath;
   }
   if (patch.posterCount !== undefined) {
     data.posterCount = patch.posterCount;

@@ -111,7 +111,7 @@ function fetchErrorDescription(error: unknown): string | undefined {
 const props = defineProps<{
   initialJobId?: string;
   initialImportName?: string;
-  initialStep?: BulkImportWizardStep | "assets";
+  initialStep?: BulkImportWizardStep;
   initialStagedPosters?: BulkImportStagedPoster[];
   resumeLoading?: boolean;
 }>();

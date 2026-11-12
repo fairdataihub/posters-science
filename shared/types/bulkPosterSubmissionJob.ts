@@ -18,16 +18,10 @@ export type BulkPosterSubmissionJob = {
   id: string;
   userId: string;
   name: string;
-  wizardStep: BulkImportWizardStep | "assets" | "metadata";
+  wizardStep: BulkImportWizardStep;
   status: BulkPosterSubmissionJobStatus;
   /** Posters uploaded to Bunny under this job (before extraction). */
   stagedPosters: BulkImportStagedPoster[];
-  licenseMetadataFileName: string | null;
-  licenseMetadataFilePath: string | null;
-  /** @deprecated Bulk v1 uses staged posters instead of a ZIP bundle. */
-  zipFileName: string | null;
-  /** @deprecated Bulk v1 uses staged posters instead of a ZIP bundle. */
-  zipFilePath: string | null;
   posterCount: number | null;
   submissionSummary: unknown | null;
   error: string | null;
@@ -44,13 +38,9 @@ export type CreateBulkPosterSubmissionJobBody = {
 
 export type UpdateBulkPosterSubmissionJobBody = {
   name?: string;
-  wizardStep?: BulkImportWizardStep | "assets" | "metadata";
+  wizardStep?: BulkImportWizardStep;
   status?: BulkPosterSubmissionJobStatus;
   stagedPosters?: BulkImportStagedPoster[];
-  licenseMetadataFileName?: string | null;
-  licenseMetadataFilePath?: string | null;
-  zipFileName?: string | null;
-  zipFilePath?: string | null;
   posterCount?: number | null;
   submissionSummary?: unknown | null;
   error?: string | null;

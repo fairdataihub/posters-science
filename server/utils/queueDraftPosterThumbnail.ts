@@ -1,4 +1,4 @@
-import { ensureThumbnailServicePosterPath } from "~~/server/utils/posterObjectPath";
+import { resolveThumbnailServicePosterPath } from "~~/server/utils/posterObjectPath";
 import { wakeExtractionWorker } from "~~/server/utils/extraction";
 
 export type QueueDraftPosterThumbnailResult =
@@ -69,10 +69,7 @@ export async function queueDraftPosterThumbnail(
 
   const { id: extractionJobId, filePath: rawFilePath } = poster.extractionJob;
 
-  const resolvedPath = await ensureThumbnailServicePosterPath(
-    posterId,
-    rawFilePath,
-  );
+  const resolvedPath = resolveThumbnailServicePosterPath(rawFilePath);
   if (!resolvedPath.ok) {
     return {
       ok: false,

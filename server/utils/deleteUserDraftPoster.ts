@@ -81,6 +81,9 @@ export async function deleteUserDraftPoster(
   const config = useRuntimeConfig();
   if (filePath && config.bunnyPrivateStorage && config.bunnyPrivateStorageKey) {
     const folderPath = filePath.substring(0, filePath.lastIndexOf("/") + 1);
+    console.log(
+      `[poster/delete] Deleting poster ${posterId} folder ${folderPath}`,
+    );
     const res = await fetch(`${config.bunnyPrivateStorage}/${folderPath}`, {
       method: "DELETE",
       headers: { AccessKey: config.bunnyPrivateStorageKey },

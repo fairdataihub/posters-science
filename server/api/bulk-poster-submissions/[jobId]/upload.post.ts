@@ -156,7 +156,9 @@ export default defineEventHandler(async (event) => {
     poster.id,
     fileName,
   );
-  console.log(`[bulk-import/upload] poster ${poster.id}: ${filePath}`);
+  console.log(
+    `[bulk-import/upload] job ${jobId} poster ${poster.id}: uploading to ${filePath}`,
+  );
 
   try {
     await putOnBunny({
@@ -166,6 +168,9 @@ export default defineEventHandler(async (event) => {
       body: fileEntry.data,
       contentType: fileType,
     });
+    console.log(
+      `[bulk-import/upload] job ${jobId} poster ${poster.id}: stored at ${filePath}`,
+    );
     await prisma.extractionJob.create({
       data: { posterId: poster.id, fileName, filePath, status: "staged" },
     });

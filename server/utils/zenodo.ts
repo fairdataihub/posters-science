@@ -1,6 +1,6 @@
 import { buildPosterJson } from "./buildPosterJson";
 import { bulkZenodoFileEmbargoDaysForPoster } from "./bulkImportZenodoEmbargo";
-import { ensureThumbnailServicePosterPath } from "./posterObjectPath";
+import { resolveThumbnailServicePosterPath } from "./posterObjectPath";
 import { toZenodoRelatedIdentifiers } from "./zenodoVocabulary";
 import { isValidOrcidChecksum, validateOrcidExists } from "#shared/utils/orcid";
 import {
@@ -1059,7 +1059,7 @@ export async function getOrCreateThumbnail(
     };
   }
 
-  const resolvedPath = await ensureThumbnailServicePosterPath(posterId, filePath);
+  const resolvedPath = resolveThumbnailServicePosterPath(filePath);
   if (!resolvedPath.ok) {
     return { success: false as const, error: resolvedPath.error };
   }
@@ -1072,7 +1072,9 @@ export async function getOrCreateThumbnail(
     };
   }
 
-  console.log(`[Zenodo] Generating missing thumbnail for poster ${posterId}`);
+  console.log(
+    `[Zenodo] Generating missing thumbnail for poster ${posterId} from ${filePath}`,
+  );
 
   let response: Response;
 
