@@ -68,6 +68,8 @@ export type PosterSheetMappingResult = {
   file_column: {
     column: string;
     method: "column" | "number";
+    /** Rows linked by each tier: exact file name, close file name, number */
+    methods?: Partial<Record<"column" | "column_fuzzy" | "number", number>>;
     matched_rows: number;
     rows: number;
   } | null;
@@ -92,10 +94,15 @@ export type PosterSheetMappingResult = {
 export type PosterSheetTitleMatch = {
   row_key: string;
   file_name: string;
-  method: "title" | "title_authors";
+  /** Tier that placed it: exact title, title plus authors, bag of words, best of what was left */
+  method: "title" | "title_authors" | "words_fuzzy" | "best_remaining";
   /** "high" is applied as is; "review" is shown for the organizer to check */
   confidence: "high" | "review";
+  /** Loop round that made the match */
+  round?: number;
   title_score: number;
+  /** Bag of words score, spelling slips allowed */
+  words_score?: number;
   author_score: number | null;
   score: number;
   row_title: string;
@@ -110,6 +117,7 @@ export type PosterSheetMatchResult = {
     closest: {
       file_name: string;
       title_score: number;
+      words_score?: number;
       author_score: number | null;
       score: number;
     } | null;

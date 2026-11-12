@@ -7,16 +7,17 @@ import type { PosterSheetRow } from "#shared/types/posterSheetMapping";
 /**
  * Merge rows from an organizer's poster sheet into the metadata grid.
  *
- * The sheet wins over extraction (Oct 28 decision): a non-empty sheet value
- * replaces the extracted one. Empty sheet cells never erase anything.
+ * What the sheet gives is taken as true: a sheet value replaces the extracted
+ * one, with no union. A field the sheet does not have, or an empty cell, is
+ * left to extraction.
  *
  * - One-row-per-poster tabs (About the Poster, Additional information):
- *   sheet values overwrite the matching cells.
- * - Creators: the sheet's author list replaces the extracted one for that
- *   poster, keeping an extracted ORCID or ROR when the same person or
- *   affiliation is on both.
- * - Other list tabs (Related resources, ...): sheet rows are added unless the
- *   same identifier is already there.
+ *   filled sheet cells overwrite the matching cells.
+ * - List tabs (Creators, Related resources, ...): when the sheet gives rows
+ *   for a poster, they replace that poster's extracted rows. On Creators, an
+ *   empty ORCID, affiliation or ROR on a sheet person is filled from
+ *   extraction when extraction found the same person.
+ * - Posters no sheet row reaches keep their extracted metadata only.
  *
  * Rows link by file name. Posters not in the grid yet (still extracting) are
  * left for a later merge and are not reported as applied.
@@ -65,6 +66,19 @@ function carryIdentifiers(
   if (!sheetRow.name_identifier && match.name_identifier) {
     sheetRow.name_identifier = match.name_identifier;
   }
+  // No affiliation in the sheet for this person: keep the extracted ones.
+  const sheetHasAffiliation = Object.entries(sheetRow).some(
+    ([key, value]) => AFFILIATION_NAME.test(key) && value,
+  );
+  if (!sheetHasAffiliation) {
+    for (const [key, value] of Object.entries(match)) {
+      if (key.startsWith("contributor_affiliation_") && key in sheetRow) {
+        sheetRow[key] = value;
+      }
+    }
+
+    return;
+  }
   const rorByName = new Map<string, string>();
   for (const [key, value] of Object.entries(match)) {
     const slot = AFFILIATION_NAME.exec(key)?.[1];
@@ -78,15 +92,6 @@ function carryIdentifiers(
     const ror = rorByName.get(norm(value));
     if (ror && !sheetRow[rorKey]) sheetRow[rorKey] = ror;
   }
-}
-
-function relationKey(row: BulkReviewGridRow): string {
-  return norm(
-    row.related_identifier ??
-      row.identifier ??
-      row.funder_name ??
-      JSON.stringify(row),
-  );
 }
 
 export function mergePosterSheetIntoGrid<Row extends BulkReviewGridRow>(
@@ -168,32 +173,19 @@ export function mergePosterSheetIntoGrid<Row extends BulkReviewGridRow>(
         return row;
       };
 
-      if (sheet.name === CREATORS_SHEET) {
-        const extracted = list.filter((row) => row.poster_id === posterId);
-        const next = posterRows.map((sheetRow) => {
-          const row = toRow(sheetRow);
-          carryIdentifiers(row, extracted);
-
-          return row as Row;
-        });
-        const at = extracted.length ? list.indexOf(extracted[0]!) : list.length;
-        const without = list.filter((row) => row.poster_id !== posterId);
-        without.splice(Math.min(at, without.length), 0, ...next);
-        list.splice(0, list.length, ...without);
-        changed.add(posterId);
-        continue;
-      }
-
-      const existing = new Set(
-        list.filter((row) => row.poster_id === posterId).map(relationKey),
-      );
-      for (const sheetRow of posterRows) {
+      // The sheet's list replaces the extracted list for this poster.
+      const extracted = list.filter((row) => row.poster_id === posterId);
+      const next = posterRows.map((sheetRow) => {
         const row = toRow(sheetRow);
-        if (existing.has(relationKey(row))) continue;
-        existing.add(relationKey(row));
-        list.push(row as Row);
-        changed.add(posterId);
-      }
+        if (sheet.name === CREATORS_SHEET) carryIdentifiers(row, extracted);
+
+        return row as Row;
+      });
+      const at = extracted.length ? list.indexOf(extracted[0]!) : list.length;
+      const without = list.filter((row) => row.poster_id !== posterId);
+      without.splice(Math.min(at, without.length), 0, ...next);
+      list.splice(0, list.length, ...without);
+      changed.add(posterId);
     }
 
     rows[sheet.name] = list;
