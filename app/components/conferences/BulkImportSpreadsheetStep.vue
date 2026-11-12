@@ -34,20 +34,8 @@ async function prepareStepTransition(): Promise<boolean> {
   return (await gridRef.value?.prepareStepTransition()) ?? true;
 }
 
-/** Save draft (wizard footer): save edits and show any issues, stay on the step. */
-async function saveDraft(): Promise<boolean> {
-  return (await gridRef.value?.save()) ?? true;
-}
-
-/** Discard changes (wizard footer): same as the grid toolbar button. */
-function discardChanges() {
-  gridRef.value?.discard();
-}
-
 defineExpose({
   saveIfDirty,
-  saveDraft,
-  discardChanges,
   prepareStepTransition,
   dirty: computed(() => gridRef.value?.dirty ?? false),
   saving: computed(() => gridRef.value?.saving ?? false),

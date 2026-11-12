@@ -1,3 +1,4 @@
+import { BULK_EXTRACTION_STOPPED_ERROR } from "#shared/bulkImportStopExtraction";
 import type { BulkImportSubmissionSummary } from "#shared/types/bulkImportLicenses";
 import type { BulkImportStagedPoster } from "#shared/types/bulkPosterSubmissionJob";
 import type { BulkPosterSubmissionJob } from "#shared/types/bulkPosterSubmissionJob";
@@ -292,11 +293,15 @@ export async function discardFailedBulkExtractions(
       posterId: { in: posterIds },
       poster: { userId },
     },
-    select: { posterId: true, status: true },
+    select: { posterId: true, status: true, error: true },
   });
 
+  // Stopped posters are waiting to be resumed, not failed.
   const failedPosterIds = extractionJobs
-    .filter((row) => row.status === "failed")
+    .filter(
+      (row) =>
+        row.status === "failed" && row.error !== BULK_EXTRACTION_STOPPED_ERROR,
+    )
     .map((row) => row.posterId);
 
   if (failedPosterIds.length === 0) {

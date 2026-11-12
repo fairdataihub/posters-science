@@ -62,7 +62,10 @@ import {
   applyBulkSubmissionMetadataToPosters,
   discardFailedBulkExtractions,
   getBulkImportExtractionStatus,
+  stopBulkExtractions,
+  resumeBulkExtractions,
 } from "~/utils/bulkPosterSubmissionJobClient";
+import { BULK_EXTRACTION_STOPPED_ERROR } from "#shared/bulkImportStopExtraction";
 import {
   BULK_POSTER_UPLOAD_ACCEPT,
   expandBulkPosterUploadSelection,
@@ -1215,7 +1218,9 @@ const batchExtractionsInProgress = computed(
 function batchStatusFromExtractionJob(
   job: BulkExtractionJobStatusResponse,
 ): BulkImportBatchItemStatus {
-  if (job.status === "failed") return "failed";
+  if (job.status === "failed") {
+    return job.error === BULK_EXTRACTION_STOPPED_ERROR ? "stopped" : "failed";
+  }
   if (job.completed && job.status === "completed") return "completed";
   if (job.status === "pending-extraction") return "waitingInQueue";
   if (job.status === "pending-thumbnail") return "extracting";
@@ -1276,6 +1281,72 @@ async function retryAllFailedBatchExtractions() {
   await Promise.all(failed.map((item) => retryBatchExtraction(item)));
 }
 
+/** Posters still waiting for the worker; only these can be stopped. */
+const batchQueuedCount = computed(
+  () =>
+    batchItems.value.filter((item) => item.status === "waitingInQueue").length,
+);
+
+/** Stopped posters still count as unfinished, so Continue waits for a resume. */
+const batchStoppedCount = computed(
+  () => batchItems.value.filter((item) => item.status === "stopped").length,
+);
+
+const stopExtractionLoading = ref(false);
+
+async function pauseBatchExtraction() {
+  if (!jobId.value) return;
+  stopExtractionLoading.value = true;
+  try {
+    const { stoppedCount } = await stopBulkExtractions(jobId.value);
+    await refreshBatchExtractionStatuses();
+    scheduleBatchExtractionPolling();
+    toast.add({
+      title: "Extraction paused",
+      description:
+        stoppedCount === 0
+          ? "No posters were waiting to be extracted."
+          : "Posters already being extracted will finish first.",
+      color: "success",
+    });
+  } catch (error) {
+    toast.add({
+      title: "Could not pause extraction",
+      description:
+        fetchErrorDescription(error) ?? "Please try again in a moment.",
+      color: "error",
+    });
+  } finally {
+    stopExtractionLoading.value = false;
+  }
+}
+
+const resumeExtractionLoading = ref(false);
+
+async function resumeBatchExtraction() {
+  if (!jobId.value) return;
+  resumeExtractionLoading.value = true;
+  try {
+    await resumeBulkExtractions(jobId.value);
+    for (const row of batchItems.value) {
+      if (row.status === "stopped") {
+        row.status = "waitingInQueue";
+        row.error = undefined;
+      }
+    }
+    scheduleBatchExtractionPolling();
+  } catch (error) {
+    toast.add({
+      title: "Could not resume extraction",
+      description:
+        fetchErrorDescription(error) ?? "Please try again in a moment.",
+      color: "error",
+    });
+  } finally {
+    resumeExtractionLoading.value = false;
+  }
+}
+
 function stopBatchExtractionPolling() {
   if (batchExtractionPollTimer) {
     clearTimeout(batchExtractionPollTimer);
@@ -1289,7 +1360,10 @@ function onMetadataWorkbookImported() {
 
 function batchExtractionPollPending() {
   return batchItems.value.some(
-    (item) => item.status !== "completed" && item.status !== "failed",
+    (item) =>
+      item.status !== "completed" &&
+      item.status !== "failed" &&
+      item.status !== "stopped",
   );
 }
 
@@ -1432,6 +1506,9 @@ const submitStepIntro = computed(() => {
   if (hasUnsubmittedStagedPosters.value) {
     return "AI extraction fills in the details for the new poster files. Once it finishes, you'll review and correct them on the next step, before anything is published.";
   }
+  if (batchStoppedCount.value > 0) {
+    return "Extraction is paused. Choose Resume extraction to continue.";
+  }
   if (batchExtractionsInProgress.value) {
     return "Wait until all posters have had their metadata extracted. You can leave this page and come back later if you are submitting a large batch.";
   }
@@ -1471,6 +1548,8 @@ function batchStatusLabel(status: BulkImportBatchItemStatus) {
       return "Completed";
     case "failed":
       return "Failed";
+    case "stopped":
+      return "Paused";
   }
 }
 
@@ -1487,6 +1566,7 @@ function batchStatusColor(
       return "info";
     case "waitingInQueue":
     case "queued":
+    case "stopped":
       return "neutral";
     default:
       return "neutral";
@@ -1497,7 +1577,11 @@ function batchStatusColor(
 function batchStatusVariant(
   status: BulkImportBatchItemStatus,
 ): "solid" | "soft" {
-  return status === "waitingInQueue" || status === "queued" ? "soft" : "solid";
+  return status === "waitingInQueue" ||
+    status === "queued" ||
+    status === "stopped"
+    ? "soft"
+    : "solid";
 }
 
 function batchStatusIcon(
@@ -1506,6 +1590,8 @@ function batchStatusIcon(
   switch (status) {
     case "waitingInQueue":
       return "i-lucide-clock";
+    case "stopped":
+      return "i-lucide-pause";
     case "uploading":
     case "extracting":
       return "i-lucide-loader-circle";
@@ -1843,8 +1929,6 @@ async function discardFailedAndContinue() {
 
 const metadataGridStepRef = ref<{
   saveIfDirty: () => Promise<boolean>;
-  saveDraft: () => Promise<boolean>;
-  discardChanges: () => void;
   prepareStepTransition: () => Promise<boolean>;
   dirty: boolean;
   saving: boolean;
@@ -1949,11 +2033,17 @@ defineStepHandlers({
     guard: () =>
       requireExtractedPosters() ??
       (batchImportFinished.value && batchExtractionsInProgress.value
-        ? {
-            title: "Extraction still in progress",
-            description:
-              "Wait until every poster has finished or failed before opening Review Posters.",
-          }
+        ? batchStoppedCount.value > 0
+          ? {
+              title: "Extraction is paused",
+              description:
+                "Resume extraction on the AI Poster Extraction step before opening Review Posters.",
+            }
+          : {
+              title: "Extraction still in progress",
+              description:
+                "Wait until every poster has finished or failed before opening Review Posters.",
+            }
         : null),
     open: syncSubmitStepBatchProgress,
     save: saveReviewStep,
@@ -2645,6 +2735,14 @@ async function startImport() {
             </p>
           </div>
 
+          <UAlert
+            color="neutral"
+            variant="soft"
+            icon="i-lucide-shield-check"
+            title="Your posters stay private"
+            description="Extraction uses an open model that runs on our own server. Your poster files and extracted data are not remembered by the model and are never used to train or improve it."
+          />
+
           <div
             v-if="
               batchExtractionStatusesLoading ||
@@ -2713,6 +2811,45 @@ async function startImport() {
                 <span class="font-medium">{{ batchProgress }}%</span>
               </div>
               <UProgress :model-value="batchProgress" size="sm" />
+            </div>
+
+            <div
+              v-if="batchQueuedCount > 0"
+              class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-gray-100 p-3 dark:border-gray-800"
+            >
+              <p class="text-muted text-sm">
+                You can pause extraction at any time and resume it later.
+              </p>
+              <UButton
+                size="sm"
+                color="neutral"
+                variant="outline"
+                icon="i-lucide-pause"
+                label="Pause extraction"
+                :loading="stopExtractionLoading"
+                @click="pauseBatchExtraction"
+              />
+            </div>
+
+            <div
+              v-else-if="batchStoppedCount > 0"
+              class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-gray-100 p-3 dark:border-gray-800"
+            >
+              <p class="text-muted text-sm">
+                {{
+                  batchStoppedCount === 1
+                    ? "Extraction is paused for 1 poster."
+                    : `Extraction is paused for ${batchStoppedCount} posters.`
+                }}
+              </p>
+              <UButton
+                size="sm"
+                color="primary"
+                icon="i-lucide-play"
+                label="Resume extraction"
+                :loading="resumeExtractionLoading"
+                @click="resumeBatchExtraction"
+              />
             </div>
 
             <div
@@ -2894,37 +3031,15 @@ async function startImport() {
             @click="backStep()"
           />
 
-          <div class="flex flex-wrap items-center gap-2">
-            <UButton
-              color="neutral"
-              variant="ghost"
-              icon="i-lucide-rotate-ccw"
-              label="Discard changes"
-              :disabled="
-                !metadataGridStepRef?.dirty ||
-                metadataGridStepRef?.saving ||
-                stepTransitionPending
-              "
-              @click="metadataGridStepRef?.discardChanges()"
-            />
-            <UButton
-              color="neutral"
-              variant="outline"
-              icon="i-lucide-save"
-              label="Save draft"
-              :loading="metadataGridStepRef?.saving"
-              :disabled="!metadataGridStepRef?.dirty || stepTransitionPending"
-              @click="metadataGridStepRef?.saveDraft()"
-            />
-            <UButton
-              color="primary"
-              icon="i-lucide-arrow-right"
-              trailing
-              label="Save and Continue"
-              :loading="stepTransitionPending"
-              @click="continueStep()"
-            />
-          </div>
+          <!-- Save draft and Discard live in the spreadsheet's own toolbar. -->
+          <UButton
+            color="primary"
+            icon="i-lucide-arrow-right"
+            trailing
+            label="Save and Continue"
+            :loading="stepTransitionPending"
+            @click="continueStep()"
+          />
         </div>
       </template>
 

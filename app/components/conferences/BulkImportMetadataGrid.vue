@@ -343,8 +343,6 @@ async function load(options: { refresh?: boolean } = {}) {
     ) {
       posterFilter.value = ALL_POSTERS;
     }
-    // Tab warnings for required-field issues (also refreshed after each save).
-    void refreshStrictTabIssues();
   } catch (error) {
     loadError.value =
       fetchErrorDescription(error) ?? "Could not load poster metadata.";
@@ -720,32 +718,6 @@ const validationIssueGroups = computed(() =>
   groupIssuesBySheet(validationModalIssues.value),
 );
 const saveIssueGroups = computed(() => groupIssuesBySheet(saveIssues.value));
-
-/**
- * Required-field issues (the ones "Fix metadata before publishing" lists),
- * checked against saved data when the grid loads and after every save.
- */
-const strictTabIssues = ref<GridValidationIssue[]>([]);
-
-async function refreshStrictTabIssues() {
-  const issues = await collectStrictFormIssues();
-  strictTabIssues.value = issues.filter((issue) => issue.code === "strict_form");
-}
-
-/**
- * Tabs that need attention: missing required cells (live), required-field
- * issues from the last check, or issues from the last save.
- */
-const sheetsWithIssues = computed(
-  () =>
-    new Set([
-      ...collectGridRequiredIssues().map((issue) => issue.sheet),
-      ...strictTabIssues.value.map((issue) => issue.sheet),
-      ...saveIssueGroups.value
-        .filter((group) => group.isTab)
-        .map((group) => group.name),
-    ]),
-);
 
 // ---------------------------------------------------------------------------
 // Opened tabs: every tab holds AI-extracted metadata, so tabs stay grey until
@@ -1185,9 +1157,17 @@ onBeforeUnmount(() => {
 });
 
 // The spreadsheet only opens as a full-window editor; Esc closes it,
-// unless it is closing the issues dialog.
+// unless a dialog is open on top.
 onKeyStroke("Escape", () => {
-  if (fullScreen.value && !validationModalOpen.value) fullScreen.value = false;
+  if (
+    unsavedOnCloseModalOpen.value ||
+    unreviewedModalOpen.value ||
+    validationModalOpen.value ||
+    activeLookup.value
+  ) {
+    return;
+  }
+  if (fullScreen.value) void requestCloseFullScreen();
 });
 
 /**
@@ -1398,6 +1378,34 @@ function resetChanges() {
   dirty.value = false;
 }
 
+const unsavedOnCloseModalOpen = ref(false);
+
+function requestCloseFullScreen() {
+  if (!fullScreen.value || unsavedOnCloseModalOpen.value) return;
+  if (!hasUnsavedChanges()) {
+    fullScreen.value = false;
+    return;
+  }
+  unsavedOnCloseModalOpen.value = true;
+}
+
+function dismissUnsavedOnCloseModal() {
+  unsavedOnCloseModalOpen.value = false;
+}
+
+function discardEditsAndCloseSpreadsheet() {
+  dismissUnsavedOnCloseModal();
+  resetChanges();
+  fullScreen.value = false;
+}
+
+async function saveDraftAndCloseSpreadsheet() {
+  const saved = await save();
+  if (!saved) return;
+  dismissUnsavedOnCloseModal();
+  fullScreen.value = false;
+}
+
 /**
  * Save draft: save as entered without checking required fields (that happens
  * on continue). Only a failed save shows the issues modal.
@@ -1544,8 +1552,10 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
           needed.
         </p>
         <p>
-          Click <strong class="font-medium">Save draft</strong> in the top-right
-          corner to save your progress.
+          Use <strong class="font-medium">Save draft</strong> or
+          <strong class="font-medium">Close</strong> in the spreadsheet toolbar
+          to save or exit. If you close with unsaved edits, you can save or
+          discard them.
         </p>
         <p class="text-muted">
           You can leave required fields incomplete for now, but they must be
@@ -1554,19 +1564,6 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
       </div>
 
       <div class="border-default flex flex-col items-center gap-3 border-t pt-5">
-        <div
-          v-if="sheetsWithIssues.size > 0 || dirty"
-          class="flex flex-wrap items-center justify-center gap-2"
-        >
-          <UBadge
-            v-if="sheetsWithIssues.size > 0"
-            color="warning"
-            variant="subtle"
-            icon="i-lucide-triangle-alert"
-            :label="`Required fields to fix in ${sheetsWithIssues.size} ${sheetsWithIssues.size === 1 ? 'section' : 'sections'}`"
-          />
-          <UBadge v-if="dirty" color="warning" variant="subtle" label="Unsaved changes" />
-        </div>
         <UButton
           color="primary"
           size="lg"
@@ -1578,6 +1575,14 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
     </div>
 
     <template v-else-if="grid">
+      <div v-if="fullScreen" class="border-default mb-4 border-b pb-4">
+        <h3 class="text-lg font-semibold">Poster spreadsheet</h3>
+        <p class="text-muted mt-1 text-sm">
+          Edit AI-extracted metadata for every poster. Changes apply when you
+          save a draft or continue to poster previews.
+        </p>
+      </div>
+
       <!-- Toolbar -->
       <div class="flex flex-wrap items-center gap-3">
         <USelectMenu
@@ -1592,13 +1597,12 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
         />
 
         <div class="ml-auto flex flex-wrap items-center gap-2">
-          <UBadge v-if="dirty" color="warning" variant="subtle" label="Unsaved changes" />
           <UButton
             color="neutral"
             variant="outline"
             icon="i-lucide-x"
             label="Close"
-            @click="fullScreen = false"
+            @click="requestCloseFullScreen()"
           />
           <UButton
             color="neutral"
@@ -1644,24 +1648,6 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
             >
               {{ item.label }}
             </span>
-          </template>
-          <template #trailing="{ item }">
-            <UTooltip
-              v-if="sheetsWithIssues.has(String(item.value))"
-              text="Has required fields to fix"
-            >
-              <!-- Red on a page-colored circle: readable on the pink
-                   (selected) and gray (unselected) tab backgrounds. -->
-              <span
-                class="bg-default flex size-5 shrink-0 items-center justify-center rounded-full"
-              >
-                <UIcon
-                  name="i-lucide-triangle-alert"
-                  class="text-error size-3.5"
-                  aria-label="Has required fields to fix"
-                />
-              </span>
-            </UTooltip>
           </template>
         </UTabs>
       </div>
@@ -2051,12 +2037,9 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
             "
           />
 
-          <p class="text-sm text-gray-600 dark:text-gray-400">
-            {{
-              unreviewedAllSheets
-                ? "We recommend opening it and checking each section before continuing."
-                : `We recommend opening ${unreviewedSheets.length > 1 ? "each tab" : "the tab"} and checking the extracted values before continuing.`
-            }}
+          <p class="text-muted text-sm">
+            We recommend opening the spreadsheet and checking each section
+            before continuing.
           </p>
         </div>
       </template>
@@ -2065,14 +2048,8 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
         <div class="flex w-full flex-wrap justify-between gap-3">
           <UButton
             variant="outline"
-            :icon="unreviewedAllSheets ? 'i-lucide-table-2' : 'i-lucide-eye'"
-            :label="
-              unreviewedAllSheets
-                ? 'Open Poster Spreadsheet'
-                : unreviewedSheets.length > 1
-                  ? 'Review Tabs'
-                  : 'Review Tab'
-            "
+            icon="i-lucide-table-2"
+            label="Open poster spreadsheet"
             @click="closeUnreviewedModal('review')"
           />
 
@@ -2081,6 +2058,49 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
             label="Continue Anyway"
             @click="closeUnreviewedModal('continue')"
           />
+        </div>
+      </template>
+    </UModal>
+
+    <UModal
+      v-model:open="unsavedOnCloseModalOpen"
+      title="Save changes?"
+      class="max-w-md"
+      :dismissible="!saving"
+      @update:open="(open) => !open && !saving && dismissUnsavedOnCloseModal()"
+    >
+      <template #body>
+        <p class="text-muted text-sm">
+          You have unsaved edits. Save your draft before closing the
+          spreadsheet, or discard them to revert to the last saved version.
+        </p>
+      </template>
+
+      <template #footer>
+        <div class="flex w-full flex-wrap justify-between gap-3">
+          <UButton
+            color="neutral"
+            variant="outline"
+            label="Keep editing"
+            :disabled="saving"
+            @click="dismissUnsavedOnCloseModal"
+          />
+          <div class="flex flex-wrap items-center gap-2">
+            <UButton
+              color="neutral"
+              variant="ghost"
+              label="Close without saving"
+              :disabled="saving"
+              @click="discardEditsAndCloseSpreadsheet"
+            />
+            <UButton
+              color="primary"
+              label="Save draft"
+              :loading="saving"
+              :disabled="disabled"
+              @click="saveDraftAndCloseSpreadsheet"
+            />
+          </div>
         </div>
       </template>
     </UModal>

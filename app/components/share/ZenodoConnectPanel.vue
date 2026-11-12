@@ -8,6 +8,8 @@ export type ZenodoReleaseConnection = ReturnType<
 
 const props = defineProps<{
   zenodo: ZenodoReleaseConnection;
+  /** The page shows the connected-account card itself, somewhere else. */
+  hideAccountStatus?: boolean;
 }>();
 
 const {
@@ -233,6 +235,7 @@ const {
 
   <template v-else>
     <ZenodoAccountStatus
+      v-if="!hideAccountStatus"
       class="mb-4"
       :account="zenodoAccount"
       :disconnecting="zenodoDisconnecting"

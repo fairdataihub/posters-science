@@ -335,43 +335,60 @@ export type ZenodoAccountInfo = {
   profileUrl?: string;
 };
 
-async function fetchZenodoAccountInfo(
+type ZenodoUserBody = {
+  id?: string | number;
+  username?: string;
+  email?: string;
+  profile?: { full_name?: string; affiliations?: string };
+};
+
+/** The signed-in user: /me first, else the first page of /users (marked is_current_user). */
+async function fetchCurrentZenodoUser(
   accessToken: string,
-): Promise<ZenodoAccountInfo | null> {
+): Promise<ZenodoUserBody | null> {
+  const me = await fetch(`${config.zenodoApiEndpoint}/me`, {
+    headers: rdmHeaders(accessToken),
+  }).catch(() => null);
+  if (me?.ok) {
+    const body = (await me.json().catch(() => null)) as ZenodoUserBody | null;
+    if (body?.username || body?.email) return body;
+  }
+
   const res = await fetch(`${config.zenodoApiEndpoint}/users?size=10`, {
     headers: rdmHeaders(accessToken),
   });
-
   if (!res.ok) {
-    console.warn(
-      `[Zenodo] Could not load account info (${res.status})`,
-    );
+    console.warn(`[Zenodo] Could not load account info (${res.status})`);
     return null;
   }
-
   const body = await res.json().catch(() => null);
   const hits =
     (body as { hits?: { hits?: Record<string, unknown>[] } })?.hits?.hits ?? [];
 
-  const current = hits.find(
-    (entry) => entry?.is_current_user === true,
-  ) as {
-    id?: string | number;
-    username?: string;
-    email?: string;
-    profile?: { full_name?: string; affiliations?: string };
-  } | undefined;
+  return (
+    (hits.find((entry) => entry?.is_current_user === true) as
+      | ZenodoUserBody
+      | undefined) ?? null
+  );
+}
 
+async function fetchZenodoAccountInfo(
+  accessToken: string,
+): Promise<ZenodoAccountInfo | null> {
+  const current = await fetchCurrentZenodoUser(accessToken);
   if (!current) return null;
-  const username = current.username?.trim();
-  if (!username) return null;
 
-  const fullName = current.profile?.full_name?.trim();
-  const affiliations = current.profile?.affiliations?.trim();
   const email =
     typeof current.email === "string" && current.email.includes("@")
       ? current.email
       : undefined;
+  // Without a username, still show the email so the account is identifiable.
+  const realUsername = current.username?.trim();
+  const username = realUsername || email;
+  if (!username) return null;
+
+  const fullName = current.profile?.full_name?.trim();
+  const affiliations = current.profile?.affiliations?.trim();
   const zenodoBase = config.zenodoEndpoint.replace(/\/$/, "");
 
   return {
@@ -380,7 +397,7 @@ async function fetchZenodoAccountInfo(
     ...(fullName && { fullName }),
     ...(email && { email }),
     ...(affiliations && { affiliations }),
-    profileUrl: `${zenodoBase}/${username}`,
+    ...(realUsername && { profileUrl: `${zenodoBase}/${realUsername}` }),
   };
 }
 

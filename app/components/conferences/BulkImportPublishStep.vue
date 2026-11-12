@@ -8,6 +8,7 @@ import {
   zenodoPublicationDoiForPoster,
   zenodoPublicationUrlForPoster,
 } from "~/utils/zenodoPublicationUrl";
+import ZenodoAccountStatus from "~/components/share/ZenodoAccountStatus.vue";
 import ZenodoConnectPanel from "~/components/share/ZenodoConnectPanel.vue";
 import { useZenodoReleaseConnection } from "~/composables/useZenodoReleaseConnection";
 import {
@@ -399,6 +400,15 @@ const rowsHydrating = ref(0);
  */
 const showZenodoPublishControls = computed(
   () => rowsHydrating.value === 0 && !allPublished.value,
+);
+
+/** The connected-account card sits above the embargo question, not in the panel. */
+const showZenodoAccountCard = computed(
+  () =>
+    showZenodoConnectPanel.value &&
+    !zenodo.zenodoLoading.value &&
+    !zenodo.zenodoConfigError.value &&
+    zenodo.zenodoTokenExists.value,
 );
 
 /** Still show the connect panel when files are embargoed but Zenodo is not
@@ -951,12 +961,20 @@ watch(
           }}). Posters are processed one at a time.
         </p>
 
+        <ZenodoAccountStatus
+          v-if="showZenodoAccountCard"
+          class="mb-5"
+          :account="zenodo.zenodoAccount.value"
+          :disconnecting="zenodo.zenodoDisconnecting.value"
+          @disconnect="zenodo.handleZenodoDisconnect"
+        />
+
         <UFormField
           v-if="zenodoEmbargoLoaded && showZenodoPublishControls"
           class="mb-5"
           label="Put the poster files under a Zenodo embargo?"
           required
-          description="If yes, each poster's record is published right away, but its files can't be downloaded until the embargo ends. This is helpful if you want to review your posters on Zenodo before others can download them. You can lift the embargo early from this page at any time."
+          description="If yes, each poster's record is published right away, but its files can't be downloaded until the embargo ends. This is helpful if you want to review your posters on Zenodo before making them available for downloads to others. You can lift the embargo early from this page at any time."
         >
           <div class="space-y-3">
             <URadioGroup
@@ -1003,7 +1021,11 @@ watch(
           :description="zenodoFileEmbargoNotice"
         />
 
-        <ZenodoConnectPanel v-if="showZenodoConnectPanel" :zenodo="zenodo">
+        <ZenodoConnectPanel
+          v-if="showZenodoConnectPanel"
+          :zenodo="zenodo"
+          hide-account-status
+        >
           <div class="flex flex-wrap items-center gap-3">
             <UButton
               color="primary"
