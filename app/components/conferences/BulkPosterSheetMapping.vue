@@ -201,6 +201,22 @@ function confirm(options: { silent?: boolean } = {}) {
   });
 }
 
+const fileLinkLabel = computed(() => {
+  const link = result.value?.file_column;
+  if (!link) return "";
+  const head = `${link.matched_rows} of ${link.rows} rows linked`;
+  if (link.method === "number")
+    return `${head} by the number in '${link.column}'`;
+  const extra = [
+    link.methods?.column_fuzzy
+      ? `${link.methods.column_fuzzy} by a close file name, check them`
+      : "",
+    link.methods?.number ? `${link.methods.number} by number` : "",
+  ].filter(Boolean);
+
+  return `${head} by '${link.column}'${extra.length ? ` (${extra.join("; ")})` : ""}`;
+});
+
 function removeSheet() {
   if (props.bulkJobId) clearPendingPosterSheet(props.bulkJobId);
   sheetFiles.value = [];
@@ -234,9 +250,10 @@ watch(
       <p class="text-muted mt-1 text-sm">
         Already have a spreadsheet of your posters, such as titles, authors and
         abstracts (your own, Curious or an EasyChair download)? Add it here and
-        we will use it instead of extracting those fields. A column with each
-        poster's file name links rows exactly. Without one, we match rows to
-        posters by title after extraction and you check the matches.
+        we will use it instead of extracting those fields. Anything it leaves
+        empty is still read from the poster. A column with each poster's file
+        name links rows exactly. Without one, we match rows to posters by title
+        after extraction and you check the matches.
       </p>
     </div>
 
@@ -332,11 +349,7 @@ watch(
           v-if="result.file_column"
           color="neutral"
           variant="subtle"
-          :label="
-            result.file_column.method === 'number'
-              ? `${result.file_column.matched_rows} of ${result.file_column.rows} rows linked by the number in '${result.file_column.column}'`
-              : `${result.file_column.matched_rows} of ${result.file_column.rows} rows linked by '${result.file_column.column}'`
-          "
+          :label="fileLinkLabel"
         />
 
         <UBadge

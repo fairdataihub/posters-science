@@ -19,6 +19,13 @@ defineProps<{
 
 const emit = defineEmits<{ (e: "unlink", rowKey: string): void }>();
 
+const METHOD_LABELS: Record<PosterSheetTitleMatch["method"], string> = {
+  title: "same title",
+  title_authors: "similar title, same authors",
+  words_fuzzy: "same words, some spelled differently",
+  best_remaining: "closest of the posters left",
+};
+
 function percent(score: number) {
   return `${Math.round(score * 100)}%`;
 }
@@ -35,9 +42,10 @@ function percent(score: number) {
     >
       <template #description>
         <p>
-          Your sheet has no file name column, so these rows were matched to
-          posters by title and authors. Unlink any that are wrong before you
-          save.
+          These rows in your poster sheet had no file name that matches an
+          upload, so they were matched to posters by title and authors. Your
+          sheet's values replace what was read from these posters. Unlink any
+          match that is wrong before you save.
           <span v-if="dirty"
             >Unlinking reloads the grid, so save other edits first.</span
           >
@@ -52,8 +60,9 @@ function percent(score: number) {
             <span class="font-medium">{{ match.file_name }}</span>
 
             <span class="text-muted">
-              matched to "{{ match.row_title }}" (title
-              {{ percent(match.title_score)
+              matched to "{{ match.row_title }}" ({{
+                METHOD_LABELS[match.method] ?? match.method
+              }}, score {{ percent(match.score)
               }}<template v-if="match.author_score !== null"
                 >, authors {{ percent(match.author_score) }}</template
               >)
@@ -73,8 +82,8 @@ function percent(score: number) {
 
     <p v-if="waiting" class="text-muted text-sm">
       {{ waiting }} row(s) in your poster sheet are not linked to a poster yet.
-      They link when a poster with the same title finishes extracting; otherwise
-      they are not used.
+      They link when a matching poster finishes extracting; otherwise they are
+      not used, and posters without a row keep what was read from them.
     </p>
   </div>
 </template>
