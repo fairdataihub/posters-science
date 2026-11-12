@@ -2788,7 +2788,7 @@ async function startImport() {
               <span class="text-muted flex items-center gap-1 text-sm">
                 <UIcon name="i-lucide-chart-bar" class="size-4 shrink-0" />
                 <ULink
-                  to="https://github.com/fairdataihub/poster2json/blob/main/docs/evaluation.md"
+                  to="https://docs.posters.science/docs/extraction.html#accuracy"
                   target="_blank"
                   rel="noopener noreferrer"
                   class="text-primary font-medium hover:underline"
