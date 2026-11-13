@@ -23,7 +23,9 @@ import type {
 } from "#shared/types/bulkSubmissionCompletion";
 import { shareBulkCompletionPath } from "~/utils/sharePaths";
 import type { BulkImportSubmissionSummary } from "#shared/types/bulkImportLicenses";
+import * as z from "zod";
 import {
+  bulkImportReviewEmbargoDaysSchema,
   DEFAULT_BULK_IMPORT_REVIEW_EMBARGO_DAYS,
   isBulkImportReviewEmbargoDaysValid,
   MAX_BULK_IMPORT_REVIEW_EMBARGO_DAYS,
@@ -51,23 +53,12 @@ const reviewEmbargoChoice = ref<BulkImportReviewEmbargoChoice | undefined>(
 const reviewEmbargoDays = ref(DEFAULT_BULK_IMPORT_REVIEW_EMBARGO_DAYS);
 const zenodoEmbargoLoaded = ref(false);
 
-const reviewEmbargoDayOptions = computed(() =>
-  Array.from(
-    {
-      length:
-        MAX_BULK_IMPORT_REVIEW_EMBARGO_DAYS -
-        MIN_BULK_IMPORT_REVIEW_EMBARGO_DAYS +
-        1,
-    },
-    (_, index) => {
-      const value = index + MIN_BULK_IMPORT_REVIEW_EMBARGO_DAYS;
-      return {
-        label: value === 1 ? "1 day" : `${value} days`,
-        value,
-      };
-    },
-  ),
-);
+const reviewEmbargoFormSchema = z.object({
+  reviewEmbargoDays: bulkImportReviewEmbargoDaysSchema,
+});
+
+/** UForm state; reactive() keeps it linked to the reviewEmbargoDays ref. */
+const reviewEmbargoFormState = reactive({ reviewEmbargoDays });
 
 const reviewEmbargoItems: {
   label: string;
@@ -576,7 +567,9 @@ const licenseForPublish = computed(() => props.uniformLicense.trim());
 
 const zenodoFileEmbargoUntil = computed(() => {
   if (reviewEmbargoChoice.value !== "yes") return null;
-  return zenodoFileEmbargoUntilDate(reviewEmbargoDays.value);
+  return zenodoFileEmbargoUntilDate(
+    normalizeBulkImportReviewEmbargoDays(reviewEmbargoDays.value),
+  );
 });
 
 const zenodoFileEmbargoNotice = computed(() => {
@@ -974,7 +967,7 @@ watch(
           class="mb-5"
           label="Put the poster files under a Zenodo embargo?"
           required
-          description="If yes, each poster's record is published right away, but its files can't be downloaded until the embargo ends. This is helpful if you want to review your posters on Zenodo before making them available for downloads to others. You can lift the embargo early from this page at any time."
+          description="If yes, each poster's record is published right away, but its files can't be downloaded until the embargo ends (up to 30 days). This is helpful if you want to review your posters on Zenodo before making them available for downloads to others. You can lift the embargo early from this page at any time."
         >
           <div class="space-y-3">
             <URadioGroup
@@ -986,20 +979,34 @@ watch(
               :ui="{ fieldset: 'gap-3', item: 'items-start' }"
             />
 
-            <UFormField
+            <UForm
               v-if="reviewEmbargoChoice === 'yes'"
-              label="Embargo length"
-              :description="`Files stay restricted on Zenodo for this many days after you publish (${MIN_BULK_IMPORT_REVIEW_EMBARGO_DAYS}–${MAX_BULK_IMPORT_REVIEW_EMBARGO_DAYS} days).`"
+              :schema="reviewEmbargoFormSchema"
+              :state="reviewEmbargoFormState"
+              @submit.prevent
             >
-              <USelectMenu
-                v-model="reviewEmbargoDays"
-                :items="reviewEmbargoDayOptions"
-                value-key="value"
-                label-key="label"
-                class="max-w-xs"
-                :disabled="zenodoEmbargoLocked"
-              />
-            </UFormField>
+              <UFormField
+                label="Embargo length"
+                name="reviewEmbargoDays"
+                required
+                :description="`Files stay restricted on Zenodo for this many days after you publish. Choose between ${MIN_BULK_IMPORT_REVIEW_EMBARGO_DAYS} and ${MAX_BULK_IMPORT_REVIEW_EMBARGO_DAYS} days.`"
+              >
+                <div class="flex items-center gap-2">
+                  <UInputNumber
+                    v-model="reviewEmbargoDays"
+                    :min="MIN_BULK_IMPORT_REVIEW_EMBARGO_DAYS"
+                    :max="MAX_BULK_IMPORT_REVIEW_EMBARGO_DAYS"
+                    :step="1"
+                    class="w-32"
+                    :disabled="zenodoEmbargoLocked"
+                  />
+
+                  <span class="text-muted text-sm">
+                    {{ reviewEmbargoDays === 1 ? "day" : "days" }}
+                  </span>
+                </div>
+              </UFormField>
+            </UForm>
 
             <p
               v-if="zenodoEmbargoLocked"
