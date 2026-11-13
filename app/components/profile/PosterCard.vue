@@ -31,8 +31,8 @@ const props = defineProps<{
   poster: ProfilePoster;
   /** Search terms to mark, as on the Discover cards. */
   highlight?: { title: string[]; description: string[]; keyword: string[] };
-  /** Whose page the card is on. The badge wording differs for organizations. */
-  audience?: "person" | "organization";
+  /** Whose page the card is on. The badge wording differs for each. */
+  audience?: "person" | "organization" | "collection";
 }>();
 
 const ROLE_BADGES = {
@@ -67,12 +67,31 @@ const ORGANIZATION_ROLE_BADGES = {
   },
 } as const;
 
+// A collection holds only posters its owner shared or claimed.
+const COLLECTION_ROLE_BADGES = {
+  publisher: {
+    ...ROLE_BADGES.publisher,
+    tooltip: "Shared on Posters.science by the collection's owner.",
+  },
+  author: {
+    ...ROLE_BADGES.author,
+    tooltip:
+      "Claimed by the collection's owner as one of the poster's authors.",
+  },
+} as const;
+
 const roleBadge = computed(() => {
   if (!props.poster.role) return null;
 
-  return props.audience === "organization"
-    ? ORGANIZATION_ROLE_BADGES[props.poster.role]
-    : ROLE_BADGES[props.poster.role];
+  if (props.audience === "organization") {
+    return ORGANIZATION_ROLE_BADGES[props.poster.role];
+  }
+
+  if (props.audience === "collection") {
+    return COLLECTION_ROLE_BADGES[props.poster.role];
+  }
+
+  return ROLE_BADGES[props.poster.role];
 });
 
 const subtitle = computed(() => {

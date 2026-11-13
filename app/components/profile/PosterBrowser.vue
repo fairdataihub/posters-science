@@ -22,7 +22,7 @@ const props = defineProps<{
   /** Replaces the default empty message, which assumes a person's profile. */
   emptyDescription?: string;
   /** Whose page this is, for the wording on the cards. */
-  audience?: "person" | "organization";
+  audience?: "person" | "organization" | "collection";
 }>();
 
 const route = useRoute();
