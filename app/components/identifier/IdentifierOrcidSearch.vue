@@ -94,6 +94,21 @@ function selectResult(result: OrcidMatch) {
     description="Search for the author's ORCID based on their name and affiliation information."
     @update:open="$emit('update:open', $event)"
   >
+    <template #title>
+      <div class="flex items-start justify-between gap-2">
+        <span>Find ORCID</span>
+
+        <UButton
+          icon="i-lucide-x"
+          color="neutral"
+          variant="ghost"
+          size="sm"
+          aria-label="Close"
+          @click="$emit('update:open', false)"
+        />
+      </div>
+    </template>
+
     <template #body>
       <div class="flex h-full w-full flex-col gap-4">
         <div

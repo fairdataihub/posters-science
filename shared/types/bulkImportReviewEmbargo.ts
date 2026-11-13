@@ -1,12 +1,25 @@
+import * as z from "zod";
+
 export type BulkImportReviewEmbargoChoice = "yes" | "no";
 
 export const MIN_BULK_IMPORT_REVIEW_EMBARGO_DAYS = 1;
 export const MAX_BULK_IMPORT_REVIEW_EMBARGO_DAYS = 30;
 export const DEFAULT_BULK_IMPORT_REVIEW_EMBARGO_DAYS = 30;
 
-export function normalizeBulkImportReviewEmbargoDays(
-  value: unknown,
-): number {
+const EMBARGO_DAYS_RANGE_MESSAGE = `Embargo length must be ${MIN_BULK_IMPORT_REVIEW_EMBARGO_DAYS}–${MAX_BULK_IMPORT_REVIEW_EMBARGO_DAYS} days`;
+
+/** Embargo length rules for the publish step. */
+export const bulkImportReviewEmbargoDaysSchema = z
+  .number({ error: "Embargo length is required" })
+  .int({ error: "Embargo length must be a whole number of days" })
+  .min(MIN_BULK_IMPORT_REVIEW_EMBARGO_DAYS, {
+    error: EMBARGO_DAYS_RANGE_MESSAGE,
+  })
+  .max(MAX_BULK_IMPORT_REVIEW_EMBARGO_DAYS, {
+    error: EMBARGO_DAYS_RANGE_MESSAGE,
+  });
+
+export function normalizeBulkImportReviewEmbargoDays(value: unknown): number {
   const parsed =
     typeof value === "number"
       ? value
@@ -25,19 +38,7 @@ export function normalizeBulkImportReviewEmbargoDays(
 }
 
 export function isBulkImportReviewEmbargoDaysValid(value: unknown): boolean {
-  const parsed =
-    typeof value === "number"
-      ? value
-      : typeof value === "string"
-        ? Number.parseInt(value, 10)
-        : Number.NaN;
+  const parsed = typeof value === "string" ? Number.parseInt(value, 10) : value;
 
-  if (!Number.isFinite(parsed) || !Number.isInteger(parsed)) {
-    return false;
-  }
-
-  return (
-    parsed >= MIN_BULK_IMPORT_REVIEW_EMBARGO_DAYS &&
-    parsed <= MAX_BULK_IMPORT_REVIEW_EMBARGO_DAYS
-  );
+  return bulkImportReviewEmbargoDaysSchema.safeParse(parsed).success;
 }

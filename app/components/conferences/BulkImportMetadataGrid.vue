@@ -1126,6 +1126,31 @@ function isFirstRowOfPoster(visibleIndex: number): boolean {
 const POSTER_COLUMN_WIDTH_PX = 320;
 const { width: gridViewportWidth } = useElementSize(gridRoot);
 
+// A second horizontal scrollbar above the grid, kept in sync with the grid's
+// own, so wide sheets can be scrolled sideways without reaching the bottom.
+const gridTopScroll = ref<HTMLElement | null>(null);
+const gridTable = ref<HTMLElement | null>(null);
+const { width: gridTableWidth } = useElementSize(gridTable, undefined, {
+  box: "border-box",
+});
+const { width: gridRootOuterWidth } = useElementSize(gridRoot, undefined, {
+  box: "border-box",
+});
+const gridOverflowsX = computed(
+  () => gridTableWidth.value > gridViewportWidth.value + 1,
+);
+/** Matches the grid's scroll range; the grid also has a vertical scrollbar. */
+const gridTopScrollWidth = computed(
+  () =>
+    gridTableWidth.value + (gridRootOuterWidth.value - gridViewportWidth.value),
+);
+
+function syncScrollLeft(from: HTMLElement | null, to: HTMLElement | null) {
+  if (from && to && to.scrollLeft !== from.scrollLeft) {
+    to.scrollLeft = from.scrollLeft;
+  }
+}
+
 /**
  * The spreadsheet opens over the whole window (the step itself shows only a
  * summary and an open button) and stops the page behind scrolling.
@@ -1500,11 +1525,14 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
 </script>
 
 <template>
+  <!-- Full screen: a window-high column where the grid fills the space left
+       under the toolbar, so both of its scrollbars stay on screen. -->
   <div
-    class="space-y-4"
-    :class="{
-      'bg-default fixed inset-0 z-50 overflow-y-auto p-4 sm:p-6': fullScreen,
-    }"
+    :class="
+      fullScreen
+        ? 'bg-default fixed inset-0 z-50 flex flex-col gap-4 overflow-y-auto p-4 sm:p-6'
+        : 'space-y-4'
+    "
   >
     <div v-if="loading && !grid" class="flex items-center gap-2 py-6" aria-busy="true">
       <UIcon name="i-lucide-loader-circle" class="text-primary size-5 animate-spin" />
@@ -1575,7 +1603,7 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
     </div>
 
     <template v-else-if="grid">
-      <div v-if="fullScreen" class="border-default mb-4 border-b pb-4">
+      <div v-if="fullScreen" class="border-default shrink-0 border-b pb-4">
         <h3 class="text-lg font-semibold">Poster spreadsheet</h3>
         <p class="text-muted mt-1 text-sm">
           Edit AI-extracted metadata for every poster. Changes apply when you
@@ -1584,7 +1612,7 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
       </div>
 
       <!-- Toolbar -->
-      <div class="flex flex-wrap items-center gap-3">
+      <div class="flex shrink-0 flex-wrap items-center gap-3">
         <USelectMenu
           v-model="posterFilter"
           :items="posterFilterOptions"
@@ -1624,7 +1652,7 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
         </div>
       </div>
 
-      <div class="min-w-0 overflow-x-auto">
+      <div class="min-w-0 shrink-0 overflow-x-auto">
         <UTabs
           v-model="activeSheet"
           :items="tabItems"
@@ -1652,8 +1680,8 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
         </UTabs>
       </div>
 
-      <div v-if="currentSheet" class="space-y-3">
-        <div class="flex flex-wrap items-start justify-between gap-3">
+      <div v-if="currentSheet" class="flex min-h-0 flex-1 flex-col gap-3">
+        <div class="flex shrink-0 flex-wrap items-start justify-between gap-3">
           <p class="text-muted max-w-3xl text-sm">{{ currentSheet.description }}</p>
 
           <div class="flex flex-wrap items-center gap-2">
@@ -1698,14 +1726,28 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
         </div>
 
         <div
-          class="border-default min-w-0 overflow-hidden rounded-lg border"
+          class="border-default flex min-h-48 min-w-0 flex-1 flex-col overflow-hidden rounded-lg border"
           :class="{ 'pointer-events-none opacity-60': disabled || saving }"
         >
           <div
-            ref="gridRoot"
-            class="max-h-[calc(100dvh-14rem)] min-w-0 overflow-x-auto overflow-y-auto overscroll-x-contain pb-3"
+            v-show="gridOverflowsX"
+            ref="gridTopScroll"
+            class="border-default shrink-0 overflow-x-auto overflow-y-hidden overscroll-x-contain border-b"
+            aria-hidden="true"
+            @scroll="syncScrollLeft(gridTopScroll, gridRoot)"
           >
-            <table class="w-max min-w-full border-separate border-spacing-0 text-sm">
+            <div class="h-px" :style="{ width: `${gridTopScrollWidth}px` }" />
+          </div>
+
+          <div
+            ref="gridRoot"
+            class="min-h-0 min-w-0 flex-1 overflow-x-auto overflow-y-auto overscroll-x-contain pb-3"
+            @scroll="syncScrollLeft(gridRoot, gridTopScroll)"
+          >
+            <table
+              ref="gridTable"
+              class="w-max min-w-full border-separate border-spacing-0 text-sm"
+            >
             <thead class="bg-elevated sticky top-0 z-20">
               <tr>
                 <th
@@ -1868,6 +1910,7 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
 
       <UAlert
         v-if="saveIssues.length"
+        class="shrink-0"
         :color="saveIssues.some((i) => i.severity === 'error') ? 'error' : 'warning'"
         variant="subtle"
         icon="i-lucide-list-checks"
