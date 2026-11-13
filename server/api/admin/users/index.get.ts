@@ -31,6 +31,13 @@ export default defineEventHandler(async (event) => {
         role: true,
         emailVerified: true,
         created: true,
+        orcid: true,
+        // Read only to say whether one is set; never sent to the browser.
+        password: true,
+        linkedAccounts: {
+          where: { provider: "orcid" },
+          select: { providerAccountId: true },
+        },
         _count: { select: { Poster: true, organizationMemberships: true } },
       },
       orderBy: { created: "desc" },
@@ -40,5 +47,22 @@ export default defineEventHandler(async (event) => {
     prisma.user.count({ where }),
   ]);
 
-  return { data: users, total, page, limit };
+  // A linked iD wins over a typed one, the same as on the public profile.
+  const data = users.map(
+    ({ password, linkedAccounts, orcid: typedOrcid, ...user }) => {
+      const linkedOrcid = linkedAccounts[0]?.providerAccountId;
+
+      return {
+        ...user,
+        orcid: linkedOrcid
+          ? { id: linkedOrcid, verified: true }
+          : typedOrcid
+            ? { id: typedOrcid, verified: false }
+            : null,
+        hasPassword: password !== null,
+      };
+    },
+  );
+
+  return { data, total, page, limit };
 });

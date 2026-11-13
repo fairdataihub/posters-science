@@ -62,6 +62,11 @@ export type AdminUserRow = {
   emailVerified: boolean;
   created: string;
   _count: { Poster: number; organizationMemberships: number };
+  // Verified when linked through ORCID sign-in, else an iD they typed in
+  // Settings. Null when they have neither.
+  orcid: { id: string; verified: boolean } | null;
+  // False for ORCID sign-ups that never set a password.
+  hasPassword: boolean;
 };
 
 export type AdminOrganizationRow = {
@@ -74,6 +79,21 @@ export type AdminOrganizationRow = {
   created: string;
   members: { user: PosterOwner }[];
   _count: { members: number; posters: number };
+};
+
+export type AdminCollectionRow = {
+  id: string;
+  path: string;
+  name: string;
+  conference: string;
+  isPublic: boolean;
+  hiddenAt: string | null;
+  hiddenReason: string;
+  created: string;
+  owner: PosterOwner;
+  /** Posters that are public right now. */
+  posterCount: number;
+  organizationCount: number;
 };
 
 export type PosterOwner = {

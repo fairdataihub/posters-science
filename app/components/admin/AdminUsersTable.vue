@@ -3,6 +3,7 @@ import { h, resolveComponent } from "vue";
 import type { ColumnDef, SortingState } from "@tanstack/vue-table";
 
 import { personNameWords } from "#shared/utils/adminSearch";
+import { orcidUrl } from "#shared/utils/orcid";
 
 import type {
   AdminUserRow,
@@ -142,7 +143,13 @@ const columns: ColumnDef<AdminUserRow>[] = [
   { accessorKey: "emailAddress", header: sortableHeader("Email") },
   { id: "userId", header: "User ID", enableSorting: false },
   { accessorKey: "role", header: sortableHeader("Role") },
-  { accessorKey: "emailVerified", header: sortableHeader("Verified") },
+  { accessorKey: "emailVerified", header: sortableHeader("Email verified") },
+  {
+    id: "orcid",
+    // Sorts none, then typed, then verified.
+    accessorFn: (r) => (r.orcid ? (r.orcid.verified ? 2 : 1) : 0),
+    header: sortableHeader("ORCID"),
+  },
   {
     id: "posterCount",
     accessorFn: (r) => r._count.Poster,
@@ -221,7 +228,7 @@ async function deleteUser() {
     <div class="flex flex-wrap items-center gap-2">
       <UInput
         v-model="searchInput"
-        placeholder="Search by name or email"
+        placeholder="Search by name, email or ORCID iD"
         icon="material-symbols:search"
         class="w-full sm:w-80"
         @keydown.enter="submitSearch"
@@ -315,6 +322,51 @@ async function deleteUser() {
               "
               size="18"
             />
+          </template>
+
+          <template #orcid-cell="{ row }">
+            <div
+              v-if="row.original.orcid"
+              class="flex flex-col items-start gap-1"
+            >
+              <UTooltip
+                :text="
+                  !row.original.orcid.verified
+                    ? 'Typed in Settings, not confirmed through ORCID sign-in'
+                    : row.original.hasPassword
+                      ? 'Linked through ORCID sign-in'
+                      : 'Linked through ORCID sign-in. No password set, so they sign in with ORCID only.'
+                "
+              >
+                <UBadge
+                  :color="row.original.orcid.verified ? 'success' : 'neutral'"
+                  variant="subtle"
+                  size="sm"
+                  :icon="
+                    row.original.orcid.verified
+                      ? 'i-heroicons-check-badge'
+                      : 'i-heroicons-pencil-square'
+                  "
+                  :label="
+                    row.original.orcid.verified ? 'Verified' : 'Not verified'
+                  "
+                />
+              </UTooltip>
+
+              <a
+                :href="orcidUrl(row.original.orcid.id)"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-muted hover:text-default font-mono text-xs whitespace-nowrap"
+              >
+                <SearchHighlight
+                  :text="row.original.orcid.id"
+                  :term="highlightTerm"
+                />
+              </a>
+            </div>
+
+            <span v-else class="text-muted">-</span>
           </template>
 
           <template #created-cell="{ row }">
