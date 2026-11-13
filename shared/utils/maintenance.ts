@@ -6,6 +6,7 @@ export const MAINTENANCE_KEYS = [
   "zenodoOAuth",
   "zenodoToken",
   "versioning",
+  "orcidSignIn",
 ] as const;
 
 export type MaintenanceKey = (typeof MAINTENANCE_KEYS)[number];
@@ -15,6 +16,7 @@ export const MAINTENANCE_LABELS: Record<MaintenanceKey, string> = {
   zenodoOAuth: "Zenodo OAuth sign-in",
   zenodoToken: "Zenodo personal access token sign-in",
   versioning: "New poster versions",
+  orcidSignIn: "ORCID sign-in",
 };
 
 export const MAINTENANCE_DESCRIPTIONS: Record<MaintenanceKey, string> = {
@@ -24,6 +26,8 @@ export const MAINTENANCE_DESCRIPTIONS: Record<MaintenanceKey, string> = {
   zenodoToken: "Connecting Zenodo by pasting a personal access token.",
   versioning:
     "Starting a new version of a published poster, whether it copies or re-extracts metadata. Drafts already in progress stay editable.",
+  orcidSignIn:
+    "Signing in, signing up and linking accounts with ORCID. Email and password sign-in keep working, and people can still unlink ORCID.",
 };
 
 /**
@@ -46,6 +50,9 @@ export const MAINTENANCE_FALLBACK_MESSAGES: Record<MaintenanceKey, string> = {
     "Connecting Zenodo with a personal access token is paused for maintenance. Please try again shortly.",
   versioning:
     "Editing published posters is paused for maintenance. Please try again shortly.",
+  // Accounts made with ORCID have no password, so point them at the way back in.
+  orcidSignIn:
+    "Signing in with ORCID is paused for maintenance. Use your email and password instead. If your account was made with ORCID, use Forgot your password to set one.",
 };
 
 export function isMaintenanceKey(value: unknown): value is MaintenanceKey {

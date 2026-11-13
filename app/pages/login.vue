@@ -3,11 +3,18 @@ import { z } from "zod";
 import type { FormSubmitEvent } from "#ui/types";
 import { emailVerificationTtlLabel } from "#shared/utils/emailVerification";
 import { safeRedirectPath } from "#shared/utils/redirect";
+import {
+  ORCID_FAILURE_OUTCOMES,
+  isOrcidOutcome,
+  orcidOutcomeNotice,
+  type OrcidPending,
+} from "#shared/utils/orcidSignIn";
 import { parseApiError } from "~/utils/apiError";
 
 const { loggedIn } = useUserSession();
 const { siteEnv } = useRuntimeConfig().public;
 const route = useRoute();
+const router = useRouter();
 
 const routeQueryParams = route.query;
 
@@ -36,17 +43,60 @@ const loading = ref(false);
 // password has already been accepted by then, so the page can offer the
 // account holder a fresh verification link instead of a dead end.
 const unverifiedAccountEmail = ref("");
+// The account was reached through ORCID, so the resend goes through the ORCID
+// sign-in held in this browser rather than an address typed here.
+const unverifiedViaOrcid = ref(false);
 const resending = ref(false);
 const resent = ref(false);
+
+// GET /api/auth/orcid sends people back here with ?orcid=<outcome>.
+const { available: orcidAvailable, pausedMessage: orcidPausedMessage } =
+  useOrcidSignIn();
+const orcidOutcome = isOrcidOutcome(route.query.orcid)
+  ? route.query.orcid
+  : null;
+const orcidNotice = computed(() =>
+  orcidOutcome
+    ? orcidOutcomeNotice(orcidOutcome, orcidPausedMessage.value)
+    : null,
+);
+
+onMounted(async () => {
+  if (!orcidOutcome) return;
+
+  if (ORCID_FAILURE_OUTCOMES.includes(orcidOutcome)) {
+    window.umami?.track("orcid_signin_failed", { reason: orcidOutcome });
+  }
+
+  // Drop the code so a reload doesn't show or count it again.
+  const { orcid: _orcid, ...query } = route.query;
+
+  await router.replace({ query });
+
+  if (orcidOutcome !== "unverified") return;
+
+  try {
+    const pending = await $fetch<OrcidPending>("/api/auth/orcid/pending");
+
+    if (pending.kind === "unverified") {
+      unverifiedAccountEmail.value = pending.emailAddress;
+      unverifiedViaOrcid.value = true;
+    }
+  } catch {
+    // The ORCID sign-in expired; signing in again starts a new one.
+  }
+});
 
 const resendVerification = async () => {
   resending.value = true;
 
   try {
-    await $fetch("/api/auth/resend-verification", {
-      body: { email: unverifiedAccountEmail.value },
-      method: "POST",
-    });
+    await (unverifiedViaOrcid.value
+      ? $fetch("/api/auth/orcid/resend-verification", { method: "POST" })
+      : $fetch("/api/auth/resend-verification", {
+          body: { email: unverifiedAccountEmail.value },
+          method: "POST",
+        }));
 
     resent.value = true;
 
@@ -96,6 +146,7 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
   // Clear any notice from a previous attempt so it cannot outlive the address
   // it referred to.
   unverifiedAccountEmail.value = "";
+  unverifiedViaOrcid.value = false;
 
   await $fetch("/api/auth/login", {
     body,
@@ -109,7 +160,7 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
         color: "success",
       });
 
-      window.umami?.track("login_completed");
+      window.umami?.track("login_completed", { method: "password" });
       // Only paths on this site, so a crafted link can't send someone away.
       window.location.href = safeRedirectPath(routeQueryParams.redirect);
     })
@@ -155,6 +206,16 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
       </div>
 
       <UAlert
+        v-if="orcidNotice"
+        class="mt-5"
+        :color="orcidOutcome === 'cancelled' ? 'info' : 'warning'"
+        variant="subtle"
+        icon="i-simple-icons-orcid"
+        :title="orcidNotice.title"
+        :description="orcidNotice.description"
+      />
+
+      <UAlert
         v-if="unverifiedAccountEmail"
         class="mt-5"
         color="warning"
@@ -178,6 +239,17 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
           />
         </template>
       </UAlert>
+
+      <template v-if="orcidAvailable">
+        <div class="mt-6">
+          <AuthOrcidButton
+            block
+            :redirect="safeRedirectPath(routeQueryParams.redirect, '')"
+          />
+        </div>
+
+        <USeparator label="or" class="mt-6" />
+      </template>
 
       <UForm
         :schema="schema"

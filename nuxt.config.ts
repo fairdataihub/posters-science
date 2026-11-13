@@ -3,6 +3,9 @@
 const PROTECTED_ROUTES = [
   "/admin",
   "/api",
+  // Collections are kept out of search engines, like profiles and organizations.
+  "/collection",
+  "/collections",
   "/dashboard",
   "/forgot-password",
   "/liked",
@@ -16,6 +19,7 @@ const PROTECTED_ROUTES = [
   "/share/new",
   "/share/new-bulk",
   "/signup",
+  "/signup/orcid",
   "/verify-email",
   "/zenodo-auth-error",
   "/404",
@@ -150,6 +154,13 @@ export default defineNuxtConfig({
     // 32 random bytes as base64, used to encrypt stored Zenodo tokens.
     // NUXT_ZENODO_TOKEN_ENCRYPTION_KEY. Changing it disconnects every user.
     zenodoTokenEncryptionKey: "",
+    // Sign in with ORCID. The button stays hidden until all four are set.
+    // NUXT_ORCID_ENDPOINT is https://orcid.org or https://sandbox.orcid.org, and
+    // NUXT_ORCID_REDIRECT_URI must match the client's registered address exactly.
+    orcidClientId: "",
+    orcidClientSecret: "",
+    orcidRedirectUri: "",
+    orcidEndpoint: "",
     posterExtractionApi: "",
     // Overridden by NUXT_FEATURES.
     features: "",

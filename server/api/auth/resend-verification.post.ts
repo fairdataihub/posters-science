@@ -1,11 +1,9 @@
 import { z } from "zod";
 import { createHash } from "node:crypto";
-import dayjs from "dayjs";
 import {
-  EMAIL_VERIFICATION_RESEND_COOLDOWN_MINUTES,
-  EMAIL_VERIFICATION_TTL_MINUTES,
-} from "#shared/utils/emailVerification";
-import { issueEmailVerification } from "../../utils/issueEmailVerification";
+  issueEmailVerification,
+  sentWithinResendCooldown,
+} from "../../utils/issueEmailVerification";
 import { logwatch } from "../../utils/logwatch";
 
 // Either identifier works. The signup and login screens know the address,
@@ -69,28 +67,15 @@ export default defineEventHandler(async (event) => {
     return { success: true };
   }
 
-  // The last send time is the stored expiry minus the lifetime, so a burst of
-  // requests cannot repeatedly mail the address without any extra storage.
-  if (user.emailVerificationTokenExpires) {
-    const issuedAt = dayjs(user.emailVerificationTokenExpires).subtract(
-      EMAIL_VERIFICATION_TTL_MINUTES,
-      "minute",
-    );
-    const cooldownStart = dayjs().subtract(
-      EMAIL_VERIFICATION_RESEND_COOLDOWN_MINUTES,
-      "minute",
-    );
+  if (sentWithinResendCooldown(user.emailVerificationTokenExpires)) {
+    logwatch.info({
+      action: "auth.resend-verification",
+      message: "Resend skipped because a link was sent within the cooldown",
+      userId: user.id,
+      via,
+    });
 
-    if (issuedAt.isAfter(cooldownStart)) {
-      logwatch.info({
-        action: "auth.resend-verification",
-        message: "Resend skipped because a link was sent within the cooldown",
-        userId: user.id,
-        via,
-      });
-
-      return { success: true };
-    }
+    return { success: true };
   }
 
   await issueEmailVerification(user);
