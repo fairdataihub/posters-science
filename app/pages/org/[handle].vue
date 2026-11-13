@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { CollectionSummary } from "#shared/types/collection";
 import type { OrganizationRole } from "#shared/types/organization";
 import type { ProfilePoster } from "~/components/profile/PosterCard.vue";
 import { parseApiError } from "~/utils/apiError";
@@ -21,11 +22,14 @@ type PublicOrganization = {
   isHidden: boolean;
   hiddenReason: string;
   posters: ProfilePoster[];
+  /** Public collections its members chose to show. */
+  collections: CollectionSummary[];
   /** Root ids matching `?search=`, or null when there is no search. */
   searchMatches: number[] | null;
 };
 
 const route = useRoute();
+const router = useRouter();
 const handle = route.params.handle as string;
 
 // The search runs on the server with the Discover search syntax, so a new
@@ -57,6 +61,46 @@ const posterCountLabel = computed(() => {
 
   return `${count} ${count === 1 ? "poster" : "posters"}`;
 });
+
+// Members always see the tab, so they learn where collections show up.
+const showCollections = computed(
+  () =>
+    (organization.value?.collections.length ?? 0) > 0 ||
+    !!organization.value?.role,
+);
+
+// The tab lives in the query string, like the filters, so it survives a
+// reload and can be shared.
+const activeTab = computed<"posters" | "collections">({
+  get: () =>
+    showCollections.value && route.query.tab === "collections"
+      ? "collections"
+      : "posters",
+  set: (tab) =>
+    router.replace({
+      query: {
+        ...route.query,
+        tab: tab === "collections" ? "collections" : undefined,
+      },
+    }),
+});
+
+const tabItems = computed(() => [
+  {
+    label: `Posters (${organization.value?.posters.length ?? 0})`,
+    icon: "i-lucide-presentation",
+    value: "posters",
+  },
+  ...(showCollections.value
+    ? [
+        {
+          label: `Collections (${organization.value?.collections.length ?? 0})`,
+          icon: "i-lucide-library-big",
+          value: "collections",
+        },
+      ]
+    : []),
+]);
 
 const memberCountLabel = computed(() => {
   const count = organization.value?.memberCount;
@@ -263,11 +307,39 @@ async function makePublic() {
         </UCard>
 
         <section class="space-y-6">
-          <h2 class="text-lg font-semibold">
+          <h2 v-if="!showCollections" class="text-lg font-semibold">
             Posters ({{ organization.posters.length }})
           </h2>
 
+          <UTabs
+            v-else
+            v-model="activeTab"
+            :items="tabItems"
+            :content="false"
+            variant="link"
+            class="w-full"
+          />
+
+          <template v-if="activeTab === 'collections'">
+            <UEmpty
+              v-if="organization.collections.length === 0"
+              icon="i-lucide-library-big"
+              title="No public collections yet"
+              description="Members can show their public collections here from the organization's Manage page."
+            />
+
+            <ul v-else class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <li
+                v-for="collection in organization.collections"
+                :key="collection.id"
+              >
+                <CollectionCard :collection="collection" />
+              </li>
+            </ul>
+          </template>
+
           <ProfilePosterBrowser
+            v-else
             :posters="organization.posters"
             :search-matches="organization.searchMatches"
             kind="posters"

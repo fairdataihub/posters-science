@@ -4,6 +4,11 @@ import {
 } from "#shared/utils/organization";
 import { parseProfileParam } from "#shared/utils/profile";
 import {
+  collectionSummarySelect,
+  publicCollectionWhere,
+  toCollectionSummaries,
+} from "../../utils/collections";
+import {
   latestPublicPosterVersions,
   matchProfilePosterSearch,
   toProfilePosterCard,
@@ -67,10 +72,22 @@ export default defineEventHandler(async (event) => {
 
   if (!organization || (!isPublic && !canPreview)) throw notFound();
 
-  const listings = await prisma.organizationPoster.findMany({
-    where: { organizationId: organization.id, poster: { tombstone: false } },
-    select: { posterId: true, created: true },
-  });
+  const [listings, collectionRows] = await Promise.all([
+    prisma.organizationPoster.findMany({
+      where: { organizationId: organization.id, poster: { tombstone: false } },
+      select: { posterId: true, created: true },
+    }),
+    // Public collections only, even for members, so the preview matches what
+    // visitors see. Members manage the rest on the Collections tab.
+    prisma.collection.findMany({
+      where: {
+        ...publicCollectionWhere,
+        organizationListings: { some: { organizationId: organization.id } },
+      },
+      orderBy: { updated: "desc" },
+      select: collectionSummarySelect,
+    }),
+  ]);
   const listedAt = new Map(
     listings.map((listing) => [listing.posterId, listing.created]),
   );
@@ -111,6 +128,7 @@ export default defineEventHandler(async (event) => {
     isHidden,
     hiddenReason: canPreview ? organization.hiddenReason : "",
     posters,
+    collections: await toCollectionSummaries(collectionRows),
     searchMatches: await matchProfilePosterSearch(
       getQuery(event).search,
       posters,
