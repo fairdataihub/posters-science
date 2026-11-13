@@ -459,6 +459,10 @@ model BulkSubmission {
 
   submissionSummary Json?
 
+  // Confirmed organizer poster sheet (rows, title matches, flags to check)
+  // waiting to be saved into the metadata grid. Cleared once nothing is left.
+  posterSheet Json?
+
   error String?
 
   managedConferenceId String?
