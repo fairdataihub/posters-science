@@ -119,7 +119,10 @@ function selectResult(result: OrcidMatch) {
             Matching affiliations shown first
           </p>
 
-          <p class="truncate text-xs text-gray-500 dark:text-gray-400">
+          <p
+            class="line-clamp-[10] break-words text-xs text-gray-500 dark:text-gray-400"
+            :title="affiliations.join('; ')"
+          >
             {{ affiliations.join("; ") }}
           </p>
         </div>
