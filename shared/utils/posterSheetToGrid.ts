@@ -7,16 +7,17 @@ import type { PosterSheetRow } from "#shared/types/posterSheetMapping";
 /**
  * Merge rows from an organizer's poster sheet into the metadata grid.
  *
- * What the sheet gives is taken as true: a sheet value replaces the extracted
- * one, with no union. A field the sheet does not have, or an empty cell, is
- * left to extraction.
+ * What the sheet gives is the source of truth: a sheet value replaces the
+ * extracted one, with no merging. Extraction only fills fields the sheet does
+ * not have, or leaves empty.
  *
  * - One-row-per-poster tabs (About the Poster, Additional information):
- *   filled sheet cells overwrite the matching cells.
+ *   filled sheet cells overwrite the matching cells (keywords included).
  * - List tabs (Creators, Related resources, ...): when the sheet gives rows
- *   for a poster, they replace that poster's extracted rows. On Creators, an
- *   empty ORCID, affiliation or ROR on a sheet person is filled from
- *   extraction when extraction found the same person.
+ *   for a poster, they replace that poster's extracted rows. On Creators, an empty ORCID,
+ *   affiliation or ROR on a sheet person is filled from extraction only when
+ *   exactly one extracted person matches (Jun Wang and Jie Wang are both
+ *   "J Wang", so a sheet "J Wang" gets neither's identifiers).
  * - Posters no sheet row reaches keep their extracted metadata only.
  *
  * Rows link by file name. Posters not in the grid yet (still extracting) are
@@ -56,13 +57,25 @@ function samePerson(a: BulkReviewGridRow, b: BulkReviewGridRow): boolean {
   return !givenA || !givenB || givenA[0] === givenB[0];
 }
 
-/** Keep identifiers extraction found when the sheet names the same person and affiliations. */
+/**
+ * Keep identifiers extraction found when the sheet names the same person and
+ * affiliations. Only when exactly one extracted person matches; two matches
+ * (same family name and initial) are left for the organizer.
+ */
 function carryIdentifiers(
   sheetRow: BulkReviewGridRow,
   extracted: BulkReviewGridRow[],
 ) {
-  const match = extracted.find((row) => samePerson(sheetRow, row));
-  if (!match) return;
+  let matches = extracted.filter((row) => samePerson(sheetRow, row));
+  // Several share the family name and initial: a full given name can still
+  // single one out (Jie Wang among Jun and Jie Wang).
+  if (matches.length > 1 && norm(sheetRow.given_name).length > 1) {
+    matches = matches.filter(
+      (row) => norm(row.given_name) === norm(sheetRow.given_name),
+    );
+  }
+  if (matches.length !== 1) return;
+  const match = matches[0]!;
   if (!sheetRow.name_identifier && match.name_identifier) {
     sheetRow.name_identifier = match.name_identifier;
   }
@@ -177,7 +190,14 @@ export function mergePosterSheetIntoGrid<Row extends BulkReviewGridRow>(
       const extracted = list.filter((row) => row.poster_id === posterId);
       const next = posterRows.map((sheetRow) => {
         const row = toRow(sheetRow);
-        if (sheet.name === CREATORS_SHEET) carryIdentifiers(row, extracted);
+        if (sheet.name === CREATORS_SHEET) {
+          // A lone name is a family name (Zenodo needs one for a person).
+          if (!row.family_name && row.given_name) {
+            row.family_name = row.given_name;
+            row.given_name = "";
+          }
+          carryIdentifiers(row, extracted);
+        }
 
         return row as Row;
       });

@@ -5,6 +5,7 @@ import type {
 } from "#shared/types/posterSheetMapping";
 import {
   clearPendingPosterSheet,
+  loadPendingPosterSheet,
   readPendingPosterSheet,
   writePendingPosterSheet,
 } from "~/utils/posterSheetPending";
@@ -17,14 +18,23 @@ import {
  * shows the mapping, how rows link to files and any warnings; once confirmed,
  * the rows fill the metadata grid as posters finish extracting.
  *
- * Rows link to files by a file name column, or by a submission number in the
- * file names. Rows left over are matched by title after extraction, and the
- * grid lists those matches for the organizer to check.
+ * Rows link to files by a file name column, or by a submission number at the
+ * start of the file names. Rows left over are matched by title after
+ * extraction, every pairing gets a title check, and the grid lists matches
+ * and disagreeing pairings for the organizer to check. The confirmed sheet is
+ * stored on the batch, so it survives a reload or another device.
+ *
+ * The poster file names sent with the sheet include files still uploading, so
+ * a sheet dropped mid-upload links to every file; the server re-links rows to
+ * the stored names once the uploads land.
  */
 
 const props = defineProps<{
   bulkJobId: string | null;
-  /** Poster files already added to this batch; a change re-checks the sheet. */
+  /**
+   * Poster files in this batch, stored or still uploading; a change re-checks
+   * the sheet.
+   */
   posterFileNames: string[];
 }>();
 
@@ -69,6 +79,13 @@ const errorMessage = ref<string | null>(null);
 const confirmedName = ref<string | null>(
   readPendingPosterSheet(props.bulkJobId)?.sheetFileName ?? null,
 );
+
+// The stored copy wins over this browser's cache (another device, a reload).
+onMounted(async () => {
+  const pending = await loadPendingPosterSheet(props.bulkJobId);
+  if (!sheetFiles.value.length)
+    confirmedName.value = pending?.sheetFileName ?? null;
+});
 
 const fieldOptions = computed(() => [
   { label: "Don't use", value: "__none__" },
@@ -123,6 +140,7 @@ async function mapSheet(overrides?: Record<string, string | null>) {
     const form = new FormData();
     for (const file of sheetFiles.value) form.append("sheet", file, file.name);
     if (overrides) form.append("mapping", JSON.stringify(overrides));
+    form.append("file_names", JSON.stringify(props.posterFileNames));
     const data = await $fetch<PosterSheetMappingResult>(
       `/api/bulk-poster-submissions/${props.bulkJobId}/poster-sheet`,
       { method: "POST", body: form },
@@ -173,14 +191,19 @@ function applyChoices() {
 function confirm(options: { silent?: boolean } = {}) {
   if (!props.bulkJobId || !result.value?.ok || !sheetFiles.value.length) return;
   reviewing.value = false;
-  writePendingPosterSheet(props.bulkJobId, {
+  void writePendingPosterSheet(props.bulkJobId, {
     sheetFileName: sheetName.value,
     confirmedAt: new Date().toISOString(),
     template: result.value.template,
     sheets: result.value.sheets,
     matchRows: result.value.match_rows,
+    pairs: result.value.pairs ?? [],
+    pairChecks: {},
+    hints: result.value.hints,
     titleMatches: {},
     rejectedMatches: [],
+    acceptedMatches: [],
+    browserFileNames: [...props.posterFileNames],
   });
   confirmedName.value = sheetName.value;
   if (options.silent) return;
@@ -188,7 +211,7 @@ function confirm(options: { silent?: boolean } = {}) {
   const byTitle = result.value.match_rows.length;
   const parts = [
     linked
-      ? `${linked} poster(s) will be filled as they finish extracting`
+      ? `${linked} poster(s) will be filled as they finish extracting, and their titles checked against the sheet`
       : "",
     byTitle
       ? `${byTitle} row(s) will be matched to posters by title after extraction`
@@ -218,7 +241,7 @@ const fileLinkLabel = computed(() => {
 });
 
 function removeSheet() {
-  if (props.bulkJobId) clearPendingPosterSheet(props.bulkJobId);
+  if (props.bulkJobId) void clearPendingPosterSheet(props.bulkJobId);
   sheetFiles.value = [];
   result.value = null;
   reviewing.value = false;

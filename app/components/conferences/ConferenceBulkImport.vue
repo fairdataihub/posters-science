@@ -267,6 +267,25 @@ const stagedPosterFileNames = computed(() =>
   stagedPosters.value.map((poster) => poster.fileName),
 );
 
+/**
+ * Poster file names for linking a poster sheet: stored posters plus files
+ * still uploading, so a sheet dropped mid-upload links to every file. The
+ * server re-links rows to the stored names once the uploads land.
+ */
+const posterSheetFileNames = computed(() => {
+  const names = new Map<string, string>();
+  for (const name of stagedPosterFileNames.value) {
+    names.set(name.toLowerCase(), name);
+  }
+  for (const [name, state] of Object.entries(posterRowStatus.value)) {
+    if (state.status === "uploading" && !names.has(name.toLowerCase())) {
+      names.set(name.toLowerCase(), name);
+    }
+  }
+
+  return [...names.values()];
+});
+
 const posterListRows = computed((): PosterListRow[] => {
   const byKey = new Map<string, PosterListRow>();
 
@@ -2434,7 +2453,7 @@ async function startImport() {
           <BulkPosterSheetMapping
             v-if="featureFlags?.poster_sheet_mapping && jobId"
             :bulk-job-id="jobId"
-            :poster-file-names="stagedPosterFileNames"
+            :poster-file-names="posterSheetFileNames"
           />
         </div>
 
