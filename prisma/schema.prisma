@@ -48,6 +48,10 @@ model User {
   // (0000-0002-1825-0097) or "" when unset.
   orcid            String  @default("")
 
+  // Hides the dashboard panel of auto-indexed posters that list this user's
+  // ORCID iD. Set from that panel and cleared from the settings page.
+  orcidSuggestionsHidden Boolean @default(false)
+
   created           DateTime          @default(now())
   updated           DateTime          @updatedAt
   Poster            Poster[]
@@ -59,9 +63,13 @@ model User {
   linkedAccounts LinkedAccount[]
   posterClaims   PosterClaim[]
 
+  claimSuggestionDismissals ClaimSuggestionDismissal[]
+
   organizationMemberships OrganizationMember[]
   organizationInvitesSent OrganizationInvite[]
   organizationPosters     OrganizationPoster[]
+
+  collections Collection[]
 
   likes Like[] @relation("UserLikes")
 
@@ -156,7 +164,11 @@ model Poster {
 
   claims PosterClaim[]
 
+  claimSuggestionDismissals ClaimSuggestionDismissal[]
+
   organizationListings OrganizationPoster[]
+
+  collectionItems CollectionPoster[]
 
   @@unique([versionRootId, versionSequence])
   @@index([versionRootId, status])
@@ -267,6 +279,25 @@ model PosterClaim {
   @@index([userId])
 }
 
+// An auto-indexed poster the user marked "Not me" among the ones that list
+// their ORCID iD, so it is no longer suggested to them. Deleting the row brings
+// the suggestion back. It never affects claims.
+model ClaimSuggestionDismissal {
+  id String @id @default(cuid(2))
+
+  // Always the version root, like PosterClaim.
+  poster   Poster @relation(fields: [posterId], references: [id], onDelete: Cascade)
+  posterId Int
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+
+  created DateTime @default(now())
+
+  @@unique([userId, posterId])
+  @@index([posterId])
+}
+
 // A lab, institute, society or other group with its own public page. An
 // organization never signs in and has no role, so it can't be an admin. It shows
 // posters but never owns them: Poster.userId stays the owner, and only that
@@ -296,9 +327,10 @@ model Organization {
   created DateTime @default(now())
   updated DateTime @updatedAt
 
-  members OrganizationMember[]
-  invites OrganizationInvite[]
-  posters OrganizationPoster[]
+  members     OrganizationMember[]
+  invites     OrganizationInvite[]
+  posters     OrganizationPoster[]
+  collections OrganizationCollection[]
 }
 
 model OrganizationMember {
@@ -359,6 +391,83 @@ model OrganizationPoster {
   @@unique([organizationId, posterId])
   @@index([posterId])
   @@index([addedById])
+}
+
+// A named group of posters that one person puts together, such as the posters
+// from a conference session or a project. It never changes who owns a poster:
+// it holds only posters its owner published or claimed, and only the publisher
+// edits a poster.
+model Collection {
+  id String @id @default(cuid(2))
+
+  // The whole public address, /collection/<profileId>. Random and never
+  // changes, so a link keeps working if the collection is renamed.
+  profileId String @unique
+
+  owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  ownerId String
+
+  name        String
+  description String @default("")
+  // Free text, prefilled from a bulk upload's conference.
+  conference  String @default("")
+
+  // Private until the owner makes it public.
+  isPublic Boolean @default(false)
+
+  // Set when an admin takes the collection down. Wins over isPublic.
+  hiddenAt     DateTime?
+  hiddenReason String    @default("")
+
+  // The bulk upload it was made from. One collection per batch.
+  sourceBulkSubmission   BulkSubmission? @relation(fields: [sourceBulkSubmissionId], references: [id], onDelete: SetNull)
+  sourceBulkSubmissionId String?         @unique
+
+  created DateTime @default(now())
+  updated DateTime @updatedAt
+
+  posters              CollectionPoster[]
+  organizationListings OrganizationCollection[]
+
+  @@index([ownerId])
+  @@index([isPublic, hiddenAt])
+}
+
+// A poster in a collection. Removing the row only takes it out of the
+// collection; the poster is unchanged.
+model CollectionPoster {
+  id String @id @default(cuid(2))
+
+  collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  collectionId String
+
+  // Always the version root, so a new version appears in the collection by
+  // itself.
+  poster   Poster @relation(fields: [posterId], references: [id], onDelete: Cascade)
+  posterId Int
+
+  created DateTime @default(now())
+
+  @@unique([collectionId, posterId])
+  @@index([posterId])
+}
+
+// A collection shown on an organization's page. Only the collection's owner
+// adds one, while they are a member. Organization owners can take it off the
+// page but never edit it.
+model OrganizationCollection {
+  id String @id @default(cuid(2))
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+
+  collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  collectionId String
+
+  created DateTime @default(now())
+
+  @@unique([organizationId, collectionId])
+  @@index([collectionId])
 }
 
 model ZenodoToken {
@@ -467,6 +576,9 @@ model BulkSubmission {
 
   created DateTime @default(now())
   updated DateTime @updatedAt
+
+  // A collection made from this batch, if the uploader made one.
+  collection Collection?
 
   @@index([userId, updated])
   @@index([status])

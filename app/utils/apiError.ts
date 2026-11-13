@@ -2,6 +2,8 @@ type ApiError = {
   statusCode?: number;
   statusMessage?: string;
   reason?: string;
+  /** Everything the server put in `data`, such as an id to go to. */
+  data?: Record<string, unknown>;
 };
 
 /**
@@ -25,7 +27,7 @@ export const parseApiError = (error: unknown): ApiError => {
     data?: {
       statusCode?: number;
       statusMessage?: string;
-      data?: { reason?: string };
+      data?: { reason?: string } & Record<string, unknown>;
     };
   };
 
@@ -36,5 +38,6 @@ export const parseApiError = (error: unknown): ApiError => {
       candidate.data?.statusCode,
     statusMessage: candidate.data?.statusMessage,
     reason: candidate.data?.data?.reason,
+    data: candidate.data?.data,
   };
 };

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { CollectionSummary } from "#shared/types/collection";
 import { parseApiError } from "~/utils/apiError";
 import type { ProfilePoster } from "~/components/profile/PosterCard.vue";
 
@@ -17,6 +18,8 @@ type PublicProfile = {
   posters: ProfilePoster[];
   /** Null unless the owner chose to show their liked posters. */
   likedPosters: ProfilePoster[] | null;
+  /** Public collections only, with at least one public poster. */
+  collections: CollectionSummary[];
   /** Root ids matching `?search=`, or null when there is no search. */
   searchMatches: number[] | null;
 };
@@ -63,12 +66,26 @@ const posterCountLabel = computed(() => {
 // reload and can be shared.
 const showLikes = computed(() => profile.value?.likedPosters != null);
 
-const activeTab = computed({
-  get: () =>
-    showLikes.value && route.query.tab === "liked" ? "liked" : "posters",
-  set: (tab: string) =>
+// The owner always sees the tab, so they learn where collections show up.
+const showCollections = computed(
+  () =>
+    (profile.value?.collections.length ?? 0) > 0 || !!profile.value?.isOwner,
+);
+
+type ProfileTab = "posters" | "liked" | "collections";
+
+const activeTab = computed<ProfileTab>({
+  get: () => {
+    if (showLikes.value && route.query.tab === "liked") return "liked";
+    if (showCollections.value && route.query.tab === "collections") {
+      return "collections";
+    }
+
+    return "posters";
+  },
+  set: (tab) =>
     router.replace({
-      query: { ...route.query, tab: tab === "liked" ? "liked" : undefined },
+      query: { ...route.query, tab: tab === "posters" ? undefined : tab },
     }),
 });
 
@@ -85,6 +102,15 @@ const tabItems = computed(() => [
           label: `Liked (${profile.value?.likedPosters?.length ?? 0})`,
           icon: "i-heroicons-heart",
           value: "liked",
+        },
+      ]
+    : []),
+  ...(showCollections.value
+    ? [
+        {
+          label: `Collections (${profile.value?.collections.length ?? 0})`,
+          icon: "i-lucide-library-big",
+          value: "collections",
         },
       ]
     : []),
@@ -305,7 +331,34 @@ useSeoMeta({
             class="w-full"
           />
 
+          <template v-if="activeTab === 'collections'">
+            <UEmpty
+              v-if="profile.collections.length === 0"
+              icon="i-lucide-library-big"
+              title="No public collections yet"
+              description="Collections you make public show here. Only you see this tab until then."
+              :actions="[
+                {
+                  label: 'Your collections',
+                  to: '/collections',
+                  color: 'neutral',
+                  variant: 'subtle',
+                },
+              ]"
+            />
+
+            <ul v-else class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <li
+                v-for="collection in profile.collections"
+                :key="collection.id"
+              >
+                <CollectionCard :collection="collection" hide-owner />
+              </li>
+            </ul>
+          </template>
+
           <ProfilePosterBrowser
+            v-else
             :key="activeTab"
             :posters="
               activeTab === 'liked'

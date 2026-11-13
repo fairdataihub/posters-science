@@ -1,8 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { collectionPath } from "#shared/utils/collection";
 import {
   organizationAvatarUrl,
   organizationPath,
 } from "#shared/utils/organization";
+import { publicCollectionWhere } from "../../../utils/collections";
 
 export default defineEventHandler(async (event) => {
   const { posterid } = event.context.params as { posterid: string };
@@ -124,6 +126,30 @@ export default defineEventHandler(async (event) => {
     avatarUrl: organizationAvatarUrl(organization.profileId),
   }));
 
+  // Public collections that hold this poster, on the same terms.
+  const collectionListings = await prisma.collectionPoster.findMany({
+    where: { posterId: rootPosterId, collection: publicCollectionWhere },
+    orderBy: { created: "asc" },
+    take: 20,
+    select: {
+      collection: {
+        select: {
+          profileId: true,
+          name: true,
+          owner: { select: { givenName: true, familyName: true } },
+        },
+      },
+    },
+  });
+
+  const collections = collectionListings.map(({ collection }) => ({
+    name: collection.name,
+    path: collectionPath(collection.profileId),
+    ownerName:
+      `${collection.owner.givenName} ${collection.owner.familyName}`.trim() ||
+      "A member",
+  }));
+
   const { umamiWebsiteId } = useRuntimeConfig();
 
   let views: number | null = null;
@@ -169,6 +195,7 @@ export default defineEventHandler(async (event) => {
     claimable: isClaimablePoster(root),
     claimed,
     organizations,
+    collections,
     views,
     likes,
     liked,

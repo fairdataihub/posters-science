@@ -1066,6 +1066,41 @@ const tabItems = [
               </ul>
             </UCard>
 
+            <UCard v-if="api?.collections?.length">
+              <template #header>
+                <h3 class="text-lg font-semibold">In collections</h3>
+              </template>
+
+              <ul class="space-y-2">
+                <li
+                  v-for="collection in api.collections"
+                  :key="collection.path"
+                >
+                  <NuxtLink
+                    :to="collection.path"
+                    class="flex items-start gap-2 rounded-md p-1 text-sm hover:bg-gray-100 dark:hover:bg-gray-800"
+                  >
+                    <UIcon
+                      name="i-lucide-library-big"
+                      class="mt-0.5 size-4 shrink-0 text-gray-500"
+                    />
+
+                    <span class="min-w-0">
+                      <span class="block font-medium break-words">
+                        {{ collection.name }}
+                      </span>
+
+                      <span
+                        class="block truncate text-xs text-gray-600 dark:text-gray-400"
+                      >
+                        By {{ collection.ownerName }}
+                      </span>
+                    </span>
+                  </NuxtLink>
+                </li>
+              </ul>
+            </UCard>
+
             <UCard>
               <template #header>
                 <h3 class="text-lg font-semibold">Additional Information</h3>
