@@ -41,11 +41,12 @@ const publicUrl = computed(() =>
 );
 
 // The tab lives in the address, ?tab=members, so a link opens it.
-const TABS = ["posters", "members", "settings"] as const;
+const TABS = ["posters", "collections", "members", "settings"] as const;
 type Tab = (typeof TABS)[number];
 
 const tabItems = computed(() => [
   { label: "Posters", value: "posters", icon: "i-lucide-image" },
+  { label: "Collections", value: "collections", icon: "i-lucide-library-big" },
   { label: "Members", value: "members", icon: "i-lucide-users" },
   {
     label: isOwner.value ? "Settings" : "Details",
@@ -320,6 +321,14 @@ async function deleteOrganization() {
                 :organization-name="organization.name"
                 :role="organization.role"
                 @changed="refresh()"
+              />
+            </UCard>
+
+            <UCard v-else-if="activeTab === 'collections'">
+              <OrganizationCollectionManager
+                :organization-id="organization.id"
+                :organization-name="organization.name"
+                :role="organization.role"
               />
             </UCard>
 
