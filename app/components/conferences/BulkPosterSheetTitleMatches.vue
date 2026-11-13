@@ -1,33 +1,60 @@
 <script setup lang="ts">
-import type { PosterSheetTitleMatch } from "#shared/types/posterSheetMapping";
+import type { PosterSheetFlaggedRow } from "#shared/types/posterSheetMapping";
 
 /**
- * Shown above the metadata grid when poster sheet rows were linked to posters
- * by title (the sheet had no file name column). Matches that needed the
- * authors to decide are listed for the organizer to check; a wrong one is
- * unlinked and never matched again.
+ * Shown above the metadata grid while poster sheet pairings need checking:
+ * rows matched to posters by title (more than the exact title was needed),
+ * a file picked by the row's number, and rows paired by file name or number
+ * whose title does not agree with the extracted poster. Each stays listed,
+ * saved or not, until the organizer accepts it or unlinks it. Unlinking puts
+ * that poster's extracted values back and the pair is never made again.
  */
 
 defineProps<{
-  /** Title matches to check, not saved yet */
-  matches: PosterSheetTitleMatch[];
+  /** Pairings to check */
+  matches: PosterSheetFlaggedRow[];
   /** Sheet rows with no poster yet */
   waiting: number;
-  /** The grid has unsaved edits (unlinking reloads it) */
-  dirty: boolean;
 }>();
 
-const emit = defineEmits<{ (e: "unlink", rowKey: string): void }>();
+const emit = defineEmits<{
+  (e: "unlink" | "accept", rowKey: string): void;
+}>();
 
-const METHOD_LABELS: Record<PosterSheetTitleMatch["method"], string> = {
+const METHOD_LABELS: Record<PosterSheetFlaggedRow["method"], string> = {
   title: "same title",
   title_authors: "similar title, same authors",
   words_fuzzy: "same words, some spelled differently",
   best_remaining: "closest of the posters left",
+  number_suggested: "the row's number is in the file name",
+  column: "file name in your sheet",
+  column_fuzzy: "close file name in your sheet",
+  number: "number at the start of the file name",
 };
 
 function percent(score: number) {
   return `${Math.round(score * 100)}%`;
+}
+
+function isFilePairing(match: PosterSheetFlaggedRow) {
+  return ["column", "column_fuzzy", "number"].includes(match.method);
+}
+
+/** How it was paired, what the poster reads when the titles disagree, and the scores. */
+function detail(match: PosterSheetFlaggedRow) {
+  const parts = [METHOD_LABELS[match.method] ?? match.method];
+  if (isFilePairing(match)) {
+    parts.push(
+      match.reason === "authors"
+        ? "but no author names in common"
+        : `but the poster reads "${match.poster_title}"`,
+    );
+  }
+  parts.push(`title ${percent(match.score)}`);
+  if (match.author_score !== null)
+    parts.push(`authors ${percent(match.author_score)}`);
+
+  return parts.join(", ");
 }
 </script>
 
@@ -38,17 +65,14 @@ function percent(score: number) {
       color="warning"
       variant="subtle"
       icon="i-lucide-link"
-      title="Check these matches from your poster sheet"
+      title="Check these pairings from your poster sheet"
     >
       <template #description>
         <p>
-          These rows in your poster sheet had no file name that matches an
-          upload, so they were matched to posters by title and authors. Your
-          sheet's values replace what was read from these posters. Unlink any
-          match that is wrong before you save.
-          <span v-if="dirty"
-            >Unlinking reloads the grid, so save other edits first.</span
-          >
+          These posters were paired with a row in your poster sheet in a way
+          that may be wrong. Your sheet's values fill these posters, so accept
+          each pairing that is right and unlink any that is wrong. Unlinking
+          puts back what was read from the poster.
         </p>
 
         <ul class="mt-2 space-y-1">
@@ -60,13 +84,16 @@ function percent(score: number) {
             <span class="font-medium">{{ match.file_name }}</span>
 
             <span class="text-muted">
-              matched to "{{ match.row_title }}" ({{
-                METHOD_LABELS[match.method] ?? match.method
-              }}, score {{ percent(match.score)
-              }}<template v-if="match.author_score !== null"
-                >, authors {{ percent(match.author_score) }}</template
-              >)
+              paired with "{{ match.row_title }}" ({{ detail(match) }})
             </span>
+
+            <UButton
+              size="xs"
+              color="neutral"
+              variant="link"
+              label="Accept"
+              @click="emit('accept', match.row_key)"
+            />
 
             <UButton
               size="xs"

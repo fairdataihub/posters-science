@@ -1,9 +1,11 @@
 import type { PosterSheetMappingResult } from "#shared/types/posterSheetMapping";
+import { posterUploadBaseName } from "#shared/utils/bulkPosterUploadFileName";
 import { getBulkPosterSubmissionJobRepository } from "~~/server/utils/bulkPosterSubmissionJobs";
 import { requireFeature } from "~~/server/utils/features";
 
 const SHEET_EXTENSIONS = [".xlsx", ".xlsm", ".xls", ".csv", ".tsv"];
 const MAX_SHEET_BYTES = 10 * 1024 * 1024;
+const MAX_BROWSER_FILE_NAMES = 5000;
 
 /**
  * Map an organizer's poster spreadsheet (Curious, EasyChair, our own) onto the
@@ -13,7 +15,10 @@ const MAX_SHEET_BYTES = 10 * 1024 * 1024;
  *
  * multipart/form-data: sheet (file; several for an export split over files,
  * such as EasyChair submission.csv plus author.csv), mapping (optional JSON of
- * confirmed column choices).
+ * confirmed column choices), file_names (optional JSON list of the poster
+ * file names the browser has, including ones still uploading). Rows are
+ * linked against those names plus the posters already stored; the pending
+ * sheet routes re-link them to the stored names once the uploads land.
  */
 export default defineEventHandler(
   async (event): Promise<PosterSheetMappingResult> => {
@@ -53,6 +58,9 @@ export default defineEventHandler(
     );
     const mapping = parts
       .find((part) => part.name === "mapping")
+      ?.data.toString("utf8");
+    const browserNamesRaw = parts
+      .find((part) => part.name === "file_names")
       ?.data.toString("utf8");
 
     if (!sheets.length) {
@@ -94,9 +102,37 @@ export default defineEventHandler(
       }
     }
 
-    const fileNames = (job.stagedPosters ?? []).map(
-      (poster) => poster.fileName,
-    );
+    let browserNames: string[] = [];
+    if (browserNamesRaw) {
+      try {
+        const parsed: unknown = JSON.parse(browserNamesRaw);
+        if (Array.isArray(parsed)) {
+          browserNames = parsed
+            .filter((name): name is string => typeof name === "string")
+            .map((name) => posterUploadBaseName(name).slice(0, 255))
+            .filter(Boolean)
+            .slice(0, MAX_BROWSER_FILE_NAMES);
+        }
+      } catch {
+        throw createError({
+          statusCode: 400,
+          statusMessage: "Invalid file name list",
+        });
+      }
+    }
+
+    // Stored posters first; browser names fill in files still uploading.
+    const fileNames: string[] = [];
+    const seen = new Set<string>();
+    for (const name of [
+      ...(job.stagedPosters ?? []).map((poster) => poster.fileName),
+      ...browserNames,
+    ]) {
+      const key = name.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      fileNames.push(name);
+    }
 
     const form = new FormData();
     for (const sheet of sheets) {
