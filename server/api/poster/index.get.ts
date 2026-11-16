@@ -1,3 +1,4 @@
+import { collectionPath } from "#shared/utils/collection";
 import {
   bulkSubmissionHasActiveExtraction,
   posterIdsFromBulkSubmissionSummary,
@@ -57,6 +58,7 @@ const bulkDashboardSelect = {
   created: true,
   updated: true,
   completedAt: true,
+  collection: { select: { id: true, profileId: true, name: true } },
 } as const;
 
 async function loadBulkDashboardRows(userId: string) {
@@ -232,6 +234,13 @@ export default defineEventHandler(async (event) => {
     createdAt: bulk.created.toISOString(),
     updatedAt: bulk.updated.toISOString(),
     completedAt: bulk.completedAt?.toISOString() ?? null,
+    collection: bulk.collection
+      ? {
+          id: bulk.collection.id,
+          path: collectionPath(bulk.collection.profileId),
+          name: bulk.collection.name,
+        }
+      : null,
   });
 
   const bulkSubmissions = bulkSubmissionRows.map(mapBulkSubmissionRow);

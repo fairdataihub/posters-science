@@ -21,20 +21,44 @@ const canDeleteBulk = computed(() => {
   );
 });
 
-const bulkMenuItems = computed(() => {
-  if (!canDeleteBulk.value) return [];
+// A finished upload can be turned into a collection, once.
+const collectionMenuItem = computed(() => {
+  if (props.bulk.status !== "completed") return null;
 
-  return [
-    [
-      {
-        label: "Delete draft",
-        icon: "i-lucide-trash-2",
-        color: "error" as const,
-        onSelect: () => emit("delete", props.bulk),
-      },
-    ],
-  ];
+  const { collection } = props.bulk;
+
+  return collection
+    ? {
+        label: "View collection",
+        icon: "i-lucide-library-big",
+        onSelect: () => navigateTo(`/collections/${collection.id}`),
+      }
+    : {
+        label: "Create collection",
+        icon: "i-lucide-library-big",
+        onSelect: () =>
+          navigateTo({
+            path: "/collections",
+            query: { new: "1", fromBatch: props.bulk.id },
+          }),
+      };
 });
+
+const bulkMenuItems = computed(() => [
+  ...(collectionMenuItem.value ? [[collectionMenuItem.value]] : []),
+  ...(canDeleteBulk.value
+    ? [
+        [
+          {
+            label: "Delete draft",
+            icon: "i-lucide-trash-2",
+            color: "error" as const,
+            onSelect: () => emit("delete", props.bulk),
+          },
+        ],
+      ]
+    : []),
+]);
 
 const CARD_TITLE_MAX_LENGTH = 80;
 
