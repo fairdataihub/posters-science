@@ -17,11 +17,14 @@ const props = withDefaults(
     committed?: string;
     placeholder?: string;
     buttonLabel?: string;
+    /** What the search finds, for the line under the input. */
+    scope?: "posters" | "collections";
   }>(),
   {
     committed: "",
     placeholder: "Search title, author, affiliation, DOI, ORCID...",
     buttonLabel: "Search Posters",
+    scope: "posters",
   },
 );
 
@@ -47,6 +50,22 @@ const searchHelp = (
 
 const searchScopeLabel = computed(() => {
   const { clauses, freeText } = parseDiscoverSearch(props.committed);
+
+  if (props.scope === "collections") {
+    if (clauses.length === 0) {
+      return freeText
+        ? `Searching collection names, descriptions, conferences and owners, and the posters inside, for "${freeText}".`
+        : "";
+    }
+
+    const parts = clauses.map(
+      ({ field, term }) => `${DISCOVER_SEARCH_FIELD_LABELS[field]} "${term}"`,
+    );
+
+    if (freeText) parts.push(`"${freeText}"`);
+
+    return `Collections matching ${parts.join(" and ")}.`;
+  }
 
   if (clauses.length === 0) {
     return freeText ? `Searching ${FREE_TEXT_SCOPE} for "${freeText}".` : "";

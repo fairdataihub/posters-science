@@ -12,7 +12,7 @@ import { escapeLike } from "#shared/utils/searchQuery";
 
 type JsonField = Exclude<
   DiscoverSearchField,
-  "title" | "description" | "doi" | "conference"
+  "title" | "description" | "doi" | "conference" | "collection"
 >;
 
 export type DiscoverSearchFilter = {
@@ -157,6 +157,20 @@ function columnCondition(
           },
         },
       };
+    // Posters in a public collection with this in its name. Collections hold
+    // the version root, so a later version matches through its root. Same
+    // rule as publicCollectionWhere in collections.ts, which imports this file.
+    case "collection": {
+      const inCollection = {
+        collectionItems: {
+          some: {
+            collection: { isPublic: true, hiddenAt: null, name: contains },
+          },
+        },
+      };
+
+      return { OR: [inCollection, { versionRoot: { is: inCollection } }] };
+    }
   }
 }
 
@@ -165,6 +179,7 @@ const COLUMN_FIELDS = new Set<DiscoverSearchField>([
   "description",
   "doi",
   "conference",
+  "collection",
 ]);
 
 function isColumnField(
