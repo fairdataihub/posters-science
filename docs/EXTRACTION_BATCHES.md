@@ -223,6 +223,18 @@ extractions. Upload failures require resending the original file. If metadata
 already exists, retry queues thumbnail-only work to avoid overwriting edits.
 Completed sibling posters are unaffected. `batchId` and `queueClass` are retained.
 
+### Completion email
+
+When every job in a batch has finished, the extraction worker emails the batch
+owner once with the number of posters extracted, failed and removed, and a link
+to their dashboard. The worker sends it directly through Resend; the website is
+not involved. `ExtractionBatch.completionEmailSentAt` records the send, so a
+failed file retried afterwards does not produce a second email. A batch whose
+jobs were all deleted is never emailed.
+
+The worker only sends while its `batch_completion_email` feature is enabled for
+that database (see the extraction API's `docs/FEATURES_AND_BATCHES.md`).
+
 ## Consuming the API
 
 Shared DTOs live in `shared/utils/extractionBatch.ts`.
