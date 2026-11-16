@@ -47,6 +47,21 @@ const props = defineProps<{
 const toast = useToast();
 const route = useRoute();
 
+// Same Tally feedback modal the single upload flow opens after publishing
+// (rendered by the default layout). Asked once, after the publish that
+// finishes the batch, so revisiting a finished batch does not reopen it. The
+// timer is not cleared on unmount, so it still opens on the summary page.
+const feedbackOpen = useState("feedbackOpen", () => false);
+let feedbackAsked = false;
+
+function afterBatchPublished() {
+  if (feedbackAsked) return;
+  feedbackAsked = true;
+  setTimeout(() => {
+    feedbackOpen.value = true;
+  }, 3000);
+}
+
 const reviewEmbargoChoice = ref<BulkImportReviewEmbargoChoice | undefined>(
   undefined,
 );
@@ -710,6 +725,7 @@ async function publishRow(row: PublishRow) {
       ...(doi && { doi }),
       error: undefined,
     });
+    if (allPublished.value) afterBatchPublished();
     await syncBatchCompletionIfReady();
     return;
   }
