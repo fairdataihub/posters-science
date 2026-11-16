@@ -168,7 +168,9 @@ function onSheetSelected(files: File[]) {
   // Several files only make sense as one export split over CSV/TSV files.
   const split =
     files.length > 1 && files.every((f) => /\.(csv|tsv)$/i.test(f.name));
-  sheetFiles.value = split ? files.slice(0, 3) : files.slice(-1);
+  // EasyChair's CSV export is up to four files: submission, author,
+  // submission_topic and topics.
+  sheetFiles.value = split ? files.slice(0, 4) : files.slice(-1);
   confirmedName.value = null;
   mapSheet();
 }
@@ -314,7 +316,7 @@ watch(
       multiple
       hide-file-list
       title="Add your poster information sheet"
-      description="Drag and drop an .xlsx, .xls, .csv or .tsv file here, or click to browse. For an EasyChair export in CSV files, add submission.csv and author.csv together."
+      description="Drag and drop an .xlsx, .xls, .csv or .tsv file here, or click to browse. For an EasyChair export in CSV files, add submission.csv, author.csv, submission_topic.csv and topics.csv together."
       :accept="SHEET_ACCEPT"
       @on-change="onSheetSelected"
     >
