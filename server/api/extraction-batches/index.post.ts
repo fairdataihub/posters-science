@@ -1,11 +1,9 @@
-import { requireFeature } from "../../utils/features";
 import { getOwnedBatch } from "../../utils/extractionBatches";
 import { createId } from "@paralleldrive/cuid2";
 import { batchManifestSchema } from "#shared/utils/extractionBatch";
 
 export default defineEventHandler(async (event) => {
   const session = await requireUserSession(event);
-  requireFeature("bulk_extraction", event);
   await assertNotInMaintenance("extraction");
 
   const parsed = batchManifestSchema.safeParse(await readBody(event));
