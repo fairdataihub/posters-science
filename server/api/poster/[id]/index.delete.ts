@@ -1,4 +1,4 @@
-import { discardZenodoDraft } from "../../../utils/zenodo";
+import { deleteUserDraftPoster } from "~~/server/utils/deleteUserDraftPoster";
 
 export default defineEventHandler(async (event) => {
   const session = await requireUserSession(event);
@@ -15,42 +15,23 @@ export default defineEventHandler(async (event) => {
 
   const { user } = session;
 
-  const poster = await prisma.poster.findUnique({
-    where: { id: posterId, userId: user.id },
-    select: {
-      id: true,
-      status: true,
-      versionRootId: true,
-      extractionJob: {
-        select: { filePath: true, status: true, completed: true },
-      },
-      zenodoDepositions: {
-        select: { depositionId: true, status: true },
-      },
-    },
-  });
+  const result = await deleteUserDraftPoster(user.id, posterId);
 
-  if (!poster) {
+  if (result.reason === "not_found") {
     throw createError({
       statusCode: 404,
       statusMessage: "Poster not found",
     });
   }
 
-  if (poster.status === "published") {
+  if (result.reason === "published") {
     throw createError({
       statusCode: 400,
       statusMessage: "Published posters cannot be deleted",
     });
   }
 
-  const versionDraftReady =
-    !poster.extractionJob ||
-    poster.extractionJob.completed ||
-    poster.extractionJob.status === "completed" ||
-    poster.extractionJob.status === "failed";
-
-  if (poster.versionRootId !== null && !versionDraftReady) {
+  if (result.reason === "version_extraction_active") {
     throw createError({
       statusCode: 409,
       statusMessage:
@@ -58,7 +39,7 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  if (poster.zenodoDepositions?.status === "published") {
+  if (result.reason === "zenodo_published") {
     throw createError({
       statusCode: 409,
       statusMessage:
@@ -66,41 +47,11 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  if (
-    poster.zenodoDepositions?.status === "draft" ||
-    poster.zenodoDepositions?.status === "draft-new"
-  ) {
-    const discarded = await discardZenodoDraft(
-      user.id,
-      poster.zenodoDepositions.depositionId,
-    );
-
-    if (!discarded.success) {
-      throw createError({
-        statusCode: 502,
-        statusMessage: discarded.error,
-      });
-    }
-  }
-
-  const filePath = poster.extractionJob?.filePath;
-
-  // Delete from DB
-  await prisma.poster.delete({ where: { id: posterId } });
-
-  const config = useRuntimeConfig();
-  // Delete from Bunny if filepath exists
-  if (filePath && config.bunnyPrivateStorage && config.bunnyPrivateStorageKey) {
-    const folderPath = filePath.substring(0, filePath.lastIndexOf("/") + 1);
-    const res = await fetch(`${config.bunnyPrivateStorage}/${folderPath}`, {
-      method: "DELETE",
-      headers: { AccessKey: config.bunnyPrivateStorageKey },
+  if (!result.deleted) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: "Poster could not be deleted",
     });
-    if (!res.ok) {
-      console.error(
-        `[poster/delete] Bunny delete failed for ${folderPath}: ${res.status}`,
-      );
-    }
   }
 
   return { success: true };

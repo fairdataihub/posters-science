@@ -14,23 +14,54 @@ interface FileUploadProps {
   accept?: string;
   /** Returns a reason the file is rejected, or null when it is allowed. */
   validateFile?: (file: File) => string | null;
+  /** Primary line in the drop zone. */
+  title?: string;
+  /** Secondary line (drag/drop instruction). */
+  description?: string;
   /** Helper text under the drop zone, such as accepted types and size limit. */
   hint?: string;
+  /** When true, selected files are not listed inside the drop zone (show them elsewhere). */
+  hideFileList?: boolean;
+  /** When true, rejected files are not shown inside the drop zone. */
+  hideRejections?: boolean;
+  /** When true, show a control to pick a folder (`webkitdirectory`). */
+  enableDirectoryPicker?: boolean;
+  /**
+   * Expand drag-and-drop into individual files (e.g. folders and archives).
+   * The native `files` list alone cannot represent a dropped directory tree.
+   */
+  resolveDroppedFiles?: (dataTransfer: DataTransfer) => Promise<File[]>;
+  /** When true, the drop zone is locked: clicks and drops are ignored. */
+  disabled?: boolean;
+  /** Shown in place of the description while disabled (e.g. what to do first). */
+  disabledMessage?: string;
 }
 
 const props = withDefaults(defineProps<FileUploadProps>(), {
   multiple: false,
   accept: undefined,
   validateFile: undefined,
+  title: "Upload file",
+  description: "Drag or drop your files here or click to upload",
   hint: undefined,
+  hideFileList: false,
+  hideRejections: false,
+  enableDirectoryPicker: false,
+  resolveDroppedFiles: undefined,
+  disabled: false,
+  disabledMessage: undefined,
 });
 
 const emit = defineEmits<{
   (e: "onChange", files: File[]): void;
   (e: "onReject", rejections: { file: File; reason: string }[]): void;
+  /** A click or drop on the locked zone, so the page can point at what's missing. */
+  (e: "onDisabledInteraction"): void;
 }>();
 
 const fileInputRef = ref<HTMLInputElement | null>(null);
+const folderInputRef = ref<HTMLInputElement | null>(null);
+const dropResolving = ref(false);
 const files = ref<File[]>([]);
 const isActive = ref<boolean>(false);
 const rejections = ref<{ name: string; reason: string }[]>([]);
@@ -83,10 +114,24 @@ function onFileChange(e: Event) {
 }
 
 function handleClick() {
+  if (props.disabled) {
+    emit("onDisabledInteraction");
+    return;
+  }
   fileInputRef.value?.click();
 }
 
+function handleFolderClick(event: MouseEvent) {
+  event.stopPropagation();
+  if (props.disabled) {
+    emit("onDisabledInteraction");
+    return;
+  }
+  folderInputRef.value?.click();
+}
+
 function handleEnter() {
+  if (props.disabled) return;
   isActive.value = true;
 }
 function handleLeave() {
@@ -94,11 +139,34 @@ function handleLeave() {
 }
 function handleDrop(e: DragEvent) {
   isActive.value = false;
-  const droppedFiles = e.dataTransfer?.files
-    ? Array.from(e.dataTransfer.files)
-    : [];
-  if (droppedFiles.length) handleFileChange(droppedFiles);
+  if (props.disabled) {
+    emit("onDisabledInteraction");
+    return;
+  }
+  if (!e.dataTransfer) return;
+
+  void (async () => {
+    dropResolving.value = true;
+    try {
+      const droppedFiles = props.resolveDroppedFiles
+        ? await props.resolveDroppedFiles(e.dataTransfer!)
+        : [...(e.dataTransfer?.files ?? [])];
+      if (droppedFiles.length) handleFileChange(droppedFiles);
+    } finally {
+      dropResolving.value = false;
+    }
+  })();
 }
+
+function clearFiles() {
+  files.value = [];
+  rejections.value = [];
+  if (fileInputRef.value) fileInputRef.value.value = "";
+  if (folderInputRef.value) folderInputRef.value.value = "";
+  emit("onChange", []);
+}
+
+defineExpose({ clearFiles });
 </script>
 
 <template>
@@ -112,7 +180,9 @@ function handleDrop(e: DragEvent) {
       @mouseleave="handleLeave"
     >
       <div
-        class="group/file relative block w-full cursor-pointer overflow-hidden rounded-lg p-10"
+        class="group/file relative block w-full overflow-hidden rounded-lg p-10"
+        :class="disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'"
+        :aria-disabled="disabled || undefined"
         @click="handleClick"
       >
         <input
@@ -121,6 +191,16 @@ function handleDrop(e: DragEvent) {
           class="hidden"
           :multiple="multiple"
           :accept="accept"
+          @change="onFileChange"
+        />
+
+        <input
+          v-if="enableDirectoryPicker"
+          ref="folderInputRef"
+          type="file"
+          class="hidden"
+          multiple
+          webkitdirectory
           @change="onFileChange"
         />
 
@@ -136,13 +216,13 @@ function handleDrop(e: DragEvent) {
           <p
             class="relative z-20 font-sans text-base font-bold text-neutral-700 dark:text-neutral-300"
           >
-            Upload file
+            {{ title }}
           </p>
 
           <p
-            class="relative z-20 mt-2 font-sans text-base font-normal text-neutral-400 dark:text-neutral-400"
+            class="relative z-20 mt-2 max-w-lg text-center font-sans text-base font-normal text-neutral-400 dark:text-neutral-400"
           >
-            Drag or drop your files here or click to upload
+            {{ disabled && disabledMessage ? disabledMessage : description }}
           </p>
 
           <p
@@ -152,9 +232,34 @@ function handleDrop(e: DragEvent) {
             {{ hint }}
           </p>
 
-          <div class="relative mx-auto mt-10 w-full max-w-xl space-y-4">
+          <p
+            v-if="enableDirectoryPicker && !disabled"
+            class="relative z-30 mt-3 font-sans text-sm text-neutral-500 dark:text-neutral-400"
+          >
+            <button
+              type="button"
+              class="text-primary font-medium underline-offset-2 hover:underline"
+              @click.stop="handleFolderClick"
+            >
+              Select a folder
+            </button>
+            <span> or drop a folder or archive here.</span>
+          </p>
+
+          <p
+            v-if="dropResolving"
+            class="relative z-20 mt-2 text-sm text-neutral-500 dark:text-neutral-400"
+          >
+            Reading dropped files…
+          </p>
+
+          <div
+            class="relative mx-auto w-full max-w-xl space-y-4"
+            :class="hideFileList ? 'mt-4' : 'mt-10'"
+          >
             <Motion
               v-for="(file, idx) in files"
+              v-show="!hideFileList"
               :key="`file-${idx}`"
               :initial="{ opacity: 0, scaleX: 0 }"
               :animate="{ opacity: 1, scaleX: 1 }"
@@ -216,6 +321,7 @@ function handleDrop(e: DragEvent) {
             <!-- Files the caller refused, e.g. wrong type or too large -->
             <div
               v-for="rejected in rejections"
+              v-show="!hideRejections"
               :key="`rejected-${rejected.name}`"
               class="relative z-40 mx-auto flex w-full items-start gap-2 rounded-md border border-red-300 bg-red-50 p-3 text-left dark:border-red-900 dark:bg-red-950/50"
             >

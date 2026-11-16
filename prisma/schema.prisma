@@ -48,15 +48,20 @@ model User {
   // (0000-0002-1825-0097) or "" when unset.
   orcid            String  @default("")
 
-  created DateTime @default(now())
-  updated DateTime @updatedAt
-  Poster  Poster[]
+  created           DateTime          @default(now())
+  updated           DateTime          @updatedAt
+  Poster            Poster[]
+  extractionBatches ExtractionBatch[]
 
   ZenodoToken       ZenodoToken?
   ZenodoDepositions ZenodoDeposition[]
 
   linkedAccounts LinkedAccount[]
   posterClaims   PosterClaim[]
+
+  organizationMemberships OrganizationMember[]
+  organizationInvitesSent OrganizationInvite[]
+  organizationPosters     OrganizationPoster[]
 
   likes Like[] @relation("UserLikes")
 
@@ -65,6 +70,7 @@ model User {
 
   adminAuditLogs AdminAuditLog[] @relation("AdminActions")
 
+  bulkSubmissions BulkSubmission[]
   maintenanceFlagUpdates MaintenanceFlag[] @relation("MaintenanceFlagUpdates")
 
   @@index([emailAddress])
@@ -149,6 +155,8 @@ model Poster {
   likes Like[] @relation("PosterLikes")
 
   claims PosterClaim[]
+
+  organizationListings OrganizationPoster[]
 
   @@unique([versionRootId, versionSequence])
   @@index([versionRootId, status])
@@ -259,6 +267,100 @@ model PosterClaim {
   @@index([userId])
 }
 
+// A lab, institute, society or other group with its own public page. An
+// organization never signs in and has no role, so it can't be an admin. It shows
+// posters but never owns them: Poster.userId stays the owner, and only that
+// person can edit or publish the poster.
+model Organization {
+  id String @id @default(cuid(2))
+
+  // The whole public address, /org/<profileId>. It is random and never changes,
+  // so a link keeps working if the organization is renamed.
+  profileId String @unique
+
+  name        String
+  description String @default("")
+  websiteUrl  String @default("")
+
+  // Private until an owner makes it public, like a user profile.
+  profilePublic Boolean @default(false)
+
+  // Whether the public page says how many members there are. Members are never
+  // named there, and members always see the count.
+  showMemberCount Boolean @default(true)
+
+  // Set when an admin takes the page down. Wins over profilePublic.
+  hiddenAt     DateTime?
+  hiddenReason String    @default("")
+
+  created DateTime @default(now())
+  updated DateTime @updatedAt
+
+  members OrganizationMember[]
+  invites OrganizationInvite[]
+  posters OrganizationPoster[]
+}
+
+model OrganizationMember {
+  id String @id @default(cuid(2))
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+
+  role String @default("member") // owner | member
+
+  created DateTime @default(now())
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+}
+
+// An invitation to join, accepted by the person whose verified account email
+// matches. Accepting or declining deletes the row.
+model OrganizationInvite {
+  id String @id @default(cuid(2))
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+
+  emailAddress String // lower case
+
+  invitedBy   User   @relation(fields: [invitedById], references: [id], onDelete: Cascade)
+  invitedById String
+
+  expiresAt DateTime
+
+  created DateTime @default(now())
+
+  @@unique([organizationId, emailAddress])
+  @@index([emailAddress])
+}
+
+// A poster shown on an organization's page. This grants the organization no
+// rights over the poster. Removing the row only takes it off the page.
+model OrganizationPoster {
+  id String @id @default(cuid(2))
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+
+  // Always the version root, so a new version appears on the page by itself.
+  poster   Poster @relation(fields: [posterId], references: [id], onDelete: Cascade)
+  posterId Int
+
+  addedBy   User   @relation(fields: [addedById], references: [id], onDelete: Cascade)
+  addedById String
+
+  created DateTime @default(now())
+
+  @@unique([organizationId, posterId])
+  @@index([posterId])
+  @@index([addedById])
+}
+
 model ZenodoToken {
   id String @id @default(cuid(2))
 
@@ -266,8 +368,9 @@ model ZenodoToken {
   userId String @unique
 
   // oauth: issued by the Zenodo OAuth flow, expires and comes with a refresh
-  // token. personal: a personal access token the user pasted in, which never
-  // expires and has no refresh token.
+  // token. personal: a personal access token the user pasted in, which has no
+  // refresh token and is deleted an hour after it is connected
+  // (server/plugins/zenodoPersonalTokenPurge.ts).
   tokenType String @default("oauth") // oauth | personal
 
   // Both tokens are encrypted at rest (server/utils/zenodoTokenCrypto.ts).
@@ -289,6 +392,8 @@ model ZenodoDeposition {
   depositionId           Int     @unique // Last published Zenodo deposition ID
   status                 String  @default("unpublished") // draft, published, unpublished
   lastPublishedZenodoDoi String? // Last published Zenodo DOI
+  /** ISO date (YYYY-MM-DD, UTC) when Zenodo file download embargo ends; null if files are public. */
+  filesEmbargoUntil      String?
 
   user   User   @relation(fields: [userId], references: [id])
   userId String
@@ -329,6 +434,62 @@ model MetricsSnapshot {
   @@index([generatedAt])
 }
 
+/// In-progress bulk poster import (wizard state). Distinct from `ExtractionJob` per poster.
+model BulkSubmission {
+  id String @id @default(cuid(2))
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+
+  name String
+
+  // setup | upload | conference | submit
+  wizardStep String @default("upload")
+  // draft | processing | completed | failed
+  status String @default("draft")
+  stagedPosters Json @default("[]")
+
+  licenseMetadataFileName String?
+  licenseMetadataFilePath String?
+
+  zipFileName String?
+  zipFilePath String?
+
+  posterCount Int?
+
+  submissionSummary Json?
+
+  error String?
+
+  managedConferenceId String?
+
+  completedAt DateTime?
+
+  created DateTime @default(now())
+  updated DateTime @updatedAt
+
+  @@index([userId, updated])
+  @@index([status])
+}
+
+model ExtractionBatch {
+  id                    String          @id @default(cuid(2))
+  user                  User            @relation(fields: [userId], references: [id])
+  userId                String
+  requestKey            String
+  name                  String
+  totalFiles            Int
+  jobs                  ExtractionJob[]
+  // Set by the extraction worker once it has emailed the owner that every job
+  // in the batch has finished. Null means no email has been sent yet.
+  completionEmailSentAt DateTime?
+  created               DateTime        @default(now())
+  updated               DateTime        @updatedAt
+
+  @@unique([userId, requestKey])
+  @@index([userId, created])
+}
+
 model ExtractionJob {
   // This record and the files will only be removed after the poster is published or a doi is submitted
   id String @id @default(cuid(2))
@@ -339,15 +500,24 @@ model ExtractionJob {
   fileName String
   filePath String
 
-  completed Boolean @default(false)
-  // pending-extraction, pending-thumbnail, processing, completed, failed
-  status    String  @default("pending-extraction")
-  error     String? // Filled when job fails
+  completed    Boolean          @default(false)
+  // Existing jobs retain single priority. A bulk job always belongs to a batch.
+  queueClass   String           @default("single")
+  batch        ExtractionBatch? @relation(fields: [batchId], references: [id], onDelete: Restrict)
+  batchId      String?
+  batchIndex   Int?
+  fileSize     Int?
+  fileUploaded Boolean          @default(true)
+  // pending-upload, uploading, pending-extraction, pending-thumbnail, processing, completed, failed
+  status       String           @default("pending-extraction")
+  error        String? // Filled when job fails
 
   created DateTime @default(now())
   updated DateTime @updatedAt
 
+  @@unique([batchId, batchIndex])
   @@index([status])
+  @@index([queueClass, completed, status, created])
 }
 
 model MaintenanceFlag {

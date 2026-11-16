@@ -1,0 +1,281 @@
+import { createError } from "h3";
+import type { Prisma } from "#shared/generated/client";
+import type { BulkImportConferenceMetadata } from "#shared/types/bulkImportConference";
+import type { BulkImportSubmissionSummary } from "#shared/types/bulkImportLicenses";
+import prisma from "~~/server/utils/prisma";
+import { getBulkPosterSubmissionJobRepository } from "~~/server/utils/bulkPosterSubmissionJobs";
+import { ensurePostersScienceDiscoverRelatedIdentifier } from "~~/server/utils/postersScienceDiscoverRelatedIdentifier";
+
+function optionalString(value: string | undefined) {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
+
+const OPTIONAL_BULK_CONFERENCE_FIELDS = [
+  "conferenceLocation",
+  "conferenceUri",
+  "conferenceIdentifier",
+  "conferenceIdentifierType",
+  "conferenceStartDate",
+  "conferenceEndDate",
+  "conferenceAcronym",
+  "conferenceSeries",
+] as const satisfies readonly (keyof BulkImportConferenceMetadata &
+  keyof Prisma.PosterMetadataUpdateInput)[];
+
+type OptionalBulkConferenceField =
+  (typeof OPTIONAL_BULK_CONFERENCE_FIELDS)[number];
+
+export function conferenceToPosterMetadataFields(
+  conference: BulkImportConferenceMetadata,
+): Pick<BulkImportConferenceMetadata, "conferenceName" | "conferenceYear"> &
+  Partial<Record<OptionalBulkConferenceField, string | null>> {
+  const data: Pick<
+    BulkImportConferenceMetadata,
+    "conferenceName" | "conferenceYear"
+  > &
+    Partial<Record<OptionalBulkConferenceField, string | null>> = {
+    conferenceName: conference.conferenceName,
+    conferenceYear: conference.conferenceYear,
+  };
+
+  for (const field of OPTIONAL_BULK_CONFERENCE_FIELDS) {
+    if (field in conference) {
+      data[field] = optionalString(conference[field]);
+    }
+  }
+
+  return data;
+}
+
+/** A "Presented" date value: one day, or "start/end" for a range. */
+function presentedDateValue(start?: string | null, end?: string | null): string {
+  const from = start?.trim() ?? "";
+  const to = end?.trim() ?? "";
+  if (!from) return "";
+
+  return to && to !== from ? `${from}/${to}` : from;
+}
+
+type PosterDate = { date?: string; dateType?: string };
+
+/**
+ * A batch poster's presentation date defaults to the conference's dates
+ * (presented during the conference). Returns the poster's new `dates`, or
+ * undefined to leave them alone: a date someone set themselves (it no longer
+ * equals the conference dates applied before) is never overwritten.
+ */
+function datesWithConferencePresented(
+  existingDates: unknown,
+  previousConference: { start?: string | null; end?: string | null },
+  nextConference: { start?: string | null; end?: string | null },
+): PosterDate[] | undefined {
+  const dates = Array.isArray(existingDates) ? (existingDates as PosterDate[]) : [];
+  const current =
+    dates.find((entry) => entry.dateType === "Presented")?.date?.trim() ?? "";
+  const previous = presentedDateValue(
+    previousConference.start,
+    previousConference.end,
+  );
+  const next = presentedDateValue(nextConference.start, nextConference.end);
+
+  const setFromConference = !current || current === previous;
+  if (!setFromConference || current === next) return undefined;
+
+  const others = dates.filter((entry) => entry.dateType !== "Presented");
+
+  return next ? [{ date: next, dateType: "Presented" }, ...others] : others;
+}
+
+export function posterMetadataCreateFromBulkSubmissionSummary(
+  summary: BulkImportSubmissionSummary,
+): Prisma.PosterMetadataCreateWithoutPosterInput | null {
+  const license = summary.uniformLicense?.trim();
+  const conference = summary.conference;
+  if (!license || !conference?.conferenceName?.trim() || conference.conferenceYear == null) {
+    return null;
+  }
+
+  const presented = presentedDateValue(
+    conference.conferenceStartDate,
+    conference.conferenceEndDate,
+  );
+
+  return {
+    license,
+    ...conferenceToPosterMetadataFields(conference),
+    ...(presented && { dates: [{ date: presented, dateType: "Presented" }] }),
+  };
+}
+
+export function posterMetadataUpdateFromBulkSubmissionSummary(
+  summary: BulkImportSubmissionSummary,
+): Prisma.PosterMetadataUpdateInput {
+  const data: Prisma.PosterMetadataUpdateInput = {};
+  const license = summary.uniformLicense?.trim();
+  if (license) {
+    data.license = license;
+  }
+  const conference = summary.conference;
+  if (
+    conference?.conferenceName?.trim() &&
+    conference.conferenceYear != null
+  ) {
+    Object.assign(data, conferenceToPosterMetadataFields(conference));
+  }
+  return data;
+}
+
+function posterIdsFromBulkSummary(summary: BulkImportSubmissionSummary | null) {
+  const ids = new Set<number>();
+  if (!summary) return ids;
+
+  if (Array.isArray(summary.createdPosterIds)) {
+    for (const id of summary.createdPosterIds) {
+      if (typeof id === "number") ids.add(id);
+    }
+  }
+  if (Array.isArray(summary.createdPosters)) {
+    for (const entry of summary.createdPosters) {
+      if (entry && typeof entry.posterId === "number") ids.add(entry.posterId);
+    }
+  }
+  return ids;
+}
+
+/**
+ * Applies batch license + conference from the bulk wizard onto poster metadata.
+ * Called after extraction (the worker blanks these fields) and when the
+ * conference or license step changes. Posters that already match are skipped.
+ */
+export async function applyBulkSubmissionMetadataToPosters(
+  userId: string,
+  jobId: string,
+  posterId?: number,
+): Promise<{ updatedPosterIds: number[] }> {
+  const repository = getBulkPosterSubmissionJobRepository();
+  const job = await repository.getByIdForUser(jobId, userId);
+
+  if (!job) {
+    throw createError({
+      statusCode: 404,
+      statusMessage: "Bulk import not found",
+    });
+  }
+
+  const summary = (job.submissionSummary ?? {}) as BulkImportSubmissionSummary;
+  const updateData = posterMetadataUpdateFromBulkSubmissionSummary(summary);
+  if (Object.keys(updateData).length === 0) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: "Bulk import has no license or conference to apply",
+    });
+  }
+
+  const allowedIds = posterIdsFromBulkSummary(summary);
+  if (allowedIds.size === 0) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: "Bulk import has no submitted posters yet",
+    });
+  }
+
+  const targetIds = posterId != null ? [posterId] : [...allowedIds];
+  if (posterId != null && !allowedIds.has(posterId)) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: "Poster is not part of this bulk import",
+    });
+  }
+
+  const updatedPosterIds: number[] = [];
+
+  // The fields this copy writes, read back so posters that already match are skipped.
+  const copiedFields = Object.keys(updateData);
+
+  // One query for ownership/state of every poster in the batch.
+  const ownedRows = await prisma.poster.findMany({
+    where: { id: { in: targetIds }, userId },
+    select: {
+      id: true,
+      posterMetadata: {
+        select: {
+          ...(Object.fromEntries(
+            copiedFields.map((field) => [field, true]),
+          ) as Prisma.PosterMetadataSelect),
+          posterId: true,
+          dates: true,
+          conferenceStartDate: true,
+          conferenceEndDate: true,
+        },
+      },
+      extractionJob: { select: { completed: true } },
+    },
+  });
+  const ownedById = new Map(ownedRows.map((row) => [row.id, row]));
+
+  const config = useRuntimeConfig();
+  const siteEnv = config.siteEnv || config.public.siteEnv;
+
+  async function applyOne(id: number): Promise<boolean> {
+    const owned = ownedById.get(id);
+    if (!owned) return false;
+
+    if (owned.posterMetadata) {
+      const dates = summary.conference
+        ? datesWithConferencePresented(
+            owned.posterMetadata.dates,
+            {
+              start: owned.posterMetadata.conferenceStartDate,
+              end: owned.posterMetadata.conferenceEndDate,
+            },
+            {
+              start: summary.conference.conferenceStartDate,
+              end: summary.conference.conferenceEndDate,
+            },
+          )
+        : undefined;
+
+      // Already has the batch license and conference: nothing to write.
+      const current = owned.posterMetadata as Record<string, unknown>;
+      const fieldsMatch = copiedFields.every(
+        (field) =>
+          (current[field] ?? null) ===
+          ((updateData as Record<string, unknown>)[field] ?? null),
+      );
+      const datesMatch =
+        !dates ||
+        JSON.stringify(dates) === JSON.stringify(owned.posterMetadata.dates);
+      if (fieldsMatch && datesMatch) return false;
+
+      await prisma.posterMetadata.update({
+        where: { posterId: id },
+        data: { ...updateData, ...(dates && { dates }) },
+      });
+    } else {
+      const createData = posterMetadataCreateFromBulkSubmissionSummary(summary);
+      if (!createData) return false;
+      await prisma.posterMetadata.create({
+        data: { posterId: id, ...createData },
+      });
+    }
+
+    if (owned.extractionJob?.completed) {
+      await ensurePostersScienceDiscoverRelatedIdentifier(id, { siteEnv });
+    }
+
+    return true;
+  }
+
+  // Posters are independent rows; process a few at a time instead of serially.
+  const APPLY_CONCURRENCY = 6;
+  for (let i = 0; i < targetIds.length; i += APPLY_CONCURRENCY) {
+    const chunk = targetIds.slice(i, i + APPLY_CONCURRENCY);
+    const results = await Promise.all(chunk.map((id) => applyOne(id)));
+    chunk.forEach((id, index) => {
+      if (results[index]) updatedPosterIds.push(id);
+    });
+  }
+
+  return { updatedPosterIds };
+}

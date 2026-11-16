@@ -7,9 +7,14 @@ const PROTECTED_ROUTES = [
   "/forgot-password",
   "/liked",
   "/login",
+  // Organization pages are kept out of search engines, like user profiles.
+  "/org",
+  "/organizations",
   "/profile",
   "/reset-password",
+  "/share",
   "/share/new",
+  "/share/new-bulk",
   "/signup",
   "/verify-email",
   "/zenodo-auth-error",
@@ -146,6 +151,8 @@ export default defineNuxtConfig({
     // NUXT_ZENODO_TOKEN_ENCRYPTION_KEY. Changing it disconnects every user.
     zenodoTokenEncryptionKey: "",
     posterExtractionApi: "",
+    // Overridden by NUXT_FEATURES.
+    features: "",
     bunnyPrivateStorage: "",
     bunnyPrivateStorageKey: "",
     bunnyPublicStorage: "",
@@ -164,17 +171,25 @@ export default defineNuxtConfig({
     },
   },
   vite: {
+    // The libarchive.js worker (bulk 7z/RAR/TAR uploads) is an ES module.
+    worker: { format: "es" },
     optimizeDeps: {
       include: [
         "@inspira-ui/plugins", // CJS
         "@internationalized/date",
+        "@vue/devtools-core",
+        "@vue/devtools-kit",
+        "@vueuse/core",
         "clsx",
         "dayjs", // CJS
         "dayjs/plugin/relativeTime", // CJS
         "dayjs/plugin/timezone", // CJS
         "dayjs/plugin/updateLocale", // CJS
         "dayjs/plugin/utc", // CJS
+        "jszip", // CJS
+        "libarchive.js",
         "motion-v",
+        "tailwind-merge",
         "vue3-lottie",
         "zod",
       ],

@@ -271,6 +271,7 @@ onUnmounted(() => {
         <UBreadcrumb
           :items="[
             { label: 'Dashboard', to: '/dashboard' },
+            { label: 'Share Posters', to: '/share' },
             { label: 'Upload Poster', to: '/share/new' },
           ]"
         />
@@ -282,6 +283,8 @@ onUnmounted(() => {
         <UCard>
           <div class="space-y-6">
             <MaintenanceNotice maintenance-key="extraction" />
+
+            <ExtractionAccuracyNotice />
 
             <UiFileUpload
               :accept="POSTER_FILE_ACCEPT"

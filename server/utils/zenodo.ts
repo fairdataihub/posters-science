@@ -1,6 +1,15 @@
 import { buildPosterJson } from "./buildPosterJson";
+import { bulkZenodoFileEmbargoDaysForPoster } from "./bulkImportZenodoEmbargo";
+import { resolveThumbnailServicePosterPath } from "./posterObjectPath";
 import { toZenodoRelatedIdentifiers } from "./zenodoVocabulary";
 import { isValidOrcidChecksum, validateOrcidExists } from "#shared/utils/orcid";
+import {
+  zenodoFileEmbargoAccessFromDays,
+  zenodoPublicRdmAccess,
+  type ZenodoRdmAccess,
+  type ZenodoRdmFileEmbargoAccess,
+} from "#shared/utils/zenodoFileEmbargoAccess";
+import { zenodoRecordWebUrl } from "#shared/utils/zenodoRecordWebUrl";
 import isoLanguages from "#shared/data/iso-639-1.json";
 
 const ISO639_1_TO_3: Record<string, string> = Object.fromEntries(
@@ -157,6 +166,14 @@ async function getZenodoToken(userId: string) {
   return tokenRecord;
 }
 
+/** Decrypted Zenodo access token for server-side API calls, if connected. */
+export async function getZenodoAccessTokenForApi(
+  userId: string,
+): Promise<string | null> {
+  const tokenRecord = await getZenodoToken(userId);
+  return tokenRecord?.accessToken ?? null;
+}
+
 // The stored token, decrypted, whether or not it has expired.
 // validateZenodoToken reads it this way to tell the user why they need to
 // connect again.
@@ -308,6 +325,81 @@ export type ZenodoUserRecord = {
   version?: string;
   versionIndex?: number;
 };
+
+export type ZenodoAccountInfo = {
+  id: string;
+  username: string;
+  fullName?: string;
+  email?: string;
+  affiliations?: string;
+  profileUrl?: string;
+};
+
+type ZenodoUserBody = {
+  id?: string | number;
+  username?: string;
+  email?: string;
+  profile?: { full_name?: string; affiliations?: string };
+};
+
+/** The signed-in user: /me first, else the first page of /users (marked is_current_user). */
+async function fetchCurrentZenodoUser(
+  accessToken: string,
+): Promise<ZenodoUserBody | null> {
+  const me = await fetch(`${config.zenodoApiEndpoint}/me`, {
+    headers: rdmHeaders(accessToken),
+  }).catch(() => null);
+  if (me?.ok) {
+    const body = (await me.json().catch(() => null)) as ZenodoUserBody | null;
+    if (body?.username || body?.email) return body;
+  }
+
+  const res = await fetch(`${config.zenodoApiEndpoint}/users?size=10`, {
+    headers: rdmHeaders(accessToken),
+  });
+  if (!res.ok) {
+    console.warn(`[Zenodo] Could not load account info (${res.status})`);
+    return null;
+  }
+  const body = await res.json().catch(() => null);
+  const hits =
+    (body as { hits?: { hits?: Record<string, unknown>[] } })?.hits?.hits ?? [];
+
+  return (
+    (hits.find((entry) => entry?.is_current_user === true) as
+      | ZenodoUserBody
+      | undefined) ?? null
+  );
+}
+
+async function fetchZenodoAccountInfo(
+  accessToken: string,
+): Promise<ZenodoAccountInfo | null> {
+  const current = await fetchCurrentZenodoUser(accessToken);
+  if (!current) return null;
+
+  const email =
+    typeof current.email === "string" && current.email.includes("@")
+      ? current.email
+      : undefined;
+  // Without a username, still show the email so the account is identifiable.
+  const realUsername = current.username?.trim();
+  const username = realUsername || email;
+  if (!username) return null;
+
+  const fullName = current.profile?.full_name?.trim();
+  const affiliations = current.profile?.affiliations?.trim();
+  const zenodoBase = config.zenodoEndpoint.replace(/\/$/, "");
+
+  return {
+    id: String(current.id ?? username),
+    username,
+    ...(fullName && { fullName }),
+    ...(email && { email }),
+    ...(affiliations && { affiliations }),
+    ...(realUsername && { profileUrl: `${zenodoBase}/${realUsername}` }),
+  };
+}
 
 // Maps an InvenioRDM /user/records search body to the shape of the publish UI
 function parseUserRecords(body: unknown): ZenodoUserRecord[] {
@@ -483,6 +575,11 @@ export async function validateZenodoToken(
 
   console.log("[Zenodo] Validation result: Zenodo token is valid");
 
+  const latestToken = await getZenodoToken(userId);
+  const zenodoAccount = latestToken?.accessToken
+    ? await fetchZenodoAccountInfo(latestToken.accessToken)
+    : null;
+
   // The token is genuinely valid and stays that way until expiresAt, so it is
   // reported valid either way. refreshRejected only says it can no longer be
   // extended, which is a warning about that date, not about right now.
@@ -492,6 +589,7 @@ export async function validateZenodoToken(
     existingDepositions,
     refreshRejected,
     expiresAt: tokenRecord.expiresAt,
+    zenodoAccount,
     tokenType: tokenRecord.tokenType,
   };
 }
@@ -899,7 +997,7 @@ async function linkZenodoDeposition(
   posterId: number,
   userId: string,
   recordId: number,
-  published?: { doi?: string },
+  published?: { doi?: string; filesEmbargoUntil?: string | null },
   draftOrigin?: WorkingDraftOrigin,
 ) {
   const state = {
@@ -911,6 +1009,9 @@ async function linkZenodoDeposition(
         ? NEW_DEPOSITION_DRAFT_STATUS
         : "draft",
     ...(published?.doi && { lastPublishedZenodoDoi: published.doi }),
+    ...(published && {
+      filesEmbargoUntil: published.filesEmbargoUntil ?? null,
+    }),
   };
 
   try {
@@ -975,6 +1076,12 @@ export async function getOrCreateThumbnail(
     };
   }
 
+  const resolvedPath = resolveThumbnailServicePosterPath(filePath);
+  if (!resolvedPath.ok) {
+    return { success: false as const, error: resolvedPath.error };
+  }
+  filePath = resolvedPath.filePath;
+
   if (!config.posterExtractionApi) {
     return {
       success: false as const,
@@ -982,7 +1089,9 @@ export async function getOrCreateThumbnail(
     };
   }
 
-  console.log(`[Zenodo] Generating missing thumbnail for poster ${posterId}`);
+  console.log(
+    `[Zenodo] Generating missing thumbnail for poster ${posterId} from ${filePath}`,
+  );
 
   let response: Response;
 
@@ -1199,6 +1308,21 @@ export async function beginZenodoPublication(
     return { success: false, error: "Poster or metadata not found" };
   }
 
+  const bulkFileEmbargoDays =
+    mode === "new"
+      ? await bulkZenodoFileEmbargoDaysForPoster(userId, posterInt)
+      : null;
+  const zenodoFileEmbargoAccess =
+    bulkFileEmbargoDays != null
+      ? zenodoFileEmbargoAccessFromDays(bulkFileEmbargoDays)
+      : null;
+
+  if (zenodoFileEmbargoAccess) {
+    console.log(
+      `[Zenodo] Bulk batch file embargo until ${zenodoFileEmbargoAccess.embargo.until} [poster ${posterId}]`,
+    );
+  }
+
   // Sequential local versions must extend their existing Zenodo record. Check
   // this before thumbnail work or any remote draft can be created.
   if (poster.versionRootId && mode !== "existing") {
@@ -1381,12 +1505,20 @@ export async function beginZenodoPublication(
       }),
     ]);
 
+    const { tryMarkBulkSubmissionZenodoComplete } = await import(
+      "~~/server/utils/bulkImportZenodoBatchCompletion"
+    );
+    await tryMarkBulkSubmissionZenodoComplete(userId, poster.id);
+
     return {
       success: true,
       data: {
         recordId: poster.zenodoDepositions.depositionId,
         doi: publishedDoi,
-        recordUrl: `${config.zenodoEndpoint}/records/${poster.zenodoDepositions.depositionId}`,
+        recordUrl: zenodoRecordWebUrl(
+          poster.zenodoDepositions.depositionId,
+          config.zenodoEndpoint,
+        ),
       },
     };
   }
@@ -1454,6 +1586,7 @@ export async function beginZenodoPublication(
         { skipRorIds: true },
       ),
     },
+    zenodoFileEmbargoAccess,
   );
 
   if (!status.success) {
@@ -1762,6 +1895,9 @@ export async function beginZenodoPublication(
       ...(draft.pids?.doi?.identifier && {
         pids: draft.pids as Record<string, unknown>,
       }),
+      ...(zenodoFileEmbargoAccess && {
+        rdmAccess: zenodoFileEmbargoAccess,
+      }),
     },
   );
 
@@ -1934,7 +2070,9 @@ export async function beginZenodoPublication(
   await onProgress?.({
     step: "publish",
     status: "in_progress",
-    message: "Publishing to Zenodo...",
+    message: zenodoFileEmbargoAccess
+      ? `Publishing to Zenodo (files under embargo until ${zenodoFileEmbargoAccess.embargo.until})...`
+      : "Publishing to Zenodo...",
   });
 
   // Publish the draft
@@ -1988,7 +2126,10 @@ export async function beginZenodoPublication(
     posterInt,
     userId,
     published.recordId,
-    { doi: publishedDoi },
+    {
+      doi: publishedDoi,
+      filesEmbargoUntil: zenodoFileEmbargoAccess?.embargo.until ?? null,
+    },
   );
 
   if (!linkedPublished.success) {
@@ -2043,6 +2184,11 @@ export async function beginZenodoPublication(
   });
 
   console.log(`[Zenodo] Publication successful [record ${published.recordId}]`);
+
+  const { tryMarkBulkSubmissionZenodoComplete } = await import(
+    "~~/server/utils/bulkImportZenodoBatchCompletion"
+  );
+  await tryMarkBulkSubmissionZenodoComplete(userId, posterInt);
 
   return { success: true, data: published };
 }
@@ -2124,11 +2270,15 @@ function rdmGet(path: string, zenodoToken: string) {
   });
 }
 
-async function createRdmDraft(zenodoToken: string, seed: RdmDraftSeed) {
+async function createRdmDraft(
+  zenodoToken: string,
+  seed: RdmDraftSeed,
+  access: ZenodoRdmAccess = zenodoPublicRdmAccess(),
+) {
   console.log("[Zenodo] Creating new InvenioRDM draft");
 
   const body = {
-    access: { record: "public", files: "public" },
+    access,
     files: { enabled: true },
     metadata: {
       title: seed.title,
@@ -2222,11 +2372,16 @@ async function acquireWorkingDraft(
   depositionId: number | undefined,
   zenodoToken: string,
   seed: RdmDraftSeed,
+  fileEmbargoAccess: ZenodoRdmFileEmbargoAccess | null = null,
 ): Promise<
   { success: true; data: WorkingDraft } | { success: false; error: string }
 > {
   if (mode === "new") {
-    const created = await createRdmDraft(zenodoToken, seed);
+    const created = await createRdmDraft(
+      zenodoToken,
+      seed,
+      fileEmbargoAccess ?? zenodoPublicRdmAccess(),
+    );
 
     return created.success
       ? {
@@ -2588,6 +2743,7 @@ type RdmExtras = {
   // Echoed back on the PUT so a full replacement update cannot drop a DOI the
   // draft already carries.
   pids?: Record<string, unknown>;
+  rdmAccess?: ZenodoRdmAccess;
 };
 
 // Builds a complete InvenioRDM PUT payload directly from DB data.
@@ -2668,6 +2824,10 @@ function buildFullRdmPayload(
   }
 
   return {
+    ...(options?.rdmAccess && {
+      access: options.rdmAccess,
+      files: { enabled: true },
+    }),
     metadata: {
       title: posterTitle,
       description: posterDescription,
@@ -2715,6 +2875,7 @@ async function updateRdmMetadata(
     | "dbRelated"
     | "presentedDates"
     | "pids"
+    | "rdmAccess"
   >,
 ): Promise<{ success: boolean; error?: string }> {
   try {
@@ -3177,13 +3338,7 @@ async function publishRdmDraft(zenodoToken: string, recordId: number) {
       doi: extractRecordDoi(record),
       conceptDoi: extractConceptDoi(record),
       ...(conceptRecordId !== undefined && { conceptRecordId }),
-      // self_html is this exact version; latest_html redirects to whichever
-      // version is newest, which is not what the user just published.
-      recordUrl:
-        record?.links?.self_html ??
-        record?.links?.record_html ??
-        record?.links?.latest_html ??
-        "",
+      recordUrl: zenodoRecordWebUrl(publishedId, config.zenodoEndpoint),
     };
 
     console.log(

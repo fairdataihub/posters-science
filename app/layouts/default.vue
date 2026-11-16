@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import type { NavigationMenuItem } from "@nuxt/ui";
+import type { DropdownMenuItem, NavigationMenuItem } from "@nuxt/ui";
 
 const { clear, user } = useUserSession();
 const feedbackOpen = useState("feedbackOpen", () => false);
 const mobileMenuOpen = ref(false);
-
 const route = useRoute();
 
 const scienceArticleUrl =
@@ -42,8 +41,8 @@ const headerItems = computed<NavigationMenuItem[]>(() => [
     active: route.path.startsWith("/discover"),
   },
   {
-    label: "Share a Poster",
-    to: "/share/new",
+    label: "Share Posters",
+    to: "/share",
     active: route.path.startsWith("/share"),
   },
   {
@@ -69,7 +68,7 @@ const headerItems = computed<NavigationMenuItem[]>(() => [
   // },
 ]);
 
-const profileDropdownItems = computed(() => [
+const profileDropdownItems = computed((): DropdownMenuItem[][] => [
   [
     {
       label: `${user?.value?.givenName} ${user?.value?.familyName}`,
@@ -93,6 +92,11 @@ const profileDropdownItems = computed(() => [
       icon: "material-symbols:star",
       label: "Liked posters",
       to: "/liked",
+    },
+    {
+      icon: "material-symbols:corporate-fare",
+      label: "Organizations",
+      to: "/organizations",
     },
     {
       icon: "material-symbols:settings",
@@ -130,6 +134,11 @@ const mobileProfileNavItems = computed<NavigationMenuItem[]>(() => [
     to: "/liked",
   },
   {
+    icon: "material-symbols:corporate-fare",
+    label: "Organizations",
+    to: "/organizations",
+  },
+  {
     icon: "material-symbols:settings",
     label: "Settings",
     to: "/profile",
@@ -159,7 +168,12 @@ const footerItems: NavigationMenuItem[] = [
 </script>
 
 <template>
-  <div class="relative">
+  <!-- fitViewport pages end at the footer with no scroll: main fills only
+       the space the header and footer leave. -->
+  <div
+    class="relative"
+    :class="{ 'flex min-h-svh flex-col': route.meta.fitViewport }"
+  >
     <!-- <UiAuroraBackground class="absolute inset-0 -z-10 h-full" /> -->
 
     <!-- Press announcement. The id remembers a close, so change it to show a new one. -->
@@ -335,7 +349,7 @@ const footerItems: NavigationMenuItem[] = [
       </template>
     </UHeader>
 
-    <UMain>
+    <UMain :class="{ 'min-h-0 flex-1': route.meta.fitViewport }">
       <slot />
     </UMain>
 

@@ -55,6 +55,7 @@ jobs:
       NUXT_UMAMI_WEBSITE_ID: ${{ secrets.NUXT_UMAMI_WEBSITE_ID }}
       # FEATURE FLAG (versioning): show the user poster versioning workflow on staging
       NUXT_PUBLIC_VERSIONING_ENABLED: "true"
+      NUXT_FEATURES: ${{ secrets.NUXT_FEATURES }}
 
     steps:
       # Step 1: Checkout the repository code

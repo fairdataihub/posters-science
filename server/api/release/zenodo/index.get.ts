@@ -4,13 +4,19 @@ const config = useRuntimeConfig();
 
 const payloadSchema = z.object({
   posterId: z.string(),
+  bulkJobId: z.string().optional(),
 });
 
 export default defineEventHandler(async (event) => {
   const session = await requireUserSession(event);
   // Read query parameters for GET requests
   const query = getQuery(event);
-  const { posterId } = payloadSchema.parse(query as Record<string, unknown>);
+  const { posterId, bulkJobId } = payloadSchema.parse(
+    query as Record<string, unknown>,
+  );
+  const oauthState = bulkJobId?.trim()
+    ? `bulk-import:${bulkJobId.trim()}`
+    : posterId;
 
   const { user } = session;
   const userId = user.id;
@@ -120,16 +126,23 @@ export default defineEventHandler(async (event) => {
 
   // Check if Zenodo is configured. Both ways of connecting need the endpoints
   // and the key stored tokens are encrypted with.
-  if (
-    !config.zenodoEndpoint ||
-    !config.zenodoApiEndpoint ||
-    !isZenodoTokenEncryptionConfigured()
-  ) {
+  const hasEndpoints = Boolean(
+    config.zenodoEndpoint && config.zenodoApiEndpoint,
+  );
+  const hasTokenEncryptionKey = isZenodoTokenEncryptionConfigured();
+
+  if (!hasEndpoints || !hasTokenEncryptionKey) {
     console.log("[Zenodo] Missing config:", {
       hasEndpoint: !!config.zenodoEndpoint,
       hasApiEndpoint: !!config.zenodoApiEndpoint,
-      hasTokenEncryptionKey: isZenodoTokenEncryptionConfigured(),
+      hasTokenEncryptionKey,
     });
+
+    let message = "Zenodo integration is not configured";
+    if (hasEndpoints && !hasTokenEncryptionKey) {
+      message =
+        "Zenodo token encryption is not configured. Set NUXT_ZENODO_TOKEN_ENCRYPTION_KEY (see .env.example).";
+    }
 
     return {
       zenodoConfigured: false,
@@ -138,7 +151,7 @@ export default defineEventHandler(async (event) => {
       zenodoNewTokenUrl: null,
       zenodoTokensUrl: null,
       zenodoToken: false,
-      message: "Zenodo integration is not configured",
+      message,
       existingDepositions: [],
     };
   }
@@ -168,7 +181,7 @@ export default defineEventHandler(async (event) => {
       response_type: "code",
       client_id: config.zenodoClientId,
       redirect_uri: config.zenodoRedirectUri,
-      state: posterId,
+      state: oauthState,
       scope: "deposit:write deposit:actions",
     });
 
@@ -191,6 +204,7 @@ export default defineEventHandler(async (event) => {
       expiresAt,
       tokenType,
       personalTokenExpired,
+      zenodoAccount,
     } = await validateZenodoToken(userId);
 
     return {
@@ -207,6 +221,7 @@ export default defineEventHandler(async (event) => {
       zenodoPersonalTokenExpired: personalTokenExpired ?? false,
       message,
       existingDepositions,
+      zenodoAccount,
       linkedDepositionId,
       linkedDeposition,
       suggestedLicense,

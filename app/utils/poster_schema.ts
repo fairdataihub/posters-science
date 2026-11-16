@@ -303,7 +303,8 @@ export const LICENSE_OPTIONS = licenses.map((lic) => ({
   value: lic.licenseId,
 }));
 
-const SUGGESTED_LICENSE_IDS = ["CC-BY-4.0", "CC0-1.0"];
+/** Shown first, under "Suggested", in license pickers (single and bulk). */
+export const SUGGESTED_LICENSE_IDS = ["CC-BY-4.0", "CC0-1.0"];
 
 const suggestedLicenses = SUGGESTED_LICENSE_IDS.flatMap((id) => {
   const lic = licenses.find((l) => l.licenseId === id);
@@ -311,7 +312,13 @@ const suggestedLicenses = SUGGESTED_LICENSE_IDS.flatMap((id) => {
   return lic ? [{ label: lic.name, value: lic.licenseId }] : [];
 });
 
-export const LICENSE_OPTIONS_WITH_SUGGESTED = [
+// Typed loosely so select menus can use `value-key="value"` across label,
+// separator and license items.
+export const LICENSE_OPTIONS_WITH_SUGGESTED: {
+  type?: "label" | "separator";
+  label?: string;
+  value?: string;
+}[] = [
   { type: "label" as const, label: "Suggested" },
   ...suggestedLicenses,
   { type: "separator" as const },
@@ -625,12 +632,19 @@ export const posterResponseSchema = z.object({
   description: z.string().optional(),
   status: z.enum(["draft", "published"]).optional(),
   publishedAt: z.string().optional(),
+  automated: z.boolean().optional(),
   posterMetadata: schema.optional(),
   extractionJob: z
     .object({
       completed: z.boolean().optional(),
       status: z
-        .enum(["pending-extraction", "processing", "completed", "failed"])
+        .enum([
+          "pending-extraction",
+          "pending-thumbnail",
+          "processing",
+          "completed",
+          "failed",
+        ])
         .optional(),
       fileName: z.string().optional(),
       filePath: z.string().optional(),
@@ -824,7 +838,7 @@ const StrictFundingSchema = z
     },
   );
 
-const StrictConferenceSchema = z.object({
+export const StrictConferenceSchema = z.object({
   conferenceName: z.string().min(1, { message: "Conference name is required" }),
   conferenceLocation: z.string().optional(),
   conferenceUri: z.string().optional().refine(isValidUrl, {
@@ -833,7 +847,7 @@ const StrictConferenceSchema = z.object({
   conferenceIdentifier: z.string().optional(),
   conferenceIdentifierType: z.string().optional(),
   conferenceYear: z
-    .number()
+    .number({ message: "Conference year is required" })
     .min(1000)
     .max(9999, { message: "Conference year is required" }),
   conferenceStartDate: z.string(),
@@ -860,7 +874,7 @@ export const strictFormSchema = z.object({
   identifiers: z.array(IdentifierSchema),
   creators: z
     .array(StrictCreatorSchema)
-    .min(1, { message: "At least one creator is required" }),
+    .min(1, { message: "You must add at least one contributor." }),
   subjects: z
     .array(z.string())
     .min(1, { message: "At least one subject is required" }),
@@ -879,3 +893,10 @@ export const strictFormSchema = z.object({
 });
 
 export type StrictFormSchema = z.infer<typeof strictFormSchema>;
+
+/** Editor state before validation: the conference year may still be blank. */
+export type StrictFormState = Omit<StrictFormSchema, "conference"> & {
+  conference: Omit<StrictFormSchema["conference"], "conferenceYear"> & {
+    conferenceYear: number | undefined;
+  };
+};

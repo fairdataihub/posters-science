@@ -148,6 +148,11 @@ const columns: ColumnDef<AdminUserRow>[] = [
     accessorFn: (r) => r._count.Poster,
     header: sortableHeader("Posters"),
   },
+  {
+    id: "organizationCount",
+    accessorFn: (r) => r._count.organizationMemberships,
+    header: sortableHeader("Orgs"),
+  },
   { accessorKey: "created", header: sortableHeader("Joined") },
   { id: "userActions", header: "", enableSorting: false },
 ];

@@ -1,0 +1,30 @@
+export type BulkImportUniformLicenseOption = {
+  value: string;
+  label: string;
+  description: string;
+};
+
+export { BULK_IMPORT_ACCEPTABLE_LICENSES } from "#shared/data/bulkImportAcceptableLicenses";
+
+import type { BulkImportConferenceMetadata } from "#shared/types/bulkImportConference";
+
+export type BulkImportSubmissionSummary = {
+  uniformLicense?: string;
+  licenseSpreadsheetRows?: unknown[];
+  conference?: BulkImportConferenceMetadata;
+  /** When true, Zenodo records use a file embargo for `reviewEmbargoDays`. */
+  reviewEmbargoEnabled?: boolean;
+  /** File embargo length in days when `reviewEmbargoEnabled` is true (1–30). */
+  reviewEmbargoDays?: number;
+  /** ISO timestamp when every batch poster finished Zenodo / platform publish. */
+  zenodoBatchCompletedAt?: string;
+  /** Set when the batch is submitted to the extraction pipeline. */
+  submittedAt?: string;
+  createdPosterIds?: number[];
+  createdPosters?: {
+    posterId: number;
+    extractionJobId: string;
+    fileName: string;
+    filePath?: string;
+  }[];
+};

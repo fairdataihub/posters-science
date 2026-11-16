@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import {
   type CalendarDate,
+  type DateValue,
   DateFormatter,
   getLocalTimeZone,
+  toCalendarDate,
 } from "@internationalized/date";
 
 defineOptions({ inheritAttrs: false });
@@ -19,11 +21,17 @@ const props = defineProps<{
   placeholder?: string;
   clearable?: boolean;
   label?: string;
+  /** Earliest selectable date; earlier dates are disabled. */
+  minValue?: CalendarDate;
+  /** Month the calendar opens on when no range is picked yet. */
+  defaultPlaceholder?: CalendarDate;
 }>();
 
 const df = new DateFormatter("en-US", { dateStyle: "medium" });
 
-const localRange = ref<{
+// shallowRef: ref() would unwrap CalendarDate and drop its class type.
+// The range is always replaced, never mutated.
+const localRange = shallowRef<{
   start: CalendarDate | undefined;
   end: CalendarDate | undefined;
 }>({
@@ -68,11 +76,13 @@ watch(isOpen, (open) => {
   }
 });
 
-function onCalendarChange(value: {
-  start: CalendarDate | undefined;
-  end: CalendarDate | undefined;
-}) {
-  localRange.value = value;
+function onCalendarChange(
+  value: { start?: DateValue; end?: DateValue } | null,
+) {
+  localRange.value = {
+    start: value?.start ? toCalendarDate(value.start) : undefined,
+    end: value?.end ? toCalendarDate(value.end) : undefined,
+  };
 }
 
 function confirm() {
@@ -121,6 +131,8 @@ const buttonLabel = computed(() => {
             class="p-2"
             :model-value="localRange"
             :number-of-months="props.numberOfMonths ?? 2"
+            :min-value="props.minValue"
+            :default-placeholder="props.defaultPlaceholder"
             range
             @update:model-value="onCalendarChange"
           />

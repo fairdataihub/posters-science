@@ -5,6 +5,7 @@ import {
   strictFormSchema,
   type PosterResponse,
   type StrictFormSchema,
+  type StrictFormState,
   ISO_LANGUAGE_OPTIONS,
   IDENTIFIER_TYPE_OPTIONS,
   IDENTIFIER_TYPE_PLACEHOLDER_OPTIONS,
@@ -29,6 +30,10 @@ import {
 } from "@internationalized/date";
 import DatePicker from "~/components/ui/DatePicker.vue";
 import DateRangePicker from "~/components/ui/DateRangePicker.vue";
+import {
+  shareBulkImportReturnFromQuery,
+  shareNewBulkPath,
+} from "~/utils/sharePaths";
 
 type FundingReference = StrictFormSchema["fundingReferences"][number];
 
@@ -39,7 +44,34 @@ definePageMeta({
 const route = useRoute();
 const toast = useToast();
 
+const bulkImportReturn = computed(() =>
+  shareBulkImportReturnFromQuery(route.query),
+);
+const bulkImportReturnTo = computed(() => {
+  const ctx = bulkImportReturn.value;
+  if (!ctx) return null;
+  return shareNewBulkPath({
+    jobId: ctx.jobId,
+    wizardStep: ctx.wizardStep,
+  });
+});
+
 const { id } = route.params as { id: string };
+
+const numericPosterId = Number.parseInt(id, 10);
+const posterRouteIdValid =
+  Boolean(id) &&
+  id !== "null" &&
+  id !== "undefined" &&
+  !Number.isNaN(numericPosterId);
+
+if (!posterRouteIdValid) {
+  await navigateTo("/dashboard", { replace: true });
+  throw createError({
+    statusCode: 404,
+    statusMessage: "Poster not found",
+  });
+}
 
 const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Edit Poster Metadata - Posters.science")}&description=${encodeURIComponent("Review and edit the metadata for your poster submission")}&app=posters-science&org=fairdataihub`;
 
@@ -106,7 +138,7 @@ const posterContentOpened = ref(false);
 const subjectInputRefs = ref<{ $el?: HTMLElement; focus?: () => void }[]>([]);
 
 // Initial state (matches PosterMetadata / StrictFormSchema)
-const state = reactive<StrictFormSchema>({
+const state = reactive<StrictFormState>({
   title: "",
   description: "",
   submissionAbstract: "",
@@ -156,10 +188,10 @@ const state = reactive<StrictFormSchema>({
   domain: "",
 });
 
-const { data, error } = await useFetch(`/api/poster/${id}`);
+const { data, error } = await useFetch(`/api/poster/${numericPosterId}`);
 
 if (data.value) {
-  const poster = data.value as PosterResponse;
+  const poster = data.value as unknown as PosterResponse;
   isVersionedPoster.value = poster.versionRootId != null;
 
   // Check if the poster is already published
@@ -273,8 +305,7 @@ if (data.value) {
               (ni) => ni.nameIdentifier.trim() !== "",
             );
             if (firstNonEmpty > 0) {
-              const [item] = mapped.splice(firstNonEmpty, 1);
-              mapped.unshift(item);
+              mapped.unshift(...mapped.splice(firstNonEmpty, 1));
             }
 
             return mapped.length > 0
@@ -554,16 +585,16 @@ function clearPresentedDate() {
   }
 }
 
-const currentYear = new Date().getFullYear();
+/** Extract a year from text (e.g. "ARVO 2025" or "Conference 25") for auto-fill. */
 const conferenceYearOptions = Array.from(
-  { length: currentYear + 1 - 2000 + 1 },
-  (_, i) => currentYear + 1 - i,
+  { length: new Date().getFullYear() + 1 - 2000 + 1 },
+  (_, i) => new Date().getFullYear() + 1 - i,
 ).map((y) => ({ label: String(y), value: y }));
 
-/** Extract a year from text (e.g. "ARVO 2025" or "Conference 25") for auto-fill. */
 function yearFromText(text: string): number | undefined {
   if (!text || typeof text !== "string") return undefined;
 
+  const currentYear = new Date().getFullYear();
   const s = text.trim();
   const fourDigit = s.match(/\b(19\d{2}|20\d{2})\b/);
 
@@ -678,16 +709,20 @@ async function continueAnyway() {
 }
 
 async function onSubmit(event: FormSubmitEvent<StrictFormSchema>) {
-  const unopened: ("additionalInfo" | "posterContent")[] = [];
-  if (!additionalInfoOpened.value) unopened.push("additionalInfo");
-  if (!posterContentOpened.value) unopened.push("posterContent");
+  const fromBulkImport = Boolean(bulkImportReturn.value);
 
-  if (unopened.length > 0) {
-    pendingUnopened.value = unopened;
-    pendingSubmitEvent.value = event;
-    showSectionModal.value = true;
+  if (!fromBulkImport) {
+    const unopened: ("additionalInfo" | "posterContent")[] = [];
+    if (!additionalInfoOpened.value) unopened.push("additionalInfo");
+    if (!posterContentOpened.value) unopened.push("posterContent");
 
-    return;
+    if (unopened.length > 0) {
+      pendingUnopened.value = unopened;
+      pendingSubmitEvent.value = event;
+      showSectionModal.value = true;
+
+      return;
+    }
   }
 
   if (Object.values(orcidErrors.value).some(Boolean)) {
@@ -727,7 +762,11 @@ async function onSubmit(event: FormSubmitEvent<StrictFormSchema>) {
       color: "success",
     });
 
-    // Navigate to review page
+    if (bulkImportReturnTo.value) {
+      await navigateTo(bulkImportReturnTo.value);
+      return;
+    }
+
     await navigateTo(`/share/${id}/publish`);
   } catch (err) {
     console.error(err);
@@ -747,6 +786,24 @@ async function onError(event: {
 }) {
   const errorCount = event.errors.length;
   const firstError = event.errors[0];
+
+  // From a bulk import the Conference card is hidden (set for the batch), so
+  // point to where it can be fixed instead of at a field you can't see.
+  const hiddenConferenceError = bulkImportReturn.value
+    ? event.errors.find((error) =>
+        (error.path ?? error.id ?? "").startsWith("conference."),
+      )
+    : undefined;
+  if (hiddenConferenceError) {
+    toast.add({
+      title: "Batch conference information needs fixing",
+      description: `${hiddenConferenceError.message ?? "A conference field is invalid."} Fix it on the batch's Conference Information step.`,
+      color: "error",
+      icon: "material-symbols:error",
+    });
+
+    return;
+  }
 
   toast.add({
     title: "Validation Error",
@@ -842,7 +899,7 @@ function handleNameTypeChange(nameType: string, cIndex: number) {
       identifierTypeErrors.value[key] =
         nameType === "Organizational"
           ? "Only ROR identifiers are accepted for organizational creators."
-          : "Only ORCID identifiers are accepted for personal creators.";
+          : "Only ORCIDs are accepted for personal creators.";
     } else {
       identifierTypeErrors.value[key] = undefined;
     }
@@ -872,7 +929,7 @@ function handleNameIdentifierInput(
       identifierTypeErrors.value[key] =
         nameType === "Organizational"
           ? "Only ROR identifiers are accepted for organizational creators."
-          : "Only ORCID identifiers are accepted for personal creators.";
+          : "Only ORCIDs are accepted for personal creators.";
     } else {
       identifierTypeErrors.value[key] = undefined;
     }
@@ -880,7 +937,7 @@ function handleNameIdentifierInput(
     identifierTypeErrors.value[key] =
       nameType === "Organizational"
         ? "Only ROR identifiers are accepted for organizational creators."
-        : "Only ORCID identifiers are accepted for personal creators.";
+        : "Only ORCIDs are accepted for personal creators.";
   } else {
     identifierTypeErrors.value[key] = undefined;
   }
@@ -1040,16 +1097,25 @@ const moveCreator = (index: number, direction: "up" | "down") => {
       <template #headline>
         <UBreadcrumb
           :items="
-            isVersionedPoster
+            bulkImportReturnTo
               ? [
                   { label: 'Dashboard', to: '/dashboard' },
+                  {
+                    label: 'Share Posters in bulk',
+                    to: bulkImportReturnTo,
+                  },
                   { label: 'Review Metadata' },
                 ]
-              : [
-                  { label: 'Dashboard', to: '/dashboard' },
-                  { label: 'Upload Poster', to: '/share/new' },
-                  { label: 'Review Metadata' },
-                ]
+              : isVersionedPoster
+                ? [
+                    { label: 'Dashboard', to: '/dashboard' },
+                    { label: 'Review Metadata' },
+                  ]
+                : [
+                    { label: 'Dashboard', to: '/dashboard' },
+                    { label: 'Upload Poster', to: '/share/new' },
+                    { label: 'Review Metadata' },
+                  ]
           "
         />
       </template>
@@ -1071,10 +1137,11 @@ const moveCreator = (index: number, direction: "up" | "down") => {
       </template>
     </UPageHeader>
 
+    <!-- state holds a draft: the conference year may be blank until validated -->
     <UForm
       ref="formRef"
       :schema="strictFormSchema"
-      :state="state"
+      :state="state as Partial<StrictFormSchema>"
       class="space-y-8"
       :disabled="loading"
       @submit="onSubmit"
@@ -1516,7 +1583,7 @@ const moveCreator = (index: number, direction: "up" | "down") => {
                       :label="
                         creator.nameType === 'Organizational'
                           ? 'ROR Identifier'
-                          : 'ORCID Identifier'
+                          : 'ORCID'
                       "
                       :error="
                         orcidErrors[`${cIndex}-0`] ||
@@ -1682,7 +1749,10 @@ const moveCreator = (index: number, direction: "up" | "down") => {
             </div>
           </CardCollapsibleContent>
 
+          <!-- From a bulk import the batch's conference (and its dates as the
+               presentation date) is applied to every poster, so it isn't shown. -->
           <CardCollapsibleContent
+            v-if="!bulkImportReturn"
             title="Conference"
             :collapse="false"
             description="The conference or event where the poster was presented"
@@ -2566,10 +2636,24 @@ const moveCreator = (index: number, direction: "up" | "down") => {
         </div>
       </div>
 
-      <div class="flex gap-3">
+      <div class="flex flex-wrap gap-3">
+        <UButton
+          v-if="bulkImportReturnTo"
+          color="neutral"
+          variant="ghost"
+          icon="i-lucide-arrow-left"
+          label="Back to bulk import"
+          :to="bulkImportReturnTo"
+          class="w-full sm:w-auto"
+        />
+
         <UTooltip
-          text="Save your progress without moving to the next step"
-          class="flex-1"
+          :text="
+            bulkImportReturnTo
+              ? 'Save without leaving this poster'
+              : 'Save your progress without moving to the next step'
+          "
+          class="min-w-0 flex-1"
         >
           <UButton
             :disabled="savingDraft || loading"
@@ -2585,16 +2669,25 @@ const moveCreator = (index: number, direction: "up" | "down") => {
         </UTooltip>
 
         <UTooltip
-          text="Save your changes and proceed to the publishing step"
-          class="flex-1"
+          :text="
+            bulkImportReturnTo
+              ? 'Save and return to the bulk import review step'
+              : 'Save your changes and proceed to the publishing step'
+          "
+          class="min-w-0 flex-1"
         >
           <UButton
             :disabled="loading || savingDraft"
             :loading="loading"
             class="w-full"
             variant="solid"
-            icon="i-lucide-arrow-right"
-            label="Save Changes and Continue"
+            :icon="bulkImportReturnTo ? 'i-lucide-arrow-left' : 'i-lucide-arrow-right'"
+            :trailing="!bulkImportReturnTo"
+            :label="
+              bulkImportReturnTo
+                ? 'Save and return to bulk import'
+                : 'Save Changes and Continue'
+            "
             type="submit"
             size="lg"
           />

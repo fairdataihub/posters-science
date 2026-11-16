@@ -2,7 +2,7 @@
 import type { AdminStats, AdminView } from "./types";
 
 defineProps<{
-  stats: AdminStats | null;
+  stats: AdminStats | null | undefined;
   pending: boolean;
 }>();
 
@@ -70,7 +70,7 @@ const tiles: Tile[] = [
   },
 ];
 
-function toneClass(tile: Tile, stats: AdminStats | null) {
+function toneClass(tile: Tile, stats: AdminStats | null | undefined) {
   if (!stats || !tile.tone || tile.tone === "default") return "";
   if (tile.value(stats) === 0) return "";
 

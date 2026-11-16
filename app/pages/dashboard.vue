@@ -8,6 +8,18 @@ import {
 } from "#shared/utils/posterFile";
 import { LICENSE_OPTIONS } from "~/utils/poster_schema";
 import { normalizeDoi, validateDoi } from "#shared/utils/doi";
+import {
+  formatZenodoFileEmbargoTimeRemaining,
+  formatZenodoFileEmbargoUntilLabel,
+  isZenodoFileEmbargoActive,
+} from "#shared/utils/zenodoFileEmbargoAccess";
+import { deleteBulkPosterSubmissionJob } from "~/utils/bulkPosterSubmissionJobClient";
+import { parseApiError } from "~/utils/apiError";
+import type {
+  DashboardBulkSubmission,
+  DashboardInProgressFeedEntry,
+  DashboardPosterFeedResponse,
+} from "#shared/types/dashboardFeed";
 
 definePageMeta({
   middleware: ["auth"],
@@ -60,6 +72,8 @@ type Poster = {
   // own published posters but read-only, since the user doesn't own it.
   claimed: boolean;
   claimedAt: Date | null;
+  /** YYYY-MM-DD (UTC) when Zenodo file download embargo ends; null if not embargoed. */
+  zenodoFilesEmbargoUntil: string | null;
 };
 
 type ExtractionJobSummary = {
@@ -92,6 +106,13 @@ type VersionThumbnailResponse = {
 };
 
 const posters = ref<Poster[]>([]);
+const bulkSubmissions = ref<DashboardBulkSubmission[]>([]);
+const completedBulkSubmissions = ref<DashboardBulkSubmission[]>([]);
+const inProgressFeed = ref<DashboardInProgressFeedEntry[]>([]);
+const activeBulkManagedPosterIds = ref<number[]>([]);
+const activeBulkManagedPosterIdSet = computed(
+  () => new Set(activeBulkManagedPosterIds.value),
+);
 const showTombstonedPosters = useCookie<boolean>(
   "dashboard-show-tombstoned-posters",
   {
@@ -101,6 +122,29 @@ const showTombstonedPosters = useCookie<boolean>(
   },
 );
 const expandedPublishedFamilies = ref(new Set<number>());
+
+const embargoClockNow = ref(Date.now());
+let embargoClockInterval: ReturnType<typeof setInterval> | undefined;
+
+function isPosterZenodoEmbargoActive(poster: Poster): boolean {
+  return isZenodoFileEmbargoActive(
+    poster.zenodoFilesEmbargoUntil,
+    new Date(embargoClockNow.value),
+  );
+}
+
+function posterEmbargoTimeRemainingLabel(poster: Poster): string | null {
+  const until = poster.zenodoFilesEmbargoUntil;
+  if (!until || !isPosterZenodoEmbargoActive(poster)) return null;
+  return formatZenodoFileEmbargoTimeRemaining(
+    until,
+    new Date(embargoClockNow.value),
+  );
+}
+
+function posterShowsPublishedDashboardActions(poster: Poster): boolean {
+  return poster.status === "published" && !isPosterZenodoEmbargoActive(poster);
+}
 
 const tombstonedPosterCount = computed(
   () => posters.value.filter((poster) => poster.tombstone).length,
@@ -112,18 +156,44 @@ const tombstoneFilteredPosters = computed(() =>
 );
 const inProgressPosters = computed(() =>
   tombstoneFilteredPosters.value.filter(
-    (poster) => poster.status !== "published",
+    (poster) =>
+      poster.status !== "published" || isPosterZenodoEmbargoActive(poster),
   ),
 );
+
+const inProgressDashboardItems = computed(() => {
+  const bulkById = new Map(
+    bulkSubmissions.value.map((bulk) => [bulk.id, bulk]),
+  );
+  const posterById = new Map(
+    inProgressPosters.value.map((poster) => [poster.id, poster]),
+  );
+
+  return inProgressFeed.value.flatMap((entry): ActiveTabListItem[] => {
+    if (entry.type === "bulkSubmission") {
+      const bulk = bulkById.get(entry.bulkSubmissionId);
+      if (!bulk) return [];
+      return [{ type: "bulk" as const, key: `bulk-${bulk.id}`, bulk }];
+    }
+
+    const poster = posterById.get(entry.posterId);
+    if (!poster) return [];
+    return [{ type: "poster" as const, key: `poster-${poster.id}`, poster }];
+  });
+});
 const publishedPosters = computed(() =>
   tombstoneFilteredPosters.value.filter(
-    (poster) => poster.status === "published" && poster.isLatestPublished,
+    (poster) =>
+      poster.status === "published" &&
+      poster.isLatestPublished &&
+      !isPosterZenodoEmbargoActive(poster) &&
+      !activeBulkManagedPosterIdSet.value.has(poster.id),
   ),
 );
 const activeDashboardTab = ref<"in-progress" | "published">("in-progress");
 const dashboardTabs = computed(() => [
   {
-    label: `In progress (${inProgressPosters.value.length})`,
+    label: `In progress (${inProgressDashboardItems.value.length})`,
     icon: "i-lucide-pencil-line",
     value: "in-progress",
   },
@@ -133,16 +203,37 @@ const dashboardTabs = computed(() => [
     value: "published",
   },
 ]);
-const activeDashboardPosters = computed(() =>
-  activeDashboardTab.value === "in-progress"
-    ? inProgressPosters.value
-    : publishedPosters.value,
-);
+type ActiveTabListItem =
+  | { type: "bulk"; key: string; bulk: DashboardBulkSubmission }
+  | { type: "poster"; key: string; poster: Poster };
+
+const activeTabListItems = computed((): ActiveTabListItem[] => {
+  if (activeDashboardTab.value === "in-progress") {
+    return inProgressDashboardItems.value;
+  }
+
+  const completedBulks: ActiveTabListItem[] =
+    completedBulkSubmissions.value.map((bulk) => ({
+      type: "bulk" as const,
+      key: `bulk-${bulk.id}`,
+      bulk,
+    }));
+
+  const published = publishedPosters.value.map((poster) => ({
+    type: "poster" as const,
+    key: `poster-${poster.id}`,
+    poster,
+  }));
+
+  return [...completedBulks, ...published];
+});
+
+const activeTabHasItems = computed(() => activeTabListItems.value.length > 0);
 // FEATURE FLAG (versioning)
 const versioningEnabled = useVersioningEnabled();
 const activeDashboardDescription = computed(() => {
   if (activeDashboardTab.value === "in-progress") {
-    return "Posters that still need your attention.";
+    return "Posters and bulk submissions that still need your attention.";
   }
 
   // FEATURE FLAG (versioning)
@@ -151,7 +242,8 @@ const activeDashboardDescription = computed(() => {
   return "The latest published version of each poster.";
 });
 const visiblePosterCount = computed(
-  () => inProgressPosters.value.length + publishedPosters.value.length,
+  () =>
+    inProgressDashboardItems.value.length + publishedPosters.value.length,
 );
 
 function publishedVersionHistory(poster: Poster) {
@@ -185,14 +277,41 @@ function togglePublishedHistory(poster: Poster) {
   expandedPublishedFamilies.value = expanded;
 }
 
-const { data, error, refresh } = await useFetch("/api/poster");
+const { data, error, refresh } =
+  await useFetch<DashboardPosterFeedResponse>("/api/poster");
+
+function applyDashboardFeed(feed: DashboardPosterFeedResponse | Poster[]) {
+  if (Array.isArray(feed)) {
+    posters.value = feed;
+    bulkSubmissions.value = [];
+    completedBulkSubmissions.value = [];
+    inProgressFeed.value = [];
+    activeBulkManagedPosterIds.value = [];
+    return;
+  }
+
+  posters.value = feed.posters as unknown as Poster[];
+  bulkSubmissions.value = feed.bulkSubmissions ?? [];
+  completedBulkSubmissions.value = feed.completedBulkSubmissions ?? [];
+  inProgressFeed.value = feed.inProgressFeed ?? [];
+  activeBulkManagedPosterIds.value = feed.activeBulkManagedPosterIds ?? [];
+}
 
 if (data.value) {
-  posters.value = data.value as unknown as Poster[];
-  if (inProgressPosters.value.length === 0 && publishedPosters.value.length) {
+  applyDashboardFeed(data.value);
+  if (
+    inProgressDashboardItems.value.length === 0 &&
+    publishedPosters.value.length
+  ) {
     activeDashboardTab.value = "published";
   }
 }
+
+watch(data, (feed) => {
+  if (feed) {
+    applyDashboardFeed(feed);
+  }
+});
 
 if (error.value) {
   console.error(error.value);
@@ -217,6 +336,39 @@ const profileListing = computed(() =>
     ? "the posters you published, claimed and liked"
     : "the posters you published and claimed",
 );
+
+// Organization pages that show each published poster. Lazy, like the
+// profile settings above.
+const {
+  hasOrganizations,
+  listedOn,
+  refresh: refreshOrganizationListings,
+} = useOrganizationListings();
+const {
+  open: organizationPromptOpen,
+  choices: organizationPromptChoices,
+  loadingPosterId: organizationPromptLoadingId,
+  offer: offerPosterOrganizations,
+  show: showPosterOrganizations,
+} = useOrganizationPosterPrompt();
+
+// True when the modal opened because a save just published the poster.
+const organizationPromptAfterPublish = ref(false);
+
+async function openPosterOrganizations(poster: Poster) {
+  organizationPromptAfterPublish.value = false;
+
+  try {
+    await showPosterOrganizations(poster.rootPosterId);
+  } catch (error) {
+    toast.add({
+      title: "Could not load your organizations",
+      description:
+        parseApiError(error).statusMessage ?? "Something went wrong. Try again.",
+      color: "error",
+    });
+  }
+}
 
 // Removing a claim on an auto-indexed poster
 const removeClaimTarget = ref<Poster | null>(null);
@@ -243,6 +395,8 @@ async function confirmRemoveClaim() {
       (row) => !(row.claimed && row.rootPosterId === poster.rootPosterId),
     );
     removeClaimTarget.value = null;
+    // Listings that depended on the claim were removed with it.
+    refreshOrganizationListings();
     toast.add({
       title: "Claim removed",
       description: "The poster is no longer linked to your account.",
@@ -704,9 +858,60 @@ function updateLocalVersionDetails(
 async function refreshPosterList() {
   const openRootId = versionPoster.value?.rootPosterId;
   await refresh();
-  posters.value = (data.value ?? []) as unknown as Poster[];
+  if (data.value) {
+    applyDashboardFeed(data.value);
+  }
   if (openRootId) {
     versionPoster.value = latestPublishedPoster(openRootId) ?? null;
+  }
+}
+
+async function refreshDashboardFeed() {
+  await refresh();
+  if (data.value) {
+    applyDashboardFeed(data.value);
+  }
+}
+
+const bulkToDelete = ref<DashboardBulkSubmission | null>(null);
+const bulkDeleteModalOpen = ref(false);
+const isDeletingBulk = ref(false);
+
+function openDeleteBulkModal(bulk: DashboardBulkSubmission) {
+  bulkToDelete.value = bulk;
+  bulkDeleteModalOpen.value = true;
+}
+
+async function deleteBulkImport() {
+  if (!bulkToDelete.value) return;
+
+  isDeletingBulk.value = true;
+
+  try {
+    const result = await deleteBulkPosterSubmissionJob(bulkToDelete.value.id);
+
+    const kept = result.keptPublishedPosterCount ?? 0;
+    toast.add({
+      title: "Bulk submission deleted",
+      description:
+        kept > 0
+          ? `Draft posters were removed. ${kept === 1 ? "One published poster" : `${kept} published posters`} from this batch remain on your dashboard.`
+          : "Your bulk submission and its draft posters have been removed.",
+      color: "success",
+    });
+
+    bulkDeleteModalOpen.value = false;
+    bulkToDelete.value = null;
+    await refreshDashboardFeed();
+  } catch (err) {
+    console.error(err);
+    toast.add({
+      title: "Error",
+      description: "There was a problem deleting this bulk submission.",
+      color: "error",
+    });
+  } finally {
+    isDeletingBulk.value = false;
   }
 }
 
@@ -1082,6 +1287,10 @@ async function createVersion() {
 }
 
 onMounted(() => {
+  embargoClockInterval = setInterval(() => {
+    embargoClockNow.value = Date.now();
+  }, 60_000);
+
   // Resume reporting on whichever draft is still preparing, whether it is
   // waiting on extraction or only on its preview image.
   const preparingDraft = posters.value.find((poster) =>
@@ -1096,11 +1305,21 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   dashboardActive = false;
+  if (embargoClockInterval) clearInterval(embargoClockInterval);
   stopVersionPolling();
   stopVersionClock();
 });
 
 function openPoster(poster: Poster) {
+  if (!poster?.id) {
+    toast.add({
+      title: "Cannot open this draft",
+      description: "This item is missing a poster id. Try refreshing the dashboard.",
+      color: "warning",
+    });
+    return;
+  }
+
   if (poster.tombstone) {
     tombstonedPoster.value = poster;
     tombstoneModalOpen.value = true;
@@ -1307,7 +1526,7 @@ async function deletePoster() {
 
     deleteModalOpen.value = false;
     await refresh();
-    posters.value = data.value as unknown as Poster[];
+    if (data.value) applyDashboardFeed(data.value);
   } catch (err) {
     console.error(err);
     toast.add({
@@ -1337,8 +1556,11 @@ async function savePublicationInfo() {
 
   isSaving.value = true;
 
+  const savedPoster = modalPoster.value;
+  const publishing = savedPoster.status === "downloaded";
+
   try {
-    await $fetch(`/api/poster/${modalPoster.value.id}/publication`, {
+    await $fetch(`/api/poster/${savedPoster.id}/publication`, {
       method: "PATCH",
       body: {
         doi: modalDoi.value ? normalizeDoi(modalDoi.value) : undefined,
@@ -1355,7 +1577,14 @@ async function savePublicationInfo() {
 
     modalOpen.value = false;
     await refresh();
-    posters.value = data.value as unknown as Poster[];
+    if (data.value) applyDashboardFeed(data.value);
+
+    // A downloaded poster is published by this save, so offer the person's
+    // organization pages as the publish page does.
+    if (publishing) {
+      organizationPromptAfterPublish.value = true;
+      offerPosterOrganizations(savedPoster.id);
+    }
   } catch (err) {
     console.error(err);
     toast.add({
@@ -1421,6 +1650,13 @@ function posterStatusPresentation(poster: Poster) {
       icon: "i-lucide-archive-x",
     };
   }
+  if (isPosterZenodoEmbargoActive(poster)) {
+    return {
+      label: "File embargo",
+      color: "warning" as const,
+      icon: "i-lucide-lock",
+    };
+  }
   if (poster.status === "published") {
     return {
       label: "Published",
@@ -1481,6 +1717,7 @@ function posterStatusPresentation(poster: Poster) {
 }
 
 function inProgressActionLabel(poster: Poster) {
+  if (isPosterZenodoEmbargoActive(poster)) return "View poster";
   if (poster.versionRootId !== null) {
     if (isVersionPreparing(poster)) return "View progress";
     if (isVersionExtractionFailed(poster)) return "Resolve issue";
@@ -1493,6 +1730,10 @@ function inProgressActionLabel(poster: Poster) {
 }
 
 function openInProgressPoster(poster: Poster) {
+  if (isPosterZenodoEmbargoActive(poster)) {
+    openPoster(poster);
+    return;
+  }
   if (poster.status === "downloaded" && poster.versionRootId === null) {
     openPublicationModal(poster);
 
@@ -1558,10 +1799,14 @@ function posterMenuItems(poster: Poster) {
       title="Dashboard"
       :links="[
         {
-          label: 'Share a Poster',
-          to: '/share/new',
-          icon: 'heroicons:plus',
+          // /share lets people choose one poster or a batch.
+          // Same as the home page's Share Posters button, but solid.
+          label: 'Share Posters',
+          to: '/share',
+          size: 'xl' as const,
+          trailingIcon: 'line-md:file-upload',
           color: 'primary' as const,
+          variant: 'solid' as const,
         },
       ]"
     >
@@ -1610,6 +1855,8 @@ function posterMenuItems(poster: Poster) {
 
     <MaintenanceNotice maintenance-key="zenodo" />
 
+    <OrganizationInviteBanner />
+
     <UTabs
       v-model="activeDashboardTab"
       :items="dashboardTabs"
@@ -1617,11 +1864,19 @@ function posterMenuItems(poster: Poster) {
       class="w-full"
     />
 
-    <section v-if="activeDashboardPosters.length > 0" class="space-y-3">
+    <section v-if="activeTabHasItems" class="space-y-3">
       <p class="text-muted text-sm">{{ activeDashboardDescription }}</p>
 
       <UPageList class="max-md:flex max-md:flex-col max-md:gap-4">
-        <template v-for="poster in activeDashboardPosters" :key="poster.id">
+        <template v-for="item in activeTabListItems" :key="item.key">
+          <DashboardBulkSubmissionCard
+            v-if="item.type === 'bulk'"
+            :bulk="item.bulk"
+            @delete="openDeleteBulkModal"
+          />
+
+          <template v-else>
+            <template v-for="poster in [item.poster]" :key="poster.id">
           <UPageCard
             variant="ghost"
             class="group h-50 overflow-hidden rounded-none border-t border-b border-gray-100 transition-all duration-300 max-md:h-auto max-md:rounded-xl max-md:border max-md:bg-white max-md:shadow-sm dark:max-md:border-gray-800 dark:max-md:bg-gray-950"
@@ -1727,6 +1982,15 @@ function posterMenuItems(poster: Poster) {
                     >
                       Author
                     </UBadge>
+
+                    <OrganizationListingBadges
+                      v-if="
+                        posterShowsPublishedDashboardActions(poster) &&
+                        poster.isLatestPublished &&
+                        !poster.tombstone
+                      "
+                      :organizations="listedOn(poster.rootPosterId)"
+                    />
 
                     <!-- FEATURE FLAG (versioning) -->
                     <UBadge
@@ -1840,7 +2104,29 @@ function posterMenuItems(poster: Poster) {
                     </span>
 
                     <span
-                      v-if="poster.publishedAt"
+                      v-if="posterEmbargoTimeRemainingLabel(poster)"
+                      class="flex items-center gap-1 border-l border-gray-100 pl-2 max-md:border-l-0 max-md:pl-0 dark:border-gray-800"
+                    >
+                      <Icon name="i-lucide-lock" class="h-3 w-3" />
+                      {{ posterEmbargoTimeRemainingLabel(poster) }}
+                      <span
+                        v-if="poster.zenodoFilesEmbargoUntil"
+                        class="text-muted"
+                      >
+                        (until
+                        {{
+                          formatZenodoFileEmbargoUntilLabel(
+                            poster.zenodoFilesEmbargoUntil,
+                          )
+                        }}
+                        UTC)
+                      </span>
+                    </span>
+
+                    <span
+                      v-if="
+                        poster.publishedAt && posterShowsPublishedDashboardActions(poster)
+                      "
                       class="flex items-center gap-1 border-l border-gray-100 pl-2 max-md:border-l-0 max-md:pl-0 dark:border-gray-800"
                     >
                       <Icon
@@ -1850,6 +2136,20 @@ function posterMenuItems(poster: Poster) {
                       Published
                       {{ dayjs(poster.publishedAt).format("MMMM D, YYYY") }}
                     </span>
+
+                    <span
+                      v-else-if="
+                        poster.publishedAt && isPosterZenodoEmbargoActive(poster)
+                      "
+                      class="flex items-center gap-1 border-l border-gray-100 pl-2 max-md:border-l-0 max-md:pl-0 dark:border-gray-800"
+                    >
+                      <Icon
+                        name="heroicons:presentation-chart-bar"
+                        class="h-3 w-3"
+                      />
+                      Submitted to Zenodo
+                      {{ dayjs(poster.publishedAt).format("MMMM D, YYYY") }}
+                    </span>
                   </div>
 
                   <div
@@ -1857,7 +2157,7 @@ function posterMenuItems(poster: Poster) {
                     class="flex items-center gap-2 max-md:flex-wrap"
                     @click.stop
                   >
-                    <template v-if="poster.status === 'published'">
+                    <template v-if="posterShowsPublishedDashboardActions(poster)">
                       <UButton
                         color="neutral"
                         variant="subtle"
@@ -1866,6 +2166,23 @@ function posterMenuItems(poster: Poster) {
                         size="xs"
                         @click="openPoster(poster)"
                       />
+
+                      <UTooltip
+                        v-if="hasOrganizations && poster.isLatestPublished"
+                        text="Choose which of your organizations show this poster on their page."
+                      >
+                        <UButton
+                          color="neutral"
+                          variant="subtle"
+                          label="Organizations"
+                          icon="i-lucide-building-2"
+                          size="xs"
+                          :loading="
+                            organizationPromptLoadingId === poster.rootPosterId
+                          "
+                          @click="openPosterOrganizations(poster)"
+                        />
+                      </UTooltip>
 
                       <UButton
                         v-if="poster.claimed"
@@ -1924,7 +2241,7 @@ function posterMenuItems(poster: Poster) {
                         :icon="
                           isVersionPreparing(poster)
                             ? 'i-lucide-activity'
-                            : 'i-lucide-arrow-right'
+                            : 'line-md:arrow-right'
                         "
                         trailing
                         size="xs"
@@ -2012,6 +2329,8 @@ function posterMenuItems(poster: Poster) {
               </button>
             </div>
           </div>
+            </template>
+          </template>
         </template>
       </UPageList>
     </section>
@@ -2069,7 +2388,7 @@ function posterMenuItems(poster: Poster) {
 
       <NuxtLink
         v-else
-        to="/share/new"
+        to="/share"
         class="group inline-block rounded-2xl px-8 py-6 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800/50"
       >
         <div
@@ -2096,7 +2415,7 @@ function posterMenuItems(poster: Poster) {
     <UModal
       v-model:open="removeClaimOpen"
       title="Remove this claim?"
-      description="The poster will no longer appear on your dashboard or profile. You can claim it again from its page."
+      description="The poster will no longer appear on your dashboard, your profile or any organization page you added it to. You can claim it again from its page."
     >
       <template #footer="{ close }">
         <div class="flex w-full items-center justify-between gap-3">
@@ -2117,6 +2436,23 @@ function posterMenuItems(poster: Poster) {
         </div>
       </template>
     </UModal>
+
+    <OrganizationPosterModal
+      v-model:open="organizationPromptOpen"
+      :choices="organizationPromptChoices"
+      :title="
+        organizationPromptAfterPublish
+          ? 'Show this poster on an organization page?'
+          : 'Organizations'
+      "
+      :description="
+        organizationPromptAfterPublish
+          ? 'Your poster is published. You can also show it on the pages of organizations you belong to.'
+          : 'Choose which of your organizations show this poster on their page.'
+      "
+      :dismiss-label="organizationPromptAfterPublish ? 'Not now' : 'Cancel'"
+      @saved="refreshOrganizationListings()"
+    />
 
     <!-- Delete draft modal -->
     <USlideover
@@ -2177,6 +2513,12 @@ function posterMenuItems(poster: Poster) {
                 :items="versionMetadataOptions"
               />
             </UFormField>
+
+            <ExtractionAccuracyNotice
+              v-if="
+                versionFileMode === 'upload' && versionMetadataMode === 'extract'
+              "
+            />
 
             <UAlert
               v-if="versionError"
@@ -2534,6 +2876,41 @@ function posterMenuItems(poster: Poster) {
           </UButton>
 
           <UButton color="error" :loading="isDeleting" @click="deletePoster">
+            Delete
+          </UButton>
+        </div>
+      </template>
+    </UModal>
+
+    <UModal v-model:open="bulkDeleteModalOpen" title="Delete bulk submission">
+      <template #body>
+        <p class="text-sm">
+          Are you sure you want to delete
+          <span class="font-medium">{{
+            bulkToDelete?.name || "this bulk submission"
+          }}</span
+          >?
+          <template v-if="bulkToDelete?.status === 'processing'">
+            Staged files and draft posters from this submission will be removed.
+          </template>
+          <template v-else>
+            Staged poster files for this submission will be removed.
+          </template>
+          This cannot be undone.
+        </p>
+      </template>
+
+      <template #footer>
+        <div class="flex justify-end gap-3">
+          <UButton variant="outline" @click="bulkDeleteModalOpen = false">
+            Cancel
+          </UButton>
+
+          <UButton
+            color="error"
+            :loading="isDeletingBulk"
+            @click="deleteBulkImport"
+          >
             Delete
           </UButton>
         </div>

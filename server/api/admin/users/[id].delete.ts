@@ -17,6 +17,30 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, statusMessage: "User not found" });
   }
 
+  // Deleting the only owner would leave an organization nobody can manage.
+  const ownerships = await prisma.organizationMember.findMany({
+    where: { userId: targetId, role: "owner" },
+    select: {
+      organization: {
+        select: {
+          name: true,
+          _count: { select: { members: { where: { role: "owner" } } } },
+        },
+      },
+    },
+  });
+  const soleOwnerOf = ownerships
+    .map(({ organization }) => organization)
+    .filter((organization) => organization._count.members <= 1)
+    .map((organization) => organization.name);
+
+  if (soleOwnerOf.length > 0) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: `This person is the only owner of ${soleOwnerOf.join(", ")}. Another member has to become an owner, or the organization has to be deleted, before the account can be removed.`,
+    });
+  }
+
   await prisma.user.delete({ where: { id: targetId } });
 
   await logAdminAction({
