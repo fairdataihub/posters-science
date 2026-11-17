@@ -24,6 +24,7 @@ export default defineEventHandler(
             select: {
               id: true,
               profileId: true,
+              slug: true,
               name: true,
               isPublic: true,
               hiddenAt: true,
@@ -55,7 +56,7 @@ export default defineEventHandler(
         return {
           collectionId: collection.id,
           name: collection.name,
-          path: collectionPath(collection.profileId),
+          path: collectionPath(collection.profileId, collection.slug),
           ownerName: organizationPersonName(collection.owner),
           isMine,
           isPublic: collection.isPublic && collection.hiddenAt === null,

@@ -18,13 +18,12 @@ import {
   organizationPath,
 } from "#shared/utils/organization";
 import { generateProfileId, profilePath } from "#shared/utils/profile";
-import { posterListingRole } from "./organizationPosters";
 import { publicPosterListing } from "./profilePosters";
 
-// Rules for collections. A collection never changes who owns a poster: it
-// holds only posters its owner published or claimed, the same rule as
-// organization listings (listablePosterRoots), and only the publisher edits
-// a poster.
+// Rules for collections. A collection never changes who owns a poster, and
+// only the publisher edits one. Any public poster can go in a collection, not
+// just the owner's: the collection page offers their own published and claimed
+// posters (listablePosterRoots), and Discover and poster pages add any other.
 
 const ADDRESS_ATTEMPTS = 5;
 const COVERS = 4;
@@ -123,6 +122,40 @@ export async function assertCollectionAllowance(userId: string) {
 }
 
 /**
+ * Which of these version roots are public right now: the latest version is
+ * published and not retired. Ids that aren't version roots never match.
+ */
+export async function publicPosterRootIds(rootIds: number[]) {
+  const roots = new Set<number>();
+
+  if (rootIds.length === 0) return roots;
+
+  const versions = await prisma.poster.findMany({
+    where: {
+      ...publicPosterListing,
+      OR: [{ id: { in: rootIds } }, { versionRootId: { in: rootIds } }],
+    },
+    select: { id: true, versionRootId: true },
+  });
+
+  for (const version of versions) roots.add(posterFamilyRootId(version));
+
+  return roots;
+}
+
+/** Throws a 403 unless every id is the version root of a public poster. */
+export async function assertPublicPosterRoots(rootIds: number[]) {
+  const roots = await publicPosterRootIds(rootIds);
+
+  if (rootIds.some((id) => !roots.has(id))) {
+    throw createError({
+      statusCode: 403,
+      statusMessage: "Only published posters can be added to a collection",
+    });
+  }
+}
+
+/**
  * The image of each poster family that is public right now, by root id.
  * Retired posters and unpublished drafts are left out.
  */
@@ -200,6 +233,7 @@ export async function collectionPosterStats(collectionIds: string[]) {
 export const myCollectionSelect = {
   id: true,
   profileId: true,
+  slug: true,
   name: true,
   description: true,
   conference: true,
@@ -226,7 +260,9 @@ export async function toMyCollections(
 
     return {
       id: row.id,
-      path: collectionPath(row.profileId),
+      path: collectionPath(row.profileId, row.slug),
+      idPath: collectionPath(row.profileId),
+      slug: row.slug,
       name: row.name,
       description: row.description,
       conference: row.conference,
@@ -251,6 +287,7 @@ export async function toMyCollection(row: MyCollectionRow) {
 export const collectionSummarySelect = {
   id: true,
   profileId: true,
+  slug: true,
   name: true,
   description: true,
   conference: true,
@@ -307,7 +344,7 @@ export async function toCollectionSummaries(
     return [
       {
         id: row.id,
-        path: collectionPath(row.profileId),
+        path: collectionPath(row.profileId, row.slug),
         name: row.name,
         description: row.description,
         conference: row.conference,
@@ -326,13 +363,14 @@ export async function posterCollectionChoices(
   userId: string,
   rootId: number,
 ): Promise<PosterCollectionChoices> {
-  const [collections, role] = await Promise.all([
+  const [collections, publicRoots] = await Promise.all([
     prisma.collection.findMany({
       where: { ownerId: userId },
       orderBy: { updated: "desc" },
       select: {
         id: true,
         profileId: true,
+        slug: true,
         name: true,
         isPublic: true,
         hiddenAt: true,
@@ -340,12 +378,12 @@ export async function posterCollectionChoices(
         _count: { select: { posters: true } },
       },
     }),
-    posterListingRole(userId, rootId),
+    publicPosterRootIds([rootId]),
   ]);
 
   return {
     posterId: rootId,
-    canAdd: role !== null,
+    canAdd: publicRoots.has(rootId),
     canCreate: collections.length < COLLECTION_PER_USER_MAX,
     collections: collections.map((collection) => {
       const hidden = collection.hiddenAt !== null;
@@ -353,7 +391,7 @@ export async function posterCollectionChoices(
       return {
         id: collection.id,
         name: collection.name,
-        path: collectionPath(collection.profileId),
+        path: collectionPath(collection.profileId, collection.slug),
         isPublic: collection.isPublic && !hidden,
         hidden,
         listed: collection.posters.length > 0,

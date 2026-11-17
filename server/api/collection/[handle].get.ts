@@ -2,8 +2,10 @@ import {
   organizationAvatarUrl,
   organizationPath,
 } from "#shared/utils/organization";
-import { collectionPath } from "#shared/utils/collection";
-import { parseProfileParam } from "#shared/utils/profile";
+import {
+  collectionPath,
+  parseCollectionHandle,
+} from "#shared/utils/collection";
 import {
   collectionOwner,
   collectionSummarySelect,
@@ -15,7 +17,9 @@ import {
 } from "../../utils/profilePosters";
 
 /**
- * Public page for /collection/<profileId>. To anyone else, a private or hidden
+ * Public page for /collection/<profileId> or /collection/<slug>. `path` is the
+ * custom link when there is one, so the page can redirect the id address to
+ * it. To anyone else, a private or hidden
  * collection and an unknown id all return 404. The owner can open it to
  * preview it, and site admins can open it to moderate it.
  *
@@ -27,12 +31,12 @@ export default defineEventHandler(async (event) => {
     createError({ statusCode: 404, statusMessage: "Collection not found" });
 
   const { handle } = event.context.params as { handle: string };
-  const profileId = parseProfileParam(handle ?? "");
+  const where = parseCollectionHandle(handle ?? "");
 
-  if (!profileId) throw notFound();
+  if (!where) throw notFound();
 
   const collection = await prisma.collection.findUnique({
-    where: { profileId },
+    where,
     select: {
       ...collectionSummarySelect,
       ownerId: true,
@@ -70,14 +74,17 @@ export default defineEventHandler(async (event) => {
   ]);
 
   const addedAt = new Map(items.map((item) => [item.posterId, item.created]));
-  const latestByRoot = await latestPublicPosterVersions([...addedAt.keys()]);
+  const [latestByRoot, ownerRoles] = await Promise.all([
+    latestPublicPosterVersions([...addedAt.keys()]),
+    // How the owner holds each poster. Anyone else's poster gets no badge.
+    listablePosterRoots(collection.ownerId),
+  ]);
 
   const posters = [...latestByRoot.entries()]
     .map(([rootId, version]) =>
       toProfilePosterCard(
         version,
-        // Auto-indexed posters reach a collection through the owner's claim.
-        version.automated ? "author" : "publisher",
+        ownerRoles.get(rootId) ?? null,
         addedAt.get(rootId) ?? null,
       ),
     )
@@ -89,7 +96,7 @@ export default defineEventHandler(async (event) => {
   return {
     // Only the owner needs the internal id, for the Manage link.
     id: isOwner ? collection.id : null,
-    path: collectionPath(collection.profileId),
+    path: collectionPath(collection.profileId, collection.slug),
     name: collection.name,
     description: collection.description,
     conference: collection.conference,

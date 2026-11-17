@@ -404,6 +404,11 @@ model Collection {
   // changes, so a link keeps working if the collection is renamed.
   profileId String @unique
 
+  // Optional address the owner picks, /collection/<slug>. Lower case. Never
+  // shaped like a profileId, so the two can't clash. The profileId address
+  // keeps working and redirects here.
+  slug String? @unique
+
   owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   ownerId String
 

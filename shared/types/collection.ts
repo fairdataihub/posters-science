@@ -6,7 +6,12 @@ export type CollectionCover = { posterId: number; imageUrl: string };
 /** A collection as its owner sees it. */
 export type MyCollection = {
   id: string;
+  /** The custom link when set, else the id link. */
   path: string;
+  /** /collection/<profileId>, which always works. */
+  idPath: string;
+  /** The custom link's last part, if the owner set one. */
+  slug: string | null;
   name: string;
   description: string;
   conference: string;

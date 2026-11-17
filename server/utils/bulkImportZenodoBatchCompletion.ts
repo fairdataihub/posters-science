@@ -225,7 +225,9 @@ export async function buildBulkSubmissionCompletion(
       status: true,
       completedAt: true,
       submissionSummary: true,
-      collection: { select: { id: true, profileId: true, name: true } },
+      collection: {
+        select: { id: true, profileId: true, slug: true, name: true },
+      },
     },
   });
 
@@ -321,7 +323,7 @@ export async function buildBulkSubmissionCompletion(
     collection: job.collection
       ? {
           id: job.collection.id,
-          path: collectionPath(job.collection.profileId),
+          path: collectionPath(job.collection.profileId, job.collection.slug),
           name: job.collection.name,
         }
       : null,

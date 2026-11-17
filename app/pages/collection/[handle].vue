@@ -42,11 +42,15 @@ const {
   { query: { search: committedSearch } },
 );
 
-// Ids are matched case-insensitively. Send other spellings to the lower case
-// address so there is one canonical URL per collection.
+// One address per collection: the custom link when there is one, else the id,
+// in lower case. Only a change of case is permanent. The id address sends you
+// to the custom link with a temporary redirect, since the owner can change it.
 if (collection.value && collection.value.path !== route.path) {
+  const caseOnly =
+    collection.value.path.toLowerCase() === route.path.toLowerCase();
+
   await navigateTo(collection.value.path, {
-    redirectCode: 301,
+    redirectCode: caseOnly ? 301 : 302,
     replace: true,
   });
 }
@@ -281,7 +285,7 @@ async function makePublic() {
             :is-owner="false"
             :empty-description="
               collection.isOwner
-                ? 'Open Manage to add your published or claimed posters.'
+                ? 'Open Manage to add your own posters, or add any poster from Discover.'
                 : 'This collection has no public posters yet.'
             "
           />

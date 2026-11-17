@@ -337,6 +337,17 @@ async function deleteCollection() {
 
               <UCard>
                 <template #header>
+                  <h2 class="text-base font-semibold">Custom link</h2>
+                </template>
+
+                <CollectionLinkForm
+                  :collection="collection"
+                  @saved="collection = $event"
+                />
+              </UCard>
+
+              <UCard>
+                <template #header>
                   <h2 class="text-base font-semibold">Details</h2>
                 </template>
 

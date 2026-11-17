@@ -135,6 +135,7 @@ export default defineEventHandler(async (event) => {
       collection: {
         select: {
           profileId: true,
+          slug: true,
           name: true,
           owner: { select: { givenName: true, familyName: true } },
         },
@@ -144,7 +145,7 @@ export default defineEventHandler(async (event) => {
 
   const collections = collectionListings.map(({ collection }) => ({
     name: collection.name,
-    path: collectionPath(collection.profileId),
+    path: collectionPath(collection.profileId, collection.slug),
     ownerName:
       `${collection.owner.givenName} ${collection.owner.familyName}`.trim() ||
       "A member",

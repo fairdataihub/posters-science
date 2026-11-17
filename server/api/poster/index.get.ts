@@ -58,7 +58,9 @@ const bulkDashboardSelect = {
   created: true,
   updated: true,
   completedAt: true,
-  collection: { select: { id: true, profileId: true, name: true } },
+  collection: {
+    select: { id: true, profileId: true, slug: true, name: true },
+  },
 } as const;
 
 async function loadBulkDashboardRows(userId: string) {
@@ -237,7 +239,7 @@ export default defineEventHandler(async (event) => {
     collection: bulk.collection
       ? {
           id: bulk.collection.id,
-          path: collectionPath(bulk.collection.profileId),
+          path: collectionPath(bulk.collection.profileId, bulk.collection.slug),
           name: bulk.collection.name,
         }
       : null,

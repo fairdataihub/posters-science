@@ -41,6 +41,7 @@ export default defineEventHandler(async (event) => {
       select: {
         id: true,
         profileId: true,
+        slug: true,
         name: true,
         conference: true,
         isPublic: true,
@@ -66,9 +67,9 @@ export default defineEventHandler(async (event) => {
 
   const stats = await collectionPosterStats(rows.map((row) => row.id));
 
-  const data = rows.map(({ profileId, _count, ...row }) => ({
+  const data = rows.map(({ profileId, slug, _count, ...row }) => ({
     ...row,
-    path: collectionPath(profileId),
+    path: collectionPath(profileId, slug),
     posterCount: stats.get(row.id)?.posterCount ?? 0,
     organizationCount: _count.organizationListings,
   }));
