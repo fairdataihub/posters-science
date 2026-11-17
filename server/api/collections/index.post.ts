@@ -6,6 +6,7 @@ import {
 } from "#shared/utils/collection";
 import {
   assertCollectionAllowance,
+  assertPublicPosterRoots,
   isUniqueClashOn,
   myCollectionSelect,
   toMyCollection,
@@ -26,9 +27,9 @@ const createSchema = collectionDetailsSchema
 
 /**
  * Creates a collection owned by the signed-in person. It stays private until
- * they make it public. It can start with posters, each a published poster they
- * published or claimed, given by its version root, and can be made from one of
- * their bulk uploads, once per upload.
+ * they make it public. It can start with posters, each a published poster
+ * (anyone's) given by its version root, and can be made from one of their bulk
+ * uploads, once per upload.
  */
 export default defineEventHandler(async (event) => {
   const session = await requireDbUserSession(event);
@@ -72,17 +73,7 @@ export default defineEventHandler(async (event) => {
     if (batch.collection) throw alreadyMade(batch.collection.id);
   }
 
-  if (posterIds.length > 0) {
-    const mine = await listablePosterRoots(userId);
-
-    if (posterIds.some((posterId) => !mine.has(posterId))) {
-      throw createError({
-        statusCode: 403,
-        statusMessage:
-          "Only published posters you published or claimed can be added",
-      });
-    }
-  }
+  await assertPublicPosterRoots(posterIds);
 
   let row;
 

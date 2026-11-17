@@ -202,7 +202,8 @@ async function remove(poster: CollectionListedPoster) {
         </h4>
 
         <p v-if="posters.listed.length === 0" class="text-muted text-sm">
-          No posters yet. Add some of your published or claimed posters below.
+          No posters yet. Add some of your own posters below, or any poster from
+          Discover.
         </p>
 
         <ul
@@ -251,8 +252,11 @@ async function remove(poster: CollectionListedPoster) {
         <h4 class="font-medium">Add your posters</h4>
 
         <p class="text-muted text-sm">
-          Published posters you shared or claimed. They stay yours, and only
-          their publisher can edit them.
+          Published posters you shared or claimed. To add anyone else's, select
+          <b>Add to collection</b>
+          on the poster in
+          <ULink to="/discover" class="text-primary underline">Discover</ULink>
+          or on its page.
         </p>
 
         <p v-if="available.length === 0" class="text-muted text-sm">

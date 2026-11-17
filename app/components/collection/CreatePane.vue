@@ -90,7 +90,7 @@ async function createCollection(details: CollectionDetails) {
     side="right"
     class="w-full max-w-xl"
     title="New collection"
-    description="Group posters you published or claimed. It stays private until you make it public."
+    description="Group any published posters, yours or anyone else's. It stays private until you make it public."
   >
     <template #body>
       <CollectionDetailsForm

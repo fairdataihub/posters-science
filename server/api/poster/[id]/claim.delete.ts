@@ -24,31 +24,22 @@ export default defineEventHandler(async (event) => {
 
   const rootId = posterFamilyRootId(poster);
 
-  // The claim is what let them show the poster on an organization page and
-  // keep it in their collections, so the listings they added go with it.
-  const { count, listingsRemoved, collectionItemsRemoved } =
-    await prisma.$transaction(async (tx) => {
-      const claims = await tx.posterClaim.deleteMany({
-        where: { posterId: rootId, userId },
-      });
-
-      if (claims.count === 0) {
-        return { count: 0, listingsRemoved: 0, collectionItemsRemoved: 0 };
-      }
-
-      const listings = await tx.organizationPoster.deleteMany({
-        where: { posterId: rootId, addedById: userId },
-      });
-      const items = await tx.collectionPoster.deleteMany({
-        where: { posterId: rootId, collection: { ownerId: userId } },
-      });
-
-      return {
-        count: claims.count,
-        listingsRemoved: listings.count,
-        collectionItemsRemoved: items.count,
-      };
+  // The claim is what let them show the poster on an organization page, so
+  // the listings they added go with it. Collections can hold any public
+  // poster, so it stays in theirs.
+  const { count, listingsRemoved } = await prisma.$transaction(async (tx) => {
+    const claims = await tx.posterClaim.deleteMany({
+      where: { posterId: rootId, userId },
     });
+
+    if (claims.count === 0) return { count: 0, listingsRemoved: 0 };
+
+    const listings = await tx.organizationPoster.deleteMany({
+      where: { posterId: rootId, addedById: userId },
+    });
+
+    return { count: claims.count, listingsRemoved: listings.count };
+  });
 
   if (count === 0) {
     throw createError({
@@ -63,7 +54,6 @@ export default defineEventHandler(async (event) => {
     userId,
     posterId: rootId,
     organizationListingsRemoved: listingsRemoved,
-    collectionItemsRemoved,
   });
 
   return { success: true };

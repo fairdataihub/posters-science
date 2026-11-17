@@ -11,8 +11,7 @@ const bodySchema = z.object({
 
 /**
  * Sets which of the signed-in person's collections hold this poster. Adding
- * needs a published poster they published or claimed. Taking it out always
- * works.
+ * needs a published poster, anyone's. Taking it out always works.
  */
 export default defineEventHandler(async (event) => {
   const session = await requireDbUserSession(event);
@@ -49,8 +48,7 @@ export default defineEventHandler(async (event) => {
   if (toAdd.length > 0 && !current.canAdd) {
     throw createError({
       statusCode: 403,
-      statusMessage:
-        "Only published posters you published or claimed can be added to a collection",
+      statusMessage: "Only published posters can be added to a collection",
     });
   }
 

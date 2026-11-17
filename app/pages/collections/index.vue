@@ -134,7 +134,7 @@ function onExists(collectionId: string) {
       <UPage>
         <UPageHeader
           title="Collections"
-          description="Group posters you published or claimed, such as the posters from one conference or project, and share them as one page. Each poster still belongs to the person who published it."
+          description="Group published posters, such as the posters from one conference or project, and share them as one page. Each poster still belongs to the person who published it."
           :links="[
             {
               label: 'New collection',
@@ -166,7 +166,7 @@ function onExists(collectionId: string) {
               v-if="collections.length === 0"
               icon="i-lucide-library-big"
               title="You don't have any collections yet"
-              description="Make one for a conference, a project or a lab, then add your published or claimed posters to it."
+              description="Make one for a conference, a project or a lab, then add your own posters or any poster from Discover."
               :actions="[
                 {
                   label: 'Create a collection',

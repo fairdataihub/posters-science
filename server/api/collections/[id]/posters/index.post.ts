@@ -2,6 +2,7 @@ import { z } from "zod";
 import { COLLECTION_IDS_PER_REQUEST } from "#shared/utils/collection";
 import {
   assertCollectionRoom,
+  assertPublicPosterRoots,
   requireCollectionOwner,
 } from "../../../../utils/collections";
 import { logwatch } from "../../../../utils/logwatch";
@@ -14,8 +15,8 @@ const bodySchema = z.object({
 });
 
 /**
- * Adds some of the owner's posters to a collection. Each must be a published
- * poster they published or claimed, given by its version root.
+ * Adds posters to a collection. Each must be a published poster, anyone's,
+ * given by its version root.
  */
 export default defineEventHandler(async (event) => {
   const collectionId = getRouterParam(event, "id") ?? "";
@@ -32,15 +33,8 @@ export default defineEventHandler(async (event) => {
   }
 
   const posterIds = [...new Set(body.data.posterIds)];
-  const mine = await listablePosterRoots(userId);
 
-  if (posterIds.some((posterId) => !mine.has(posterId))) {
-    throw createError({
-      statusCode: 403,
-      statusMessage:
-        "Only published posters you published or claimed can be added",
-    });
-  }
+  await assertPublicPosterRoots(posterIds);
 
   const alreadyIn = await prisma.collectionPoster.count({
     where: { collectionId, posterId: { in: posterIds } },

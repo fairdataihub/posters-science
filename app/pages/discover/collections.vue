@@ -184,7 +184,8 @@ const { data: posterData } = useFetch<{ total: number }>("/api/discover", {
 });
 
 const backLink = computed(() => {
-  const query: Record<string, string | string[]> = {};
+  // Keep the collections band on, since it's off by default.
+  const query: Record<string, string | string[]> = { collections: "on" };
 
   if (committedSearch.value) query.search = committedSearch.value;
 

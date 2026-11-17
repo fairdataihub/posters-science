@@ -71,7 +71,7 @@ You may choose to make your profile public. A Public Profile can be viewed by an
 
 ### 4.5 Collections
 
-You may group poster records you have submitted or claimed into a collection. A collection does not transfer ownership of any poster record or give you the right to edit one. A collection is private until you make it public. A public collection can be viewed by anyone and shows its name, description, conference, poster records and your name as its owner, and it may appear on Discover, your Public Profile and the organization pages you choose. Organization owners may remove a collection from their page. You are responsible for the name and description you give a collection, and we may hide a collection that violates these Terms.
+You may group published poster records into a collection, including poster records submitted or claimed by other Users. A collection does not transfer ownership of any poster record or give you the right to edit one. A collection is private until you make it public. A public collection can be viewed by anyone and shows its name, description, conference, poster records and your name as its owner, and it may appear on Discover, your Public Profile and the organization pages you choose. Organization owners may remove a collection from their page. You are responsible for the name and description you give a collection, and we may hide a collection that violates these Terms.
 
 ## 5. Contributor Responsibilities
 

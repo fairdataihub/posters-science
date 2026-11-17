@@ -41,18 +41,12 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, statusMessage: "Claim not found" });
   }
 
-  // The claimant's organization listings and collection items for this poster
-  // depended on the claim.
-  const [, listings, collectionItems] = await prisma.$transaction([
+  // The claimant's organization listings for this poster depended on the
+  // claim. Collections can hold any public poster, so their items stay.
+  const [, listings] = await prisma.$transaction([
     prisma.posterClaim.delete({ where: { id: claim.id } }),
     prisma.organizationPoster.deleteMany({
       where: { posterId: claim.posterId, addedById: claim.userId },
-    }),
-    prisma.collectionPoster.deleteMany({
-      where: {
-        posterId: claim.posterId,
-        collection: { ownerId: claim.userId },
-      },
     }),
   ]);
 
@@ -68,7 +62,6 @@ export default defineEventHandler(async (event) => {
       claimantEmail: claim.user.emailAddress,
       claimedAt: claim.created,
       organizationListingsRemoved: listings.count,
-      collectionItemsRemoved: collectionItems.count,
       reason: body.data.reason,
     },
   });

@@ -138,7 +138,7 @@ Author names are shown exactly as they appear in the original record, so citatio
 
 ### How do I remove a claim?
 
-Select **Remove claim** on the poster in your dashboard, or **Remove** next to "Claimed by you" on the poster's page. The poster also comes out of your collections and off any organization pages you showed it on. You can claim it again later.
+Open the menu (three dots) on the poster in your dashboard and select **Remove claim**, or select **Remove** next to "Claimed by you" on the poster's page. The poster also comes off any organization pages you showed it on, but stays in your collections. You can claim it again later.
 
 ### Someone claimed a poster they didn't author. What can I do?
 
@@ -160,15 +160,19 @@ A named group of posters, such as the posters from one conference, project or la
 
 ### How do I make a collection?
 
-Go to [Collections](/collections) and select **New collection**, or select **Collections** on a published poster in your dashboard and type a name. After a bulk upload, select **Create collection from this batch** to start one with the upload's published posters already in it.
+Go to [Collections](/collections) and select **New collection**. You can also select **Add to collection** on any poster in [Discover](/discover) or on its page, or **Collections** in the menu of a published poster in your dashboard, and type a name. After a bulk upload, select **Create collection from this batch** to start one with the upload's published posters already in it.
 
 ### Which posters can I add?
 
-Posters you published on Posters.science and auto-indexed posters you claimed, while they are published. A collection holds up to 500 posters, and you can have up to 100 collections.
+Any published poster on Posters.science, including ones other people shared and auto-indexed ones. A collection's page lists your own published and claimed posters to add. For anyone else's, select **Add to collection** on the poster in Discover or on its page. A collection holds up to 500 posters, and you can have up to 100 collections.
 
 ### Who can see my collection?
 
 Only you, until you make it public from its Settings tab. A public collection can be seen by anyone with the link and shows its name, description, conference, posters, and your name as its owner. It also appears on Discover, on your public profile if you have one, and on organization pages you choose. Search engines are asked not to index it.
+
+### Can I give my collection its own link?
+
+Yes. Open the collection's **Settings** tab and set a **Custom link**, such as `/collection/agu-2026-lab-posters`. It can use letters, numbers and hyphens, and each one can only be used by one collection. The original link with the collection's id keeps working and opens the custom one. If you change or remove the custom link, links that use the old one stop working.
 
 ### Can I show a collection on an organization page?
 
@@ -176,11 +180,11 @@ Yes, on any organization you belong to. Open the collection's **Organizations** 
 
 ### How do I find collections?
 
-The [Discover](/discover) page shows matching collections above the posters, and **See all** opens every collection that matches. A collection matches when your search is in its name, description, conference or owner's name, or when it holds a poster that matches. Use `collection:` to find posters in a collection by its name.
+On the [Discover](/discover) page, turn on **Show collections** to see matching collections above the posters. **See all** opens every collection that matches. A collection matches when your search is in its name, description, conference or owner's name, or when it holds a poster that matches. Use `collection:` to find posters in a collection by its name.
 
 ### What happens to a collection if a poster is removed?
 
-A retired poster disappears from the collection while it is retired and comes back if it is restored. If you remove your claim on a poster, it comes out of your collections.
+A retired poster disappears from the collection while it is retired and comes back if it is restored. Removing your claim on a poster doesn't take it out of your collections.
 
 ## Your profile and account
 

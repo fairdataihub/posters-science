@@ -2,6 +2,7 @@
 import dayjs from "dayjs";
 
 import type { MatchingOrcid } from "#shared/types/orcidSuggestions";
+import { parseApiError } from "~/utils/apiError";
 import {
   DISCOVER_SEARCH_FIELD_LABELS,
   type DiscoverSearchClause,
@@ -56,8 +57,8 @@ const institutionFilterValue = ref<string[]>(
 );
 const funderFilterValue = ref<string[]>(parseStringList(route.query.funder));
 
-// The collections band above the posters. On unless ?collections=off.
-const showCollections = ref(route.query.collections !== "off");
+// The collections band above the posters. Off unless ?collections=on.
+const showCollections = ref(route.query.collections === "on");
 
 function setShowCollections(on: boolean) {
   showCollections.value = on;
@@ -210,6 +211,31 @@ const { data: matchingOrcid } = useFetch<MatchingOrcid>("/api/user/orcid", {
 });
 const myOrcid = computed(() => matchingOrcid.value?.orcid ?? null);
 
+// Quick add to a collection from any poster card, for signed-in people.
+const toast = useToast();
+const {
+  open: collectionPromptOpen,
+  choices: collectionPromptChoices,
+  loadingPosterId: collectionPromptLoadingId,
+  show: showPosterCollections,
+} = useCollectionPosterPrompt();
+
+async function openPosterCollections(posterId: number | undefined) {
+  if (posterId === undefined) return;
+
+  try {
+    await showPosterCollections(posterId);
+  } catch (error) {
+    toast.add({
+      title: "Could not load your collections",
+      description:
+        parseApiError(error).statusMessage ??
+        "Something went wrong. Try again.",
+      color: "error",
+    });
+  }
+}
+
 function isMyOrcidClause(clause: DiscoverSearchClause) {
   return (
     clause.field === "orcid" &&
@@ -307,7 +333,7 @@ watch(
       query.institution = institutionFilterValue.value;
     if (funderFilterValue.value.length > 0)
       query.funder = funderFilterValue.value;
-    if (!showCollections.value) query.collections = "off";
+    if (showCollections.value) query.collections = "on";
     router.replace({ query });
   },
   { deep: true },
@@ -697,99 +723,119 @@ function clearAllFilters() {
 
         <UiSpinner :loading="status === 'pending'" overlay>
           <UPageGrid v-if="posters.length > 0">
-            <NuxtLink
+            <div
               v-for="poster in posters"
               :key="poster.id"
-              :to="`/discover/${poster.id}`"
               class="relative h-full"
             >
-              <UCard
-                class="group relative flex h-full flex-1 cursor-pointer flex-col shadow-sm ring-0 transition-shadow duration-300 hover:shadow-md"
+              <NuxtLink
+                :to="`/discover/${poster.id}`"
+                class="relative block h-full"
               >
-                <div class="relative h-full flex-1">
-                  <div class="relative overflow-hidden">
-                    <img
-                      :src="poster.imageUrl"
-                      :alt="poster.title"
-                      class="h-48 w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                      @error="onImageError($event, poster)"
-                    />
+                <UCard
+                  class="group relative flex h-full flex-1 cursor-pointer flex-col shadow-sm ring-0 transition-shadow duration-300 hover:shadow-md"
+                >
+                  <div class="relative h-full flex-1">
+                    <div class="relative overflow-hidden">
+                      <img
+                        :src="poster.imageUrl"
+                        :alt="poster.title"
+                        class="h-48 w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                        @error="onImageError($event, poster)"
+                      />
 
-                    <UTooltip
-                      v-if="poster.automated"
-                      text="This poster was picked up by our automated system."
-                    >
-                      <UBadge
-                        color="primary"
-                        variant="solid"
-                        size="xs"
-                        icon="i-lucide-sparkles"
-                        class="absolute top-2 left-2 z-10 cursor-help"
+                      <UTooltip
+                        v-if="poster.automated"
+                        text="This poster was picked up by our automated system."
                       >
-                        Auto-indexed
-                      </UBadge>
-                    </UTooltip>
-                  </div>
-
-                  <div class="relative flex flex-col justify-between gap-2 p-2">
-                    <div class="flex flex-col gap-3">
-                      <h3 class="line-clamp-2 text-lg font-semibold">
-                        <SearchHighlight
-                          :text="poster.title"
-                          :term="highlightTerms.title"
-                        />
-                      </h3>
-
-                      <p class="line-clamp-3 text-sm leading-relaxed">
-                        <SearchHighlight
-                          :text="poster.description"
-                          :term="highlightTerms.description"
-                        />
-                      </p>
-
-                      <div class="flex flex-wrap gap-1">
                         <UBadge
-                          v-for="tag in poster.keywords.slice(0, 2)"
-                          :key="tag"
-                          color="neutral"
-                          variant="soft"
-                          class="capitalize"
+                          color="primary"
+                          variant="solid"
+                          size="xs"
+                          icon="i-lucide-sparkles"
+                          class="absolute top-2 left-2 z-10 cursor-help"
                         >
-                          <SearchHighlight
-                            :text="tag"
-                            :term="highlightTerms.keyword"
-                          />
+                          Auto-indexed
                         </UBadge>
-
-                        <UBadge
-                          v-if="poster.keywords.length > 2"
-                          color="neutral"
-                          variant="soft"
-                        >
-                          + {{ poster.keywords.length - 2 }}
-                        </UBadge>
-                      </div>
+                      </UTooltip>
                     </div>
 
                     <div
-                      class="flex items-center justify-between border-t border-gray-100 pt-2 text-sm"
+                      class="relative flex flex-col justify-between gap-2 p-2"
                     >
-                      <div class="flex items-center gap-4">
-                        <span class="flex items-center gap-1">
-                          <Icon name="heroicons:heart" />
-                          {{ poster.likes }}
-                        </span>
+                      <div class="flex flex-col gap-3">
+                        <h3 class="line-clamp-2 text-lg font-semibold">
+                          <SearchHighlight
+                            :text="poster.title"
+                            :term="highlightTerms.title"
+                          />
+                        </h3>
+
+                        <p class="line-clamp-3 text-sm leading-relaxed">
+                          <SearchHighlight
+                            :text="poster.description"
+                            :term="highlightTerms.description"
+                          />
+                        </p>
+
+                        <div class="flex flex-wrap gap-1">
+                          <UBadge
+                            v-for="tag in poster.keywords.slice(0, 2)"
+                            :key="tag"
+                            color="neutral"
+                            variant="soft"
+                            class="capitalize"
+                          >
+                            <SearchHighlight
+                              :text="tag"
+                              :term="highlightTerms.keyword"
+                            />
+                          </UBadge>
+
+                          <UBadge
+                            v-if="poster.keywords.length > 2"
+                            color="neutral"
+                            variant="soft"
+                          >
+                            + {{ poster.keywords.length - 2 }}
+                          </UBadge>
+                        </div>
                       </div>
 
-                      <span class="flex items-center gap-1">
-                        <Icon name="heroicons:calendar-days" />
-                        {{ dayjs(poster.created).format("MMM D, YYYY") }}
-                      </span>
+                      <div
+                        class="flex items-center justify-between border-t border-gray-100 pt-2 text-sm"
+                      >
+                        <div class="flex items-center gap-4">
+                          <span class="flex items-center gap-1">
+                            <Icon name="heroicons:heart" />
+                            {{ poster.likes }}
+                          </span>
+                        </div>
+
+                        <span class="flex items-center gap-1">
+                          <Icon name="heroicons:calendar-days" />
+                          {{ dayjs(poster.created).format("MMM D, YYYY") }}
+                        </span>
+                      </div>
                     </div>
                   </div>
-                </div>
-              </UCard>
-            </NuxtLink>
+                </UCard>
+              </NuxtLink>
+
+              <!-- Outside the link, on the image's top right corner -->
+              <UTooltip v-if="loggedIn" text="Add to a collection">
+                <UButton
+                  color="neutral"
+                  variant="outline"
+                  icon="i-lucide-library-big"
+                  size="sm"
+                  class="absolute top-6 right-6 z-10 shadow-sm sm:top-8 sm:right-8"
+                  aria-label="Add to a collection"
+                  :loading="collectionPromptLoadingId === poster.id"
+                  @click="openPosterCollections(poster.id)"
+                />
+              </UTooltip>
+            </div>
           </UPageGrid>
 
           <!-- Empty State -->
@@ -800,6 +846,12 @@ function clearAllFilters() {
             description="Try adjusting your search criteria or filters."
           />
         </UiSpinner>
+
+        <CollectionPosterModal
+          v-model:open="collectionPromptOpen"
+          :choices="collectionPromptChoices"
+          from="discover_card"
+        />
 
         <div class="flex justify-center pt-8 pb-4">
           <UPagination

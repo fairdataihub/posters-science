@@ -67,8 +67,13 @@ const searched = computed(() => {
   return props.posters.filter((poster) => matches.has(poster.posterId));
 });
 
-// Self-published or claimed (the Posters tab only)
+// Self-published or claimed (the Posters tab only). Not on a collection,
+// which can also hold posters its owner neither published nor claimed.
 type RoleFilter = "all" | "published" | "claimed";
+
+const roleFilterShown = computed(
+  () => props.kind === "posters" && props.audience !== "collection",
+);
 
 const roleFilter = computed<RoleFilter>({
   get: () => {
@@ -94,7 +99,7 @@ const roleOptions = computed(() => [
 ]);
 
 const roleFiltered = computed(() => {
-  if (props.kind !== "posters" || roleFilter.value === "all") {
+  if (!roleFilterShown.value || roleFilter.value === "all") {
     return searched.value;
   }
 
@@ -233,7 +238,7 @@ const activeBadges = computed(() => {
     [];
   const { clauses, freeText } = parsedSearch.value;
 
-  if (props.kind === "posters" && roleFilter.value !== "all") {
+  if (roleFilterShown.value && roleFilter.value !== "all") {
     badges.push({
       key: "show",
       label: `Showing: ${roleFilter.value === "published" ? "Self-published" : "Claimed"}`,
@@ -306,7 +311,7 @@ function clearAll() {
 // Selections made in the Filters popup, shown as a count on its button.
 const filterCount = computed(
   () =>
-    (props.kind === "posters" && roleFilter.value !== "all" ? 1 : 0) +
+    (roleFilterShown.value && roleFilter.value !== "all" ? 1 : 0) +
     yearFilter.value.length +
     languageFilter.value.length +
     licenseFilter.value.length,
@@ -382,7 +387,7 @@ const noun = computed(() =>
 
             <template #content>
               <div class="w-80 max-w-[calc(100vw-2rem)] space-y-5 p-4">
-                <div v-if="kind === 'posters'" class="space-y-2">
+                <div v-if="roleFilterShown" class="space-y-2">
                   <p class="text-sm font-medium">Show</p>
 
                   <div

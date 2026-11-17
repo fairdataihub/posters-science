@@ -12,9 +12,14 @@ import { parseApiError } from "~/utils/apiError";
 
 const open = defineModel<boolean>("open", { default: false });
 
-const props = defineProps<{
-  choices: PosterCollectionChoices | null;
-}>();
+const props = withDefaults(
+  defineProps<{
+    choices: PosterCollectionChoices | null;
+    /** Where it was opened, for analytics. */
+    from?: "dashboard" | "discover_card" | "poster_page";
+  }>(),
+  { from: "dashboard" },
+);
 
 const emit = defineEmits<{
   saved: [choices: PosterCollectionChoices];
@@ -93,7 +98,10 @@ async function createCollection() {
       },
     });
 
-    window.umami?.track("collection_created", { source: "poster_modal" });
+    window.umami?.track("collection_created", {
+      source: "poster_modal",
+      from: props.from,
+    });
 
     created.value = [
       {
@@ -152,12 +160,14 @@ async function save() {
       window.umami?.track("collection_posters_added", {
         count: added,
         source: "poster_modal",
+        from: props.from,
       });
     }
 
     if (removed > 0) {
       window.umami?.track("collection_poster_removed", {
         source: "poster_modal",
+        from: props.from,
       });
     }
 
@@ -198,7 +208,7 @@ async function save() {
           variant="subtle"
           icon="i-heroicons-information-circle"
           title="This poster can't be added right now"
-          description="Only published posters you published or claimed can go in a collection. You can still take it out of one."
+          description="Only published posters can go in a collection. If it's in one already, you can still take it out."
         />
 
         <ul
@@ -254,7 +264,8 @@ async function save() {
         </form>
 
         <p class="text-muted text-xs">
-          The poster stays yours. A collection only groups posters for viewing.
+          A collection only groups posters for viewing. Each poster still
+          belongs to the person who published it.
         </p>
       </div>
     </template>

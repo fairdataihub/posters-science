@@ -67,7 +67,8 @@ const ORGANIZATION_ROLE_BADGES = {
   },
 } as const;
 
-// A collection holds only posters its owner shared or claimed.
+// Posters the collection's owner shared or claimed. Anyone else's poster in a
+// collection has no badge.
 const COLLECTION_ROLE_BADGES = {
   publisher: {
     ...ROLE_BADGES.publisher,
