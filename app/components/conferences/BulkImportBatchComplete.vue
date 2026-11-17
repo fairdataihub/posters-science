@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { BulkSubmissionCompletionResponse } from "#shared/types/bulkSubmissionCompletion";
 import dayjs from "dayjs";
+import BulkImportBatchOrganizations from "./BulkImportBatchOrganizations.vue";
 
 const props = defineProps<{
   jobId: string;
@@ -12,6 +13,48 @@ const { data, error, status } =
   );
 
 const loading = computed(() => status.value === "pending");
+const organizationsOpen = ref(false);
+
+// Ask for feedback the first time a batch's summary opens, as a single poster
+// does once it's published. The default layout owns the Tally form.
+const feedbackOpen = useState("feedbackOpen", () => false);
+let feedbackTimer: ReturnType<typeof setTimeout> | undefined;
+
+function askForFeedbackOnce(jobId: string) {
+  const key = `bulk-feedback-asked:${jobId}`;
+
+  try {
+    if (localStorage.getItem(key)) return;
+  } catch {
+    // No storage: ask anyway. It may ask again on a later visit.
+  }
+
+  // A moment after the summary shows, unless another dialog is already open.
+  feedbackTimer = setTimeout(() => {
+    if (organizationsOpen.value) return;
+
+    feedbackOpen.value = true;
+
+    try {
+      localStorage.setItem(key, new Date().toISOString());
+    } catch {
+      // Same as above.
+    }
+  }, 800);
+}
+
+onMounted(() => {
+  watch(
+    () => data.value?.jobId,
+    (jobId) => {
+      clearTimeout(feedbackTimer);
+      if (jobId) askForFeedbackOnce(jobId);
+    },
+    { immediate: true },
+  );
+});
+
+onBeforeUnmount(() => clearTimeout(feedbackTimer));
 
 const completedLabel = computed(() => {
   const at = data.value?.completedAt ?? data.value?.zenodoBatchCompletedAt;
@@ -149,7 +192,41 @@ useSeoMeta({
           label="Back to dashboard"
           to="/dashboard"
         />
+
+        <UButton
+          color="neutral"
+          variant="subtle"
+          icon="i-lucide-building-2"
+          label="Add to organization"
+          @click="organizationsOpen = true"
+        />
+
+        <UButton
+          v-if="data.collection"
+          color="neutral"
+          variant="subtle"
+          icon="i-lucide-library-big"
+          label="View collection"
+          :to="`/collections/${data.collection.id}`"
+        />
+
+        <UButton
+          v-else
+          color="primary"
+          variant="subtle"
+          icon="i-lucide-library-big"
+          label="Create collection from this batch"
+          :to="{
+            path: '/collections',
+            query: { new: '1', fromBatch: data.jobId },
+          }"
+        />
       </div>
+
+      <BulkImportBatchOrganizations
+        v-model:open="organizationsOpen"
+        :job-id="data.jobId"
+      />
     </template>
   </div>
 </template>
