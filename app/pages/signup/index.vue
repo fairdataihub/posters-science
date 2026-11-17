@@ -46,6 +46,7 @@ useSeoMeta({
 
 const toast = useToast();
 const loading = ref(false);
+const { available: orcidAvailable } = useOrcidSignIn();
 
 // Set when signup is refused because the address already has an account that
 // has never been verified.
@@ -168,7 +169,7 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
         icon: "material-symbols:mail-outline",
       });
 
-      window.umami?.track("signup_completed");
+      window.umami?.track("signup_completed", { method: "password" });
       const next = organizationName ? "/organizations" : redirectAfterLogin;
 
       navigateTo(
@@ -277,6 +278,22 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
           class="w-full"
         />
       </UFormField>
+
+      <!-- An organization is created after signing in, so ORCID is offered
+           for a personal account only. -->
+      <template v-if="orcidAvailable && !isOrganizationSignup">
+        <div class="mt-4">
+          <AuthOrcidButton
+            block
+            label="Sign up with ORCID"
+            source="signup"
+            :redirect="redirectAfterLogin || undefined"
+            :email="invitedEmail || undefined"
+          />
+        </div>
+
+        <USeparator label="or" class="mt-4" />
+      </template>
 
       <UForm
         :schema="schema"

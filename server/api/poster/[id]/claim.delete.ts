@@ -25,7 +25,8 @@ export default defineEventHandler(async (event) => {
   const rootId = posterFamilyRootId(poster);
 
   // The claim is what let them show the poster on an organization page, so
-  // the listings they added go with it.
+  // the listings they added go with it. Collections can hold any public
+  // poster, so it stays in theirs.
   const { count, listingsRemoved } = await prisma.$transaction(async (tx) => {
     const claims = await tx.posterClaim.deleteMany({
       where: { posterId: rootId, userId },

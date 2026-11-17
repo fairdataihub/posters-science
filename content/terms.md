@@ -24,8 +24,10 @@ By using the Platform, you represent and warrant that you are legally permitted 
 Certain features of the Platform may require you to create an account. You agree to:
 
 - Provide accurate and up-to-date registration information;
-- Maintain the confidentiality of your login credentials; and
+- Maintain the confidentiality of your login credentials, including any ORCID account you use to sign in; and
 - Be responsible for all activities that occur under your account.
+
+You may sign in with an email address and password, or with ORCID. When you sign in with or link ORCID, ORCID confirms your ORCID iD and name to us, and each ORCID iD may be linked to only one account. Your use of ORCID is subject to ORCID's own terms and privacy policy.
 
 ## 3. Nature of the Service
 
@@ -56,6 +58,7 @@ If you claim an Auto-Indexed Poster Record, you represent that you are one of it
 
 - You will only claim poster records that you authored or co-authored;
 - Claims are not verified when they are made. We may review any Claim, and we may remove a Claim at any time and without notice, including in response to a report from another User;
+- We may suggest poster records whose author list in the external repository includes your ORCID iD. A suggestion is not a confirmation that you authored the poster record, and claiming a suggested poster record is the same as any other Claim;
 - A Claim lists the poster record on your dashboard and, if you have one, your Public Profile. It does not transfer ownership of the poster record, give you the right to edit its metadata, or change the original poster, its license, or its record in the external repository;
 - Other authors may also claim the same poster record; and
 - You may remove your Claim at any time.
@@ -64,7 +67,11 @@ If you believe a poster record has been claimed by someone who is not one of its
 
 ### 4.4 Public Profiles
 
-You may choose to make your profile public. A Public Profile can be viewed by anyone and shows your name, affiliation, ORCID iD if you add one, short biography, the poster records you have submitted or claimed, and, if you choose to show them, the poster records you have liked. Your email address is not shown. You are responsible for the information you add to your Public Profile, and you may make it private again at any time. We may hide or remove Public Profile content that violates these Terms.
+You may choose to make your profile public. A Public Profile can be viewed by anyone and shows your name, affiliation, ORCID iD if you add or link one, short biography, the poster records you have submitted or claimed, and, if you choose to show them, the poster records you have liked. Your email address is not shown. You are responsible for the information you add to your Public Profile, and you may make it private again at any time. We may hide or remove Public Profile content that violates these Terms.
+
+### 4.5 Collections
+
+You may group published poster records into a collection, including poster records submitted or claimed by other Users. A collection does not transfer ownership of any poster record or give you the right to edit one. A collection is private until you make it public. A public collection can be viewed by anyone and shows its name, description, conference, poster records and your name as its owner, and it may appear on Discover, your Public Profile and the organization pages you choose. Organization owners may remove a collection from their page. You are responsible for the name and description you give a collection, and we may hide a collection that violates these Terms.
 
 ## 5. Contributor Responsibilities
 
@@ -125,7 +132,7 @@ You agree to indemnify, defend, and hold harmless the operators of Posters.scien
 
 ## 13. Third-Party Services
 
-The Platform links to and integrates with third-party services, including Zenodo for poster archiving. We do not control and are not responsible for the content, policies, or practices of any third-party services. Your use of such services is subject to their own terms and policies.
+The Platform links to and integrates with third-party services, including Zenodo for poster archiving and ORCID for signing in and confirming ORCID iDs. We do not control and are not responsible for the content, policies, or practices of any third-party services. Your use of such services is subject to their own terms and policies.
 
 ## 14. Changes to These Terms
 

@@ -99,6 +99,11 @@ const profileDropdownItems = computed((): DropdownMenuItem[][] => [
       to: "/organizations",
     },
     {
+      icon: "material-symbols:collections-bookmark",
+      label: "Collections",
+      to: "/collections",
+    },
+    {
       icon: "material-symbols:settings",
       label: "Settings",
       to: "/profile",
@@ -137,6 +142,11 @@ const mobileProfileNavItems = computed<NavigationMenuItem[]>(() => [
     icon: "material-symbols:corporate-fare",
     label: "Organizations",
     to: "/organizations",
+  },
+  {
+    icon: "material-symbols:collections-bookmark",
+    label: "Collections",
+    to: "/collections",
   },
   {
     icon: "material-symbols:settings",

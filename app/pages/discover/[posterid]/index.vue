@@ -7,6 +7,7 @@ import {
   RELATION_TYPE_OPTIONS,
 } from "~/utils/poster_schema";
 import { resolveDoiUrl } from "#shared/utils/doi";
+import { parseApiError } from "~/utils/apiError";
 import type { WithContext, ScholarlyArticle } from "schema-dts";
 
 type PosterIdentifier = {
@@ -413,6 +414,31 @@ const NuxtSchemaPoster: WithContext<ScholarlyArticle> = {
 
 useSchemaOrg([cleanSchema(NuxtSchemaPoster)]);
 
+// Add this poster to the signed-in person's collections. Any public poster
+// can go in one.
+const {
+  open: collectionPromptOpen,
+  choices: collectionPromptChoices,
+  loadingPosterId: collectionPromptLoadingId,
+  show: showPosterCollections,
+} = useCollectionPosterPrompt();
+
+async function openPosterCollections() {
+  if (!loggedIn.value) return;
+
+  try {
+    await showPosterCollections(Number(poster.value.id));
+  } catch (error) {
+    toast.add({
+      title: "Could not load your collections",
+      description:
+        parseApiError(error).statusMessage ??
+        "Something went wrong. Try again.",
+      color: "error",
+    });
+  }
+}
+
 const handleLike = async () => {
   if (!loggedIn.value) {
     toast.add({
@@ -675,6 +701,18 @@ const tabItems = [
                   @click="handleLike"
                 >
                   {{ liked ? "Liked" : "Like" }}
+                </UButton>
+
+                <UButton
+                  color="neutral"
+                  variant="outline"
+                  icon="i-lucide-library-big"
+                  size="lg"
+                  :disabled="!loggedIn"
+                  :loading="collectionPromptLoadingId !== null"
+                  @click="openPosterCollections"
+                >
+                  Add to collection
                 </UButton>
 
                 <UButton
@@ -1066,6 +1104,41 @@ const tabItems = [
               </ul>
             </UCard>
 
+            <UCard v-if="api?.collections?.length">
+              <template #header>
+                <h3 class="text-lg font-semibold">In collections</h3>
+              </template>
+
+              <ul class="space-y-2">
+                <li
+                  v-for="collection in api.collections"
+                  :key="collection.path"
+                >
+                  <NuxtLink
+                    :to="collection.path"
+                    class="flex items-start gap-2 rounded-md p-1 text-sm hover:bg-gray-100 dark:hover:bg-gray-800"
+                  >
+                    <UIcon
+                      name="i-lucide-library-big"
+                      class="mt-0.5 size-4 shrink-0 text-gray-500"
+                    />
+
+                    <span class="min-w-0">
+                      <span class="block font-medium break-words">
+                        {{ collection.name }}
+                      </span>
+
+                      <span
+                        class="block truncate text-xs text-gray-600 dark:text-gray-400"
+                      >
+                        By {{ collection.ownerName }}
+                      </span>
+                    </span>
+                  </NuxtLink>
+                </li>
+              </ul>
+            </UCard>
+
             <UCard>
               <template #header>
                 <h3 class="text-lg font-semibold">Additional Information</h3>
@@ -1168,6 +1241,12 @@ const tabItems = [
           </div>
         </div>
       </UContainer>
+
+      <CollectionPosterModal
+        v-model:open="collectionPromptOpen"
+        :choices="collectionPromptChoices"
+        from="poster_page"
+      />
     </template>
   </div>
 </template>

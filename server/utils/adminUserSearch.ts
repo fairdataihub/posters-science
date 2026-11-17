@@ -28,5 +28,17 @@ export function userSearchWhere(term: string): Prisma.UserWhereInput {
     });
   }
 
+  const orcid = normalizeOrcid(term);
+  if (isValidOrcidChecksum(orcid)) {
+    clauses.push(
+      { orcid },
+      {
+        linkedAccounts: {
+          some: { provider: "orcid", providerAccountId: orcid },
+        },
+      },
+    );
+  }
+
   return { OR: clauses };
 }

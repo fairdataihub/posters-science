@@ -21,20 +21,47 @@ const canDeleteBulk = computed(() => {
   );
 });
 
-const bulkMenuItems = computed(() => {
-  if (!canDeleteBulk.value) return [];
+// A finished upload can be turned into a collection, once.
+const collectionMenuItem = computed(() => {
+  if (props.bulk.status !== "completed") return null;
 
-  return [
-    [
-      {
-        label: "Delete draft",
-        icon: "i-lucide-trash-2",
-        color: "error" as const,
-        onSelect: () => emit("delete", props.bulk),
-      },
-    ],
-  ];
+  const { collection } = props.bulk;
+
+  return collection
+    ? {
+        label: "View collection",
+        description: "Open the collection made from this batch",
+        icon: "i-lucide-library-big",
+        onSelect: () => navigateTo(`/collections/${collection.id}`),
+      }
+    : {
+        label: "Create collection",
+        description: "Start one with this batch's posters",
+        icon: "i-lucide-library-big",
+        onSelect: () =>
+          navigateTo({
+            path: "/collections",
+            query: { new: "1", fromBatch: props.bulk.id },
+          }),
+      };
 });
+
+const bulkMenuItems = computed(() => [
+  ...(collectionMenuItem.value ? [[collectionMenuItem.value]] : []),
+  ...(canDeleteBulk.value
+    ? [
+        [
+          {
+            label: "Delete draft",
+            description: "Remove the upload and its staged files",
+            icon: "i-lucide-trash-2",
+            color: "error" as const,
+            onSelect: () => emit("delete", props.bulk),
+          },
+        ],
+      ]
+    : []),
+]);
 
 const CARD_TITLE_MAX_LENGTH = 80;
 
@@ -217,11 +244,12 @@ function continueImport() {
               v-if="bulkMenuItems.length"
               :items="bulkMenuItems"
               :content="{ align: 'end' }"
+              :ui="{ itemLeadingIcon: 'self-center' }"
             >
               <UButton
                 color="neutral"
                 variant="ghost"
-                icon="i-lucide-ellipsis"
+                icon="i-lucide-ellipsis-vertical"
                 size="xs"
                 aria-label="More bulk import actions"
               />

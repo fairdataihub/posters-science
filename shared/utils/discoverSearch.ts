@@ -16,6 +16,7 @@ export const DISCOVER_SEARCH_FIELDS = [
   "funder",
   "award",
   "content",
+  "collection",
 ] as const;
 
 export type DiscoverSearchField = (typeof DISCOVER_SEARCH_FIELDS)[number];
@@ -34,9 +35,13 @@ export const DISCOVER_SEARCH_FIELD_LABELS: Record<DiscoverSearchField, string> =
     funder: "Funder",
     award: "Award",
     content: "Poster text",
+    collection: "Collection",
   };
 
-/** Fields a plain term looks at. Identifiers and poster text need a prefix. */
+/**
+ * Fields a plain term looks at. Identifiers, poster text and collections need
+ * a prefix.
+ */
 export const DISCOVER_FREE_TEXT_FIELDS = [
   "title",
   "description",
@@ -77,6 +82,9 @@ const FIELD_ALIASES: Record<string, DiscoverSearchField> = {
   content: "content",
   text: "content",
   body: "content",
+  // `org:` already means affiliation, so collections get their own words.
+  collection: "collection",
+  col: "collection",
 };
 
 /** Example queries for the help popover, one per field. */
@@ -95,6 +103,7 @@ export const DISCOVER_SEARCH_EXAMPLES: Record<DiscoverSearchField, string> = {
   award: "award:R01",
   // eslint-disable-next-line @stylistic/quotes
   content: 'content:"random forest"',
+  collection: "collection:AGU",
 };
 
 export type DiscoverSearchClause = {

@@ -20,6 +20,7 @@ import type {
   DashboardInProgressFeedEntry,
   DashboardPosterFeedResponse,
 } from "#shared/types/dashboardFeed";
+import type { OrcidSuggestions } from "#shared/types/orcidSuggestions";
 
 definePageMeta({
   middleware: ["auth"],
@@ -190,6 +191,18 @@ const publishedPosters = computed(() =>
       !activeBulkManagedPosterIdSet.value.has(poster.id),
   ),
 );
+// Auto-indexed posters that list the user's ORCID iD, shown in the Published
+// tab. Fetched in the browser so the dashboard doesn't wait on the search.
+const { data: orcidSuggestions, refresh: refreshOrcidSuggestions } =
+  useFetch<OrcidSuggestions>("/api/user/orcid-suggestions", {
+    server: false,
+    lazy: true,
+  });
+const orcidSuggestionCount = computed(() =>
+  orcidSuggestions.value?.orcid && !orcidSuggestions.value.hidden
+    ? orcidSuggestions.value.total
+    : 0,
+);
 const activeDashboardTab = ref<"in-progress" | "published">("in-progress");
 const dashboardTabs = computed(() => [
   {
@@ -201,6 +214,15 @@ const dashboardTabs = computed(() => [
     label: `Published (${publishedPosters.value.length})`,
     icon: "i-lucide-circle-check",
     value: "published",
+    badge:
+      orcidSuggestionCount.value > 0
+        ? {
+            label: `${orcidSuggestionCount.value.toLocaleString()} suggested`,
+            color: "primary" as const,
+            variant: "subtle" as const,
+            size: "sm" as const,
+          }
+        : undefined,
   },
 ]);
 type ActiveTabListItem =
@@ -307,6 +329,29 @@ if (data.value) {
   }
 }
 
+// ?tab=published opens the Published tab, as the settings page links to it.
+const route = useRoute();
+
+if (route.query.tab === "published") {
+  activeDashboardTab.value = "published";
+}
+
+// Someone with no posters of their own yet, but some that list their iD,
+// lands on the suggestions.
+watch(orcidSuggestionCount, (count) => {
+  if (
+    count > 0 &&
+    inProgressDashboardItems.value.length === 0 &&
+    publishedPosters.value.length === 0
+  ) {
+    activeDashboardTab.value = "published";
+  }
+});
+
+async function onOrcidSuggestionsClaimed() {
+  await Promise.all([refresh(), refreshOrcidSuggestions()]);
+}
+
 watch(data, (feed) => {
   if (feed) {
     applyDashboardFeed(feed);
@@ -365,6 +410,28 @@ async function openPosterOrganizations(poster: Poster) {
       title: "Could not load your organizations",
       description:
         parseApiError(error).statusMessage ?? "Something went wrong. Try again.",
+      color: "error",
+    });
+  }
+}
+
+// Collections that hold each published poster, chosen in a pop-up.
+const {
+  open: collectionPromptOpen,
+  choices: collectionPromptChoices,
+  loadingPosterId: collectionPromptLoadingId,
+  show: showPosterCollections,
+} = useCollectionPosterPrompt();
+
+async function openPosterCollections(poster: Poster) {
+  try {
+    await showPosterCollections(poster.rootPosterId);
+  } catch (error) {
+    toast.add({
+      title: "Could not load your collections",
+      description:
+        parseApiError(error).statusMessage ??
+        "Something went wrong. Try again.",
       color: "error",
     });
   }
@@ -1743,11 +1810,50 @@ function openInProgressPoster(poster: Poster) {
   openPoster(poster);
 }
 
+// The three-dot menu on a published card. View and Edit stay as buttons.
+function publishedPosterMenuItems(poster: Poster) {
+  const listing = [];
+
+  if (hasOrganizations.value && poster.isLatestPublished) {
+    listing.push({
+      label: "Organizations",
+      description: "Choose which organization pages show it",
+      icon: "i-lucide-building-2",
+      onSelect: () => openPosterOrganizations(poster),
+    });
+  }
+
+  if (poster.isLatestPublished) {
+    listing.push({
+      label: "Collections",
+      description: "Choose which of your collections hold it",
+      icon: "i-lucide-library-big",
+      onSelect: () => openPosterCollections(poster),
+    });
+  }
+
+  const claim = poster.claimed
+    ? [
+        {
+          label: "Remove claim",
+          icon: "i-lucide-x",
+          color: "error" as const,
+          onSelect: () => {
+            removeClaimTarget.value = poster;
+          },
+        },
+      ]
+    : [];
+
+  return [listing, claim].filter((group) => group.length > 0);
+}
+
 function posterMenuItems(poster: Poster) {
   if (poster.tombstone) return [];
 
   const regeneratePreview = {
-    label: "Regenerate poster preview",
+    label: "Regenerate preview",
+    description: "Rebuild the thumbnail from the poster file",
     icon: "i-lucide-refresh-cw",
     disabled: regeneratingThumbnailIds.value.includes(poster.id),
     onSelect: () => regenerateThumbnail(poster),
@@ -1771,6 +1877,7 @@ function posterMenuItems(poster: Poster) {
         regeneratePreview,
         {
           label: "Discard draft",
+          description: "Drop these edits. The published poster stays.",
           icon: "i-lucide-trash-2",
           color: "error" as const,
           onSelect: () => openDeleteVersionDraftCard(poster),
@@ -1784,6 +1891,7 @@ function posterMenuItems(poster: Poster) {
       regeneratePreview,
       {
         label: "Delete draft",
+        description: "Remove this draft for good",
         icon: "i-lucide-trash-2",
         color: "error" as const,
         onSelect: () => openDeleteModal(poster),
@@ -1862,6 +1970,13 @@ function posterMenuItems(poster: Poster) {
       :items="dashboardTabs"
       :content="false"
       class="w-full"
+    />
+
+    <DashboardOrcidSuggestions
+      v-if="activeDashboardTab === 'published' && orcidSuggestions"
+      :data="orcidSuggestions"
+      @changed="refreshOrcidSuggestions"
+      @claimed="onOrcidSuggestionsClaimed"
     />
 
     <section v-if="activeTabHasItems" class="space-y-3">
@@ -2167,33 +2282,6 @@ function posterMenuItems(poster: Poster) {
                         @click="openPoster(poster)"
                       />
 
-                      <UTooltip
-                        v-if="hasOrganizations && poster.isLatestPublished"
-                        text="Choose which of your organizations show this poster on their page."
-                      >
-                        <UButton
-                          color="neutral"
-                          variant="subtle"
-                          label="Organizations"
-                          icon="i-lucide-building-2"
-                          size="xs"
-                          :loading="
-                            organizationPromptLoadingId === poster.rootPosterId
-                          "
-                          @click="openPosterOrganizations(poster)"
-                        />
-                      </UTooltip>
-
-                      <UButton
-                        v-if="poster.claimed"
-                        color="neutral"
-                        variant="ghost"
-                        label="Remove claim"
-                        icon="i-lucide-x"
-                        size="xs"
-                        @click="removeClaimTarget = poster"
-                      />
-
                       <!-- FEATURE FLAG (versioning) -->
                       <UButton
                         v-if="
@@ -2231,6 +2319,26 @@ function posterMenuItems(poster: Poster) {
                           />
                         </span>
                       </UTooltip>
+
+                      <UDropdownMenu
+                        v-if="publishedPosterMenuItems(poster).length"
+                        :items="publishedPosterMenuItems(poster)"
+                        :content="{ align: 'end' }"
+                        :ui="{ itemLeadingIcon: 'self-center' }"
+                      >
+                        <UButton
+                          color="neutral"
+                          variant="ghost"
+                          icon="i-lucide-ellipsis-vertical"
+                          size="xs"
+                          aria-label="More poster actions"
+                          :loading="
+                            organizationPromptLoadingId ===
+                              poster.rootPosterId ||
+                            collectionPromptLoadingId === poster.rootPosterId
+                          "
+                        />
+                      </UDropdownMenu>
                     </template>
 
                     <template v-else>
@@ -2252,11 +2360,12 @@ function posterMenuItems(poster: Poster) {
                         v-if="posterMenuItems(poster).length"
                         :items="posterMenuItems(poster)"
                         :content="{ align: 'end' }"
+                        :ui="{ itemLeadingIcon: 'self-center' }"
                       >
                         <UButton
                           color="neutral"
                           variant="ghost"
-                          icon="i-lucide-ellipsis"
+                          icon="i-lucide-ellipsis-vertical"
                           size="xs"
                           aria-label="More poster actions"
                         />
@@ -2452,6 +2561,11 @@ function posterMenuItems(poster: Poster) {
       "
       :dismiss-label="organizationPromptAfterPublish ? 'Not now' : 'Cancel'"
       @saved="refreshOrganizationListings()"
+    />
+
+    <CollectionPosterModal
+      v-model:open="collectionPromptOpen"
+      :choices="collectionPromptChoices"
     />
 
     <!-- Delete draft modal -->

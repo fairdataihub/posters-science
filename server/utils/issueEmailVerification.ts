@@ -2,10 +2,31 @@ import { createHash } from "node:crypto";
 import { nanoid } from "nanoid";
 import dayjs from "dayjs";
 import {
+  EMAIL_VERIFICATION_RESEND_COOLDOWN_MINUTES,
   EMAIL_VERIFICATION_TTL_MINUTES,
   emailVerificationTtlLabel,
 } from "#shared/utils/emailVerification";
 import { sendEmail } from "./sendEmail";
+
+/**
+ * Whether the last link went out within the resend cooldown. The send time is
+ * the stored expiry minus the lifetime, so a burst of requests can't keep
+ * mailing an address and no extra column is needed.
+ */
+export function sentWithinResendCooldown(tokenExpires: Date | null): boolean {
+  if (!tokenExpires) return false;
+
+  const issuedAt = dayjs(tokenExpires).subtract(
+    EMAIL_VERIFICATION_TTL_MINUTES,
+    "minute",
+  );
+  const cooldownStart = dayjs().subtract(
+    EMAIL_VERIFICATION_RESEND_COOLDOWN_MINUTES,
+    "minute",
+  );
+
+  return issuedAt.isAfter(cooldownStart);
+}
 
 /**
  * Issue a fresh verification token for a user and email them the link.

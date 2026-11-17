@@ -39,6 +39,8 @@ const actionLabels: Record<string, string> = {
   REVOKE_CLAIM: "Revoked claim",
   HIDE_ORGANIZATION: "Hid organization",
   RESTORE_ORGANIZATION: "Restored organization",
+  HIDE_COLLECTION: "Hid collection",
+  RESTORE_COLLECTION: "Restored collection",
 };
 
 const actionItems = [
@@ -64,7 +66,9 @@ function actionColor(action: string) {
     return "error" as const;
   }
   if (action === "UPDATE_MAINTENANCE") return "warning" as const;
-  if (action === "HIDE_ORGANIZATION") return "warning" as const;
+  if (action === "HIDE_ORGANIZATION" || action === "HIDE_COLLECTION") {
+    return "warning" as const;
+  }
   if (action.startsWith("UPDATE")) return "warning" as const;
 
   return "neutral" as const;

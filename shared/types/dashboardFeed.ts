@@ -1,3 +1,10 @@
+/** The collection made from a bulk upload, if any. */
+export type BulkSubmissionCollectionLink = {
+  id: string;
+  path: string;
+  name: string;
+};
+
 /** Bulk import row included in `GET /api/poster` (in-progress only). */
 export type DashboardBulkSubmission = {
   id: string;
@@ -10,6 +17,8 @@ export type DashboardBulkSubmission = {
   createdAt: string;
   updatedAt: string;
   completedAt?: string | null;
+  /** Set once a collection was made from this upload. */
+  collection?: BulkSubmissionCollectionLink | null;
 };
 
 export type DashboardInProgressFeedEntry =
