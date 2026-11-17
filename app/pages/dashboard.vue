@@ -1810,11 +1810,50 @@ function openInProgressPoster(poster: Poster) {
   openPoster(poster);
 }
 
+// The three-dot menu on a published card. View and Edit stay as buttons.
+function publishedPosterMenuItems(poster: Poster) {
+  const listing = [];
+
+  if (hasOrganizations.value && poster.isLatestPublished) {
+    listing.push({
+      label: "Organizations",
+      description: "Choose which organization pages show it",
+      icon: "i-lucide-building-2",
+      onSelect: () => openPosterOrganizations(poster),
+    });
+  }
+
+  if (poster.isLatestPublished) {
+    listing.push({
+      label: "Collections",
+      description: "Choose which of your collections hold it",
+      icon: "i-lucide-library-big",
+      onSelect: () => openPosterCollections(poster),
+    });
+  }
+
+  const claim = poster.claimed
+    ? [
+        {
+          label: "Remove claim",
+          icon: "i-lucide-x",
+          color: "error" as const,
+          onSelect: () => {
+            removeClaimTarget.value = poster;
+          },
+        },
+      ]
+    : [];
+
+  return [listing, claim].filter((group) => group.length > 0);
+}
+
 function posterMenuItems(poster: Poster) {
   if (poster.tombstone) return [];
 
   const regeneratePreview = {
-    label: "Regenerate poster preview",
+    label: "Regenerate preview",
+    description: "Rebuild the thumbnail from the poster file",
     icon: "i-lucide-refresh-cw",
     disabled: regeneratingThumbnailIds.value.includes(poster.id),
     onSelect: () => regenerateThumbnail(poster),
@@ -1838,6 +1877,7 @@ function posterMenuItems(poster: Poster) {
         regeneratePreview,
         {
           label: "Discard draft",
+          description: "Drop these edits. The published poster stays.",
           icon: "i-lucide-trash-2",
           color: "error" as const,
           onSelect: () => openDeleteVersionDraftCard(poster),
@@ -1851,6 +1891,7 @@ function posterMenuItems(poster: Poster) {
       regeneratePreview,
       {
         label: "Delete draft",
+        description: "Remove this draft for good",
         icon: "i-lucide-trash-2",
         color: "error" as const,
         onSelect: () => openDeleteModal(poster),
@@ -2241,50 +2282,6 @@ function posterMenuItems(poster: Poster) {
                         @click="openPoster(poster)"
                       />
 
-                      <UTooltip
-                        v-if="hasOrganizations && poster.isLatestPublished"
-                        text="Choose which of your organizations show this poster on their page."
-                      >
-                        <UButton
-                          color="neutral"
-                          variant="subtle"
-                          label="Organizations"
-                          icon="i-lucide-building-2"
-                          size="xs"
-                          :loading="
-                            organizationPromptLoadingId === poster.rootPosterId
-                          "
-                          @click="openPosterOrganizations(poster)"
-                        />
-                      </UTooltip>
-
-                      <UTooltip
-                        v-if="poster.isLatestPublished"
-                        text="Choose which of your collections hold this poster."
-                      >
-                        <UButton
-                          color="neutral"
-                          variant="subtle"
-                          label="Collections"
-                          icon="i-lucide-library-big"
-                          size="xs"
-                          :loading="
-                            collectionPromptLoadingId === poster.rootPosterId
-                          "
-                          @click="openPosterCollections(poster)"
-                        />
-                      </UTooltip>
-
-                      <UButton
-                        v-if="poster.claimed"
-                        color="neutral"
-                        variant="ghost"
-                        label="Remove claim"
-                        icon="i-lucide-x"
-                        size="xs"
-                        @click="removeClaimTarget = poster"
-                      />
-
                       <!-- FEATURE FLAG (versioning) -->
                       <UButton
                         v-if="
@@ -2322,6 +2319,26 @@ function posterMenuItems(poster: Poster) {
                           />
                         </span>
                       </UTooltip>
+
+                      <UDropdownMenu
+                        v-if="publishedPosterMenuItems(poster).length"
+                        :items="publishedPosterMenuItems(poster)"
+                        :content="{ align: 'end' }"
+                        :ui="{ itemLeadingIcon: 'self-center' }"
+                      >
+                        <UButton
+                          color="neutral"
+                          variant="ghost"
+                          icon="i-lucide-ellipsis-vertical"
+                          size="xs"
+                          aria-label="More poster actions"
+                          :loading="
+                            organizationPromptLoadingId ===
+                              poster.rootPosterId ||
+                            collectionPromptLoadingId === poster.rootPosterId
+                          "
+                        />
+                      </UDropdownMenu>
                     </template>
 
                     <template v-else>
@@ -2343,11 +2360,12 @@ function posterMenuItems(poster: Poster) {
                         v-if="posterMenuItems(poster).length"
                         :items="posterMenuItems(poster)"
                         :content="{ align: 'end' }"
+                        :ui="{ itemLeadingIcon: 'self-center' }"
                       >
                         <UButton
                           color="neutral"
                           variant="ghost"
-                          icon="i-lucide-ellipsis"
+                          icon="i-lucide-ellipsis-vertical"
                           size="xs"
                           aria-label="More poster actions"
                         />

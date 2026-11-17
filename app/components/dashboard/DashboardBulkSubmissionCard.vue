@@ -30,11 +30,13 @@ const collectionMenuItem = computed(() => {
   return collection
     ? {
         label: "View collection",
+        description: "Open the collection made from this batch",
         icon: "i-lucide-library-big",
         onSelect: () => navigateTo(`/collections/${collection.id}`),
       }
     : {
         label: "Create collection",
+        description: "Start one with this batch's posters",
         icon: "i-lucide-library-big",
         onSelect: () =>
           navigateTo({
@@ -51,6 +53,7 @@ const bulkMenuItems = computed(() => [
         [
           {
             label: "Delete draft",
+            description: "Remove the upload and its staged files",
             icon: "i-lucide-trash-2",
             color: "error" as const,
             onSelect: () => emit("delete", props.bulk),
@@ -241,11 +244,12 @@ function continueImport() {
               v-if="bulkMenuItems.length"
               :items="bulkMenuItems"
               :content="{ align: 'end' }"
+              :ui="{ itemLeadingIcon: 'self-center' }"
             >
               <UButton
                 color="neutral"
                 variant="ghost"
-                icon="i-lucide-ellipsis"
+                icon="i-lucide-ellipsis-vertical"
                 size="xs"
                 aria-label="More bulk import actions"
               />
