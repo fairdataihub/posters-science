@@ -6,6 +6,8 @@ import { requireFeature } from "~~/server/utils/features";
 const SHEET_EXTENSIONS = [".xlsx", ".xlsm", ".xls", ".csv", ".tsv"];
 const MAX_SHEET_BYTES = 10 * 1024 * 1024;
 const MAX_BROWSER_FILE_NAMES = 5000;
+/** Sheet formats the organizer can choose; the extraction API checks the columns. */
+const SHEET_FORMATS = ["easychair", "curious"];
 
 /**
  * Map an organizer's poster spreadsheet (Curious, EasyChair, our own) onto the
@@ -16,7 +18,9 @@ const MAX_BROWSER_FILE_NAMES = 5000;
  * multipart/form-data: sheet (file; several for an export split over files,
  * such as EasyChair submission.csv plus author.csv), mapping (optional JSON of
  * confirmed column choices), file_names (optional JSON list of the poster
- * file names the browser has, including ones still uploading). Rows are
+ * file names the browser has, including ones still uploading), format
+ * (optional, easychair or curious: a sheet without that format's columns is
+ * refused with 422 and data.code format_mismatch). Rows are
  * linked against those names plus the posters already stored; the pending
  * sheet routes re-link them to the stored names once the uploads land.
  */
@@ -62,6 +66,17 @@ export default defineEventHandler(
     const browserNamesRaw = parts
       .find((part) => part.name === "file_names")
       ?.data.toString("utf8");
+    const sheetFormat = parts
+      .find((part) => part.name === "format")
+      ?.data.toString("utf8")
+      .trim()
+      .toLowerCase();
+    if (sheetFormat && !SHEET_FORMATS.includes(sheetFormat)) {
+      throw createError({
+        statusCode: 400,
+        statusMessage: "Choose EasyChair or Curious as the sheet format",
+      });
+    }
 
     if (!sheets.length) {
       throw createError({
@@ -146,6 +161,7 @@ export default defineEventHandler(
     }
     form.append("file_names", JSON.stringify(fileNames));
     if (mapping) form.append("mapping", mapping);
+    if (sheetFormat) form.append("format", sheetFormat);
 
     let response: Response;
     try {
@@ -163,12 +179,27 @@ export default defineEventHandler(
     }
 
     const body = (await response.json().catch(() => null)) as
-      | (PosterSheetMappingResult & { error?: string })
+      | (PosterSheetMappingResult & {
+          error?: string;
+          code?: string;
+          missing_columns?: string[];
+          detected_format?: string | null;
+        })
       | null;
     if (!response.ok || !body) {
       throw createError({
         statusCode: response.status >= 500 || !body ? 502 : 422,
         statusMessage: body?.error ?? "Could not read this spreadsheet",
+        // The format check says which columns are missing and, when the
+        // sheet is the other known format, which one to choose.
+        data:
+          body?.code === "format_mismatch"
+            ? {
+                code: body.code,
+                missingColumns: body.missing_columns ?? [],
+                detectedFormat: body.detected_format ?? null,
+              }
+            : undefined,
       });
     }
 
