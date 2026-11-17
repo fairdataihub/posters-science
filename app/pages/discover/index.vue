@@ -1,10 +1,14 @@
 <script setup lang="ts">
 import dayjs from "dayjs";
 
+import type { MatchingOrcid } from "#shared/types/orcidSuggestions";
 import {
   DISCOVER_SEARCH_FIELD_LABELS,
+  type DiscoverSearchClause,
   discoverHighlightTerms,
+  normalizeOrcid,
   parseDiscoverSearch,
+  serializeDiscoverSearch,
   withoutDiscoverClause,
   withoutDiscoverFreeText,
 } from "#shared/utils/discoverSearch";
@@ -51,6 +55,14 @@ const institutionFilterValue = ref<string[]>(
   parseStringList(route.query.institution),
 );
 const funderFilterValue = ref<string[]>(parseStringList(route.query.funder));
+
+// The collections band above the posters. On unless ?collections=off.
+const showCollections = ref(route.query.collections !== "off");
+
+function setShowCollections(on: boolean) {
+  showCollections.value = on;
+  window.umami?.track("collection_band_toggled", { on });
+}
 
 // Send each selection as a repeated query param (ofetch serializes non-empty
 // arrays that way); undefined omits the param entirely when nothing is selected.
@@ -188,6 +200,58 @@ function applySearch(value: string) {
 
 const parsedSearch = computed(() => parseDiscoverSearch(committedSearch.value));
 
+// "Posters with my ORCID iD" adds or removes an orcid: clause with the
+// signed-in user's iD, so the search box and badges show what it does.
+const { loggedIn } = useUserSession();
+const { data: matchingOrcid } = useFetch<MatchingOrcid>("/api/user/orcid", {
+  server: false,
+  lazy: true,
+  immediate: loggedIn.value,
+});
+const myOrcid = computed(() => matchingOrcid.value?.orcid ?? null);
+
+function isMyOrcidClause(clause: DiscoverSearchClause) {
+  return (
+    clause.field === "orcid" &&
+    !!myOrcid.value &&
+    normalizeOrcid(clause.term) === myOrcid.value
+  );
+}
+
+const myOrcidOn = computed(() =>
+  parsedSearch.value.clauses.some(isMyOrcidClause),
+);
+
+function setMyOrcid(on: boolean) {
+  if (!myOrcid.value) return;
+
+  const parsed = parsedSearch.value;
+  const clauses = parsed.clauses.filter((clause) => !isMyOrcidClause(clause));
+
+  if (on) clauses.push({ field: "orcid", term: myOrcid.value });
+
+  applySearch(serializeDiscoverSearch({ ...parsed, clauses }));
+  window.umami?.track("discover_my_orcid_toggled", { on });
+}
+
+// The same search and filters, for the collections band.
+const collectionBandQuery = computed(() => ({
+  search: committedSearch.value || undefined,
+  source: sourceParam.value,
+  language: languageParam.value,
+  license: licenseParam.value,
+  publicationYear: publicationYearParam.value,
+  institution: institutionParam.value,
+  funder: funderParam.value,
+}));
+
+const collectionHighlight = computed(() => [
+  ...(parsedSearch.value.freeText ? [parsedSearch.value.freeText] : []),
+  ...parsedSearch.value.clauses
+    .filter((clause) => clause.field === "collection")
+    .map((clause) => clause.term),
+]);
+
 const highlightTerms = computed(() =>
   discoverHighlightTerms(parsedSearch.value),
 );
@@ -222,6 +286,7 @@ watch(
     publicationYearFilterValue,
     institutionFilterValue,
     funderFilterValue,
+    showCollections,
   ],
   () => {
     // Write selections as repeated query params (arrays) so comma-containing
@@ -242,6 +307,7 @@ watch(
       query.institution = institutionFilterValue.value;
     if (funderFilterValue.value.length > 0)
       query.funder = funderFilterValue.value;
+    if (!showCollections.value) query.collections = "off";
     router.replace({ query });
   },
   { deep: true },
@@ -407,6 +473,14 @@ function clearAllFilters() {
       description="Find and explore posters on a variety of topics."
       :links="[
         {
+          label: 'Collections',
+          to: '/discover/collections',
+          icon: 'i-lucide-library-big',
+          size: 'lg',
+          variant: 'subtle' as const,
+          color: 'neutral' as const,
+        },
+        {
           label: 'Smart Search',
           to: '/discover/smart-search',
           icon: 'si:ai-fill',
@@ -444,6 +518,21 @@ function clearAllFilters() {
           </template>
 
           <div class="space-y-6">
+            <USwitch
+              :model-value="showCollections"
+              label="Show collections"
+              description="Matching collections above the posters."
+              @update:model-value="setShowCollections"
+            />
+
+            <USwitch
+              v-if="myOrcid"
+              :model-value="myOrcidOn"
+              label="Posters with my ORCID iD"
+              :description="`Posters that list ${myOrcid} for an author.`"
+              @update:model-value="setMyOrcid"
+            />
+
             <DiscoverInstitutionFilter
               v-model="institutionFilterValue"
               :options="facetOptions.institutions"
@@ -499,6 +588,21 @@ function clearAllFilters() {
             v-show="showMobileFilter"
             class="mt-2 space-y-6 rounded-lg border p-4"
           >
+            <USwitch
+              :model-value="showCollections"
+              label="Show collections"
+              description="Matching collections above the posters."
+              @update:model-value="setShowCollections"
+            />
+
+            <USwitch
+              v-if="myOrcid"
+              :model-value="myOrcidOn"
+              label="Posters with my ORCID iD"
+              :description="`Posters that list ${myOrcid} for an author.`"
+              @update:model-value="setMyOrcid"
+            />
+
             <DiscoverInstitutionFilter
               v-model="institutionFilterValue"
               :options="facetOptions.institutions"
@@ -582,6 +686,14 @@ function clearAllFilters() {
             Clear all
           </UButton>
         </div>
+
+        <DiscoverCollectionBand
+          v-if="showCollections && page === 1"
+          :query="collectionBandQuery"
+          :search-text="committedSearch"
+          :highlight="collectionHighlight"
+          :active="hasActiveBadges"
+        />
 
         <UiSpinner :loading="status === 'pending'" overlay>
           <UPageGrid v-if="posters.length > 0">

@@ -8,6 +8,12 @@ import {
 } from "#shared/utils/profile";
 import { isValidOrcidChecksum, orcidUrl } from "#shared/utils/orcid";
 import { normalizeOrcid } from "#shared/utils/discoverSearch";
+import {
+  ORCID_FAILURE_OUTCOMES,
+  isOrcidOutcome,
+  orcidOutcomeNotice,
+} from "#shared/utils/orcidSignIn";
+import type { OrcidSuggestions } from "#shared/types/orcidSuggestions";
 
 definePageMeta({
   middleware: ["auth"],
@@ -39,6 +45,141 @@ const hasPassword = computed(() => userData.value?.hasPassword ?? true);
 const passwordActionLabel = computed(() =>
   hasPassword.value ? "Change password" : "Set password",
 );
+
+// The ORCID card holds both kinds of iD. One linked through ORCID sign-in is
+// verified, and is shown on the public profile in place of a typed-in one,
+// which stays saved but hidden here until the user unlinks.
+const linkedOrcid = computed(
+  () =>
+    userData.value?.linkedAccounts?.find(
+      (account) => account.provider === "orcid",
+    )?.providerAccountId ?? "",
+);
+const { available: orcidAvailable, pausedMessage: orcidPausedMessage } =
+  useOrcidSignIn();
+const unlinkingOrcid = ref(false);
+
+async function unlinkOrcid() {
+  unlinkingOrcid.value = true;
+
+  try {
+    await $fetch("/api/user/linked-accounts/orcid", { method: "DELETE" });
+    await refreshUser();
+    // Suggestions now follow the typed iD, if there is one.
+    await refreshOrcidSuggestions();
+
+    window.umami?.track("orcid_unlinked");
+
+    toast.add({
+      title: "ORCID unlinked",
+      description:
+        "Your iD is no longer verified. You can verify it again at any time.",
+      color: "success",
+      icon: "material-symbols:check-circle-outline",
+    });
+  } catch (error: unknown) {
+    console.error(error);
+
+    toast.add({
+      title: "Could not unlink ORCID",
+      description:
+        parseApiError(error).statusMessage ??
+        "Please try again in a few moments.",
+      color: "error",
+      icon: "material-symbols:error",
+    });
+  } finally {
+    unlinkingOrcid.value = false;
+  }
+}
+
+// The posters the dashboard suggests from the user's iD. The ORCID card points
+// to them, and brings them back after "Hide" or "Not me".
+const { data: orcidSuggestions, refresh: refreshOrcidSuggestions } =
+  useFetch<OrcidSuggestions>("/api/user/orcid-suggestions", {
+    server: false,
+    lazy: true,
+  });
+const orcidSuggestionsOff = computed(
+  () =>
+    !!orcidSuggestions.value &&
+    (orcidSuggestions.value.hidden ||
+      orcidSuggestions.value.dismissedCount > 0),
+);
+const restoringSuggestions = ref(false);
+
+async function showSuggestionsAgain() {
+  restoringSuggestions.value = true;
+
+  try {
+    await $fetch("/api/user/orcid-suggestions", {
+      method: "PATCH",
+      body: { hidden: false, restoreDismissed: true },
+    });
+    await refreshOrcidSuggestions();
+
+    window.umami?.track("orcid_suggestions_shown", { source: "settings" });
+
+    toast.add({
+      title: "Suggestions are back",
+      description: "They're in the Published tab of your dashboard.",
+      color: "success",
+      icon: "material-symbols:check-circle-outline",
+    });
+  } catch (error: unknown) {
+    toast.add({
+      title: "Could not show the suggestions",
+      description:
+        parseApiError(error).statusMessage ??
+        "Please try again in a few moments.",
+      color: "error",
+      icon: "material-symbols:error",
+    });
+  } finally {
+    restoringSuggestions.value = false;
+  }
+}
+
+// GET /api/auth/orcid sends people back here with ?orcid=<outcome> after
+// linking.
+const route = useRoute();
+const router = useRouter();
+
+onMounted(async () => {
+  const outcome = route.query.orcid;
+
+  if (!isOrcidOutcome(outcome)) return;
+
+  if (outcome === "linked") {
+    window.umami?.track("orcid_linked");
+
+    toast.add({
+      title: "ORCID iD verified",
+      description: "It's now on your profile, and you can sign in with ORCID.",
+      color: "success",
+      icon: "material-symbols:check-circle-outline",
+    });
+  } else {
+    const notice = orcidOutcomeNotice(outcome, orcidPausedMessage.value);
+
+    if (ORCID_FAILURE_OUTCOMES.includes(outcome)) {
+      window.umami?.track("orcid_signin_failed", { reason: outcome });
+    }
+
+    if (notice) {
+      toast.add({
+        ...notice,
+        color: outcome === "cancelled" ? "info" : "warning",
+        icon: "i-simple-icons-orcid",
+      });
+    }
+  }
+
+  // Drop the code so a reload doesn't show or count it again.
+  const { orcid: _orcid, ...query } = route.query;
+
+  await router.replace({ query, hash: route.hash });
+});
 
 const passwordSchema = z
   .object({
@@ -171,14 +312,6 @@ const schema = z.object({
     .string()
     .trim()
     .max(PROFILE_BIO_MAX, `Must be at most ${PROFILE_BIO_MAX} characters`),
-  // Format and checksum only. The server also checks ORCID has a record of it.
-  orcid: z
-    .string()
-    .trim()
-    .refine(
-      (value) => !value || isValidOrcidChecksum(value),
-      "Enter a valid ORCID iD, such as 0000-0002-1825-0097 or its orcid.org link",
-    ),
 });
 
 type Schema = z.output<typeof schema>;
@@ -188,40 +321,124 @@ const state = reactive<Schema>({
   familyName: "",
   affiliation: "",
   bio: "",
-  orcid: "",
 });
+
+// Each field is reset only when its saved value changes, so saving the ORCID
+// card or a profile switch doesn't wipe unsaved edits in this form.
+watch(
+  [
+    () => userData.value?.givenName,
+    () => userData.value?.familyName,
+    () => userData.value?.affiliation,
+    () => userData.value?.bio,
+  ],
+  ([givenName, familyName, affiliation, bio]) => {
+    state.givenName = givenName ?? "";
+    state.familyName = familyName ?? "";
+    state.affiliation = affiliation ?? "";
+    state.bio = bio ?? "";
+  },
+  { immediate: true },
+);
+
+// An iD typed in by the user, saved on its own from the ORCID card. Format
+// and checksum only here; the server also checks ORCID has a record of it.
+const orcidSchema = z.object({
+  orcid: z
+    .string()
+    .trim()
+    .refine(
+      (value) => !value || isValidOrcidChecksum(value),
+      "Enter a valid ORCID iD, such as 0000-0002-1825-0097 or its orcid.org link",
+    ),
+});
+
+type OrcidSchema = z.output<typeof orcidSchema>;
+
+const orcidState = reactive<OrcidSchema>({ orcid: "" });
+const savedTypedOrcid = computed(() => userData.value?.orcid ?? "");
+const orcidSaving = ref(false);
 
 // Unset rather than "", which UFormField
 // would read as `error: true` and outline the field without a message.
 const orcidServerError = ref<string>();
 
 watch(
-  () => state.orcid,
+  savedTypedOrcid,
+  (orcid) => {
+    orcidState.orcid = orcid;
+  },
+  { immediate: true },
+);
+
+watch(
+  () => orcidState.orcid,
   () => {
     orcidServerError.value = undefined;
   },
 );
 
+const orcidChanged = computed(
+  () => orcidState.orcid.trim() !== savedTypedOrcid.value,
+);
+
 // Link to the record for the iD in the field, so the user can check it's theirs.
 const orcidRecordUrl = computed(() =>
-  isValidOrcidChecksum(state.orcid)
-    ? orcidUrl(normalizeOrcid(state.orcid))
+  isValidOrcidChecksum(orcidState.orcid)
+    ? orcidUrl(normalizeOrcid(orcidState.orcid))
     : "",
 );
 
-watch(
-  () => userData.value,
-  (u) => {
-    if (u) {
-      state.givenName = u.givenName ?? "";
-      state.familyName = u.familyName ?? "";
-      state.affiliation = u.affiliation ?? "";
-      state.bio = u.bio ?? "";
-      state.orcid = u.orcid ?? "";
+const orcidCardDescription = computed(() => {
+  if (linkedOrcid.value) {
+    return "Verified by signing in to ORCID. It's shown on your public profile, and you can sign in here with ORCID.";
+  }
+
+  if (!orcidAvailable.value) {
+    return "Shown on your public profile with a link to your ORCID record.";
+  }
+
+  return savedTypedOrcid.value
+    ? "You entered this iD yourself. It's shown on your public profile, but it isn't verified until you confirm it with ORCID."
+    : "Shown on your public profile with a link to your ORCID record. Type it in, or sign in to ORCID to add it verified.";
+});
+
+async function saveTypedOrcid(event: FormSubmitEvent<OrcidSchema>) {
+  orcidSaving.value = true;
+
+  try {
+    await $fetch("/api/user", {
+      method: "PATCH",
+      body: { orcid: event.data.orcid },
+    });
+    await refreshUser();
+    // A new typed iD can change the suggested posters.
+    await refreshOrcidSuggestions();
+
+    toast.add({
+      title: event.data.orcid ? "ORCID iD saved" : "ORCID iD removed",
+      color: "success",
+      icon: "i-heroicons-check-circle",
+    });
+  } catch (err: unknown) {
+    const { statusMessage, reason } = parseApiError(err);
+    const message = statusMessage ?? "Failed to save your ORCID iD";
+
+    // A bad or unknown ORCID iD belongs under its field.
+    if (reason?.startsWith("orcid_")) {
+      orcidServerError.value = message;
     }
-  },
-  { immediate: true },
-);
+
+    toast.add({
+      title: "Update failed",
+      description: message,
+      color: "error",
+      icon: "i-heroicons-exclamation-circle",
+    });
+  } finally {
+    orcidSaving.value = false;
+  }
+}
 
 // Public profile. Opt-in, and the address is created the first time it is
 // turned on.
@@ -317,7 +534,6 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
     familyName: event.data.familyName,
     affiliation: event.data.affiliation,
     bio: event.data.bio,
-    orcid: event.data.orcid,
   };
 
   loading.value = true;
@@ -333,17 +549,10 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
       icon: "i-heroicons-check-circle",
     });
   } catch (err: unknown) {
-    const { statusMessage, reason } = parseApiError(err);
-    const message = statusMessage ?? "Failed to update profile";
-
-    // A bad or unknown ORCID iD belongs under its field.
-    if (reason?.startsWith("orcid_")) {
-      orcidServerError.value = message;
-    }
-
     toast.add({
       title: "Update failed",
-      description: message,
+      description:
+        parseApiError(err).statusMessage ?? "Failed to update profile",
       color: "error",
       icon: "i-heroicons-exclamation-circle",
     });
@@ -560,58 +769,6 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
                     />
                   </UFormField>
 
-                  <!-- Checked as the user types, not only after leaving the
-                       field, so a bad iD gets its message while the focus
-                       ring would otherwise look like an error border. -->
-                  <UFormField
-                    v-slot="{ error }"
-                    label="ORCID iD"
-                    name="orcid"
-                    class="md:col-span-2"
-                    help="Shown on your public profile with a link to your ORCID record."
-                    :error="orcidServerError"
-                    eager-validation
-                    :validate-on-input-delay="500"
-                  >
-                    <UInput
-                      v-model="state.orcid"
-                      type="text"
-                      placeholder="0000-0002-1825-0097"
-                      autocomplete="off"
-                      spellcheck="false"
-                      class="w-full max-w-sm"
-                      :ui="{ trailing: 'pe-1' }"
-                    >
-                      <template #leading>
-                        <UIcon
-                          name="i-simple-icons-orcid"
-                          class="size-5 text-[#A6CE39]"
-                        />
-                      </template>
-
-                      <template v-if="error" #trailing>
-                        <UIcon
-                          name="i-heroicons-exclamation-circle"
-                          class="text-error me-1.5 size-5"
-                        />
-                      </template>
-
-                      <template v-else-if="orcidRecordUrl" #trailing>
-                        <UTooltip text="Open this iD on orcid.org">
-                          <UButton
-                            :to="orcidRecordUrl"
-                            target="_blank"
-                            color="neutral"
-                            variant="link"
-                            size="sm"
-                            icon="i-heroicons-arrow-top-right-on-square"
-                            aria-label="Open this iD on orcid.org"
-                          />
-                        </UTooltip>
-                      </template>
-                    </UInput>
-                  </UFormField>
-
                   <UFormField
                     label="Bio"
                     name="bio"
@@ -644,6 +801,232 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
                   </p>
                 </div>
               </UForm>
+            </UCard>
+
+            <!-- ORCID iD: verified through ORCID sign-in, or typed in -->
+            <UCard id="orcid">
+              <div class="flex flex-wrap items-center gap-2">
+                <h2 class="text-lg font-semibold">ORCID iD</h2>
+
+                <UBadge
+                  v-if="linkedOrcid"
+                  color="success"
+                  variant="subtle"
+                  icon="i-heroicons-check-badge"
+                  label="Verified"
+                />
+
+                <!-- Only when there's a way to verify it. -->
+                <UBadge
+                  v-else-if="savedTypedOrcid && orcidAvailable"
+                  color="neutral"
+                  variant="subtle"
+                  icon="i-heroicons-pencil-square"
+                  label="Not verified"
+                />
+              </div>
+
+              <p class="text-muted mt-1 text-sm">
+                {{ orcidCardDescription }}
+              </p>
+
+              <div
+                v-if="linkedOrcid"
+                class="mt-4 flex flex-wrap items-center gap-3"
+              >
+                <ProfileOrcidBadge :orcid="linkedOrcid" />
+
+                <UTooltip
+                  text="Set a password first, so you can still sign in after unlinking."
+                  :disabled="hasPassword"
+                >
+                  <UButton
+                    color="neutral"
+                    variant="outline"
+                    label="Unlink"
+                    :loading="unlinkingOrcid"
+                    :disabled="!hasPassword"
+                    @click="unlinkOrcid"
+                  />
+                </UTooltip>
+              </div>
+
+              <template v-else>
+                <UForm
+                  :schema="orcidSchema"
+                  :state="orcidState"
+                  class="mt-4"
+                  @submit="saveTypedOrcid"
+                >
+                  <!-- Checked as the user types, not only after leaving the
+                       field, so a bad iD gets its message while the focus
+                       ring would otherwise look like an error border. -->
+                  <UFormField
+                    v-slot="{ error }"
+                    label="Your iD"
+                    name="orcid"
+                    :error="orcidServerError"
+                    eager-validation
+                    :validate-on-input-delay="500"
+                  >
+                    <div class="flex flex-wrap items-start gap-2">
+                      <UInput
+                        v-model="orcidState.orcid"
+                        type="text"
+                        placeholder="0000-0002-1825-0097"
+                        autocomplete="off"
+                        spellcheck="false"
+                        class="w-full max-w-sm"
+                        :ui="{ trailing: 'pe-1' }"
+                      >
+                        <template #leading>
+                          <UIcon
+                            name="i-simple-icons-orcid"
+                            class="size-5 text-[#A6CE39]"
+                          />
+                        </template>
+
+                        <template v-if="error" #trailing>
+                          <UIcon
+                            name="i-heroicons-exclamation-circle"
+                            class="text-error me-1.5 size-5"
+                          />
+                        </template>
+
+                        <template v-else-if="orcidRecordUrl" #trailing>
+                          <UTooltip text="Open this iD on orcid.org">
+                            <UButton
+                              :to="orcidRecordUrl"
+                              target="_blank"
+                              color="neutral"
+                              variant="link"
+                              size="sm"
+                              icon="i-heroicons-arrow-top-right-on-square"
+                              aria-label="Open this iD on orcid.org"
+                            />
+                          </UTooltip>
+                        </template>
+                      </UInput>
+
+                      <UButton
+                        type="submit"
+                        color="primary"
+                        label="Save"
+                        :loading="orcidSaving"
+                        :disabled="!orcidChanged"
+                      />
+                    </div>
+                  </UFormField>
+                </UForm>
+
+                <div
+                  v-if="orcidAvailable"
+                  class="border-default mt-4 flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div>
+                    <p class="text-sm font-medium">
+                      {{
+                        savedTypedOrcid
+                          ? "Verify your iD"
+                          : "Add a verified iD instead"
+                      }}
+                    </p>
+
+                    <p class="text-muted text-sm">
+                      Sign in to ORCID to confirm the iD is yours. The verified
+                      iD replaces a typed one on your public profile, and you
+                      can then sign in here with ORCID.
+                    </p>
+                  </div>
+
+                  <div class="shrink-0">
+                    <AuthOrcidButton
+                      intent="link"
+                      source="link"
+                      label="Verify with ORCID"
+                      redirect="/profile"
+                    />
+                  </div>
+                </div>
+              </template>
+
+              <div
+                v-if="orcidSuggestions?.orcid"
+                id="suggested-posters"
+                class="border-default mt-4 border-t pt-4"
+              >
+                <h3 class="text-sm font-medium">Suggested posters</h3>
+
+                <p class="text-muted mt-1 text-sm">
+                  <template v-if="orcidSuggestions.hidden">
+                    Suggested posters are hidden on your dashboard.
+                  </template>
+
+                  <template v-else-if="orcidSuggestions.total > 0">
+                    {{
+                      orcidSuggestions.total === 1
+                        ? "1 auto-indexed poster lists"
+                        : `${orcidSuggestions.total.toLocaleString()} auto-indexed posters list`
+                    }}
+                    {{
+                      orcidSuggestions.source === "linked"
+                        ? "your verified iD"
+                        : "the iD you typed"
+                    }}
+                    for one of their authors. Claim the ones you authored from
+                    your dashboard.
+                  </template>
+
+                  <template v-else>
+                    Auto-indexed posters that list
+                    {{
+                      orcidSuggestions.source === "linked"
+                        ? "your verified iD"
+                        : "the iD you typed"
+                    }}
+                    are suggested in the Published tab of your dashboard. None
+                    are waiting right now.
+                  </template>
+
+                  <template
+                    v-if="
+                      !orcidSuggestions.hidden &&
+                      orcidSuggestions.dismissedCount > 0
+                    "
+                  >
+                    You marked
+                    {{
+                      orcidSuggestions.dismissedCount === 1
+                        ? "1 poster"
+                        : `${orcidSuggestions.dismissedCount} posters`
+                    }}
+                    as not yours.
+                  </template>
+                </p>
+
+                <div class="mt-3 flex flex-wrap items-center gap-3">
+                  <UButton
+                    v-if="
+                      !orcidSuggestions.hidden && orcidSuggestions.total > 0
+                    "
+                    to="/dashboard?tab=published"
+                    color="neutral"
+                    variant="outline"
+                    trailing-icon="i-lucide-arrow-right"
+                    label="Review on your dashboard"
+                  />
+
+                  <UButton
+                    v-if="orcidSuggestionsOff"
+                    color="neutral"
+                    variant="outline"
+                    icon="i-lucide-eye"
+                    label="Show them again"
+                    :loading="restoringSuggestions"
+                    @click="showSuggestionsAgain"
+                  />
+                </div>
+              </div>
             </UCard>
 
             <!-- Account info (read-only) -->
