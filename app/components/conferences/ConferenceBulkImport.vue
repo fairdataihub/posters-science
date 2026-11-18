@@ -86,6 +86,9 @@ const router = useRouter();
 const { data: featureFlags } = useLazyFetch<FeatureFlags>("/api/features", {
   server: false,
 });
+const posterSheetRef = ref<InstanceType<typeof BulkPosterSheetMapping> | null>(
+  null,
+);
 const route = useRoute();
 
 function fetchErrorStatusCode(error: unknown): number | undefined {
@@ -1787,6 +1790,18 @@ async function saveUploadStep(): Promise<boolean> {
     return false;
   }
 
+  // Poster worksheet cards: one must be chosen; each card adds its own checks.
+  const worksheetProblem = posterSheetRef.value?.validate() ?? null;
+  if (worksheetProblem) {
+    toast.add({
+      title: "Poster worksheets",
+      description: worksheetProblem,
+      color: "warning",
+    });
+
+    return false;
+  }
+
   // Save a renamed batch.
   try {
     await persistSetupJob();
@@ -2452,6 +2467,7 @@ async function startImport() {
 
           <BulkPosterSheetMapping
             v-if="featureFlags?.poster_sheet_mapping && jobId"
+            ref="posterSheetRef"
             :bulk-job-id="jobId"
             :poster-file-names="posterSheetFileNames"
           />

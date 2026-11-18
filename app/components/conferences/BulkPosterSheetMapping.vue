@@ -11,9 +11,10 @@ import {
 } from "~/utils/posterSheetPending";
 
 /**
- * Optional second drop zone on the posters step: the organizer's own poster
- * information sheet (Curious, EasyChair, our template; .xlsx, .xls, .csv,
- * .tsv; an EasyChair export split over CSV files can be dropped together).
+ * Optional second drop zone on the posters step: the organizer's poster
+ * information sheet exported from EasyChair or Curious, the only supported
+ * platforms (.xlsx, .xls, .csv, .tsv; an EasyChair export split over CSV files
+ * can be dropped together). Platform cards set the instructions.
  * The sheet is mapped to our fields by the extraction API. A confirm panel
  * shows the mapping, how rows link to files and any warnings; once confirmed,
  * the rows fill the metadata grid as posters finish extracting.
@@ -76,6 +77,98 @@ const loading = ref(false);
 /** True while the confirm panel is open. */
 const reviewing = ref(false);
 const errorMessage = ref<string | null>(null);
+
+/**
+ * Conference platform the sheet was exported from. Only EasyChair and Curious
+ * are supported. It is sent with the sheet, and the extraction API refuses a
+ * sheet without that platform's columns (format_mismatch).
+ */
+type SheetPlatform = "easychair" | "curious";
+const PLATFORM_OPTIONS: { label: string; value: SheetPlatform }[] = [
+  { label: "EasyChair", value: "easychair" },
+  { label: "Curious", value: "curious" },
+];
+/**
+ * Asked first as cards: which platform the sheet is from, or none. The drop
+ * zone shows once a platform is picked.
+ */
+type SheetChoice = SheetPlatform | "none";
+const choice = ref<SheetChoice | undefined>(undefined);
+const CHOICE_CARDS: {
+  label: string;
+  logo?: string;
+  description: string;
+  value: SheetChoice;
+}[] = [
+  {
+    label: "EasyChair",
+    logo: "/assets/images/EasyChair_logo.png",
+    description: "Submissions download (.xlsx) or its CSV files",
+    value: "easychair",
+  },
+  {
+    label: "Curious",
+    logo: "/assets/images/curious_conference_logo.svg",
+    description: "Poster information sheet (.xlsx or .csv)",
+    value: "curious",
+  },
+  {
+    label: "None of these",
+    description: "No worksheets, or they're from another platform",
+    value: "none",
+  },
+];
+const platform = computed<SheetPlatform>(() =>
+  choice.value === "curious" ? "curious" : "easychair",
+);
+
+/**
+ * What each card needs before Save and continue, as a problem message or
+ * null. Every card passes for now; add a card's own rules to its entry.
+ */
+const CHOICE_CHECKS: Record<SheetChoice, () => string | null> = {
+  easychair: () => null,
+  curious: () => null,
+  none: () => null,
+};
+/** Set once Save and continue was tried without a card chosen. */
+const choiceMissing = ref(false);
+watch(choice, () => {
+  choiceMissing.value = false;
+});
+
+/** Called by the wizard on Save and continue: a problem message, or null. */
+function validate(): string | null {
+  // A sheet already added counts as a choice.
+  if (confirmedName.value) return null;
+  if (!choice.value) {
+    choiceMissing.value = true;
+
+    return "Choose a poster worksheet option, or None of these.";
+  }
+
+  return CHOICE_CHECKS[choice.value]();
+}
+
+defineExpose({ validate });
+
+const platformLabel = computed(
+  () =>
+    PLATFORM_OPTIONS.find((option) => option.value === platform.value)!.label,
+);
+const dropDescription = computed(() =>
+  platform.value === "easychair"
+    ? "Drag and drop your EasyChair submissions download (.xlsx) here, or click to browse. For the CSV export, add submission.csv, author.csv, submission_topic.csv and topics.csv together."
+    : "Drag and drop your Curious poster information sheet (.xlsx or .csv) here, or click to browse.",
+);
+/** The other platform, when a refused sheet looks like it. */
+const suggestedPlatform = ref<SheetPlatform | null>(null);
+
+function switchPlatform(value: SheetPlatform) {
+  choice.value = value;
+  mapSheet();
+}
+
 const confirmedName = ref<string | null>(
   readPendingPosterSheet(props.bulkJobId)?.sheetFileName ?? null,
 );
@@ -136,11 +229,13 @@ async function mapSheet(overrides?: Record<string, string | null>) {
   if (!props.bulkJobId || !sheetFiles.value.length) return;
   loading.value = true;
   errorMessage.value = null;
+  suggestedPlatform.value = null;
   try {
     const form = new FormData();
     for (const file of sheetFiles.value) form.append("sheet", file, file.name);
     if (overrides) form.append("mapping", JSON.stringify(overrides));
     form.append("file_names", JSON.stringify(props.posterFileNames));
+    form.append("format", platform.value);
     const data = await $fetch<PosterSheetMappingResult>(
       `/api/bulk-poster-submissions/${props.bulkJobId}/poster-sheet`,
       { method: "POST", body: form },
@@ -154,9 +249,26 @@ async function mapSheet(overrides?: Record<string, string | null>) {
       confirm({ silent: !reviewing.value && !!confirmedName.value });
     else reviewing.value = true;
   } catch (error) {
-    const data = (error as { data?: { statusMessage?: string } })?.data;
-    errorMessage.value =
-      data?.statusMessage ?? "Could not read this spreadsheet.";
+    const data = (
+      error as {
+        data?: {
+          statusMessage?: string;
+          data?: { code?: string; detectedFormat?: string | null };
+        };
+      }
+    )?.data;
+    if (data?.data?.code === "format_mismatch") {
+      const detected = PLATFORM_OPTIONS.find(
+        (option) => option.value === data.data?.detectedFormat,
+      );
+      suggestedPlatform.value = detected?.value ?? null;
+      errorMessage.value = detected
+        ? `This looks like a ${detected.label} sheet, not ${platformLabel.value}`
+        : `This doesn't look like a ${platformLabel.value} export`;
+    } else {
+      errorMessage.value =
+        data?.statusMessage ?? "Could not read this spreadsheet.";
+    }
     result.value = null;
   } finally {
     loading.value = false;
@@ -269,18 +381,92 @@ watch(
   <div
     class="space-y-4 rounded-lg border border-gray-200 p-4 dark:border-gray-800"
   >
-    <div>
-      <h4 class="text-sm font-semibold">Poster information (optional)</h4>
+    <h4 class="text-sm font-semibold">Poster information (optional)</h4>
 
-      <p class="text-muted mt-1 text-sm">
-        Already have a spreadsheet of your posters, such as titles, authors and
-        abstracts (your own, Curious or an EasyChair download)? Add it here and
-        we will use it instead of extracting those fields. Anything it leaves
-        empty is still read from the poster. A column with each poster's file
-        name links rows exactly. Without one, we match rows to posters by title
-        after extraction and you check the matches.
-      </p>
-    </div>
+    <fieldset v-if="!confirmedName" class="space-y-3">
+      <legend class="mb-3 text-sm">
+        <span class="font-medium">
+          Do you have poster worksheets from a conference platform?
+        </span>
+
+        <span class="text-muted block">
+          Pick yours below. If you don't have any, choose None of these to skip.
+        </span>
+      </legend>
+
+      <div class="grid gap-3 sm:grid-cols-3">
+        <button
+          v-for="card in CHOICE_CARDS"
+          :key="card.value"
+          type="button"
+          :aria-pressed="choice === card.value"
+          :disabled="sheetFiles.length > 0"
+          class="group flex flex-col items-center gap-3 rounded-xl border p-4 text-center transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--ui-primary) disabled:cursor-not-allowed disabled:opacity-60"
+          :class="
+            choice === card.value
+              ? 'border-primary bg-primary/5 ring-primary shadow-sm ring-1'
+              : 'border-default hover:border-primary/50 hover:bg-elevated/50 hover:shadow-sm'
+          "
+          @click="choice = card.value"
+        >
+          <div
+            class="flex h-16 w-full items-center justify-center rounded-lg bg-white px-4"
+          >
+            <img
+              v-if="card.logo"
+              :src="card.logo"
+              :alt="card.label"
+              class="max-h-10 w-auto max-w-full object-contain"
+            />
+
+            <div v-else class="flex items-center gap-2 text-gray-400">
+              <UIcon name="i-lucide-skip-forward" class="size-6 shrink-0" />
+
+              <span class="text-sm font-semibold whitespace-nowrap">
+                Skip this step
+              </span>
+            </div>
+          </div>
+
+          <div class="space-y-0.5">
+            <p
+              class="flex items-center justify-center gap-1.5 text-sm font-semibold"
+            >
+              <UIcon
+                :name="
+                  choice === card.value
+                    ? 'i-lucide-circle-check'
+                    : 'i-lucide-circle'
+                "
+                class="size-4"
+                :class="choice === card.value ? 'text-primary' : 'text-dimmed'"
+              />
+              {{ card.label }}
+            </p>
+
+            <p class="text-muted text-xs">{{ card.description }}</p>
+          </div>
+        </button>
+      </div>
+    </fieldset>
+
+    <p
+      v-if="choiceMissing"
+      class="text-error flex items-center gap-2 text-sm"
+      role="alert"
+    >
+      <UIcon name="i-lucide-circle-alert" class="size-4 shrink-0" />
+      Choose an option to continue.
+    </p>
+
+    <p
+      v-if="choice === 'none'"
+      class="text-muted flex items-center gap-2 text-sm"
+    >
+      <UIcon name="i-lucide-circle-check" class="text-success size-4" />
+      No problem. Continue to the next step, and we'll read the details from
+      your posters.
+    </p>
 
     <UAlert
       v-if="confirmedName && !reviewing"
@@ -311,12 +497,12 @@ watch(
     </UAlert>
 
     <UiFileUpload
-      v-else-if="!reviewing && !loading"
+      v-else-if="choice && choice !== 'none' && !reviewing && !loading"
       ref="uploadRef"
       multiple
       hide-file-list
-      title="Add your poster information sheet"
-      description="Drag and drop an .xlsx, .xls, .csv or .tsv file here, or click to browse. For an EasyChair export in CSV files, add submission.csv, author.csv, submission_topic.csv and topics.csv together."
+      :title="`Add your ${platformLabel} poster sheet`"
+      :description="dropDescription"
       :accept="SHEET_ACCEPT"
       @on-change="onSheetSelected"
     >
@@ -340,6 +526,15 @@ watch(
       :title="errorMessage"
     >
       <template #actions>
+        <UButton
+          v-if="suggestedPlatform"
+          size="xs"
+          color="neutral"
+          variant="outline"
+          :label="`Use as ${PLATFORM_OPTIONS.find((option) => option.value === suggestedPlatform)?.label}`"
+          @click="switchPlatform(suggestedPlatform)"
+        />
+
         <UButton
           size="xs"
           color="neutral"
