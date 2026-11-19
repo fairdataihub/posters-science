@@ -75,6 +75,8 @@ type Poster = {
   claimedAt: Date | null;
   /** YYYY-MM-DD (UTC) when Zenodo file download embargo ends; null if not embargoed. */
   zenodoFilesEmbargoUntil: string | null;
+  /** The bulk upload the poster came from, if any. */
+  bulkSubmission: { id: string; name: string } | null;
 };
 
 type ExtractionJobSummary = {
@@ -243,6 +245,78 @@ const dashboardTabs = computed(() => [
       ]
     : []),
 ]);
+// FEATURE FLAG (versioning)
+const versioningEnabled = useVersioningEnabled();
+
+// Filters for the Published tab: one kind of poster at a time, plus a search
+// on the title or DOI.
+type PublishedFilter = "all" | "owned" | "claimed" | "bulk" | "versions";
+
+const publishedFilter = ref<PublishedFilter>("all");
+const publishedSearch = ref("");
+
+const publishedFilterTests: Record<
+  PublishedFilter,
+  (poster: Poster) => boolean
+> = {
+  all: () => true,
+  owned: (poster) => !poster.claimed,
+  claimed: (poster) => poster.claimed,
+  bulk: (poster) => !!poster.bulkSubmission,
+  // The same posters that show "View published versions" on their card.
+  versions: (poster) => publishedVersionHistory(poster).length > 0,
+};
+
+const publishedFilterOptions = computed(() => {
+  const options: { value: PublishedFilter; label: string; icon?: string }[] = [
+    { value: "all", label: "All" },
+    { value: "owned", label: "Shared by you", icon: "i-lucide-upload" },
+    { value: "claimed", label: "Claimed", icon: "i-heroicons-hand-raised" },
+    { value: "bulk", label: "Bulk uploads", icon: "i-lucide-library-big" },
+    // FEATURE FLAG (versioning)
+    ...(versioningEnabled
+      ? [
+          {
+            value: "versions" as const,
+            label: "Multiple versions",
+            icon: "i-lucide-history",
+          },
+        ]
+      : []),
+  ];
+
+  return (
+    options
+      .map((option) => ({
+        ...option,
+        count: publishedPosters.value.filter(publishedFilterTests[option.value])
+          .length,
+      }))
+      // A filter with nothing to show is left out, unless it's the one on.
+      .filter(
+        (option) =>
+          option.value === "all" ||
+          option.count > 0 ||
+          option.value === publishedFilter.value,
+      )
+  );
+});
+
+const publishedSearchTerm = computed(() =>
+  publishedSearch.value.trim().toLowerCase(),
+);
+
+function matchesPublishedSearch(...fields: (string | null | undefined)[]) {
+  const term = publishedSearchTerm.value;
+
+  return !term || fields.some((field) => field?.toLowerCase().includes(term));
+}
+
+function clearPublishedFilters() {
+  publishedFilter.value = "all";
+  publishedSearch.value = "";
+}
+
 type ActiveTabListItem =
   | { type: "bulk"; key: string; bulk: DashboardBulkSubmission }
   | { type: "poster"; key: string; poster: Poster };
@@ -255,25 +329,48 @@ const activeTabListItems = computed((): ActiveTabListItem[] => {
   // The Suggested tab renders its own list.
   if (activeDashboardTab.value === "suggested") return [];
 
-  const completedBulks: ActiveTabListItem[] =
-    completedBulkSubmissions.value.map((bulk) => ({
-      type: "bulk" as const,
-      key: `bulk-${bulk.id}`,
-      bulk,
-    }));
+  // Finished bulk uploads only show under All and Bulk uploads.
+  const showBulkCards =
+    publishedFilter.value === "all" || publishedFilter.value === "bulk";
 
-  const published = publishedPosters.value.map((poster) => ({
-    type: "poster" as const,
-    key: `poster-${poster.id}`,
-    poster,
-  }));
+  const completedBulks: ActiveTabListItem[] = showBulkCards
+    ? completedBulkSubmissions.value
+        .filter((bulk) => matchesPublishedSearch(bulk.name))
+        .map((bulk) => ({
+          type: "bulk" as const,
+          key: `bulk-${bulk.id}`,
+          bulk,
+        }))
+    : [];
+
+  const published = publishedPosters.value
+    .filter(publishedFilterTests[publishedFilter.value])
+    .filter((poster) =>
+      matchesPublishedSearch(
+        poster.title,
+        poster.posterMetadata?.doi,
+        poster.bulkSubmission?.name,
+      ),
+    )
+    .map((poster) => ({
+      type: "poster" as const,
+      key: `poster-${poster.id}`,
+      poster,
+    }));
 
   return [...completedBulks, ...published];
 });
 
+// Whether the Published tab has anything before its filters apply, so a
+// filter that matches nothing shows a "no match" note instead of the empty
+// tab.
+const publishedTabHasItems = computed(
+  () =>
+    completedBulkSubmissions.value.length > 0 ||
+    publishedPosters.value.length > 0,
+);
+
 const activeTabHasItems = computed(() => activeTabListItems.value.length > 0);
-// FEATURE FLAG (versioning)
-const versioningEnabled = useVersioningEnabled();
 const activeDashboardDescription = computed(() => {
   if (activeDashboardTab.value === "in-progress") {
     return "Posters and bulk submissions that still need your attention.";
@@ -2022,10 +2119,85 @@ function posterMenuItems(poster: Poster) {
       @claimed="onOrcidSuggestionsClaimed"
     />
 
-    <section v-else-if="activeTabHasItems" class="space-y-3">
+    <section
+      v-else-if="
+        activeTabHasItems ||
+        (activeDashboardTab === 'published' && publishedTabHasItems)
+      "
+      class="space-y-3"
+    >
       <p class="text-muted text-sm">{{ activeDashboardDescription }}</p>
 
-      <UPageList class="max-md:flex max-md:flex-col max-md:gap-4">
+      <div
+        v-if="activeDashboardTab === 'published'"
+        class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center"
+      >
+        <UInput
+          v-model="publishedSearch"
+          icon="i-lucide-search"
+          placeholder="Search by title or DOI"
+          aria-label="Search published posters"
+          size="sm"
+          class="w-full sm:w-72"
+        >
+          <template v-if="publishedSearch" #trailing>
+            <UButton
+              color="neutral"
+              variant="link"
+              size="xs"
+              icon="i-lucide-x"
+              aria-label="Clear search"
+              @click="publishedSearch = ''"
+            />
+          </template>
+        </UInput>
+
+        <div
+          class="flex flex-wrap items-center gap-1.5"
+          role="group"
+          aria-label="Show"
+        >
+          <UButton
+            v-for="option in publishedFilterOptions"
+            :key="option.value"
+            size="sm"
+            :color="publishedFilter === option.value ? 'primary' : 'neutral'"
+            :variant="publishedFilter === option.value ? 'subtle' : 'ghost'"
+            :icon="option.icon"
+            :aria-pressed="publishedFilter === option.value"
+            @click="publishedFilter = option.value"
+          >
+            {{ option.label }}
+            <span class="text-xs opacity-70">{{ option.count }}</span>
+          </UButton>
+        </div>
+      </div>
+
+      <div
+        v-if="!activeTabHasItems"
+        class="mx-auto flex max-w-md flex-col items-center gap-3 py-12 text-center"
+      >
+        <Icon name="i-lucide-search-x" class="text-muted h-12 w-12" />
+
+        <h3 class="text-lg font-medium">No posters match</h3>
+
+        <p class="text-muted text-sm">
+          Try another search or filter.
+          <template v-if="!showTombstonedPosters && tombstonedPosterCount > 0">
+            Deleted posters are hidden.
+          </template>
+        </p>
+
+        <UButton
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-x"
+          label="Clear filters"
+          @click="clearPublishedFilters"
+        />
+      </div>
+
+      <UPageList v-else class="max-md:flex max-md:flex-col max-md:gap-4">
         <template v-for="item in activeTabListItems" :key="item.key">
           <DashboardBulkSubmissionCard
             v-if="item.type === 'bulk'"

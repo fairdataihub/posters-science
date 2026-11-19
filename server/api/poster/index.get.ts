@@ -178,6 +178,22 @@ export default defineEventHandler(async (event) => {
     }),
   );
 
+  // The bulk upload each poster family came from, for the Published tab's
+  // filter. A bulk upload lists the posters it created, which are the first
+  // version of each family, so later versions are matched through the root.
+  const bulkSubmissionByRootId = new Map<
+    number,
+    { id: string; name: string }
+  >();
+
+  for (const bulk of [...bulkSubmissionRows, ...completedBulkSubmissionRows]) {
+    for (const posterId of posterIdsFromBulkSubmissionSummary(
+      bulk.submissionSummary,
+    )) {
+      bulkSubmissionByRootId.set(posterId, { id: bulk.id, name: bulk.name });
+    }
+  }
+
   const owned = posterRows.map((poster) => {
     const rootPosterId = posterFamilyRootId(poster);
     const details = familyDetails.get(rootPosterId)!;
@@ -195,6 +211,7 @@ export default defineEventHandler(async (event) => {
       activeVersionDraft: isLatestPublished ? details.activeVersionDraft : null,
       claimed: false,
       claimedAt: null as Date | null,
+      bulkSubmission: bulkSubmissionByRootId.get(rootPosterId) ?? null,
     };
   });
 
@@ -346,5 +363,6 @@ async function loadClaimedPosters(userId: string) {
     activeVersionDraft: null,
     claimed: true,
     claimedAt: claimedAt.get(rootPosterId) ?? null,
+    bulkSubmission: null as { id: string; name: string } | null,
   }));
 }
