@@ -29,6 +29,7 @@ const METHOD_LABELS: Record<PosterSheetFlaggedRow["method"], string> = {
   number_suggested: "the row's number is in the file name",
   column: "file name in your sheet",
   column_fuzzy: "close file name in your sheet",
+  column_unverified: "file name in your sheet, before upload",
   number: "number at the start of the file name",
 };
 
@@ -37,7 +38,9 @@ function percent(score: number) {
 }
 
 function isFilePairing(match: PosterSheetFlaggedRow) {
-  return ["column", "column_fuzzy", "number"].includes(match.method);
+  return ["column", "column_fuzzy", "column_unverified", "number"].includes(
+    match.method,
+  );
 }
 
 /** How it was paired, what the poster reads when the titles disagree, and the scores. */
