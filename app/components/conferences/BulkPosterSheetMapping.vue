@@ -4,6 +4,11 @@ import type {
   PosterSheetWarning,
 } from "#shared/types/posterSheetMapping";
 import {
+  CONFERENCE_WORKSHEET_ACCEPT,
+  MAX_CONFERENCE_WORKSHEET_FILES,
+  conferenceWorksheetRejection,
+} from "#shared/utils/conferenceWorksheets";
+import {
   clearPendingPosterSheet,
   loadPendingPosterSheet,
   readPendingPosterSheet,
@@ -151,6 +156,67 @@ function validate(): string | null {
 }
 
 defineExpose({ validate });
+
+/** "None of these": the organizer can ask us to support their platform. */
+const requestedPlatform = ref("");
+const requestedWorksheets = ref<File[]>([]);
+const platformRequestSending = ref(false);
+const platformRequestSent = ref(false);
+const platformRequestError = ref<string | null>(null);
+const platformRequestEmpty = computed(
+  () => !requestedPlatform.value.trim() && !requestedWorksheets.value.length,
+);
+const tooManyWorksheets = computed(
+  () => requestedWorksheets.value.length > MAX_CONFERENCE_WORKSHEET_FILES,
+);
+
+// Already sent for this batch: show the thanks instead of the form.
+onMounted(async () => {
+  if (!props.bulkJobId) return;
+  try {
+    const { submitted } = await $fetch<{ submitted: boolean }>(
+      `/api/bulk-poster-submissions/${props.bulkJobId}/platform-request`,
+    );
+    platformRequestSent.value = submitted;
+  } catch {
+    // Not loaded: the empty form still works.
+  }
+});
+
+async function sendPlatformRequest() {
+  if (
+    !props.bulkJobId ||
+    platformRequestEmpty.value ||
+    tooManyWorksheets.value ||
+    platformRequestSending.value
+  )
+    return;
+  platformRequestSending.value = true;
+  platformRequestError.value = null;
+  try {
+    const form = new FormData();
+    form.append("platform", requestedPlatform.value.trim());
+    for (const file of requestedWorksheets.value)
+      form.append("worksheet", file, file.name);
+    await $fetch(
+      `/api/bulk-poster-submissions/${props.bulkJobId}/platform-request`,
+      { method: "POST", body: form },
+    );
+    platformRequestSent.value = true;
+  } catch (error) {
+    // Our own messages (400, 502) say what to do; anything else is generic.
+    const data = (
+      error as { data?: { statusCode?: number; statusMessage?: string } }
+    )?.data;
+    platformRequestError.value =
+      (data?.statusCode === 400 || data?.statusCode === 502) &&
+      data.statusMessage
+        ? data.statusMessage
+        : "Could not send your request. Try again later.";
+  } finally {
+    platformRequestSending.value = false;
+  }
+}
 
 const platformLabel = computed(
   () =>
@@ -390,7 +456,8 @@ watch(
         </span>
 
         <span class="text-muted block">
-          Pick yours below. If you don't have any, choose None of these to skip.
+          Pick yours below. If you don't have any or don't see your platform,
+          choose None of these.
         </span>
       </legend>
 
@@ -459,14 +526,79 @@ watch(
       Choose an option to continue.
     </p>
 
-    <p
+    <div
       v-if="choice === 'none'"
-      class="text-muted flex items-center gap-2 text-sm"
+      class="border-default bg-elevated/40 space-y-3 rounded-lg border p-3 text-sm"
     >
-      <UIcon name="i-lucide-circle-check" class="text-success size-4" />
-      No problem. Continue to the next step, and we'll read the details from
-      your posters.
-    </p>
+      <p
+        v-if="platformRequestSent"
+        class="flex items-center gap-2"
+        aria-live="polite"
+      >
+        <UIcon name="i-lucide-mail-check" class="text-success size-4" />
+        Thanks, your message was sent to the team.
+      </p>
+
+      <template v-else>
+        <div>
+          <p>
+            Using a platform we don't support yet? Tell us about it and we'll
+            look into adding it.
+          </p>
+
+          <p class="text-muted">
+            This is optional. You can skip it and continue, and we'll read the
+            details from your posters.
+          </p>
+        </div>
+
+        <form class="space-y-2" @submit.prevent="sendPlatformRequest">
+          <UFormField label="Platform">
+            <UInput
+              v-model="requestedPlatform"
+              placeholder="e.g. Oxford Abstracts, ConfTool"
+              :maxlength="100"
+              class="w-full"
+            />
+          </UFormField>
+
+          <UFormField
+            label="Worksheet files"
+            :error="
+              tooManyWorksheets
+                ? `Add up to ${MAX_CONFERENCE_WORKSHEET_FILES} files.`
+                : undefined
+            "
+          >
+            <UiFileUpload
+              multiple
+              title="Add your worksheet files"
+              :description="`Drag and drop up to ${MAX_CONFERENCE_WORKSHEET_FILES} files here, or click to browse.`"
+              hint="Spreadsheet, CSV, TSV, JSON or XML, up to 10 MB each."
+              :accept="CONFERENCE_WORKSHEET_ACCEPT"
+              :validate-file="conferenceWorksheetRejection"
+              @on-change="requestedWorksheets = $event"
+            >
+              <UiFileUploadGrid />
+            </UiFileUpload>
+          </UFormField>
+
+          <UButton
+            type="submit"
+            label="Request support"
+            icon="i-lucide-send"
+            color="neutral"
+            variant="outline"
+            :loading="platformRequestSending"
+            :disabled="platformRequestEmpty || tooManyWorksheets"
+          />
+        </form>
+
+        <p v-if="platformRequestError" class="text-error" role="alert">
+          {{ platformRequestError }}
+        </p>
+      </template>
+    </div>
 
     <UAlert
       v-if="confirmedName && !reviewing"

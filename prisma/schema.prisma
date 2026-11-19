@@ -463,6 +463,10 @@ model BulkSubmission {
   // waiting to be saved into the metadata grid. Cleared once nothing is left.
   posterSheet Json?
 
+  // "None of these" poster worksheets: true once the organizer has sent us
+  // their platform details on Slack.
+  posterPlatformDetailsSubmittedToSlack Boolean @default(false)
+
   error String?
 
   managedConferenceId String?

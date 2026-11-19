@@ -21,7 +21,21 @@ export function bulkImportPostersPrefix(
   return `${bulkImportJobPrefix(folderExtension, jobId)}/`;
 }
 
-/** Guard deletes so paths cannot escape this job's poster prefix. */
+/** Worksheets sent with a "None of these" platform request. */
+export const CONFERENCE_WORKSHEETS_FOLDER = "conference-worksheets";
+
+export function bulkImportConferenceWorksheetPath(
+  folderExtension: string,
+  jobId: string,
+  fileName: string,
+) {
+  return `${bulkImportPostersPrefix(folderExtension, jobId)}${CONFERENCE_WORKSHEETS_FOLDER}/${fileName}`;
+}
+
+/**
+ * Guard deletes so paths cannot escape this job's poster prefix. The
+ * conference worksheets folder is not a poster, so poster deletes skip it.
+ */
 export function isBulkImportPosterObjectPath(
   filePath: string,
   folderExtension: string,
@@ -32,6 +46,7 @@ export function isBulkImportPosterObjectPath(
   return (
     filePath.startsWith(prefix) &&
     filePath.length > prefix.length &&
+    !filePath.startsWith(`${prefix}${CONFERENCE_WORKSHEETS_FOLDER}/`) &&
     !filePath.split("/").includes("..")
   );
 }

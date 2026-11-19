@@ -141,6 +141,7 @@ export default defineNuxtConfig({
     },
     resendApiKey: "",
     logwatchUrl: "",
+    slackWebhookUrl: "",
     siteUrl: "http://localhost:3000",
     zenodoClientId: "",
     zenodoClientSecret: "",
