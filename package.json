@@ -5,6 +5,7 @@
   "scripts": {
     "build": "nuxt build",
     "dev": "nuxt dev",
+    "dev:orcid": "nuxt dev --https --host 127.0.0.1",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
     "lint:js": "eslint .",
