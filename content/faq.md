@@ -116,9 +116,9 @@ Open the poster, select **Claim this poster** in the Authors section, and confir
 
 ### Why does my dashboard suggest posters?
 
-If your account has an ORCID iD, the **Published** tab of your [dashboard](/dashboard) lists auto-indexed posters whose author list includes that iD. We use the iD you linked with ORCID, or the one typed on your [Settings page](/profile) if you haven't linked one. Posters you shared yourself or already claimed are left out.
+If you verified your ORCID iD by signing in with ORCID, the **Suggested** tab of your [dashboard](/dashboard) lists auto-indexed posters whose author list includes that iD. An iD typed on your [Settings page](/profile) isn't used for suggestions until you verify it with ORCID there. Posters you shared yourself or already claimed are left out.
 
-The author list comes from each poster's repository record, so a suggestion can be wrong. Claim only the posters you authored. Select **Claim** on a poster, or **Claim all** for the whole list. Select **Not me** to stop seeing a poster, or **Hide** to hide the list. You can show them again from the ORCID section of your Settings page.
+The author list comes from each poster's repository record, so a suggestion can be wrong. Claim only the posters you authored. Select **Claim** on a poster, or **Claim all** for the whole list. Select **Not me** to stop seeing a poster, or **Hide** to hide the tab. You can show them again from the ORCID section of your Settings page.
 
 ### Is my claim checked?
 
