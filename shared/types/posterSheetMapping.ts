@@ -61,8 +61,12 @@ export type PosterSheetPair = {
   row_key: string;
   row: number;
   file_name: string;
-  /** File name column, close file name, or a file name that starts with the row's number */
-  method: "column" | "column_fuzzy" | "number";
+  /**
+   * File name column, close file name, a file name that starts with the row's
+   * number, or (column_unverified) the sheet's file name before any poster was
+   * uploaded, re-linked once that file is stored
+   */
+  method: "column" | "column_fuzzy" | "column_unverified" | "number";
   title: string;
   authors: string[];
 };
@@ -103,7 +107,9 @@ export type PosterSheetMappingResult = {
     column: string;
     method: "column" | "number";
     /** Rows linked by each tier: exact file name, close file name, number */
-    methods?: Partial<Record<"column" | "column_fuzzy" | "number", number>>;
+    methods?: Partial<
+      Record<"column" | "column_fuzzy" | "column_unverified" | "number", number>
+    >;
     matched_rows: number;
     rows: number;
   } | null;
