@@ -1,5 +1,8 @@
 // Register feature names here before enabling them in NUXT_FEATURES.
-export const FEATURE_NAMES = ["bulk_extraction"] as const;
+export const FEATURE_NAMES = [
+  "bulk_extraction",
+  "poster_sheet_mapping",
+] as const;
 export type FeatureName = (typeof FEATURE_NAMES)[number];
 export type FeatureFlags = Record<FeatureName, boolean>;
 
