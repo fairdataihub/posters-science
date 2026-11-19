@@ -13,6 +13,10 @@ allowBuilds:
 minimumReleaseAge: 7200
 blockExoticSubdeps: true
 minimumReleaseAgeStrict: true # tracked in https://github.com/pnpm/pnpm/issues/11238
+# Security patch for GHSA-x9jw-j844-v24h, exempted from the release age wait.
+# Pinned to the exact version so later @nuxt/ui releases still wait 5 days.
+minimumReleaseAgeExclude:
+  - "@nuxt/ui@4.13.0"
 
 # Keep h3 out of pnpm's hidden hoist (node_modules/.pnpm/node_modules). Nuxt
 # modules such as @nuxt/content and @nuxt/icon import h3 without declaring it,
