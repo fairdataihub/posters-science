@@ -17,6 +17,7 @@ export type OrcidSuggestion = {
   /** The latest public version, for links to the poster page. */
   versionId: number;
   title: string;
+  description: string;
   imageUrl: string;
   publicationYear: number | null;
   /** Acronym or name, plus the year when known. */
@@ -27,7 +28,7 @@ export type OrcidSuggestion = {
 };
 
 export type OrcidSuggestions = MatchingOrcid & {
-  /** The user hid the dashboard panel. */
+  /** The user hid the dashboard's Suggested tab. */
   hidden: boolean;
   /** Posters the user marked "Not me". */
   dismissedCount: number;

@@ -191,19 +191,37 @@ const publishedPosters = computed(() =>
       !activeBulkManagedPosterIdSet.value.has(poster.id),
   ),
 );
-// Auto-indexed posters that list the user's ORCID iD, shown in the Published
+// Auto-indexed posters that list the user's ORCID iD, shown in the Suggested
 // tab. Fetched in the browser so the dashboard doesn't wait on the search.
-const { data: orcidSuggestions, refresh: refreshOrcidSuggestions } =
-  useFetch<OrcidSuggestions>("/api/user/orcid-suggestions", {
-    server: false,
-    lazy: true,
-  });
-const orcidSuggestionCount = computed(() =>
-  orcidSuggestions.value?.orcid && !orcidSuggestions.value.hidden
-    ? orcidSuggestions.value.total
-    : 0,
+const {
+  data: orcidSuggestions,
+  error: orcidSuggestionsError,
+  refresh: refreshOrcidSuggestions,
+} = useFetch<OrcidSuggestions>("/api/user/orcid-suggestions", {
+  server: false,
+  lazy: true,
+});
+// Only an iD verified through ORCID sign-in gets suggestions here, never one
+// typed into Settings.
+const orcidSuggestionsAvailable = computed(
+  () =>
+    orcidSuggestions.value?.source === "linked" &&
+    !orcidSuggestions.value.hidden,
 );
-const activeDashboardTab = ref<"in-progress" | "published">("in-progress");
+const orcidSuggestionCount = computed(() =>
+  orcidSuggestionsAvailable.value ? (orcidSuggestions.value?.total ?? 0) : 0,
+);
+const activeDashboardTab = ref<"in-progress" | "published" | "suggested">(
+  "in-progress",
+);
+// The tab stays while it's open, so claiming the last suggestion doesn't
+// pull the page out from under the user.
+const showSuggestedTab = computed(
+  () =>
+    orcidSuggestionsAvailable.value &&
+    (orcidSuggestionCount.value > 0 ||
+      activeDashboardTab.value === "suggested"),
+);
 const dashboardTabs = computed(() => [
   {
     label: `In progress (${inProgressDashboardItems.value.length})`,
@@ -214,16 +232,16 @@ const dashboardTabs = computed(() => [
     label: `Published (${publishedPosters.value.length})`,
     icon: "i-lucide-circle-check",
     value: "published",
-    badge:
-      orcidSuggestionCount.value > 0
-        ? {
-            label: `${orcidSuggestionCount.value.toLocaleString()} suggested`,
-            color: "primary" as const,
-            variant: "subtle" as const,
-            size: "sm" as const,
-          }
-        : undefined,
   },
+  ...(showSuggestedTab.value
+    ? [
+        {
+          label: `Suggested (${orcidSuggestionCount.value.toLocaleString()})`,
+          icon: "i-simple-icons-orcid",
+          value: "suggested",
+        },
+      ]
+    : []),
 ]);
 type ActiveTabListItem =
   | { type: "bulk"; key: string; bulk: DashboardBulkSubmission }
@@ -233,6 +251,9 @@ const activeTabListItems = computed((): ActiveTabListItem[] => {
   if (activeDashboardTab.value === "in-progress") {
     return inProgressDashboardItems.value;
   }
+
+  // The Suggested tab renders its own list.
+  if (activeDashboardTab.value === "suggested") return [];
 
   const completedBulks: ActiveTabListItem[] =
     completedBulkSubmissions.value.map((bulk) => ({
@@ -329,11 +350,16 @@ if (data.value) {
   }
 }
 
-// ?tab=published opens the Published tab, as the settings page links to it.
+// ?tab=published and ?tab=suggested open those tabs, as the settings page
+// links to them.
 const route = useRoute();
 
 if (route.query.tab === "published") {
   activeDashboardTab.value = "published";
+}
+
+if (route.query.tab === "suggested") {
+  activeDashboardTab.value = "suggested";
 }
 
 // Someone with no posters of their own yet, but some that list their iD,
@@ -344,9 +370,26 @@ watch(orcidSuggestionCount, (count) => {
     inProgressDashboardItems.value.length === 0 &&
     publishedPosters.value.length === 0
   ) {
-    activeDashboardTab.value = "published";
+    activeDashboardTab.value = "suggested";
   }
 });
+
+// Leave the Suggested tab once it no longer applies: suggestions hidden, no
+// verified iD (such as a ?tab=suggested link opened by a typed iD), or they
+// failed to load.
+watch(
+  [orcidSuggestions, orcidSuggestionsAvailable, orcidSuggestionsError],
+  ([suggestions, available, loadError]) => {
+    if (!loadError && (!suggestions || available)) return;
+    if (activeDashboardTab.value !== "suggested") return;
+
+    activeDashboardTab.value =
+      inProgressDashboardItems.value.length === 0 &&
+      publishedPosters.value.length > 0
+        ? "published"
+        : "in-progress";
+  },
+);
 
 async function onOrcidSuggestionsClaimed() {
   await Promise.all([refresh(), refreshOrcidSuggestions()]);
@@ -1973,13 +2016,13 @@ function posterMenuItems(poster: Poster) {
     />
 
     <DashboardOrcidSuggestions
-      v-if="activeDashboardTab === 'published' && orcidSuggestions"
-      :data="orcidSuggestions"
+      v-if="activeDashboardTab === 'suggested'"
+      :data="orcidSuggestions ?? null"
       @changed="refreshOrcidSuggestions"
       @claimed="onOrcidSuggestionsClaimed"
     />
 
-    <section v-if="activeTabHasItems" class="space-y-3">
+    <section v-else-if="activeTabHasItems" class="space-y-3">
       <p class="text-muted text-sm">{{ activeDashboardDescription }}</p>
 
       <UPageList class="max-md:flex max-md:flex-col max-md:gap-4">

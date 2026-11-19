@@ -150,6 +150,7 @@ export async function orcidSuggestionCards(
         posterId: rootId,
         versionId: version.id,
         title: version.title,
+        description: version.description,
         imageUrl: version.imageUrl,
         publicationYear: meta?.publicationYear ?? null,
         conference: conferenceLabel

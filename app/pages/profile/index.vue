@@ -962,30 +962,41 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
                     Suggested posters are hidden on your dashboard.
                   </template>
 
+                  <template
+                    v-else-if="
+                      orcidSuggestions.source === 'typed' &&
+                      orcidSuggestions.total > 0
+                    "
+                  >
+                    {{
+                      orcidSuggestions.total === 1
+                        ? "1 auto-indexed poster lists"
+                        : `${orcidSuggestions.total.toLocaleString()} auto-indexed posters list`
+                    }}
+                    the iD you typed for one of their authors. Verify it with
+                    ORCID to see them on your dashboard and claim the ones you
+                    authored.
+                  </template>
+
+                  <template v-else-if="orcidSuggestions.source === 'typed'">
+                    Once you verify your iD with ORCID, auto-indexed posters
+                    that list it are suggested on your dashboard.
+                  </template>
+
                   <template v-else-if="orcidSuggestions.total > 0">
                     {{
                       orcidSuggestions.total === 1
                         ? "1 auto-indexed poster lists"
                         : `${orcidSuggestions.total.toLocaleString()} auto-indexed posters list`
                     }}
-                    {{
-                      orcidSuggestions.source === "linked"
-                        ? "your verified iD"
-                        : "the iD you typed"
-                    }}
-                    for one of their authors. Claim the ones you authored from
-                    your dashboard.
+                    your verified iD for one of their authors. Claim the ones
+                    you authored from your dashboard.
                   </template>
 
                   <template v-else>
-                    Auto-indexed posters that list
-                    {{
-                      orcidSuggestions.source === "linked"
-                        ? "your verified iD"
-                        : "the iD you typed"
-                    }}
-                    are suggested in the Published tab of your dashboard. None
-                    are waiting right now.
+                    Auto-indexed posters that list your verified iD appear in
+                    the Suggested tab of your dashboard. None are waiting right
+                    now.
                   </template>
 
                   <template
@@ -1007,9 +1018,11 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
                 <div class="mt-3 flex flex-wrap items-center gap-3">
                   <UButton
                     v-if="
-                      !orcidSuggestions.hidden && orcidSuggestions.total > 0
+                      orcidSuggestions.source === 'linked' &&
+                      !orcidSuggestions.hidden &&
+                      orcidSuggestions.total > 0
                     "
-                    to="/dashboard?tab=published"
+                    to="/dashboard?tab=suggested"
                     color="neutral"
                     variant="outline"
                     trailing-icon="i-lucide-arrow-right"

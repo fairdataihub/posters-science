@@ -7,8 +7,8 @@ import {
 
 /**
  * Auto-indexed posters that list the user's ORCID iD and that they haven't
- * claimed or marked "Not me", for the panel in the dashboard's Published tab.
- * While the panel is hidden only the count is returned, for the settings page.
+ * claimed or marked "Not me", for the dashboard's Suggested tab. While the
+ * tab is hidden only the count is returned, for the settings page.
  */
 export default defineEventHandler(async (event): Promise<OrcidSuggestions> => {
   const session = await requireUserSession(event);

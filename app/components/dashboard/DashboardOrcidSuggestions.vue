@@ -6,12 +6,14 @@ import type {
 import { orcidUrl } from "#shared/utils/orcid";
 import { parseApiError } from "~/utils/apiError";
 
-// Auto-indexed posters that list the user's ORCID iD, above the published
-// posters on the dashboard. Each one can be claimed or marked "Not me", and
-// the whole panel can be hidden and brought back from the settings page.
+// The dashboard's Suggested tab: auto-indexed posters that list the user's
+// verified ORCID iD, as cards like the other tabs. Each one can be claimed or
+// marked "Not me", and the tab can be hidden and brought back from the
+// settings page.
 
 const props = defineProps<{
-  data: OrcidSuggestions;
+  /** Null while the suggestions load. */
+  data: OrcidSuggestions | null;
 }>();
 
 const emit = defineEmits<{
@@ -21,54 +23,48 @@ const emit = defineEmits<{
   claimed: [];
 }>();
 
-const PREVIEW_COUNT = 3;
-
 const toast = useToast();
 
-const expanded = ref(false);
 const busyIds = ref(new Set<number>());
+const expandedDescriptions = ref(new Set<number>());
 const claimAllOpen = ref(false);
 const claimingAll = ref(false);
 const hiding = ref(false);
 
-const suggestions = computed(() => props.data.suggestions);
-const shown = computed(() =>
-  expanded.value
-    ? suggestions.value
-    : suggestions.value.slice(0, PREVIEW_COUNT),
-);
-const visible = computed(
-  () =>
-    !!props.data.orcid && !props.data.hidden && suggestions.value.length > 0,
-);
-const countText = computed(() =>
-  props.data.total === 1
-    ? "1 auto-indexed poster lists"
-    : `${props.data.total.toLocaleString()} auto-indexed posters list`,
-);
-const sourceText = computed(() =>
-  props.data.source === "linked"
-    ? "the ORCID iD linked to your account"
-    : "the ORCID iD on your settings page",
-);
+const suggestions = computed(() => props.data?.suggestions ?? []);
 
 function fallbackImage(suggestion: OrcidSuggestion) {
   return `https://api.dicebear.com/9.x/shapes/svg?seed=${suggestion.posterId}`;
 }
 
-function details(suggestion: OrcidSuggestion) {
+function posterPath(suggestion: OrcidSuggestion) {
+  return `/discover/${suggestion.versionId}`;
+}
+
+// A new tab, so the list keeps its place while posters are checked one by one.
+function openSuggestion(suggestion: OrcidSuggestion) {
+  window.open(posterPath(suggestion), "_blank", "noopener");
+}
+
+function yearLabel(suggestion: OrcidSuggestion) {
   const year = suggestion.publicationYear
     ? String(suggestion.publicationYear)
     : null;
 
-  return [
-    suggestion.listedAs ? `Listed as ${suggestion.listedAs}` : null,
-    suggestion.conference,
-    // The conference label usually carries the year already.
-    year && !suggestion.conference?.includes(year) ? year : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  // The conference label usually carries the year already.
+  return year && !suggestion.conference?.includes(year) ? year : null;
+}
+
+function toggleDescription(posterId: number) {
+  const next = new Set(expandedDescriptions.value);
+
+  if (next.has(posterId)) {
+    next.delete(posterId);
+  } else {
+    next.add(posterId);
+  }
+
+  expandedDescriptions.value = next;
 }
 
 function setBusy(posterId: number, busy: boolean) {
@@ -251,168 +247,298 @@ async function hide() {
 </script>
 
 <template>
-  <section
-    v-if="visible && data.orcid"
-    aria-labelledby="orcid-suggestions-title"
-    class="border-default rounded-lg border bg-white p-4 sm:p-5 dark:bg-gray-950"
-  >
-    <div class="flex flex-wrap items-start justify-between gap-3">
-      <div class="min-w-0 flex-1">
-        <h2
-          id="orcid-suggestions-title"
-          class="flex items-center gap-2 font-semibold"
-        >
-          <Icon name="i-simple-icons-orcid" class="h-5 w-5 text-[#A6CE39]" />
-          Posters that may be yours
-        </h2>
+  <section aria-labelledby="orcid-suggestions-title" class="space-y-3">
+    <h2 id="orcid-suggestions-title" class="sr-only">Suggested posters</h2>
 
-        <p class="text-muted mt-1 text-sm">
-          {{ countText }} your ORCID iD
-          <ULink
-            :to="orcidUrl(data.orcid)"
-            target="_blank"
-            class="text-primary underline"
-            >{{ data.orcid }}</ULink
-          >
-          for one of their authors. Claim the ones you authored to add them here
-          and to your profile.
-        </p>
-      </div>
+    <div v-if="!data" class="space-y-3" aria-busy="true">
+      <USkeleton class="h-4 w-2/3" />
 
-      <div class="flex items-center gap-1">
-        <UPopover>
-          <UButton
-            color="neutral"
-            variant="ghost"
-            size="sm"
-            icon="i-lucide-info"
-            label="How we match"
-          />
-
-          <template #content>
-            <div class="max-w-sm space-y-2 p-4 text-sm">
-              <p>
-                Each auto-indexed poster comes with the author list from its
-                repository record, such as Zenodo, and some authors have an
-                ORCID iD there.
-              </p>
-
-              <p>
-                We list the posters whose author list includes
-                {{ sourceText }}. Posters you shared yourself, posters you
-                already claimed, retired posters and ones you marked Not me are
-                left out.
-              </p>
-
-              <p>
-                A record can be wrong, so only claim posters you authored.
-                <ULink
-                  to="/faq#claiming-auto-indexed-posters"
-                  target="_blank"
-                  class="text-primary underline"
-                  >How claiming works</ULink
-                >
-              </p>
-            </div>
-          </template>
-        </UPopover>
-
-        <UButton
-          color="neutral"
-          variant="ghost"
-          size="sm"
-          icon="i-lucide-eye-off"
-          label="Hide"
-          :loading="hiding"
-          @click="hide"
+      <div
+        v-for="n in 3"
+        :key="n"
+        class="flex h-50 gap-8 border-t border-b border-gray-100 py-4 max-md:h-auto max-md:flex-col max-md:gap-3 dark:border-gray-800"
+      >
+        <USkeleton
+          class="h-full w-[150px] shrink-0 max-md:h-44 max-md:w-full"
         />
+
+        <div class="flex flex-1 flex-col gap-3 py-1">
+          <USkeleton class="h-5 w-40" />
+
+          <USkeleton class="h-6 w-3/4" />
+
+          <USkeleton class="h-4 w-full" />
+        </div>
       </div>
     </div>
 
-    <ul class="divide-default mt-3 divide-y">
-      <li
-        v-for="suggestion in shown"
-        :key="suggestion.posterId"
-        class="flex flex-wrap items-center gap-3 py-3 sm:flex-nowrap"
-      >
-        <img
-          :src="suggestion.imageUrl || fallbackImage(suggestion)"
-          alt=""
-          loading="lazy"
-          class="border-default h-14 w-11 flex-shrink-0 rounded border object-cover"
-        />
+    <template v-else>
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div class="min-w-0 flex-1 space-y-1">
+          <p class="text-muted text-sm">
+            Auto-indexed posters that list your ORCID iD
+            <ULink
+              v-if="data.orcid"
+              :to="orcidUrl(data.orcid)"
+              target="_blank"
+              class="text-primary underline"
+              >{{ data.orcid }}</ULink
+            >
+            for one of their authors. Claim the ones you authored to add them to
+            your Published tab and profile.
+          </p>
 
-        <div class="min-w-0 flex-1">
-          <NuxtLink
-            :to="`/discover/${suggestion.versionId}`"
-            target="_blank"
-            class="line-clamp-2 text-sm font-medium hover:underline"
-          >
-            {{ suggestion.title || "Untitled poster" }}
-          </NuxtLink>
-
-          <p v-if="details(suggestion)" class="text-muted mt-0.5 text-xs">
-            {{ details(suggestion) }}
+          <p class="text-muted text-xs">
+            By claiming, you confirm you're one of the authors and agree to the
+            <ULink to="/terms" target="_blank" class="underline"
+              >Terms of Use</ULink
+            >.
           </p>
         </div>
 
-        <div class="flex w-full justify-end gap-2 sm:w-auto">
+        <div class="flex flex-wrap items-center gap-1">
+          <UPopover>
+            <UButton
+              color="neutral"
+              variant="ghost"
+              size="sm"
+              icon="i-lucide-info"
+              label="How we match"
+            />
+
+            <template #content>
+              <div class="max-w-sm space-y-2 p-4 text-sm">
+                <p>
+                  Each auto-indexed poster comes with the author list from its
+                  repository record, such as Zenodo, and some authors have an
+                  ORCID iD there.
+                </p>
+
+                <p>
+                  We list the posters whose author list includes the ORCID iD
+                  you verified. Posters you shared yourself, posters you already
+                  claimed, retired posters and ones you marked Not me are left
+                  out.
+                </p>
+
+                <p>
+                  A record can be wrong, so only claim posters you authored.
+                  <ULink
+                    to="/faq#claiming-auto-indexed-posters"
+                    target="_blank"
+                    class="text-primary underline"
+                    >How claiming works</ULink
+                  >
+                </p>
+              </div>
+            </template>
+          </UPopover>
+
           <UButton
             color="neutral"
             variant="ghost"
             size="sm"
-            label="Not me"
-            :disabled="busyIds.has(suggestion.posterId) || claimingAll"
-            @click="dismiss(suggestion)"
+            icon="i-lucide-eye-off"
+            label="Hide"
+            :loading="hiding"
+            @click="hide"
           />
 
           <UButton
-            color="primary"
-            variant="subtle"
+            v-if="suggestions.length > 1"
             size="sm"
             icon="i-heroicons-hand-raised"
-            label="Claim"
-            :loading="busyIds.has(suggestion.posterId)"
-            :disabled="claimingAll"
-            @click="claimOne(suggestion)"
+            :label="`Claim all ${suggestions.length}`"
+            @click="claimAllOpen = true"
           />
         </div>
-      </li>
-    </ul>
+      </div>
 
-    <div
-      class="border-default flex flex-wrap items-center justify-between gap-3 border-t pt-3"
-    >
-      <UButton
-        v-if="suggestions.length > PREVIEW_COUNT"
-        color="neutral"
-        variant="link"
-        size="sm"
-        :label="expanded ? 'Show fewer' : `Show all ${suggestions.length}`"
-        :trailing-icon="
-          expanded ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'
-        "
-        @click="expanded = !expanded"
-      />
+      <UPageList
+        v-if="suggestions.length > 0"
+        class="max-md:flex max-md:flex-col max-md:gap-4"
+      >
+        <UPageCard
+          v-for="suggestion in suggestions"
+          :key="suggestion.posterId"
+          variant="ghost"
+          class="group h-50 cursor-pointer overflow-hidden rounded-none border-t border-b border-gray-100 transition-all duration-300 max-md:h-auto max-md:rounded-xl max-md:border max-md:bg-white max-md:shadow-sm max-md:hover:shadow-md dark:max-md:border-gray-800 dark:max-md:bg-gray-950"
+          tabindex="0"
+          @click="openSuggestion(suggestion)"
+          @keydown.enter.self="openSuggestion(suggestion)"
+          @keydown.space.self.prevent="openSuggestion(suggestion)"
+        >
+          <div
+            class="flex h-full gap-8 max-md:h-auto max-md:flex-col max-md:gap-0"
+          >
+            <div
+              class="h-full w-[150px] shrink-0 overflow-hidden max-md:h-44 max-md:w-full max-md:border-b max-md:border-gray-100 dark:max-md:border-gray-800"
+            >
+              <img
+                :src="suggestion.imageUrl || fallbackImage(suggestion)"
+                :alt="suggestion.title || 'Untitled poster'"
+                loading="lazy"
+                class="max-h-[150px] w-full object-contain p-2 transition-transform duration-300 group-hover:scale-105 max-md:h-full max-md:max-h-none max-md:p-3"
+              />
+            </div>
 
-      <p class="text-muted text-xs">
-        By claiming, you confirm you're one of the authors and agree to the
-        <ULink to="/terms" target="_blank" class="underline">Terms of Use</ULink
-        >.
+            <div
+              class="flex h-full w-full min-w-0 flex-col justify-between py-1 max-md:h-auto max-md:gap-3 max-md:p-4 max-md:py-4"
+            >
+              <div class="flex flex-col gap-2">
+                <div class="flex flex-wrap items-center gap-2">
+                  <UBadge
+                    color="primary"
+                    variant="soft"
+                    size="sm"
+                    icon="i-lucide-sparkles"
+                  >
+                    Auto-indexed
+                  </UBadge>
+
+                  <UTooltip
+                    text="The author next to your ORCID iD in this poster's record."
+                  >
+                    <UBadge
+                      color="neutral"
+                      variant="soft"
+                      size="sm"
+                      icon="i-simple-icons-orcid"
+                      class="cursor-help"
+                    >
+                      {{
+                        suggestion.listedAs
+                          ? `Listed as ${suggestion.listedAs}`
+                          : "Lists your iD"
+                      }}
+                    </UBadge>
+                  </UTooltip>
+                </div>
+
+                <h3
+                  class="line-clamp-2 max-h-14 overflow-hidden text-lg font-semibold break-words"
+                  :title="suggestion.title"
+                >
+                  {{ suggestion.title || "Untitled poster" }}
+                </h3>
+
+                <div class="flex flex-col gap-1">
+                  <p
+                    :class="[
+                      'text-sm',
+                      expandedDescriptions.has(suggestion.posterId)
+                        ? ''
+                        : 'line-clamp-2',
+                    ]"
+                  >
+                    {{ suggestion.description || "No description available" }}
+                  </p>
+
+                  <button
+                    v-if="suggestion.description.length > 100"
+                    class="text-primary w-fit text-left text-xs font-medium md:hidden"
+                    @click.stop="toggleDescription(suggestion.posterId)"
+                  >
+                    {{
+                      expandedDescriptions.has(suggestion.posterId)
+                        ? "Show less"
+                        : "Show more"
+                    }}
+                  </button>
+                </div>
+              </div>
+
+              <div
+                class="flex items-center justify-between gap-2 border-t border-gray-100 pt-2 text-xs max-md:flex-wrap max-md:gap-y-2 dark:border-gray-800"
+              >
+                <div
+                  class="text-muted flex min-w-0 items-center gap-2 max-md:flex-col max-md:items-start max-md:gap-1"
+                >
+                  <span
+                    v-if="suggestion.conference"
+                    class="flex items-center gap-1"
+                  >
+                    <Icon
+                      name="heroicons:presentation-chart-bar"
+                      class="h-3 w-3"
+                    />
+                    {{ suggestion.conference }}
+                  </span>
+
+                  <span
+                    v-if="yearLabel(suggestion)"
+                    class="flex items-center gap-1"
+                    :class="
+                      suggestion.conference
+                        ? 'border-l border-gray-100 pl-2 max-md:border-l-0 max-md:pl-0 dark:border-gray-800'
+                        : ''
+                    "
+                  >
+                    <Icon name="heroicons:calendar-days" class="h-3 w-3" />
+                    {{ yearLabel(suggestion) }}
+                  </span>
+                </div>
+
+                <div
+                  class="flex shrink-0 items-center gap-2 max-md:flex-wrap"
+                  @click.stop
+                >
+                  <UButton
+                    color="neutral"
+                    variant="ghost"
+                    size="xs"
+                    icon="i-lucide-user-x"
+                    label="Not me"
+                    :disabled="busyIds.has(suggestion.posterId) || claimingAll"
+                    @click="dismiss(suggestion)"
+                  />
+
+                  <UButton
+                    color="neutral"
+                    variant="subtle"
+                    size="xs"
+                    icon="i-lucide-eye"
+                    label="View poster"
+                    :to="posterPath(suggestion)"
+                    target="_blank"
+                  />
+
+                  <UButton
+                    color="primary"
+                    variant="subtle"
+                    size="xs"
+                    icon="i-heroicons-hand-raised"
+                    label="Claim"
+                    :loading="busyIds.has(suggestion.posterId)"
+                    :disabled="claimingAll"
+                    @click="claimOne(suggestion)"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </UPageCard>
+      </UPageList>
+
+      <div
+        v-else
+        class="mx-auto flex max-w-md flex-col items-center gap-3 py-12 text-center"
+      >
+        <Icon name="i-lucide-circle-check" class="text-muted h-12 w-12" />
+
+        <h3 class="text-lg font-medium">No suggestions right now</h3>
+
+        <p class="text-muted text-sm">
+          Posters you claim move to your Published tab. New auto-indexed posters
+          that list your iD will show up here.
+        </p>
+      </div>
+
+      <p v-if="data.total > suggestions.length" class="text-muted text-xs">
+        Showing {{ suggestions.length }} of {{ data.total.toLocaleString() }}.
+        More appear as you claim or remove these.
       </p>
-
-      <UButton
-        v-if="suggestions.length > 1"
-        size="sm"
-        :label="`Claim all ${suggestions.length}`"
-        @click="claimAllOpen = true"
-      />
-    </div>
-
-    <p v-if="data.total > suggestions.length" class="text-muted mt-2 text-xs">
-      Showing {{ suggestions.length }} of {{ data.total.toLocaleString() }}.
-      More appear as you claim or remove these.
-    </p>
+    </template>
 
     <UModal
       v-model:open="claimAllOpen"

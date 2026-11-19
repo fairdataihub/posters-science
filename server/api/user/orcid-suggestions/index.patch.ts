@@ -7,7 +7,7 @@ const settingsSchema = z.object({
   restoreDismissed: z.boolean().optional(),
 });
 
-/** Hides or shows the suggested posters panel on the dashboard. */
+/** Hides or shows the Suggested tab on the dashboard. */
 export default defineEventHandler(async (event) => {
   const session = await requireDbUserSession(event);
   const userId = session.user.id;
