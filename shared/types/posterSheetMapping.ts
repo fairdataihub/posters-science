@@ -12,6 +12,22 @@ export type PosterSheetWarning = {
   severity: PosterSheetWarningSeverity;
 };
 
+/**
+ * Why a sheet was refused and where (POST /sheets/map 422 `issues`). file,
+ * sheet and row are null when the problem is not at one place, such as a
+ * required file that was not added. row is 1-based, as in Excel.
+ */
+export type PosterSheetIssue = {
+  message: string;
+  file: string | null;
+  sheet: string | null;
+  row: number | null;
+  /** Columns the format needs that the header row lacks */
+  missing: string[];
+  /** Columns the header row has */
+  found: string[];
+};
+
 export type PosterSheetColumnSource =
   | "template"
   | "alias"
@@ -196,6 +212,12 @@ export type PosterSheetFlaggedRow = {
   author_score: number | null;
   row_title: string;
   poster_title: string;
+  /** The row's number in the organizer's sheet, when known */
+  row_number?: number;
+  /** Authors in the sheet row */
+  row_authors: string[];
+  /** Authors read from the poster (before the sheet filled it); null when not known */
+  poster_authors: string[] | null;
 };
 
 /** What the wizard keeps after the user confirms a sheet. */

@@ -188,8 +188,12 @@ export function flaggedRowsToReview(
   if (!pending) return [];
   const accepted = new Set(pending.acceptedMatches ?? []);
   const out: PosterSheetFlaggedRow[] = [];
+  const matchRows = new Map(
+    (pending.matchRows ?? []).map((row) => [row.row_key, row]),
+  );
   for (const match of Object.values(pending.titleMatches ?? {})) {
     if (match.confidence !== "review" || accepted.has(match.row_key)) continue;
+    const row = matchRows.get(match.row_key);
     out.push({
       row_key: match.row_key,
       file_name: match.file_name,
@@ -198,6 +202,9 @@ export function flaggedRowsToReview(
       author_score: match.author_score,
       row_title: match.row_title,
       poster_title: match.poster_title,
+      row_number: row?.row,
+      row_authors: row?.authors ?? [],
+      poster_authors: authorsBeforeSheet(pending, match.row_key),
     });
   }
   const paired = new Map(
@@ -216,10 +223,38 @@ export function flaggedRowsToReview(
       author_score: check.author_score ?? null,
       row_title: check.row_title,
       poster_title: check.poster_title,
+      row_number: pair.row,
+      row_authors: pair.authors ?? [],
+      poster_authors: authorsBeforeSheet(pending, check.row_key),
     });
   }
 
   return out;
+}
+
+/**
+ * Creator names a flagged poster had before the sheet filled it (what was
+ * read from the poster), or null when that was not kept.
+ */
+export function creatorNames(
+  rows: Record<string, unknown>[] | undefined,
+): string[] | null {
+  if (!rows) return null;
+
+  return rows
+    .map((row) =>
+      [row.given_name, row.family_name]
+        .filter((part) => typeof part === "string" && part.trim())
+        .join(" "),
+    )
+    .filter(Boolean);
+}
+
+function authorsBeforeSheet(
+  pending: PendingPosterSheet,
+  rowKey: string,
+): string[] | null {
+  return creatorNames(pending.beforeSheet?.[rowKey]?.[CREATORS_SHEET]);
 }
 
 /** The organizer confirms a flagged pairing; it leaves the review list. */

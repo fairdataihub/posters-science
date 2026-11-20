@@ -18,7 +18,7 @@ function slackText(value: string) {
 }
 
 /**
- * An organizer chose "None of these" for poster worksheets and told us about
+ * An organizer chose "Other platform" for poster worksheets and told us about
  * the platform they use, so the team can look at supporting it. Any worksheet
  * files go to the batch's conference-worksheets folder on Bunny. Posted to
  * Slack only when NUXT_SLACK_WEBHOOK_URL is set; the batch then remembers it
@@ -35,6 +35,18 @@ export default defineEventHandler(async (event): Promise<{ ok: true }> => {
       ?.data.toString("utf8")
       .trim() ?? "";
   const platform = field("platform").slice(0, 100);
+  // Another address for replies, when the organizer gave one.
+  const contactEmail = field("contact_email");
+  if (
+    contactEmail &&
+    (contactEmail.length > 254 ||
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail))
+  ) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: "Enter a valid email address",
+    });
+  }
   const worksheets = parts.filter(
     (part) => part.name === "worksheet" && part.filename,
   );
@@ -109,6 +121,10 @@ export default defineEventHandler(async (event): Promise<{ ok: true }> => {
   const text = [
     `*Poster worksheet platform request:* ${slackText(platform || "Not given")}`,
     `From: ${slackText(name || "Unknown")} (${slackText(user.emailAddress)})`,
+    contactEmail &&
+    contactEmail.toLowerCase() !== user.emailAddress?.toLowerCase()
+      ? `Reply to: ${slackText(contactEmail)}`
+      : null,
     `Batch: ${slackText(job.name)} (${job.id})`,
     saved.length
       ? `Worksheets in Bunny (conference-worksheets): ${saved.map(slackText).join(", ")}`

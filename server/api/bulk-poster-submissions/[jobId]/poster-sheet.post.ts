@@ -1,4 +1,7 @@
-import type { PosterSheetMappingResult } from "#shared/types/posterSheetMapping";
+import type {
+  PosterSheetIssue,
+  PosterSheetMappingResult,
+} from "#shared/types/posterSheetMapping";
 import { posterUploadBaseName } from "#shared/utils/bulkPosterUploadFileName";
 import { getBulkPosterSubmissionJobRepository } from "~~/server/utils/bulkPosterSubmissionJobs";
 import { requireFeature } from "~~/server/utils/features";
@@ -184,6 +187,7 @@ export default defineEventHandler(
           code?: string;
           missing_columns?: string[];
           detected_format?: string | null;
+          issues?: PosterSheetIssue[];
         })
       | null;
     if (!response.ok || !body) {
@@ -191,15 +195,14 @@ export default defineEventHandler(
         statusCode: response.status >= 500 || !body ? 502 : 422,
         statusMessage: body?.error ?? "Could not read this spreadsheet",
         // The format check says which columns are missing and, when the
-        // sheet is the other known format, which one to choose.
-        data:
-          body?.code === "format_mismatch"
-            ? {
-                code: body.code,
-                missingColumns: body.missing_columns ?? [],
-                detectedFormat: body.detected_format ?? null,
-              }
-            : undefined,
+        // sheet is the other known format, which one to choose. Issues say
+        // where each problem is (file, sheet, row) for the rejection dialog.
+        data: {
+          code: body?.code ?? null,
+          missingColumns: body?.missing_columns ?? [],
+          detectedFormat: body?.detected_format ?? null,
+          issues: Array.isArray(body?.issues) ? body.issues : [],
+        },
       });
     }
 

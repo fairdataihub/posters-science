@@ -1,4 +1,4 @@
-// Worksheet files an organizer can send with a "None of these" platform
+// Worksheet files an organizer can send with an "Other platform"
 // request. Shared by the drop zone and the platform-request route.
 
 export const MAX_CONFERENCE_WORKSHEET_FILES = 5;

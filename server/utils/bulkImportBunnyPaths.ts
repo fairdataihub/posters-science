@@ -21,7 +21,7 @@ export function bulkImportPostersPrefix(
   return `${bulkImportJobPrefix(folderExtension, jobId)}/`;
 }
 
-/** Worksheets sent with a "None of these" platform request. */
+/** Worksheets sent with an "Other platform" request. */
 export const CONFERENCE_WORKSHEETS_FOLDER = "conference-worksheets";
 
 export function bulkImportConferenceWorksheetPath(

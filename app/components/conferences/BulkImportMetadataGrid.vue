@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import BulkImportMetadataGridRow from "~/components/conferences/BulkImportMetadataGridRow.vue";
 import { strictIssueMessage } from "~/utils/strictIssueLabel";
-import { onKeyStroke, useElementSize, useScrollLock } from "@vueuse/core";
+import { onKeyStroke, useElementSize } from "@vueuse/core";
 import type {
   BulkReviewGridColumn,
   BulkReviewGridRow,
@@ -36,6 +36,7 @@ import {
   writePendingPosterSheet,
 } from "~/utils/posterSheetPending";
 import {
+  creatorNames,
   flaggedRowsToReview,
   rowsWithoutPoster,
 } from "#shared/utils/posterSheetTitleMatch";
@@ -1189,19 +1190,16 @@ watch(
   { immediate: true },
 );
 
-const pageBody = ref<HTMLElement | null>(null);
-const pageScrollLocked = useScrollLock(pageBody);
-
-onMounted(() => {
-  pageBody.value = document.body;
-});
-
+// The page stays still behind the full-window editor. This is a class on
+// <html>, not body.style.overflow: dialogs (Reka) save and restore
+// body.style.overflow themselves, so a dialog opened over the editor would
+// put back "hidden" after the editor closed and leave the page unscrollable.
 watch(fullScreen, (on) => {
-  pageScrollLocked.value = on;
+  document.documentElement.classList.toggle("overflow-hidden", on);
 });
 
 onBeforeUnmount(() => {
-  pageScrollLocked.value = false;
+  document.documentElement.classList.remove("overflow-hidden");
 });
 
 // The spreadsheet only opens as a full-window editor; Esc closes it,
@@ -1436,7 +1434,18 @@ const posterSheetWaiting = ref(0);
 
 function refreshPosterSheetReview() {
   const pending = readPendingPosterSheet(props.bulkJobId);
-  posterSheetReview.value = flaggedRowsToReview(pending);
+  // Authors read from the poster: kept for each flagged row, or else the
+  // last saved values of a poster the sheet has not filled yet.
+  posterSheetReview.value = flaggedRowsToReview(pending).map((row) => {
+    if (row.poster_authors) return row;
+    const posterId = posterIdForFile(row.file_name);
+    const snap = posterId ? savedPosterSnapshots.value.get(posterId) : null;
+    const saved = snap
+      ? (JSON.parse(snap) as Record<string, Record<string, unknown>[]>)
+      : null;
+
+    return { ...row, poster_authors: creatorNames(saved?.Creators) };
+  });
   posterSheetWaiting.value = rowsWithoutPoster(pending);
 }
 
