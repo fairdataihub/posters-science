@@ -77,14 +77,14 @@ export default defineEventHandler(
     if (sheetFormat && !SHEET_FORMATS.includes(sheetFormat)) {
       throw createError({
         statusCode: 400,
-        statusMessage: "Choose EasyChair or Curious as the sheet format",
+        statusMessage: "Choose EasyChair or Curious as the worksheet format",
       });
     }
 
     if (!sheets.length) {
       throw createError({
         statusCode: 400,
-        statusMessage: "Choose a spreadsheet to upload",
+        statusMessage: "Choose a worksheet to upload",
       });
     }
     const wrongType = sheets.some((sheet) => {
@@ -106,7 +106,7 @@ export default defineEventHandler(
     if (totalBytes > MAX_SHEET_BYTES) {
       throw createError({
         statusCode: 413,
-        statusMessage: "Spreadsheet is larger than 10 MB",
+        statusMessage: "The worksheet is larger than 10 MB",
       });
     }
     if (mapping) {
@@ -177,7 +177,8 @@ export default defineEventHandler(
       console.error("[poster-sheet] extraction API unreachable", error);
       throw createError({
         statusCode: 502,
-        statusMessage: "Could not reach the sheet mapping service",
+        statusMessage:
+          "We couldn't reach the worksheet service. Try again in a moment.",
       });
     }
 
@@ -193,7 +194,7 @@ export default defineEventHandler(
     if (!response.ok || !body) {
       throw createError({
         statusCode: response.status >= 500 || !body ? 502 : 422,
-        statusMessage: body?.error ?? "Could not read this spreadsheet",
+        statusMessage: body?.error ?? "We couldn't read this worksheet.",
         // The format check says which columns are missing and, when the
         // sheet is the other known format, which one to choose. Issues say
         // where each problem is (file, sheet, row) for the rejection dialog.

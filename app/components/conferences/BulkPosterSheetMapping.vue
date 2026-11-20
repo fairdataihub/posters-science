@@ -47,7 +47,6 @@ const props = defineProps<{
 
 const SHEET_ACCEPT = ".xlsx,.xlsm,.xls,.csv,.tsv";
 
-const toast = useToast();
 const uploadRef = ref<{ clearFiles: () => void } | null>(null);
 /** One sheet, or an export split over files (EasyChair submission.csv + author.csv). */
 const sheetFiles = ref<File[]>([]);
@@ -57,9 +56,10 @@ const sheetName = computed(() =>
 const result = ref<PosterSheetMappingResult | null>(null);
 const loading = ref(false);
 /** True while the confirm panel is open. */
-const reviewing = ref(false);
 /** The file(s) last refused, named in the rejection dialog. */
 const rejectedName = ref("");
+/** Overrides "Fix this in your file…" when the file itself is fine. */
+const rejectionHint = ref<string | null>(null);
 /** Why the sheet was refused and where, shown in the rejection dialog. */
 const rejectionIssues = ref<PosterSheetIssue[]>([]);
 const rejectionOpen = ref(false);
@@ -90,13 +90,13 @@ const CHOICE_CARDS: {
   {
     label: "EasyChair",
     logo: "/assets/images/EasyChair_logo.png",
-    description: "Conference data workbook (.xlsx) or its 4 CSV files",
+    description: "Conference data workbook (.xlsx) or CSV files",
     value: "easychair",
   },
   {
     label: "Curious",
     logo: "/assets/images/curious_conference_logo.svg",
-    description: "Poster information sheet (.xlsx)",
+    description: "Poster information worksheet (.xlsx)",
     value: "curious",
   },
   {
@@ -122,13 +122,11 @@ const platform = computed<SheetPlatform>(() =>
 function sheetCheck(): string | null {
   if (confirmedName.value) return null;
   const name = PLATFORM_OPTIONS.find((o) => o.value === choice.value)?.label;
-  if (loading.value) return "Wait for your sheet to finish reading.";
+  if (loading.value) return "Wait for your worksheet to finish reading.";
   if (csvMode.value && !hasMainCsv.value)
     return "Add submission.csv to continue, or choose Skip this step.";
-  if (result.value && reviewing.value)
-    return "Confirm the worksheet you added by selecting Use this worksheet, or select Remove worksheet to re-import your spreadsheet.";
 
-  return `Add your ${name} sheet, or choose Skip this step.`;
+  return `Add your ${name} worksheet, or choose Skip this step.`;
 }
 
 const CHOICE_CHECKS: Record<SheetChoice, () => string | null> = {
@@ -138,7 +136,7 @@ const CHOICE_CHECKS: Record<SheetChoice, () => string | null> = {
   other: () => {
     if (platformRequestSent.value) return null;
     if (platformRequestEmpty.value)
-      return "Tell us your platform and send it, or choose Skip this step to continue without a sheet.";
+      return "Tell us your platform and send it, or choose Skip this step to continue without a worksheet.";
 
     return "Choose Request support to send your platform details first.";
   },
@@ -233,19 +231,23 @@ async function sendPlatformRequest() {
       (data?.statusCode === 400 || data?.statusCode === 502) &&
       data.statusMessage
         ? data.statusMessage
-        : "Could not send your request. Try again later.";
+        : "We couldn't send your request. Try again later.";
   } finally {
     platformRequestSending.value = false;
   }
 }
 
+/** "an" before EasyChair, "a" before Curious. */
+const platformArticle = computed(() =>
+  /^[aeiou]/i.test(platformLabel.value) ? "an" : "a",
+);
 const platformLabel = computed(
   () =>
     PLATFORM_OPTIONS.find((option) => option.value === platform.value)!.label,
 );
 const dropDescription = computed(() =>
   platform.value === "easychair"
-    ? "Drop the workbook, or the CSV files together, here or click to browse."
+    ? "Drop the workbook or CSV files here, or click to browse."
     : "Drop the Curious .xlsx file here, or click to browse.",
 );
 
@@ -366,17 +368,10 @@ onMounted(async () => {
     confirmedName.value = pending?.sheetFileName ?? null;
 });
 
-const errors = computed(() =>
-  (result.value?.warnings ?? []).filter((w) => w.severity === "error"),
-);
-
-const canConfirm = computed(() => !!result.value?.ok && !loading.value);
-
 /** What the sheet step looked like before a drop, to go back to if refused. */
 type SheetSnapshot = {
   files: File[];
   result: PosterSheetMappingResult | null;
-  reviewing: boolean;
   confirmedName: string | null;
 };
 
@@ -384,7 +379,6 @@ function snapshot(): SheetSnapshot {
   return {
     files: [...sheetFiles.value],
     result: result.value,
-    reviewing: reviewing.value,
     confirmedName: confirmedName.value,
   };
 }
@@ -398,21 +392,24 @@ function rejectSheet(
   issues: PosterSheetIssue[],
   before: SheetSnapshot,
   name: string,
+  hint?: string,
 ) {
   rejectedName.value = name;
+  rejectionHint.value = hint ?? null;
   rejectionIssues.value = issues.length
     ? issues
     : [{ message, file: null, sheet: null, row: null, missing: [], found: [] }];
   sheetFiles.value = before.files;
   result.value = before.result;
-  reviewing.value = before.reviewing;
   confirmedName.value = before.confirmedName;
   rejectionOpen.value = true;
 }
 
-async function mapSheet(before: SheetSnapshot = snapshot()) {
+async function mapSheet(
+  before: SheetSnapshot = snapshot(),
+  name: string = sheetName.value,
+) {
   if (!props.bulkJobId || !sheetFiles.value.length) return;
-  const name = sheetName.value;
   loading.value = true;
   try {
     const form = new FormData();
@@ -423,11 +420,29 @@ async function mapSheet(before: SheetSnapshot = snapshot()) {
       `/api/bulk-poster-submissions/${props.bulkJobId}/poster-sheet`,
       { method: "POST", body: form },
     );
+    // A worksheet the API read but can't use is refused like any other.
+    const problems = data.warnings.filter((w) => w.severity === "error");
+    if (!data.ok || problems.length) {
+      const message = problems[0]?.message ?? "We couldn't use this worksheet.";
+      rejectSheet(
+        message,
+        problems.map((w) => ({
+          message: w.message,
+          file: null,
+          sheet: null,
+          row: null,
+          missing: [],
+          found: [],
+        })),
+        before,
+        name,
+      );
+
+      return;
+    }
+    // Read and usable: it's used straight away. Remove takes it out.
     result.value = data;
-    // A saved template with every row linked needs no review.
-    if (!data.needs_confirmation && data.ok)
-      confirm({ silent: !reviewing.value && !!confirmedName.value });
-    else reviewing.value = true;
+    useSheet();
   } catch (error) {
     const data = (
       error as {
@@ -445,8 +460,8 @@ async function mapSheet(before: SheetSnapshot = snapshot()) {
     // sheet looks like it, so that case gets a plain one.
     const message =
       data?.data?.code === "format_mismatch" && data.data.detectedFormat
-        ? `This doesn't look like a ${platformLabel.value} export.`
-        : (data?.statusMessage ?? "Could not read this spreadsheet.");
+        ? `This isn't ${platformArticle.value} ${platformLabel.value} worksheet.`
+        : (data?.statusMessage ?? "We couldn't read this worksheet.");
     rejectSheet(message, data?.data?.issues ?? [], before, name);
   } finally {
     loading.value = false;
@@ -491,7 +506,7 @@ const csvChecklist = computed(() =>
 const showDropZone = computed(() => {
   if (choice.value !== "easychair" && choice.value !== "curious") return false;
   if (loading.value) return false;
-  if (!sheetFiles.value.length) return !confirmedName.value && !reviewing.value;
+  if (!sheetFiles.value.length) return !confirmedName.value;
 
   return (
     csvMode.value &&
@@ -508,8 +523,7 @@ const showFilesBox = computed(
   () =>
     (choice.value === "easychair" || choice.value === "curious") &&
     (showDropZone.value ||
-      (sheetFiles.value.length > 0 &&
-        (reviewing.value || loading.value || !confirmedName.value))),
+      (sheetFiles.value.length > 0 && (loading.value || !confirmedName.value))),
 );
 
 /** Once files are added, only the way they came (Excel or CSV) is listed. */
@@ -571,6 +585,7 @@ function onSheetSelected(dropped: File[]) {
       [],
       before,
       dropped.map((file) => file.name).join(" + "),
+      "Add one or the other.",
     );
 
     return;
@@ -581,19 +596,18 @@ function onSheetSelected(dropped: File[]) {
     ? files.slice(0, EASYCHAIR_CSV_FILES.length)
     : files.slice(-1);
   confirmedName.value = null;
-  importSheet(before);
+  importSheet(before, dropped.map((file) => file.name).join(" + "));
 }
 
 /** Map the files, or wait while an EasyChair CSV export lacks submission.csv. */
-function importSheet(before: SheetSnapshot = snapshot()) {
+function importSheet(before: SheetSnapshot = snapshot(), name?: string) {
   if (csvMode.value && !hasMainCsv.value) {
     result.value = null;
-    reviewing.value = false;
     if (props.bulkJobId) void clearPendingPosterSheet(props.bulkJobId);
 
     return;
   }
-  mapSheet(before);
+  mapSheet(before, name);
 }
 
 /** Take one added file out (the sheet, or one file of a CSV export). */
@@ -610,9 +624,9 @@ function removeFile(name: string) {
   importSheet(before);
 }
 
-function confirm(options: { silent?: boolean } = {}) {
+/** Keep the imported worksheet for the metadata step. */
+function useSheet() {
   if (!props.bulkJobId || !result.value?.ok || !sheetFiles.value.length) return;
-  reviewing.value = false;
   void writePendingPosterSheet(props.bulkJobId, {
     sheetFileName: sheetName.value,
     confirmedAt: new Date().toISOString(),
@@ -628,22 +642,6 @@ function confirm(options: { silent?: boolean } = {}) {
     browserFileNames: [...props.posterFileNames],
   });
   confirmedName.value = sheetName.value;
-  if (options.silent) return;
-  const linked = result.value.file_column?.matched_rows ?? 0;
-  const byTitle = result.value.match_rows.length;
-  const parts = [
-    linked
-      ? `${linked} poster(s) will be filled as they finish extracting, and their titles checked against the sheet`
-      : "",
-    byTitle
-      ? `${byTitle} row(s) will be matched to posters by title after extraction`
-      : "",
-  ].filter(Boolean);
-  toast.add({
-    title: "Poster information added",
-    description: `${sheetName.value}: ${parts.join("; ")}.`,
-    color: "success",
-  });
 }
 
 /** Posters in the sheet: rows linked to a file plus rows to match by title. */
@@ -662,19 +660,18 @@ const posterCountNote = computed(() => {
   if (uploaded > inSheet) {
     const rest = uploaded - inSheet;
 
-    return `Your sheet has information for ${inSheet} of your ${posters(uploaded)}. For the other ${rest}, we'll read the details from the ${rest === 1 ? "poster itself" : "posters themselves"}.`;
+    return `Your worksheet covers ${inSheet} of ${posters(uploaded)}. We'll read the other ${rest} from ${rest === 1 ? "the poster" : "their posters"}.`;
   }
 
   const extra = inSheet - uploaded;
 
-  return `Your sheet has information for ${posters(inSheet)}, but only ${uploaded} ${uploaded === 1 ? "was" : "were"} uploaded above. The sheet's information for the other ${extra} won't be used.`;
+  return `Your worksheet lists ${posters(inSheet)}, but ${uploaded} ${uploaded === 1 ? "was" : "were"} uploaded. The other ${extra} ${extra === 1 ? "row won't" : "rows won't"} be used.`;
 });
 
 function removeSheet() {
   if (props.bulkJobId) void clearPendingPosterSheet(props.bulkJobId);
   sheetFiles.value = [];
   result.value = null;
-  reviewing.value = false;
   confirmedName.value = null;
   rejectionIssues.value = [];
   rejectionOpen.value = false;
@@ -710,17 +707,12 @@ watch(
   <div
     class="space-y-4 rounded-lg border border-gray-200 p-4 dark:border-gray-800"
   >
-    <h4 class="text-sm font-semibold">Poster information (optional)</h4>
+    <h4 class="text-sm font-semibold">Poster worksheets</h4>
 
     <fieldset v-if="!confirmedName" class="space-y-3">
       <legend class="mb-3 text-sm">
         <span class="font-medium">
           Do you have poster worksheets from a conference platform?
-        </span>
-
-        <span class="text-muted block">
-          Pick yours below, or Other platform if it isn't listed. No worksheets?
-          Skip this step.
         </span>
       </legend>
 
@@ -774,6 +766,10 @@ watch(
       </div>
     </fieldset>
 
+    <p v-if="!confirmedName && sheetFiles.length" class="text-muted text-xs">
+      Remove your worksheet files to choose a different option.
+    </p>
+
     <p
       v-if="stepProblem"
       class="text-error flex items-center gap-2 text-sm"
@@ -784,15 +780,6 @@ watch(
     </p>
 
     <div
-      v-if="choice === 'skip'"
-      class="text-muted flex items-center gap-2 text-sm"
-    >
-      <UIcon name="i-lucide-circle-check" class="text-success size-4" />
-      No problem. Continue to the next step, and we'll read the details from
-      your posters.
-    </div>
-
-    <div
       v-if="choice === 'other'"
       class="border-default bg-elevated/40 space-y-3 rounded-lg border p-3 text-sm"
     >
@@ -801,20 +788,24 @@ watch(
         class="flex items-center gap-2"
         aria-live="polite"
       >
-        <UIcon name="i-lucide-mail-check" class="text-success size-4" />
-        Thanks, your message was sent to the team.
+        <UIcon
+          name="i-lucide-mail-check"
+          class="text-success size-4 shrink-0"
+        />
+        Thanks, we've sent this to the team. Continue, and we'll read the
+        details from your posters for now.
       </p>
 
       <template v-else>
         <div>
           <p>
-            Tell us which platform you use and add its worksheets, and we'll
-            look into supporting it.
+            Tell us your platform and add its worksheets, and we'll look into
+            supporting it.
           </p>
 
           <p class="text-muted">
-            Don't want to wait for us? Choose Skip this step, and we'll read the
-            details from your posters.
+            Not now? Choose Skip this step, and we'll read the details from your
+            posters.
           </p>
         </div>
 
@@ -924,9 +915,9 @@ watch(
       </template>
     </div>
 
-    <!-- The sheet in use, after Use this worksheet -->
+    <!-- The worksheet in use -->
     <div
-      v-if="confirmedName && !reviewing"
+      v-if="confirmedName"
       class="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50/60 px-3 py-2 text-sm dark:border-green-900 dark:bg-green-950/20"
     >
       <UIcon
@@ -935,7 +926,11 @@ watch(
       />
 
       <span class="min-w-0 flex-1 truncate" :title="confirmedName">
-        <span class="font-medium">{{ confirmedName }}</span> imported
+        <span class="font-medium">{{ confirmedName }}</span>
+        imported
+        <template v-if="sheetRowCount">
+          · {{ sheetRowCount }} {{ sheetRowCount === 1 ? "poster" : "posters" }}
+        </template>
       </span>
 
       <UButton
@@ -946,6 +941,14 @@ watch(
         @click="removeSheet"
       />
     </div>
+
+    <p
+      v-if="confirmedName && posterCountNote"
+      class="flex items-start gap-2 text-sm text-amber-800 dark:text-amber-300"
+    >
+      <UIcon name="i-lucide-triangle-alert" class="mt-0.5 size-4 shrink-0" />
+      {{ posterCountNote }}
+    </p>
 
     <template v-if="showFilesBox">
       <!-- Expected files and format, ticked off as they're added -->
@@ -1098,7 +1101,7 @@ watch(
         hide-file-list
         :title="
           !sheetFiles.length
-            ? `Add your ${platformLabel} poster sheet`
+            ? `Add your ${platformLabel} worksheet`
             : hasMainCsv
               ? 'Add more CSV files'
               : 'Add submission.csv'
@@ -1128,7 +1131,10 @@ watch(
     <UModal
       v-model:open="rejectionOpen"
       :title="`We couldn't use ${rejectedName || 'this sheet'}`"
-      :description="`Fix ${rejectionIssues.length === 1 ? 'this' : 'these'} in your file and add it again.`"
+      :description="
+        rejectionHint ??
+        `Fix ${rejectionIssues.length === 1 ? 'this' : 'these'} in your file and add it again.`
+      "
       :ui="{ content: 'sm:max-w-2xl' }"
     >
       <template #body>
@@ -1184,71 +1190,5 @@ watch(
         </div>
       </template>
     </UModal>
-
-    <!-- The sheet was read: say briefly what happens next -->
-    <section
-      v-if="result && reviewing && !loading"
-      class="space-y-4 rounded-lg border border-green-200 bg-green-50/60 p-4 dark:border-green-900 dark:bg-green-950/20"
-      aria-labelledby="poster-sheet-ready-title"
-    >
-      <div class="flex gap-3">
-        <UIcon
-          name="i-lucide-circle-check"
-          class="text-success mt-0.5 size-5 shrink-0"
-        />
-
-        <div class="min-w-0 space-y-1">
-          <h3 id="poster-sheet-ready-title" class="font-semibold">
-            Your {{ platformLabel }} conference worksheet was imported
-            successfully
-          </h3>
-
-          <p class="text-muted flex min-w-0 items-center gap-1.5 text-sm">
-            <UIcon name="i-lucide-file-spreadsheet" class="size-4 shrink-0" />
-
-            <span class="truncate">{{ sheetName }}</span>
-
-            <span v-if="sheetRowCount" class="shrink-0">
-              · {{ sheetRowCount }}
-              {{ sheetRowCount === 1 ? "poster" : "posters" }}
-            </span>
-          </p>
-        </div>
-      </div>
-
-      <p
-        v-if="posterCountNote"
-        class="flex items-start gap-2 text-sm text-amber-800 dark:text-amber-300"
-      >
-        <UIcon name="i-lucide-triangle-alert" class="mt-0.5 size-4 shrink-0" />
-        {{ posterCountNote }}
-      </p>
-
-      <UAlert
-        v-for="warning in errors"
-        :key="warning.code + warning.message"
-        color="error"
-        variant="subtle"
-        icon="i-lucide-alert-triangle"
-        :description="warning.message"
-      />
-
-      <div class="flex flex-wrap items-center justify-end gap-2">
-        <UButton
-          color="neutral"
-          variant="outline"
-          label="Remove worksheet"
-          @click="removeSheet"
-        />
-
-        <UButton
-          color="primary"
-          icon="i-lucide-check"
-          label="Use this worksheet"
-          :disabled="!canConfirm"
-          @click="confirm()"
-        />
-      </div>
-    </section>
   </div>
 </template>

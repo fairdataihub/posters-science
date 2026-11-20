@@ -111,7 +111,8 @@ export default defineEventHandler(
       console.error("[poster-sheet] extraction API unreachable", error);
       throw createError({
         statusCode: 502,
-        statusMessage: "Could not reach the sheet matching service",
+        statusMessage:
+          "We couldn't reach the worksheet service. Try again in a moment.",
       });
     }
 
