@@ -1,5 +1,5 @@
-// Worksheet files an organizer can send with an "Other platform"
-// request. Shared by the drop zone and the platform-request route.
+// Worksheet files an organizer can send to the team ("Send it to us" in
+// the worksheet rejection dialog). Checked by the platform-request route.
 
 export const MAX_CONFERENCE_WORKSHEET_FILES = 5;
 export const MAX_CONFERENCE_WORKSHEET_BYTES = 10 * 1024 * 1024;

@@ -70,7 +70,7 @@ model User {
 
   adminAuditLogs AdminAuditLog[] @relation("AdminActions")
 
-  bulkSubmissions BulkSubmission[]
+  bulkSubmissions        BulkSubmission[]
   maintenanceFlagUpdates MaintenanceFlag[] @relation("MaintenanceFlagUpdates")
 
   @@index([emailAddress])
@@ -392,7 +392,9 @@ model ZenodoDeposition {
   depositionId           Int     @unique // Last published Zenodo deposition ID
   status                 String  @default("unpublished") // draft, published, unpublished
   lastPublishedZenodoDoi String? // Last published Zenodo DOI
-  /** ISO date (YYYY-MM-DD, UTC) when Zenodo file download embargo ends; null if files are public. */
+  /**
+   * ISO date (YYYY-MM-DD, UTC) when Zenodo file download embargo ends; null if files are public.
+   */
   filesEmbargoUntil      String?
 
   user   User   @relation(fields: [userId], references: [id])
@@ -444,14 +446,14 @@ model BulkSubmission {
   name String
 
   // setup | upload | conference | submit
-  wizardStep String @default("upload")
+  wizardStep    String @default("upload")
   // The release (deploy run number) the wizard last opened this batch on. A
   // batch opened on a higher release starts again at the first step, so
   // organizers see steps added since. Null for batches from before this was kept.
   wizardRelease Int?
   // draft | processing | completed | failed
-  status String @default("draft")
-  stagedPosters Json @default("[]")
+  status        String @default("draft")
+  stagedPosters Json   @default("[]")
 
   licenseMetadataFileName String?
   licenseMetadataFilePath String?
@@ -470,6 +472,13 @@ model BulkSubmission {
   // "Other platform" poster worksheets: true once the organizer has sent us
   // their platform details on Slack.
   posterPlatformDetailsSubmittedToSlack Boolean @default(false)
+
+  // Worksheet hold: set when the organizer sends a refused worksheet to the
+  // team ("Send it to us"). The batch stays on the first step until an admin
+  // releases it; the organizer then adds the worksheet again. Files are the
+  // Bunny paths of what they sent.
+  worksheetHeldAt    DateTime?
+  worksheetHoldFiles String[]  @default([])
 
   error String?
 

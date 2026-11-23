@@ -4,11 +4,6 @@ import type {
   PosterSheetMappingResult,
 } from "#shared/types/posterSheetMapping";
 import {
-  CONFERENCE_WORKSHEET_ACCEPT,
-  MAX_CONFERENCE_WORKSHEET_FILES,
-  conferenceWorksheetRejection,
-} from "#shared/utils/conferenceWorksheets";
-import {
   clearPendingPosterSheet,
   loadPendingPosterSheet,
   readPendingPosterSheet,
@@ -63,6 +58,13 @@ const rejectionHint = ref<string | null>(null);
 /** Why the sheet was refused and where, shown in the rejection dialog. */
 const rejectionIssues = ref<PosterSheetIssue[]>([]);
 const rejectionOpen = ref(false);
+/** The files last refused, kept so they can be tried as the other format. */
+const rejectedFiles = ref<File[]>([]);
+/**
+ * The other supported platform the refused sheet looks like (the extraction
+ * API's detected_format), offered as a switch in the rejection dialog.
+ */
+const suggestedPlatform = ref<SheetPlatform | null>(null);
 
 /**
  * Conference platform the sheet was exported from. Only EasyChair and Curious
@@ -78,7 +80,7 @@ const PLATFORM_OPTIONS: { label: string; value: SheetPlatform }[] = [
  * Asked first as cards: which platform the sheet is from, or none. The drop
  * zone shows once a platform is picked.
  */
-type SheetChoice = SheetPlatform | "other" | "skip";
+type SheetChoice = SheetPlatform | "skip";
 const choice = ref<SheetChoice | undefined>(undefined);
 const CHOICE_CARDS: {
   label: string;
@@ -98,11 +100,6 @@ const CHOICE_CARDS: {
     logo: "/assets/images/curious_conference_logo.svg",
     description: "Poster information worksheet (.xlsx)",
     value: "curious",
-  },
-  {
-    label: "Other platform",
-    description: "Worksheets from a platform we don't support yet",
-    value: "other",
   },
   {
     label: "Skip this step",
@@ -132,14 +129,6 @@ function sheetCheck(): string | null {
 const CHOICE_CHECKS: Record<SheetChoice, () => string | null> = {
   easychair: sheetCheck,
   curious: sheetCheck,
-  // Other platform means we process their sheet by hand, so we need it.
-  other: () => {
-    if (platformRequestSent.value) return null;
-    if (platformRequestEmpty.value)
-      return "Tell us your platform and send it, or choose Skip this step to continue without a worksheet.";
-
-    return "Choose Request support to send your platform details first.";
-  },
   skip: () => null,
 };
 /** Why Save and continue was refused, shown under the cards. */
@@ -147,8 +136,15 @@ const stepProblem = ref<string | null>(null);
 
 /** Called by the wizard on Save and continue: a problem message, or null. */
 function validate(): string | null {
+  // Held: the team has the worksheet, and the batch waits here for it.
+  if (heldAt.value) {
+    stepProblem.value =
+      "We're setting up your worksheet. You can continue once we've emailed you that it's ready.";
+
+    return stepProblem.value;
+  }
   // A sheet already added (also from an earlier visit) counts as a choice.
-  if (confirmedName.value && choice.value !== "other") {
+  if (confirmedName.value) {
     stepProblem.value = null;
 
     return null;
@@ -162,78 +158,95 @@ function validate(): string | null {
 
 defineExpose({ validate });
 
-/** "Other platform": the organizer can ask us to support their platform. */
-const requestedPlatform = ref("");
-const requestedWorksheets = ref<File[]>([]);
-const platformRequestSending = ref(false);
-const platformRequestSent = ref(false);
-const platformRequestError = ref<string | null>(null);
-const platformRequestEmpty = computed(
-  () => !requestedPlatform.value.trim() && !requestedWorksheets.value.length,
-);
-const tooManyWorksheets = computed(
-  () => requestedWorksheets.value.length > MAX_CONFERENCE_WORKSHEET_FILES,
-);
+/**
+ * "Send it to us" in the rejection dialog: the refused files go to the team
+ * (Bunny + Slack) with why they were refused, and the batch is held on this
+ * step (the server refuses to move it on) until an admin releases it. The
+ * organizer then adds their worksheet again, under a format we've added
+ * since or as a file we've fixed for them.
+ */
+const sendingToTeam = ref(false);
+const sendError = ref<string | null>(null);
+/** When the worksheet was sent to the team, while the batch is held. */
+const heldAt = ref<string | null>(null);
+/** The hold was released while this page was open. */
+const holdReleased = ref(false);
 
-/** We reply to the account's email, or another one the organizer gives. */
-const { user: sessionUser } = useUserSession();
-const accountEmail = computed(() => sessionUser.value?.emailAddress || "");
-const useOtherEmail = ref(false);
-const contactEmail = ref("");
-const contactEmailInvalid = computed(
-  () =>
-    useOtherEmail.value &&
-    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail.value.trim()),
-);
-
-// Already sent for this batch: show the thanks instead of the form.
-onMounted(async () => {
+async function loadHold() {
   if (!props.bulkJobId) return;
   try {
-    const { submitted } = await $fetch<{ submitted: boolean }>(
+    const result = await $fetch<{ heldAt: string | null }>(
       `/api/bulk-poster-submissions/${props.bulkJobId}/platform-request`,
     );
-    platformRequestSent.value = submitted;
+    if (heldAt.value && !result.heldAt) holdReleased.value = true;
+    heldAt.value = result.heldAt;
   } catch {
-    // Not loaded: the empty form still works.
+    // Not loaded: keep what we have; the server still enforces the hold.
   }
+}
+
+/** Expected by: 7 days after it was sent. */
+const heldUntil = computed(() => {
+  if (!heldAt.value) return "";
+  const due = new Date(new Date(heldAt.value).getTime() + 7 * 86_400_000);
+
+  return due.toLocaleDateString(undefined, {
+    month: "long",
+    day: "numeric",
+  });
 });
 
-async function sendPlatformRequest() {
-  if (
-    !props.bulkJobId ||
-    platformRequestEmpty.value ||
-    tooManyWorksheets.value ||
-    contactEmailInvalid.value ||
-    platformRequestSending.value
-  )
+// Check now, then every minute while held, so a release shows without a reload.
+let holdTimer: ReturnType<typeof setInterval> | null = null;
+onMounted(async () => {
+  await loadHold();
+  holdTimer = setInterval(() => {
+    if (heldAt.value) void loadHold();
+  }, 60_000);
+});
+onBeforeUnmount(() => {
+  if (holdTimer) clearInterval(holdTimer);
+});
+
+async function sendToTeam() {
+  if (!props.bulkJobId || !rejectedFiles.value.length || sendingToTeam.value)
     return;
-  platformRequestSending.value = true;
-  platformRequestError.value = null;
+  sendingToTeam.value = true;
+  sendError.value = null;
   try {
     const form = new FormData();
-    form.append("platform", requestedPlatform.value.trim());
-    if (useOtherEmail.value)
-      form.append("contact_email", contactEmail.value.trim());
-    for (const file of requestedWorksheets.value)
+    form.append("platform", platformLabel.value);
+    form.append(
+      "problems",
+      JSON.stringify(
+        rejectionIssues.value.map((issue) =>
+          [issuePlace(issue), issue.message].filter(Boolean).join(": "),
+        ),
+      ),
+    );
+    for (const file of rejectedFiles.value)
       form.append("worksheet", file, file.name);
-    await $fetch(
+    const sent = await $fetch<{ heldAt: string }>(
       `/api/bulk-poster-submissions/${props.bulkJobId}/platform-request`,
       { method: "POST", body: form },
     );
-    platformRequestSent.value = true;
+    removeSheet();
+    choice.value = undefined;
+    heldAt.value = sent.heldAt;
   } catch (error) {
     // Our own messages (400, 502) say what to do; anything else is generic.
     const data = (
       error as { data?: { statusCode?: number; statusMessage?: string } }
     )?.data;
-    platformRequestError.value =
-      (data?.statusCode === 400 || data?.statusCode === 502) &&
+    sendError.value =
+      (data?.statusCode === 400 ||
+        data?.statusCode === 409 ||
+        data?.statusCode === 502) &&
       data.statusMessage
         ? data.statusMessage
-        : "We couldn't send your request. Try again later.";
+        : "We couldn't send your worksheet. Try again later.";
   } finally {
-    platformRequestSending.value = false;
+    sendingToTeam.value = false;
   }
 }
 
@@ -373,6 +386,7 @@ type SheetSnapshot = {
   files: File[];
   result: PosterSheetMappingResult | null;
   confirmedName: string | null;
+  choice: SheetChoice | undefined;
 };
 
 function snapshot(): SheetSnapshot {
@@ -380,6 +394,7 @@ function snapshot(): SheetSnapshot {
     files: [...sheetFiles.value],
     result: result.value,
     confirmedName: confirmedName.value,
+    choice: choice.value,
   };
 }
 
@@ -392,17 +407,55 @@ function rejectSheet(
   issues: PosterSheetIssue[],
   before: SheetSnapshot,
   name: string,
-  hint?: string,
+  {
+    hint,
+    files,
+    switchTo,
+  }: {
+    hint?: string;
+    /** The refused files, kept for Send it to us and the platform switch. */
+    files: File[];
+    switchTo?: SheetPlatform | null;
+  },
 ) {
   rejectedName.value = name;
   rejectionHint.value = hint ?? null;
   rejectionIssues.value = issues.length
     ? issues
     : [{ message, file: null, sheet: null, row: null, missing: [], found: [] }];
+  suggestedPlatform.value = switchTo ?? null;
+  rejectedFiles.value = files;
+  sendError.value = null;
   sheetFiles.value = before.files;
   result.value = before.result;
   confirmedName.value = before.confirmedName;
+  choice.value = before.choice;
   rejectionOpen.value = true;
+}
+
+const suggestedLabel = computed(
+  () =>
+    PLATFORM_OPTIONS.find((o) => o.value === suggestedPlatform.value)?.label ??
+    "",
+);
+
+/** Try the refused files again as the platform they look like. */
+function switchPlatform() {
+  const target = suggestedPlatform.value;
+  const files = rejectedFiles.value;
+  if (!target || !files.length) return;
+  const before = snapshot();
+  rejectionOpen.value = false;
+  choice.value = target;
+  sheetFiles.value = files;
+  confirmedName.value = null;
+  importSheet(before, files.map((file) => file.name).join(" + "));
+}
+
+/** Give up on the worksheet: details come from the posters (Skip this step). */
+function continueWithoutSheet() {
+  removeSheet();
+  choice.value = "skip";
 }
 
 async function mapSheet(
@@ -410,6 +463,7 @@ async function mapSheet(
   name: string = sheetName.value,
 ) {
   if (!props.bulkJobId || !sheetFiles.value.length) return;
+  const sent = [...sheetFiles.value];
   loading.value = true;
   try {
     const form = new FormData();
@@ -436,6 +490,7 @@ async function mapSheet(
         })),
         before,
         name,
+        { files: sent },
       );
 
       return;
@@ -456,13 +511,24 @@ async function mapSheet(
         };
       }
     )?.data;
-    // We don't suggest the other platform: the API's message does when the
-    // sheet looks like it, so that case gets a plain one.
-    const message =
-      data?.data?.code === "format_mismatch" && data.data.detectedFormat
-        ? `This isn't ${platformArticle.value} ${platformLabel.value} worksheet.`
-        : (data?.statusMessage ?? "We couldn't read this worksheet.");
-    rejectSheet(message, data?.data?.issues ?? [], before, name);
+    // A sheet that looks like the other supported platform gets a switch
+    // button in the dialog instead of the API's wording.
+    const detected = PLATFORM_OPTIONS.find(
+      (o) =>
+        o.value === data?.data?.detectedFormat && o.value !== platform.value,
+    );
+    const switchTo =
+      data?.data?.code === "format_mismatch" && detected ? detected : null;
+    const message = switchTo
+      ? `This isn't ${platformArticle.value} ${platformLabel.value} worksheet.`
+      : (data?.statusMessage ?? "We couldn't read this worksheet.");
+    rejectSheet(message, data?.data?.issues ?? [], before, name, {
+      hint: switchTo
+        ? `It looks like ${/^[aeiou]/i.test(switchTo.label) ? "an" : "a"} ${switchTo.label} worksheet. Choose ${switchTo.label} to use it.`
+        : undefined,
+      files: sent,
+      switchTo: switchTo?.value,
+    });
   } finally {
     loading.value = false;
   }
@@ -585,7 +651,7 @@ function onSheetSelected(dropped: File[]) {
       [],
       before,
       dropped.map((file) => file.name).join(" + "),
-      "Add one or the other.",
+      { hint: "Add one or the other.", files },
     );
 
     return;
@@ -679,19 +745,9 @@ function removeSheet() {
 }
 
 // The refusal message goes once the organizer acts on it.
-watch(
-  [
-    choice,
-    confirmedName,
-    sheetFiles,
-    platformRequestSent,
-    requestedPlatform,
-    requestedWorksheets,
-  ],
-  () => {
-    stepProblem.value = null;
-  },
-);
+watch([choice, confirmedName, sheetFiles, heldAt], () => {
+  stepProblem.value = null;
+});
 
 // New or removed poster files change which rows link; re-check the sheet.
 watch(
@@ -709,423 +765,335 @@ watch(
   >
     <h4 class="text-sm font-semibold">Poster worksheets</h4>
 
-    <fieldset v-if="!confirmedName" class="space-y-3">
-      <legend class="mb-3 text-sm">
-        <span class="font-medium">
-          Do you have poster worksheets from a conference platform?
-        </span>
-      </legend>
-
-      <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <button
-          v-for="card in CHOICE_CARDS"
-          :key="card.value"
-          type="button"
-          :aria-pressed="choice === card.value"
-          :disabled="sheetFiles.length > 0"
-          class="group flex flex-col items-center gap-3 rounded-xl border p-4 text-center transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--ui-primary) disabled:cursor-not-allowed disabled:opacity-60"
-          :class="[
-            choice === card.value
-              ? 'border-primary bg-primary/5 ring-primary shadow-sm ring-1'
-              : 'border-default hover:border-primary/50 hover:bg-elevated/50 hover:shadow-sm',
-            // Text-only cards stay the row's height, text centered.
-            card.logo ? '' : 'justify-center',
-          ]"
-          @click="choice = card.value"
-        >
-          <div
-            v-if="card.logo"
-            class="flex h-16 w-full items-center justify-center rounded-lg bg-white px-4"
-          >
-            <img
-              :src="card.logo"
-              :alt="card.label"
-              class="max-h-10 w-auto max-w-full object-contain"
-            />
-          </div>
-
-          <div class="space-y-0.5">
-            <p
-              class="flex items-center justify-center gap-1.5 text-sm font-semibold"
-            >
-              <UIcon
-                :name="
-                  choice === card.value
-                    ? 'i-lucide-circle-check'
-                    : 'i-lucide-circle'
-                "
-                class="size-4"
-                :class="choice === card.value ? 'text-primary' : 'text-dimmed'"
-              />
-              {{ card.label }}
-            </p>
-
-            <p class="text-muted text-xs">{{ card.description }}</p>
-          </div>
-        </button>
-      </div>
-    </fieldset>
-
-    <p v-if="!confirmedName && sheetFiles.length" class="text-muted text-xs">
-      Remove your worksheet files to choose a different option.
-    </p>
-
-    <p
-      v-if="stepProblem"
-      class="text-error flex items-center gap-2 text-sm"
-      role="alert"
-    >
-      <UIcon name="i-lucide-circle-alert" class="size-4 shrink-0" />
-      {{ stepProblem }}
-    </p>
-
+    <!-- Held: the team has the worksheet; the batch waits on this step -->
     <div
-      v-if="choice === 'other'"
-      class="border-default bg-elevated/40 space-y-3 rounded-lg border p-3 text-sm"
+      v-if="heldAt"
+      class="space-y-2 rounded-lg border border-amber-200 bg-amber-50/60 p-3 text-sm dark:border-amber-900 dark:bg-amber-950/20"
+      role="status"
     >
-      <p
-        v-if="platformRequestSent"
-        class="flex items-center gap-2"
-        aria-live="polite"
-      >
-        <UIcon
-          name="i-lucide-mail-check"
-          class="text-success size-4 shrink-0"
-        />
-        Thanks, we've sent this to the team. Continue, and we'll read the
-        details from your posters for now.
+      <p class="flex items-center gap-2 font-semibold">
+        <UIcon name="i-lucide-clock" class="size-4 shrink-0 text-amber-600" />
+        We're setting up your worksheet
       </p>
 
-      <template v-else>
-        <div>
-          <p>
-            Tell us your platform and add its worksheets, and we'll look into
-            supporting it.
-          </p>
+      <p>
+        Thanks for sending it. We'll have it ready by {{ heldUntil }} and email
+        you. This batch stays on this step until then.
+      </p>
 
-          <p class="text-muted">
-            Not now? Choose Skip this step, and we'll read the details from your
-            posters.
-          </p>
-        </div>
+      <p class="text-muted">
+        Once we've emailed you, come back here and add your worksheet again. You
+        can still add or remove poster files meanwhile.
+      </p>
+    </div>
 
-        <form class="space-y-2" @submit.prevent="sendPlatformRequest">
-          <div class="text-sm">
-            <p
-              v-if="!useOtherEmail"
-              class="flex flex-wrap items-center gap-x-2"
+    <template v-else>
+      <UAlert
+        v-if="holdReleased"
+        color="success"
+        variant="subtle"
+        icon="i-lucide-circle-check"
+        title="Your worksheet is ready to add"
+        description="Add your worksheet again below, using the option from our email."
+        close
+        @update:open="holdReleased = false"
+      />
+
+      <fieldset v-if="!confirmedName" class="space-y-3">
+        <legend class="mb-3 text-sm">
+          <span class="font-medium">
+            Do you have poster worksheets from a conference platform?
+          </span>
+
+          <span class="text-muted mt-1 block">
+            Not every conference platform is supported yet. On another one? Add
+            your worksheet under the closest option; if we can't read it, you
+            can send it to us to set up.
+          </span>
+        </legend>
+
+        <div class="grid gap-3 sm:grid-cols-3">
+          <button
+            v-for="card in CHOICE_CARDS"
+            :key="card.value"
+            type="button"
+            :aria-pressed="choice === card.value"
+            :disabled="sheetFiles.length > 0"
+            class="group flex flex-col items-center gap-3 rounded-xl border p-4 text-center transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--ui-primary) disabled:cursor-not-allowed disabled:opacity-60"
+            :class="[
+              choice === card.value
+                ? 'border-primary bg-primary/5 ring-primary shadow-sm ring-1'
+                : 'border-default hover:border-primary/50 hover:bg-elevated/50 hover:shadow-sm',
+              // Text-only cards stay the row's height, text centered.
+              card.logo ? '' : 'justify-center',
+            ]"
+            @click="choice = card.value"
+          >
+            <div
+              v-if="card.logo"
+              class="flex h-16 w-full items-center justify-center rounded-lg bg-white px-4"
             >
-              <span>
-                We'll reply to
-                <span class="font-medium">{{
-                  accountEmail || "your account email"
-                }}</span
-                >.
-              </span>
-
-              <UButton
-                size="xs"
-                color="primary"
-                variant="link"
-                class="px-0"
-                label="Use a different email"
-                @click="useOtherEmail = true"
+              <img
+                :src="card.logo"
+                :alt="card.label"
+                class="max-h-10 w-auto max-w-full object-contain"
               />
-            </p>
+            </div>
 
-            <UFormField
-              v-else
-              label="Email for replies"
-              :error="
-                contactEmail.trim() && contactEmailInvalid
-                  ? 'Enter a valid email address.'
-                  : undefined
-              "
-            >
-              <div class="flex flex-wrap items-center gap-2">
-                <UInput
-                  v-model="contactEmail"
-                  type="email"
-                  autocomplete="email"
-                  placeholder="user@example.com"
-                  :maxlength="254"
-                  class="min-w-0 flex-1"
-                />
-
-                <UButton
-                  size="xs"
-                  color="neutral"
-                  variant="link"
-                  :label="`Use ${accountEmail || 'my account email'}`"
-                  @click="
-                    useOtherEmail = false;
-                    contactEmail = '';
+            <div class="space-y-0.5">
+              <p
+                class="flex items-center justify-center gap-1.5 text-sm font-semibold"
+              >
+                <UIcon
+                  :name="
+                    choice === card.value
+                      ? 'i-lucide-circle-check'
+                      : 'i-lucide-circle'
+                  "
+                  class="size-4"
+                  :class="
+                    choice === card.value ? 'text-primary' : 'text-dimmed'
                   "
                 />
-              </div>
-            </UFormField>
-          </div>
+                {{ card.label }}
+              </p>
 
-          <UFormField label="Platform">
-            <UInput
-              v-model="requestedPlatform"
-              placeholder="e.g. Oxford Abstracts, ConfTool"
-              :maxlength="100"
-              class="w-full"
-            />
-          </UFormField>
+              <p class="text-muted text-xs">{{ card.description }}</p>
+            </div>
+          </button>
+        </div>
+      </fieldset>
 
-          <UFormField
-            label="Worksheet files"
-            :error="
-              tooManyWorksheets
-                ? `Add up to ${MAX_CONFERENCE_WORKSHEET_FILES} files.`
-                : undefined
-            "
-          >
-            <UiFileUpload
-              multiple
-              title="Add your worksheet files"
-              :description="`Drag and drop up to ${MAX_CONFERENCE_WORKSHEET_FILES} files here, or click to browse.`"
-              hint="Spreadsheet, CSV, TSV, JSON or XML, up to 10 MB each."
-              :accept="CONFERENCE_WORKSHEET_ACCEPT"
-              :validate-file="conferenceWorksheetRejection"
-              @on-change="requestedWorksheets = $event"
-            >
-              <UiFileUploadGrid />
-            </UiFileUpload>
-          </UFormField>
+      <p v-if="!confirmedName && sheetFiles.length" class="text-muted text-xs">
+        Remove your worksheet files to choose a different option.
+      </p>
 
-          <UButton
-            type="submit"
-            label="Request support"
-            icon="i-lucide-send"
-            color="neutral"
-            variant="outline"
-            :loading="platformRequestSending"
-            :disabled="
-              platformRequestEmpty || tooManyWorksheets || contactEmailInvalid
-            "
-          />
-        </form>
-
-        <p v-if="platformRequestError" class="text-error" role="alert">
-          {{ platformRequestError }}
-        </p>
-      </template>
-    </div>
-
-    <!-- The worksheet in use -->
-    <div
-      v-if="confirmedName"
-      class="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50/60 px-3 py-2 text-sm dark:border-green-900 dark:bg-green-950/20"
-    >
-      <UIcon
-        name="i-lucide-circle-check"
-        class="text-success size-4 shrink-0"
-      />
-
-      <span class="min-w-0 flex-1 truncate" :title="confirmedName">
-        <span class="font-medium">{{ confirmedName }}</span>
-        imported
-        <template v-if="sheetRowCount">
-          · {{ sheetRowCount }} {{ sheetRowCount === 1 ? "poster" : "posters" }}
-        </template>
-      </span>
-
-      <UButton
-        size="xs"
-        color="neutral"
-        variant="ghost"
-        label="Remove"
-        @click="removeSheet"
-      />
-    </div>
-
-    <p
-      v-if="confirmedName && posterCountNote"
-      class="flex items-start gap-2 text-sm text-amber-800 dark:text-amber-300"
-    >
-      <UIcon name="i-lucide-triangle-alert" class="mt-0.5 size-4 shrink-0" />
-      {{ posterCountNote }}
-    </p>
-
-    <template v-if="showFilesBox">
-      <!-- Expected files and format, ticked off as they're added -->
-      <section
-        class="border-default bg-elevated/40 space-y-3 rounded-lg border p-3 text-sm sm:p-4"
-        :aria-label="filesHeading"
+      <p
+        v-if="stepProblem"
+        class="text-error flex items-center gap-2 text-sm"
+        role="alert"
       >
-        <p class="flex items-center gap-2 font-semibold">
-          <UIcon
-            :name="filesDone ? 'i-lucide-circle-check' : 'i-lucide-info'"
-            class="size-4 shrink-0"
-            :class="filesDone ? 'text-success' : 'text-primary'"
-          />
-          {{ filesHeading }}
-        </p>
+        <UIcon name="i-lucide-circle-alert" class="size-4 shrink-0" />
+        {{ stepProblem }}
+      </p>
 
-        <div>
-          <div class="flex flex-col gap-2 sm:flex-row sm:items-stretch">
-            <template
-              v-for="(option, index) in visibleFileOptions"
-              :key="option.label"
-            >
-              <!-- OR between the ways to send the sheet -->
-              <div
-                v-if="index"
-                class="flex items-center gap-2 sm:flex-col"
-                aria-hidden="true"
+      <!-- The worksheet in use -->
+      <div
+        v-if="confirmedName"
+        class="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50/60 px-3 py-2 text-sm dark:border-green-900 dark:bg-green-950/20"
+      >
+        <UIcon
+          name="i-lucide-circle-check"
+          class="text-success size-4 shrink-0"
+        />
+
+        <span class="min-w-0 flex-1 truncate" :title="confirmedName">
+          <span class="font-medium">{{ confirmedName }}</span>
+          imported
+          <template v-if="sheetRowCount">
+            · {{ sheetRowCount }}
+            {{ sheetRowCount === 1 ? "poster" : "posters" }}
+          </template>
+        </span>
+
+        <UButton
+          size="xs"
+          color="neutral"
+          variant="ghost"
+          label="Remove"
+          @click="removeSheet"
+        />
+      </div>
+
+      <p
+        v-if="confirmedName && posterCountNote"
+        class="flex items-start gap-2 text-sm text-amber-800 dark:text-amber-300"
+      >
+        <UIcon name="i-lucide-triangle-alert" class="mt-0.5 size-4 shrink-0" />
+        {{ posterCountNote }}
+      </p>
+
+      <template v-if="showFilesBox">
+        <!-- Expected files and format, ticked off as they're added -->
+        <section
+          class="border-default bg-elevated/40 space-y-3 rounded-lg border p-3 text-sm sm:p-4"
+          :aria-label="filesHeading"
+        >
+          <p class="flex items-center gap-2 font-semibold">
+            <UIcon
+              :name="filesDone ? 'i-lucide-circle-check' : 'i-lucide-info'"
+              class="size-4 shrink-0"
+              :class="filesDone ? 'text-success' : 'text-primary'"
+            />
+            {{ filesHeading }}
+          </p>
+
+          <div>
+            <div class="flex flex-col gap-2 sm:flex-row sm:items-stretch">
+              <template
+                v-for="(option, index) in visibleFileOptions"
+                :key="option.label"
               >
-                <span
-                  class="h-px flex-1 bg-gray-200 sm:h-auto sm:w-px dark:bg-gray-700"
-                />
-
-                <span
-                  class="bg-primary/10 text-primary rounded-full px-2 py-0.5 text-xs font-bold tracking-wide"
+                <!-- OR between the ways to send the sheet -->
+                <div
+                  v-if="index"
+                  class="flex items-center gap-2 sm:flex-col"
+                  aria-hidden="true"
                 >
-                  OR
-                </span>
-
-                <span
-                  class="h-px flex-1 bg-gray-200 sm:h-auto sm:w-px dark:bg-gray-700"
-                />
-              </div>
-
-              <div
-                class="border-default bg-default flex-1 rounded-md border p-3"
-              >
-                <p class="flex items-center gap-2 font-medium">
-                  <span v-if="index" class="sr-only">Or</span>
-
-                  <UIcon
-                    :name="option.icon"
-                    class="text-muted size-4 shrink-0"
+                  <span
+                    class="h-px flex-1 bg-gray-200 sm:h-auto sm:w-px dark:bg-gray-700"
                   />
-                  {{ option.label }}
-                </p>
 
-                <ul class="mt-2 divide-y divide-gray-200 dark:divide-gray-700">
-                  <li
-                    v-for="file in option.files"
-                    :key="file.name"
-                    class="flex flex-wrap items-center gap-x-2 gap-y-1 py-2 first:pt-0 last:pb-0"
+                  <span
+                    class="bg-primary/10 text-primary rounded-full px-2 py-0.5 text-xs font-bold tracking-wide"
                   >
+                    OR
+                  </span>
+
+                  <span
+                    class="h-px flex-1 bg-gray-200 sm:h-auto sm:w-px dark:bg-gray-700"
+                  />
+                </div>
+
+                <div
+                  class="border-default bg-default flex-1 rounded-md border p-3"
+                >
+                  <p class="flex items-center gap-2 font-medium">
+                    <span v-if="index" class="sr-only">Or</span>
+
                     <UIcon
-                      :name="
-                        addedFile(option, file)
-                          ? 'i-lucide-circle-check'
-                          : 'i-lucide-circle'
-                      "
-                      class="size-4 shrink-0"
-                      :class="
-                        addedFile(option, file) ? 'text-success' : 'text-dimmed'
-                      "
-                      :aria-label="
-                        addedFile(option, file) ? 'Added' : 'Not added'
-                      "
+                      :name="option.icon"
+                      class="text-muted size-4 shrink-0"
                     />
+                    {{ option.label }}
+                  </p>
 
-                    <span
-                      class="min-w-0 flex-1 truncate font-mono text-xs"
-                      :title="addedFile(option, file)?.name ?? file.name"
+                  <ul
+                    class="mt-2 divide-y divide-gray-200 dark:divide-gray-700"
+                  >
+                    <li
+                      v-for="file in option.files"
+                      :key="file.name"
+                      class="flex flex-wrap items-center gap-x-2 gap-y-1 py-2 first:pt-0 last:pb-0"
                     >
-                      {{ addedFile(option, file)?.name ?? file.name }}
-                    </span>
-
-                    <UButton
-                      v-if="addedFile(option, file)"
-                      size="xs"
-                      color="neutral"
-                      variant="ghost"
-                      icon="i-lucide-x"
-                      :disabled="loading"
-                      :aria-label="`Remove ${addedFile(option, file)!.name}`"
-                      @click="removeFile(addedFile(option, file)!.name)"
-                    />
-
-                    <template v-else>
-                      <UBadge
-                        size="sm"
-                        variant="subtle"
-                        :color="file.required ? 'primary' : 'neutral'"
-                        :label="file.required ? 'Required' : 'Optional'"
+                      <UIcon
+                        :name="
+                          addedFile(option, file)
+                            ? 'i-lucide-circle-check'
+                            : 'i-lucide-circle'
+                        "
+                        class="size-4 shrink-0"
+                        :class="
+                          addedFile(option, file)
+                            ? 'text-success'
+                            : 'text-dimmed'
+                        "
+                        :aria-label="
+                          addedFile(option, file) ? 'Added' : 'Not added'
+                        "
                       />
 
                       <span
-                        class="flex w-full flex-wrap items-center gap-1 pl-6"
-                        :aria-label="`Headers: ${file.columns.join(', ')}${file.more ? ', and more' : ''}`"
+                        class="min-w-0 flex-1 truncate font-mono text-xs"
+                        :title="addedFile(option, file)?.name ?? file.name"
                       >
-                        <span class="text-muted text-xs" aria-hidden="true">
-                          Headers:
-                        </span>
-
-                        <span
-                          v-for="column in file.columns"
-                          :key="column"
-                          class="bg-elevated text-muted rounded px-1 py-px font-mono text-[11px] leading-4 ring-1 ring-gray-200 dark:ring-gray-700"
-                          aria-hidden="true"
-                        >
-                          {{ column }}
-                        </span>
-
-                        <span
-                          v-if="file.more"
-                          class="text-muted text-xs"
-                          title="More headers follow"
-                          aria-hidden="true"
-                        >
-                          …
-                        </span>
+                        {{ addedFile(option, file)?.name ?? file.name }}
                       </span>
-                    </template>
-                  </li>
-                </ul>
-              </div>
-            </template>
+
+                      <UButton
+                        v-if="addedFile(option, file)"
+                        size="xs"
+                        color="neutral"
+                        variant="ghost"
+                        icon="i-lucide-x"
+                        :disabled="loading"
+                        :aria-label="`Remove ${addedFile(option, file)!.name}`"
+                        @click="removeFile(addedFile(option, file)!.name)"
+                      />
+
+                      <template v-else>
+                        <UBadge
+                          size="sm"
+                          variant="subtle"
+                          :color="file.required ? 'primary' : 'neutral'"
+                          :label="file.required ? 'Required' : 'Optional'"
+                        />
+
+                        <span
+                          class="flex w-full flex-wrap items-center gap-1 pl-6"
+                          :aria-label="`Headers: ${file.columns.join(', ')}${file.more ? ', and more' : ''}`"
+                        >
+                          <span class="text-muted text-xs" aria-hidden="true">
+                            Headers:
+                          </span>
+
+                          <span
+                            v-for="column in file.columns"
+                            :key="column"
+                            class="bg-elevated text-muted rounded px-1 py-px font-mono text-[11px] leading-4 ring-1 ring-gray-200 dark:ring-gray-700"
+                            aria-hidden="true"
+                          >
+                            {{ column }}
+                          </span>
+
+                          <span
+                            v-if="file.more"
+                            class="text-muted text-xs"
+                            title="More headers follow"
+                            aria-hidden="true"
+                          >
+                            …
+                          </span>
+                        </span>
+                      </template>
+                    </li>
+                  </ul>
+                </div>
+              </template>
+            </div>
+
+            <p
+              v-if="expectations.fileRule && !sheetFiles.length"
+              class="text-muted mt-1.5 text-xs"
+            >
+              {{ expectations.fileRule }}
+            </p>
           </div>
+        </section>
 
-          <p
-            v-if="expectations.fileRule && !sheetFiles.length"
-            class="text-muted mt-1.5 text-xs"
-          >
-            {{ expectations.fileRule }}
-          </p>
-        </div>
-      </section>
+        <UiFileUpload
+          v-if="showDropZone"
+          ref="uploadRef"
+          multiple
+          hide-file-list
+          :title="
+            !sheetFiles.length
+              ? `Add your ${platformLabel} worksheet`
+              : hasMainCsv
+                ? 'Add more CSV files'
+                : 'Add submission.csv'
+          "
+          :description="
+            sheetFiles.length
+              ? 'Drop one or more CSV files here, or click to browse.'
+              : dropDescription
+          "
+          :accept="SHEET_ACCEPT"
+          @on-change="onSheetSelected"
+        >
+          <UiFileUploadGrid />
+        </UiFileUpload>
+      </template>
 
-      <UiFileUpload
-        v-if="showDropZone"
-        ref="uploadRef"
-        multiple
-        hide-file-list
-        :title="
-          !sheetFiles.length
-            ? `Add your ${platformLabel} worksheet`
-            : hasMainCsv
-              ? 'Add more CSV files'
-              : 'Add submission.csv'
-        "
-        :description="
-          sheetFiles.length
-            ? 'Drop one or more CSV files here, or click to browse.'
-            : dropDescription
-        "
-        :accept="SHEET_ACCEPT"
-        @on-change="onSheetSelected"
+      <div
+        v-if="loading"
+        class="text-muted flex items-center gap-2 text-sm"
+        aria-live="polite"
       >
-        <UiFileUploadGrid />
-      </UiFileUpload>
+        <UIcon name="i-lucide-loader-circle" class="size-4 animate-spin" />
+        Reading {{ sheetName }}…
+      </div>
     </template>
-
-    <div
-      v-if="loading"
-      class="text-muted flex items-center gap-2 text-sm"
-      aria-live="polite"
-    >
-      <UIcon name="i-lucide-loader-circle" class="size-4 animate-spin" />
-      Reading {{ sheetName }}…
-    </div>
 
     <!-- Why the sheet was refused, and where -->
     <UModal
@@ -1177,15 +1145,50 @@ watch(
             </div>
           </li>
         </ol>
+
+        <p v-if="rejectedFiles.length" class="text-muted mt-4 text-sm">
+          Can't fix it, or it's from another platform? Send it to us and we'll
+          set it up within 7 days. Hold off publishing until we email you.
+        </p>
+
+        <p v-if="sendError" class="text-error mt-2 text-sm" role="alert">
+          {{ sendError }}
+        </p>
       </template>
 
       <template #footer="{ close }">
         <div class="flex w-full flex-wrap items-center justify-end gap-2">
           <UButton
-            color="primary"
+            color="neutral"
+            variant="ghost"
+            label="Continue without a worksheet"
+            @click="continueWithoutSheet"
+          />
+
+          <UButton
+            v-if="rejectedFiles.length"
+            color="neutral"
+            variant="outline"
+            icon="i-lucide-send"
+            label="Send it to us"
+            :loading="sendingToTeam"
+            @click="sendToTeam"
+          />
+
+          <UButton
+            :color="suggestedPlatform ? 'neutral' : 'primary'"
+            :variant="suggestedPlatform ? 'outline' : 'solid'"
             icon="i-lucide-upload"
             label="Choose another file"
             @click="close"
+          />
+
+          <UButton
+            v-if="suggestedPlatform"
+            color="primary"
+            icon="i-lucide-arrow-right-left"
+            :label="`Use as ${suggestedLabel}`"
+            @click="switchPlatform"
           />
         </div>
       </template>

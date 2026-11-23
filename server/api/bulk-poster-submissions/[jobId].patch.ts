@@ -2,6 +2,7 @@ import type { BulkImportSubmissionSummary } from "#shared/types/bulkImportLicens
 import { getBulkPosterSubmissionJobRepository } from "~~/server/utils/bulkPosterSubmissionJobs";
 import { updateBulkJobBodySchema } from "~~/server/utils/bulkJobPatchBody";
 import { currentWizardRelease } from "~~/server/utils/bulkImportWizardRelease";
+import { assertWorksheetNotHeld } from "~~/server/utils/bulkWorksheetHold";
 
 export default defineEventHandler(async (event) => {
   const session = await requireDbUserSession(event);
@@ -48,6 +49,11 @@ export default defineEventHandler(async (event) => {
           }),
         }
       : undefined;
+
+  // A held batch stays on the first step until its worksheet is released.
+  if (wizardStep && wizardStep !== "upload") {
+    await assertWorksheetNotHeld(jobId);
+  }
 
   try {
     return await repository.updateForUser(jobId, session.user.id, {

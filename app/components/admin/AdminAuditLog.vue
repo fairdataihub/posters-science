@@ -39,6 +39,7 @@ const actionLabels: Record<string, string> = {
   REVOKE_CLAIM: "Revoked claim",
   HIDE_ORGANIZATION: "Hid organization",
   RESTORE_ORGANIZATION: "Restored organization",
+  RELEASE_WORKSHEET_HOLD: "Released worksheet hold",
 };
 
 const actionItems = [

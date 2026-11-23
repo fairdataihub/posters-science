@@ -1,4 +1,5 @@
 import { submitBulkPosterSubmissionJob } from "~~/server/utils/bulkImportSubmit";
+import { assertWorksheetNotHeld } from "~~/server/utils/bulkWorksheetHold";
 
 export default defineEventHandler(async (event) => {
   const session = await requireDbUserSession(event);
@@ -10,6 +11,9 @@ export default defineEventHandler(async (event) => {
       statusMessage: "Job id is required",
     });
   }
+
+  // A held batch can't start extraction until its worksheet is released.
+  await assertWorksheetNotHeld(jobId);
 
   return await submitBulkPosterSubmissionJob(session.user.id, jobId);
 });
