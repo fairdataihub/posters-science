@@ -27,12 +27,8 @@ const props = defineProps<{
   licenseOptions: FacetOption[];
   /** How many deleted posters the switch would show or hide. */
   deletedCount: number;
-  /**
-   * Posters listed, the same count as the sidebar's for the kind when no
-   * search or filter is on. Bulk upload cards aren't counted, as each one
-   * says how many posters it holds.
-   */
-  posterCount: number;
+  /** Names batch cards and their poster contents separately. */
+  resultSummary: string;
   searching?: boolean;
 }>();
 
@@ -57,8 +53,8 @@ function submitSearch() {
   search.value = draft.value.trim();
 }
 
-const deletedHidden = computed(
-  () => props.deletedCount > 0 && !showDeleted.value,
+const deletedIncluded = computed(
+  () => props.deletedCount > 0 && showDeleted.value,
 );
 
 const filterCount = computed(
@@ -66,14 +62,14 @@ const filterCount = computed(
     repositories.value.length +
     years.value.length +
     licenses.value.length +
-    (deletedHidden.value ? 1 : 0),
+    (deletedIncluded.value ? 1 : 0),
 );
 
 function clearFilters() {
   repositories.value = [];
   years.value = [];
   licenses.value = [];
-  showDeleted.value = true;
+  showDeleted.value = false;
 }
 
 function clearAll() {
@@ -111,9 +107,7 @@ const checkedYears = computed<string[]>({
 const resultLabel = computed(() => {
   if (props.searching) return "Searching...";
 
-  const posters = `${props.posterCount.toLocaleString()} poster${props.posterCount === 1 ? "" : "s"}`;
-
-  return search.value || filterCount.value > 0 ? `${posters} found` : posters;
+  return props.resultSummary;
 });
 
 // Active filters, shown as removable badges like on profile pages.
@@ -168,12 +162,12 @@ const activeBadges = computed(() => {
     });
   }
 
-  if (deletedHidden.value) {
+  if (deletedIncluded.value) {
     badges.push({
       key: "deleted",
-      label: "Deleted posters hidden",
+      label: "Deleted posters included",
       onRemove: () => {
-        showDeleted.value = true;
+        showDeleted.value = false;
       },
     });
   }
@@ -194,7 +188,7 @@ const activeBadges = computed(() => {
       @submit="submitSearch"
     >
       <div class="flex grow items-center justify-between gap-3">
-        <p class="text-muted text-sm whitespace-nowrap" aria-live="polite">
+        <p class="text-muted text-sm" aria-live="polite">
           {{ resultLabel }}
         </p>
 
@@ -235,7 +229,7 @@ const activeBadges = computed(() => {
                     :aria-pressed="kind === option.value"
                     @click="kind = option.value"
                   >
-                    {{ option.label }} ({{ option.count.toLocaleString() }})
+                    {{ option.label }}
                   </UButton>
                 </div>
               </div>

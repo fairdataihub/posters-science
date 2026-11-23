@@ -18,7 +18,7 @@ const props = withDefaults(
     placeholder?: string;
     buttonLabel?: string;
     /** What the search finds, for the line under the input. */
-    scope?: "posters" | "collections";
+    scope?: "posters" | "collections" | "drafts";
   }>(),
   {
     committed: "",
@@ -49,6 +49,11 @@ const searchHelp = (
 }));
 
 const searchScopeLabel = computed(() => {
+  if (props.scope === "drafts") {
+    return props.committed
+      ? `Searching draft titles, descriptions and batch names for "${props.committed}".`
+      : "";
+  }
   const { clauses, freeText } = parseDiscoverSearch(props.committed);
 
   if (props.scope === "collections") {
@@ -98,7 +103,7 @@ const searchScopeLabel = computed(() => {
           />
 
           <template #content>
-            <div class="space-y-2 text-xs">
+            <div v-if="scope !== 'drafts'" class="space-y-2 text-xs">
               <p>
                 A plain search looks at the {{ FREE_TEXT_SCOPE }}. Pasting an
                 ORCID, ROR or DOI searches for that identifier.
@@ -119,6 +124,11 @@ const searchScopeLabel = computed(() => {
                 </template>
               </ul>
             </div>
+
+            <p v-else class="max-w-xs text-xs">
+              Search your draft titles, descriptions and batch names. Choose a
+              batch status under Filters to find uploads that need attention.
+            </p>
           </template>
         </UTooltip>
 

@@ -3,107 +3,90 @@ import type { NavigationMenuItem } from "@nuxt/ui";
 import type {
   DashboardView,
   DashboardViewOption,
+  InProgressFilter,
+  InProgressFilterOption,
   PublishedFilter,
   PublishedFilterOption,
 } from "~/types/dashboard";
-
-// The dashboard sidebar's own content: the profile summary, the poster views
-// with the Published filters under them, and links to the person's account
-// pages.
 
 const props = defineProps<{
   collapsed?: boolean;
   views: DashboardViewOption[];
   filters: PublishedFilterOption[];
+  progressFilters: InProgressFilterOption[];
 }>();
-
 const view = defineModel<DashboardView>("view", { required: true });
 const filter = defineModel<PublishedFilter>("filter", { required: true });
-
-const emit = defineEmits<{
-  /** A view or link was chosen, so the mobile menu can close. */
-  navigate: [];
-}>();
-
+const progressFilter = defineModel<InProgressFilter>("progressFilter", {
+  required: true,
+});
+const emit = defineEmits<{ navigate: [] }>();
 const { invites } = useOrganizationInvites();
+const openGroups = ref<Record<string, boolean>>({});
+watch(
+  view,
+  (value) => {
+    openGroups.value = { [value]: true };
+  },
+  { immediate: true },
+);
 
 function selectView(value: DashboardView) {
   view.value = value;
+  if (value === "published") filter.value = "all";
+  if (value === "in-progress") progressFilter.value = "all";
+  openGroups.value = { [value]: true };
   emit("navigate");
 }
 
-// A filter always applies to the Published view, so choosing one from
-// another view switches to it.
-function selectFilter(value: PublishedFilter) {
-  filter.value = value;
-  view.value = "published";
-  emit("navigate");
+function children(value: DashboardView): NavigationMenuItem[] {
+  if (value === "published")
+    return props.filters.map((option) => ({
+      label: option.label,
+      active: view.value === value && filter.value === option.value,
+      onSelect: () => {
+        filter.value = option.value;
+        view.value = value;
+        emit("navigate");
+      },
+    }));
+  if (value === "in-progress")
+    return props.progressFilters.map((option) => ({
+      label: option.label,
+      active: view.value === value && progressFilter.value === option.value,
+      onSelect: () => {
+        progressFilter.value = option.value;
+        view.value = value;
+        emit("navigate");
+      },
+    }));
+
+  return [];
 }
 
-// Every kind is listed, even with nothing in it, so it's clear what the
-// dashboard can hold. An empty one says how posters get there.
-const filterItems = computed<NavigationMenuItem[]>(() =>
-  props.filters.map((option) => ({
+const collapsedItems = computed<NavigationMenuItem[]>(() =>
+  props.views.map((option) => ({
     label: option.label,
     icon: option.icon,
-    badge: {
-      label: option.count.toLocaleString(),
-      class: option.count === 0 ? "opacity-50" : undefined,
-    },
-    active: view.value === "published" && filter.value === option.value,
-    onSelect: () => selectFilter(option.value),
+    active: view.value === option.value,
+    children:
+      children(option.value).length > 1 ? children(option.value) : undefined,
+    onSelect: () => selectView(option.value),
   })),
 );
-
-const viewItems = computed<NavigationMenuItem[]>(() => [
-  { label: "Your posters", type: "label" },
-  ...props.views.flatMap((option): NavigationMenuItem[] => {
-    const item: NavigationMenuItem = {
-      label: option.label,
-      icon: option.icon,
-      badge: option.count.toLocaleString(),
-      active: view.value === option.value,
-      onSelect: () => selectView(option.value),
-    };
-
-    if (option.value !== "published") return [item];
-
-    // Collapsed, the filters open from the Published icon instead.
-    if (props.collapsed) return [{ ...item, children: filterItems.value }];
-
-    // Listed flat under Published rather than as its children, so Published
-    // itself stays a view to open instead of a toggle for the filters.
-    return [
-      item,
-      ...filterItems.value.map((filterItem) => ({
-        ...filterItem,
-        icon: undefined,
-        ui: {
-          item: "ms-5 border-s border-default ps-1.5",
-          link: "py-1",
-        },
-      })),
-    ];
-  }),
-]);
-
-const accountItems = computed<NavigationMenuItem[]>(() => [
-  { label: "Account", type: "label" },
-  {
-    label: "Profile",
-    icon: "i-lucide-circle-user",
-    to: "/profile/me",
-  },
+const libraryItems = computed<NavigationMenuItem[]>(() => [
+  { label: "Library", type: "label" },
   {
     label: "Liked posters",
     icon: "i-lucide-star",
     to: "/liked",
+    onSelect: () => emit("navigate"),
   },
   {
     label: "Organizations",
     icon: "i-lucide-building-2",
     to: "/organizations",
-    // Pending invites, answered on the organizations page.
+    onSelect: () => emit("navigate"),
     ...(invites.value.length > 0 && {
       badge: {
         label: String(invites.value.length),
@@ -116,11 +99,7 @@ const accountItems = computed<NavigationMenuItem[]>(() => [
     label: "Collections",
     icon: "i-lucide-library-big",
     to: "/collections",
-  },
-  {
-    label: "Settings",
-    icon: "i-lucide-settings",
-    to: "/profile",
+    onSelect: () => emit("navigate"),
   },
 ]);
 </script>
@@ -132,19 +111,60 @@ const accountItems = computed<NavigationMenuItem[]>(() => [
   />
 
   <UNavigationMenu
-    :collapsed="collapsed"
-    :items="viewItems"
+    v-if="collapsed"
+    :items="collapsedItems"
+    collapsed
     orientation="vertical"
     tooltip
     popover
     aria-label="Your posters"
   />
 
+  <nav v-else aria-label="Your posters" class="space-y-1">
+    <p class="text-muted px-2.5 py-2 text-xs font-medium">Your posters</p>
+
+    <section v-for="option in views" :key="option.value">
+      <div class="flex items-center gap-1">
+        <UButton
+          :label="option.label"
+          :icon="option.icon"
+          :color="view === option.value ? 'primary' : 'neutral'"
+          :variant="view === option.value ? 'soft' : 'ghost'"
+          :aria-current="view === option.value ? 'page' : undefined"
+          class="min-w-0 flex-1 justify-start"
+          @click="selectView(option.value)"
+        />
+
+        <UButton
+          v-if="children(option.value).length > 1"
+          icon="i-lucide-chevron-down"
+          color="neutral"
+          variant="ghost"
+          size="xs"
+          :class="{ 'rotate-180': openGroups[option.value] }"
+          :aria-label="`${openGroups[option.value] ? 'Collapse' : 'Expand'} ${option.label}`"
+          :aria-expanded="!!openGroups[option.value]"
+          :aria-controls="`dashboard-group-${option.value}`"
+          @click="openGroups[option.value] = !openGroups[option.value]"
+        />
+      </div>
+
+      <UNavigationMenu
+        v-if="children(option.value).length > 1 && openGroups[option.value]"
+        :id="`dashboard-group-${option.value}`"
+        :items="children(option.value)"
+        orientation="vertical"
+        class="border-default my-1 ml-4 border-l pl-2"
+        :aria-label="`${option.label} categories`"
+      />
+    </section>
+  </nav>
+
   <UNavigationMenu
     :collapsed="collapsed"
-    :items="accountItems"
+    :items="libraryItems"
     orientation="vertical"
     tooltip
-    aria-label="Account"
+    aria-label="Library"
   />
 </template>

@@ -30,10 +30,15 @@ import {
   discoverHighlightTerms,
   parseDiscoverSearch,
 } from "#shared/utils/discoverSearch";
+import {
+  dashboardBatchStatus,
+  dashboardResultSummary,
+} from "~/utils/dashboardBatchStatus";
 import { POSTER_REPOSITORY_LABELS } from "~/composables/useDashboardQuery";
 import type {
   DashboardView,
   DashboardViewOption,
+  InProgressFilterOption,
   FacetOption,
   PublishedFilter,
   PublishedFilterOption,
@@ -149,6 +154,9 @@ const defaultDashboardView = ref<DashboardView>("in-progress");
 const {
   view: activeDashboardTab,
   kind: publishedFilter,
+  progressKind: inProgressFilter,
+  progressSearch: inProgressSearch,
+  batchStatuses,
   search: publishedSearch,
   sort: publishedSort,
   repositories: repositoryFilter,
@@ -219,6 +227,63 @@ const inProgressDashboardItems = computed(() => {
     return [{ type: "poster" as const, key: `poster-${poster.id}`, poster }];
   });
 });
+const inProgressFilterOptions = computed((): InProgressFilterOption[] => {
+  const options: InProgressFilterOption[] = [
+    {
+      value: "all",
+      label: "All in progress",
+      count: inProgressDashboardItems.value.length,
+    },
+    {
+      value: "individual",
+      label: "Individual uploads",
+      count: inProgressDashboardItems.value.filter(
+        (item) => item.type === "poster",
+      ).length,
+    },
+    {
+      value: "bulk",
+      label: "Bulk uploads",
+      count: bulkSubmissions.value.length,
+    },
+  ];
+
+  return options.filter(
+    (option) =>
+      option.value === "all" ||
+      option.count > 0 ||
+      (activeDashboardTab.value === "in-progress" &&
+        option.value === inProgressFilter.value),
+  );
+});
+
+const filteredInProgressItems = computed(() => {
+  const term = inProgressSearch.value.trim().toLocaleLowerCase();
+
+  return inProgressDashboardItems.value.filter((item) => {
+    if (inProgressFilter.value === "bulk" && item.type !== "bulk") return false;
+    if (inProgressFilter.value === "individual" && item.type !== "poster")
+      return false;
+    if (
+      batchStatuses.value.length &&
+      (item.type !== "bulk" ||
+        !batchStatuses.value.includes(dashboardBatchStatus(item.bulk)))
+    )
+      return false;
+    const text =
+      item.type === "bulk"
+        ? item.bulk.name
+        : `${item.poster.title} ${item.poster.description}`;
+
+    return !term || text.toLocaleLowerCase().includes(term);
+  });
+});
+
+function clearInProgressSearchAndFilters() {
+  inProgressSearch.value = "";
+  batchStatuses.value = [];
+}
+
 const publishedPosters = computed(() =>
   tombstoneFilteredPosters.value.filter(
     (poster) =>
@@ -256,19 +321,17 @@ const showSuggestedTab = computed(
     (orcidSuggestionCount.value > 0 ||
       activeDashboardTab.value === "suggested"),
 );
-// The views listed in the sidebar, each with how many items it holds.
+// Status navigation stays simple; totals are shown beside the results.
 const dashboardViews = computed((): DashboardViewOption[] => [
   {
     label: "In progress",
     icon: "i-lucide-pencil-line",
     value: "in-progress",
-    count: inProgressDashboardItems.value.length,
   },
   {
     label: "Published",
     icon: "i-lucide-circle-check",
     value: "published",
-    count: publishedPosters.value.length,
   },
   ...(showSuggestedTab.value
     ? [
@@ -276,7 +339,6 @@ const dashboardViews = computed((): DashboardViewOption[] => [
           label: "Suggested",
           icon: "i-simple-icons-orcid",
           value: "suggested" as const,
-          count: orcidSuggestionCount.value,
         },
       ]
     : []),
@@ -298,10 +360,10 @@ const publishedFilterTests: Record<
   versions: (poster) => publishedVersionHistory(poster).length > 0,
 };
 
-// Every kind is listed, even an empty one, which says how posters get there.
+// Only show specialized categories once the account has relevant content.
 const publishedFilterOptions = computed((): PublishedFilterOption[] => {
   const options: Omit<PublishedFilterOption, "count">[] = [
-    { value: "all", label: "All" },
+    { value: "all", label: "All published" },
     { value: "owned", label: "Shared by you", icon: "i-lucide-upload" },
     { value: "claimed", label: "Claimed", icon: "i-heroicons-hand-raised" },
     { value: "bulk", label: "Bulk uploads", icon: "i-lucide-library-big" },
@@ -317,11 +379,26 @@ const publishedFilterOptions = computed((): PublishedFilterOption[] => {
       : []),
   ];
 
-  return options.map((option) => ({
-    ...option,
-    count: publishedPosters.value.filter(publishedFilterTests[option.value])
-      .length,
-  }));
+  // Availability depends on the account's content, never the current search.
+  return options
+    .map((option) => ({
+      ...option,
+      count: posters.value.filter(
+        (poster) =>
+          poster.status === "published" &&
+          poster.isLatestPublished &&
+          publishedFilterTests[option.value](poster),
+      ).length,
+    }))
+    .filter(
+      (option) =>
+        option.value === "all" ||
+        option.count > 0 ||
+        (option.value === "bulk" &&
+          completedBulkSubmissions.value.length > 0) ||
+        (activeDashboardTab.value === "published" &&
+          option.value === publishedFilter.value),
+    );
 });
 
 const kindPublishedPosters = computed(() =>
@@ -530,7 +607,7 @@ const publishedBatches = computed((): PublishedBatch[] => {
 // only.
 const PUBLISHED_BATCH_ROWS_SHOWN = 10;
 const toggledPublishedBatches = ref(new Set<string>());
-const fullyShownPublishedBatches = ref(new Set<string>());
+const shownPublishedBatchRows = ref<Record<string, number>>({});
 
 watch(publishedNarrowed, () => {
   toggledPublishedBatches.value = new Set();
@@ -544,6 +621,10 @@ function togglePublishedBatch(bulkId: string) {
   const toggled = new Set(toggledPublishedBatches.value);
 
   if (!toggled.delete(bulkId)) toggled.add(bulkId);
+  shownPublishedBatchRows.value = {
+    ...shownPublishedBatchRows.value,
+    [bulkId]: PUBLISHED_BATCH_ROWS_SHOWN,
+  };
 
   toggledPublishedBatches.value = toggled;
 }
@@ -619,16 +700,27 @@ function publishedBatchPosterDetails(bulkId: string, poster: Poster) {
 }
 
 function shownPublishedBatchPosters(bulkId: string, batchPosters: Poster[]) {
-  return fullyShownPublishedBatches.value.has(bulkId)
-    ? batchPosters
-    : batchPosters.slice(0, PUBLISHED_BATCH_ROWS_SHOWN);
+  return batchPosters.slice(
+    0,
+    shownPublishedBatchRows.value[bulkId] ?? PUBLISHED_BATCH_ROWS_SHOWN,
+  );
 }
 
-function showAllPublishedBatchPosters(bulkId: string) {
-  fullyShownPublishedBatches.value = new Set([
-    ...fullyShownPublishedBatches.value,
-    bulkId,
-  ]);
+function showMorePublishedBatchPosters(bulkId: string) {
+  shownPublishedBatchRows.value = {
+    ...shownPublishedBatchRows.value,
+    [bulkId]:
+      (shownPublishedBatchRows.value[bulkId] ?? PUBLISHED_BATCH_ROWS_SHOWN) +
+      PUBLISHED_BATCH_ROWS_SHOWN,
+  };
+}
+
+async function closePublishedBatch(bulkId: string) {
+  togglePublishedBatch(bulkId);
+  await nextTick();
+  const toggle = document.getElementById(`batch-toggle-${bulkId}`);
+  toggle?.focus({ preventScroll: true });
+  toggle?.scrollIntoView({ block: "nearest", behavior: "smooth" });
 }
 
 function clearPublishedSearchAndFilters() {
@@ -636,7 +728,7 @@ function clearPublishedSearchAndFilters() {
   repositoryFilter.value = [];
   yearFilter.value = [];
   licenseFilter.value = [];
-  showTombstonedPosters.value = true;
+  showTombstonedPosters.value = false;
 }
 
 // A kind of poster with nothing in it says how posters get there instead.
@@ -708,7 +800,7 @@ const publishedSorters: Record<
 
 const activeTabListItems = computed((): ActiveTabListItem[] => {
   if (activeDashboardTab.value === "in-progress") {
-    return inProgressDashboardItems.value;
+    return filteredInProgressItems.value;
   }
 
   // The Suggested tab renders its own list.
@@ -768,6 +860,13 @@ const activeViewLabel = computed(
       ?.label ?? "Dashboard",
 );
 const activeFilterLabel = computed(() => {
+  if (activeDashboardTab.value === "in-progress") {
+    return inProgressFilter.value === "all"
+      ? null
+      : (inProgressFilterOptions.value.find(
+          (option) => option.value === inProgressFilter.value,
+        )?.label ?? null);
+  }
   if (activeDashboardTab.value !== "published") return null;
   if (publishedFilter.value === "all") return null;
 
@@ -775,6 +874,30 @@ const activeFilterLabel = computed(() => {
     publishedFilterOptions.value.find(
       (option) => option.value === publishedFilter.value,
     )?.label ?? null
+  );
+});
+
+const activeResultSummary = computed(() => {
+  const items = activeTabListItems.value;
+  const batches = items.filter((item) => item.type === "bulk");
+  const countKnown = batches.every(
+    (item) =>
+      item.type === "bulk" && (item.batch || item.bulk.posterCount !== null),
+  );
+
+  return dashboardResultSummary(
+    items.length - batches.length,
+    batches.length,
+    countKnown
+      ? batches.reduce(
+          (count, item) =>
+            count +
+            (item.type === "bulk"
+              ? (item.batch?.posters.length ?? item.bulk.posterCount ?? 0)
+              : 0),
+          0,
+        )
+      : null,
   );
 });
 
@@ -2432,6 +2555,8 @@ function posterMenuItems(poster: Poster) {
       <DashboardSidebarNav
         v-model:view="activeDashboardTab"
         v-model:filter="publishedFilter"
+        v-model:progress-filter="inProgressFilter"
+        :progress-filters="inProgressFilterOptions"
         :collapsed="collapsed"
         :views="dashboardViews"
         :filters="publishedFilterOptions"
@@ -2471,6 +2596,22 @@ function posterMenuItems(poster: Poster) {
         </template>
       </UDashboardNavbar>
 
+      <DashboardInProgressToolbar
+        v-if="
+          activeDashboardTab === 'in-progress' &&
+          (inProgressDashboardItems.length > 0 ||
+            inProgressSearch ||
+            batchStatuses.length ||
+            inProgressFilter !== 'all')
+        "
+        v-model:search="inProgressSearch"
+        v-model:kind="inProgressFilter"
+        v-model:statuses="batchStatuses"
+        :kinds="inProgressFilterOptions"
+        :result-summary="activeResultSummary"
+        :has-batches="bulkSubmissions.length > 0"
+      />
+
       <DashboardPublishedToolbar
         v-if="showPublishedToolbar"
         v-model:search="publishedSearch"
@@ -2485,7 +2626,7 @@ function posterMenuItems(poster: Poster) {
         :year-options="yearOptions"
         :license-options="licenseOptions"
         :deleted-count="tombstonedPosterCount"
-        :poster-count="filteredPublishedPosters.length"
+        :result-summary="activeResultSummary"
         :searching="publishedSearchPending"
       />
     </template>
@@ -2515,7 +2656,12 @@ function posterMenuItems(poster: Poster) {
       <section
         v-else-if="
           activeTabHasItems ||
-          (activeDashboardTab === 'published' && publishedTabHasItems)
+          (activeDashboardTab === 'published' && publishedTabHasItems) ||
+          (activeDashboardTab === 'in-progress' &&
+            (inProgressDashboardItems.length > 0 ||
+              inProgressSearch ||
+              batchStatuses.length ||
+              inProgressFilter !== 'all'))
         "
         class="space-y-3"
       >
@@ -2552,7 +2698,15 @@ function posterMenuItems(poster: Poster) {
         >
           <Icon name="i-lucide-search-x" class="text-muted h-12 w-12" />
 
-          <h3 class="text-lg font-medium">No posters match</h3>
+          <h3 class="text-lg font-medium">
+            No
+            {{
+              activeDashboardTab === "in-progress"
+                ? "drafts or batches"
+                : "posters"
+            }}
+            match
+          </h3>
 
           <p class="text-muted text-sm">
             Try another search or filter.
@@ -2568,7 +2722,11 @@ function posterMenuItems(poster: Poster) {
             variant="outline"
             icon="i-lucide-x"
             label="Clear search and filters"
-            @click="clearPublishedSearchAndFilters"
+            @click="
+              activeDashboardTab === 'in-progress'
+                ? clearInProgressSearchAndFilters()
+                : clearPublishedSearchAndFilters()
+            "
           />
         </div>
 
@@ -2577,7 +2735,11 @@ function posterMenuItems(poster: Poster) {
             <template v-if="item.type === 'bulk'">
               <DashboardBulkSubmissionCard
                 :bulk="item.bulk"
-                :highlight="publishedHighlight?.title"
+                :highlight="
+                  activeDashboardTab === 'in-progress'
+                    ? [inProgressSearch]
+                    : publishedHighlight?.title
+                "
                 :summary-panel-id="
                   item.batch ? `batch-summary-${item.bulk.id}` : undefined
                 "
@@ -2615,12 +2777,25 @@ function posterMenuItems(poster: Poster) {
                   Could not load this batch's file names.
                 </p>
 
-                <p
-                  v-if="item.batch.posters.length < item.batch.total"
-                  class="text-muted text-xs"
-                >
-                  Showing {{ item.batch.posters.length.toLocaleString() }} of
-                  {{ item.batch.total.toLocaleString() }} posters in this batch
+                <p class="text-muted text-xs" aria-live="polite">
+                  Showing
+                  {{
+                    shownPublishedBatchPosters(
+                      item.bulk.id,
+                      item.batch.posters,
+                    ).length.toLocaleString()
+                  }}
+                  of {{ item.batch.posters.length.toLocaleString() }} poster{{
+                    item.batch.posters.length === 1 ? "" : "s"
+                  }}
+                  <template v-if="item.batch.posters.length < item.batch.total">
+                    matching your filters ({{
+                      item.batch.total.toLocaleString()
+                    }}
+                    in this batch)
+                  </template>
+
+                  <template v-else>in this batch</template>
                 </p>
 
                 <div
@@ -2867,19 +3042,32 @@ function posterMenuItems(poster: Poster) {
                   </div>
                 </div>
 
-                <UButton
-                  v-if="
-                    item.batch.posters.length >
-                    shownPublishedBatchPosters(item.bulk.id, item.batch.posters)
-                      .length
-                  "
-                  color="neutral"
-                  variant="ghost"
-                  size="xs"
-                  icon="i-lucide-chevron-down"
-                  :label="`Show ${(item.batch.posters.length - PUBLISHED_BATCH_ROWS_SHOWN).toLocaleString()} more`"
-                  @click="showAllPublishedBatchPosters(item.bulk.id)"
-                />
+                <div class="flex flex-wrap items-center gap-2">
+                  <UButton
+                    v-if="
+                      item.batch.posters.length >
+                      shownPublishedBatchPosters(
+                        item.bulk.id,
+                        item.batch.posters,
+                      ).length
+                    "
+                    color="neutral"
+                    variant="ghost"
+                    size="xs"
+                    icon="i-lucide-chevron-down"
+                    :label="`Show ${Math.min(PUBLISHED_BATCH_ROWS_SHOWN, item.batch.posters.length - shownPublishedBatchPosters(item.bulk.id, item.batch.posters).length)} more`"
+                    @click="showMorePublishedBatchPosters(item.bulk.id)"
+                  />
+
+                  <UButton
+                    label="Hide posters"
+                    icon="i-lucide-chevron-up"
+                    color="neutral"
+                    variant="ghost"
+                    size="xs"
+                    @click="closePublishedBatch(item.bulk.id)"
+                  />
+                </div>
               </div>
             </template>
 
@@ -3464,13 +3652,21 @@ function posterMenuItems(poster: Poster) {
           </div>
 
           <h3 class="mb-2 text-lg font-medium text-gray-900 dark:text-gray-100">
-            No posters yet
+            {{
+              activeDashboardTab === "published"
+                ? "No published posters yet"
+                : "No posters in progress"
+            }}
           </h3>
 
           <p
             class="mb-6 text-gray-500 underline-offset-2 group-hover:underline dark:text-gray-400"
           >
-            Get started by sharing your first poster.
+            {{
+              activeDashboardTab === "published"
+                ? "Your published posters will appear here after your first submission."
+                : "Start sharing a poster or bulk upload. Your drafts will appear here."
+            }}
           </p>
         </NuxtLink>
       </div>

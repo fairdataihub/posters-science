@@ -4,12 +4,19 @@ export type DashboardView = "in-progress" | "published" | "suggested";
 /** Filters for the Published view: one kind of poster at a time. */
 export type PublishedFilter = "all" | "owned" | "claimed" | "bulk" | "versions";
 
-/** A view as the sidebar lists it, with how many items it holds. */
+export type InProgressFilter = "all" | "individual" | "bulk";
+
+export type InProgressFilterOption = {
+  value: InProgressFilter;
+  label: string;
+  count: number;
+};
+
+/** A view listed in the sidebar. Counts belong beside the results. */
 export type DashboardViewOption = {
   value: DashboardView;
   label: string;
   icon: string;
-  count: number;
 };
 
 /** A Published filter as the sidebar lists it. */
