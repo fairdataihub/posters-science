@@ -53,8 +53,8 @@ function submitSearch() {
   search.value = draft.value.trim();
 }
 
-const deletedHidden = computed(
-  () => props.deletedCount > 0 && !showDeleted.value,
+const deletedIncluded = computed(
+  () => props.deletedCount > 0 && showDeleted.value,
 );
 
 const filterCount = computed(
@@ -62,14 +62,14 @@ const filterCount = computed(
     repositories.value.length +
     years.value.length +
     licenses.value.length +
-    (deletedHidden.value ? 1 : 0),
+    (deletedIncluded.value ? 1 : 0),
 );
 
 function clearFilters() {
   repositories.value = [];
   years.value = [];
   licenses.value = [];
-  showDeleted.value = true;
+  showDeleted.value = false;
 }
 
 function clearAll() {
@@ -162,12 +162,12 @@ const activeBadges = computed(() => {
     });
   }
 
-  if (deletedHidden.value) {
+  if (deletedIncluded.value) {
     badges.push({
       key: "deleted",
-      label: "Deleted posters hidden",
+      label: "Deleted posters included",
       onRemove: () => {
-        showDeleted.value = true;
+        showDeleted.value = false;
       },
     });
   }

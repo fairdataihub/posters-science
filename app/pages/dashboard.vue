@@ -728,7 +728,7 @@ function clearPublishedSearchAndFilters() {
   repositoryFilter.value = [];
   yearFilter.value = [];
   licenseFilter.value = [];
-  showTombstonedPosters.value = true;
+  showTombstonedPosters.value = false;
 }
 
 // A kind of poster with nothing in it says how posters get there instead.

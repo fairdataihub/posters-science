@@ -184,13 +184,13 @@ export function useDashboardQuery(defaultView: Ref<DashboardView>) {
       updateQuery({ license: values.length ? values : undefined }),
   });
 
-  // Deleted (tombstoned) posters show by default. The choice is also kept in
-  // a cookie, as it was before the filters moved to the URL, so a dashboard
-  // opened without the parameter remembers it.
+  // Deleted (tombstoned) posters are hidden until explicitly included. Use
+  // a new cookie so the old automatic "show" default does not opt people in.
+  // Explicit URL choices still take precedence over the saved preference.
   const showDeletedCookie = useCookie<boolean>(
-    "dashboard-show-tombstoned-posters",
+    "dashboard-include-tombstoned-posters",
     {
-      default: () => true,
+      default: () => false,
       maxAge: 60 * 60 * 24 * 365,
       sameSite: "lax",
     },
@@ -205,7 +205,7 @@ export function useDashboardQuery(defaultView: Ref<DashboardView>) {
     },
     set: (show) => {
       showDeletedCookie.value = show;
-      updateQuery({ deleted: show ? undefined : "hide" });
+      updateQuery({ deleted: show ? "show" : undefined });
     },
   });
 
