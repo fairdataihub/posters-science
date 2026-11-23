@@ -5,25 +5,40 @@ import { shareBulkCompletionPath, shareNewBulkPath } from "~/utils/sharePaths";
 
 const props = defineProps<{
   bulk: DashboardBulkSubmission;
+  /** Search terms to mark in the name, as on the poster cards. */
+  highlight?: string[];
+  /**
+   * On Published, a finished batch shows its summary and posters in a panel
+   * under the card instead of opening the summary page. This is that
+   * panel's id, left out where there is none.
+   */
+  summaryPanelId?: string;
+  summaryExpanded?: boolean;
 }>();
 
 const emit = defineEmits<{
   delete: [bulk: DashboardBulkSubmission];
+  toggleSummary: [];
 }>();
+
+const opensSummaryInPlace = computed(
+  () => props.bulk.status === "completed" && !!props.summaryPanelId,
+);
 
 const canDeleteBulk = computed(() => {
   if (props.bulk.status === "draft" || props.bulk.status === "failed") {
     return true;
   }
 
-  return (
-    props.bulk.status === "processing" && !props.bulk.hasActiveExtraction
-  );
+  return props.bulk.status === "processing" && !props.bulk.hasActiveExtraction;
 });
 
-// A finished upload can be turned into a collection, once.
+// A finished upload can be turned into a collection, once. Where the card
+// opens its summary in place, that summary offers it instead.
 const collectionMenuItem = computed(() => {
-  if (props.bulk.status !== "completed") return null;
+  if (props.bulk.status !== "completed" || opensSummaryInPlace.value) {
+    return null;
+  }
 
   const { collection } = props.bulk;
 
@@ -67,6 +82,7 @@ const CARD_TITLE_MAX_LENGTH = 80;
 
 const displayTitle = computed(() => {
   const title = props.bulk.name;
+
   return title.length > CARD_TITLE_MAX_LENGTH
     ? `${title.slice(0, CARD_TITLE_MAX_LENGTH).trimEnd()}…`
     : title;
@@ -108,8 +124,7 @@ const status = computed(() => statusPresentation());
 
 const description = computed(() => {
   const count = props.bulk.posterCount ?? 0;
-  const staged =
-    count === 1 ? "1 poster staged" : `${count} posters staged`;
+  const staged = count === 1 ? "1 poster staged" : `${count} posters staged`;
 
   if (props.bulk.status === "completed") {
     return count === 1
@@ -121,6 +136,9 @@ const description = computed(() => {
 });
 
 function actionLabel() {
+  if (opensSummaryInPlace.value) {
+    return props.summaryExpanded ? "Hide batch summary" : "View batch summary";
+  }
   if (props.bulk.status === "completed") return "View batch summary";
   if (props.bulk.status === "failed") return "Resolve issue";
   if (props.bulk.status === "processing" && props.bulk.hasActiveExtraction) {
@@ -131,8 +149,15 @@ function actionLabel() {
 }
 
 function continueImport() {
+  if (opensSummaryInPlace.value) {
+    emit("toggleSummary");
+
+    return;
+  }
+
   if (props.bulk.status === "completed") {
     void navigateTo(shareBulkCompletionPath(props.bulk.id));
+
     return;
   }
 
@@ -143,19 +168,19 @@ function continueImport() {
 <template>
   <UPageCard
     variant="ghost"
-    class="group h-50 cursor-pointer overflow-hidden rounded-none border-t border-b border-gray-100 transition-all duration-300 max-md:h-auto max-md:rounded-xl max-md:border max-md:bg-white max-md:shadow-sm max-md:hover:shadow-md dark:max-md:border-gray-800 dark:max-md:bg-gray-950"
+    class="group border-default h-50 cursor-pointer overflow-hidden rounded-none border-t border-b transition-all duration-300 max-md:h-auto max-md:rounded-xl max-md:border max-md:bg-white max-md:shadow-sm max-md:hover:shadow-md dark:max-md:bg-gray-950"
     @click="continueImport"
   >
     <div
       class="flex h-full gap-8 max-md:h-auto max-md:flex-col max-md:gap-0 md:items-stretch"
     >
       <div
-        class="h-full w-[150px] shrink-0 overflow-hidden max-md:h-44 max-md:w-full max-md:border-b max-md:border-gray-100 dark:max-md:border-gray-800"
+        class="max-md:border-default h-full w-[150px] shrink-0 overflow-hidden max-md:h-44 max-md:w-full max-md:border-b"
       >
         <img
           :src="`https://api.dicebear.com/9.x/shapes/svg?seed=${previewSeed}`"
           :alt="bulk.name"
-          class="max-h-[150px] w-full object-contain p-2 transition-transform duration-300 max-md:h-full max-md:max-h-none max-md:p-3 group-hover:scale-105"
+          class="max-h-[150px] w-full object-contain p-2 transition-transform duration-300 group-hover:scale-105 max-md:h-full max-md:max-h-none max-md:p-3"
         />
       </div>
 
@@ -182,7 +207,10 @@ function continueImport() {
             class="line-clamp-2 max-h-14 overflow-hidden text-lg font-semibold break-words"
             :title="bulk.name"
           >
-            {{ displayTitle || "Untitled bulk submission" }}
+            <SearchHighlight
+              :text="displayTitle || 'Untitled bulk submission'"
+              :term="highlight"
+            />
           </h3>
 
           <div class="flex flex-col gap-1">
@@ -193,7 +221,7 @@ function continueImport() {
         </div>
 
         <div
-          class="flex items-center justify-between border-t border-gray-100 pt-2 text-xs max-md:flex-wrap max-md:gap-y-2 dark:border-gray-800"
+          class="border-default flex items-center justify-between border-t pt-2 text-xs max-md:flex-wrap max-md:gap-y-2"
         >
           <div
             class="text-muted flex items-center gap-2 max-md:flex-col max-md:items-start max-md:gap-1"
@@ -204,11 +232,8 @@ function continueImport() {
             </span>
 
             <span
-              v-if="
-                bulk.status === 'completed' &&
-                bulk.completedAt
-              "
-              class="flex items-center gap-1 border-l border-gray-100 pl-2 max-md:border-l-0 max-md:pl-0 dark:border-gray-800"
+              v-if="bulk.status === 'completed' && bulk.completedAt"
+              class="border-default flex items-center gap-1 border-l pl-2 max-md:border-l-0 max-md:pl-0"
             >
               <Icon name="i-lucide-circle-check" class="h-3 w-3" />
               Completed {{ dayjs(bulk.completedAt).format("MMMM D, YYYY") }}
@@ -218,7 +243,7 @@ function continueImport() {
               v-else-if="
                 dayjs(bulk.updatedAt).isAfter(dayjs(bulk.createdAt), 'day')
               "
-              class="flex items-center gap-1 border-l border-gray-100 pl-2 max-md:border-l-0 max-md:pl-0 dark:border-gray-800"
+              class="border-default flex items-center gap-1 border-l pl-2 max-md:border-l-0 max-md:pl-0"
             >
               <Icon name="i-lucide-pencil-line" class="h-3 w-3" />
               Updated {{ dayjs(bulk.updatedAt).format("MMMM D, YYYY") }}
@@ -227,6 +252,24 @@ function continueImport() {
 
           <div class="flex items-center gap-2 max-md:flex-wrap" @click.stop>
             <UButton
+              v-if="opensSummaryInPlace"
+              color="primary"
+              variant="subtle"
+              :label="actionLabel()"
+              trailing-icon="i-lucide-chevron-down"
+              size="xs"
+              :aria-expanded="summaryExpanded"
+              :aria-controls="summaryPanelId"
+              :ui="{
+                trailingIcon: summaryExpanded
+                  ? 'rotate-180 transition-transform'
+                  : 'transition-transform',
+              }"
+              @click="continueImport"
+            />
+
+            <UButton
+              v-else
               color="primary"
               variant="subtle"
               :label="actionLabel()"
