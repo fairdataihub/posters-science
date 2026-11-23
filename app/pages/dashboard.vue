@@ -30,10 +30,15 @@ import {
   discoverHighlightTerms,
   parseDiscoverSearch,
 } from "#shared/utils/discoverSearch";
+import {
+  dashboardBatchStatus,
+  dashboardResultSummary,
+} from "~/utils/dashboardBatchStatus";
 import { POSTER_REPOSITORY_LABELS } from "~/composables/useDashboardQuery";
 import type {
   DashboardView,
   DashboardViewOption,
+  InProgressFilterOption,
   FacetOption,
   PublishedFilter,
   PublishedFilterOption,
@@ -149,6 +154,9 @@ const defaultDashboardView = ref<DashboardView>("in-progress");
 const {
   view: activeDashboardTab,
   kind: publishedFilter,
+  progressKind: inProgressFilter,
+  progressSearch: inProgressSearch,
+  batchStatuses,
   search: publishedSearch,
   sort: publishedSort,
   repositories: repositoryFilter,
@@ -219,6 +227,63 @@ const inProgressDashboardItems = computed(() => {
     return [{ type: "poster" as const, key: `poster-${poster.id}`, poster }];
   });
 });
+const inProgressFilterOptions = computed((): InProgressFilterOption[] => {
+  const options: InProgressFilterOption[] = [
+    {
+      value: "all",
+      label: "All in progress",
+      count: inProgressDashboardItems.value.length,
+    },
+    {
+      value: "individual",
+      label: "Individual uploads",
+      count: inProgressDashboardItems.value.filter(
+        (item) => item.type === "poster",
+      ).length,
+    },
+    {
+      value: "bulk",
+      label: "Bulk uploads",
+      count: bulkSubmissions.value.length,
+    },
+  ];
+
+  return options.filter(
+    (option) =>
+      option.value === "all" ||
+      option.count > 0 ||
+      (activeDashboardTab.value === "in-progress" &&
+        option.value === inProgressFilter.value),
+  );
+});
+
+const filteredInProgressItems = computed(() => {
+  const term = inProgressSearch.value.trim().toLocaleLowerCase();
+
+  return inProgressDashboardItems.value.filter((item) => {
+    if (inProgressFilter.value === "bulk" && item.type !== "bulk") return false;
+    if (inProgressFilter.value === "individual" && item.type !== "poster")
+      return false;
+    if (
+      batchStatuses.value.length &&
+      (item.type !== "bulk" ||
+        !batchStatuses.value.includes(dashboardBatchStatus(item.bulk)))
+    )
+      return false;
+    const text =
+      item.type === "bulk"
+        ? item.bulk.name
+        : `${item.poster.title} ${item.poster.description}`;
+
+    return !term || text.toLocaleLowerCase().includes(term);
+  });
+});
+
+function clearInProgressSearchAndFilters() {
+  inProgressSearch.value = "";
+  batchStatuses.value = [];
+}
+
 const publishedPosters = computed(() =>
   tombstoneFilteredPosters.value.filter(
     (poster) =>
@@ -708,7 +773,7 @@ const publishedSorters: Record<
 
 const activeTabListItems = computed((): ActiveTabListItem[] => {
   if (activeDashboardTab.value === "in-progress") {
-    return inProgressDashboardItems.value;
+    return filteredInProgressItems.value;
   }
 
   // The Suggested tab renders its own list.
@@ -768,6 +833,13 @@ const activeViewLabel = computed(
       ?.label ?? "Dashboard",
 );
 const activeFilterLabel = computed(() => {
+  if (activeDashboardTab.value === "in-progress") {
+    return inProgressFilter.value === "all"
+      ? null
+      : (inProgressFilterOptions.value.find(
+          (option) => option.value === inProgressFilter.value,
+        )?.label ?? null);
+  }
   if (activeDashboardTab.value !== "published") return null;
   if (publishedFilter.value === "all") return null;
 
@@ -775,6 +847,30 @@ const activeFilterLabel = computed(() => {
     publishedFilterOptions.value.find(
       (option) => option.value === publishedFilter.value,
     )?.label ?? null
+  );
+});
+
+const activeResultSummary = computed(() => {
+  const items = activeTabListItems.value;
+  const batches = items.filter((item) => item.type === "bulk");
+  const countKnown = batches.every(
+    (item) =>
+      item.type === "bulk" && (item.batch || item.bulk.posterCount !== null),
+  );
+
+  return dashboardResultSummary(
+    items.length - batches.length,
+    batches.length,
+    countKnown
+      ? batches.reduce(
+          (count, item) =>
+            count +
+            (item.type === "bulk"
+              ? (item.batch?.posters.length ?? item.bulk.posterCount ?? 0)
+              : 0),
+          0,
+        )
+      : null,
   );
 });
 
@@ -2471,6 +2567,22 @@ function posterMenuItems(poster: Poster) {
         </template>
       </UDashboardNavbar>
 
+      <DashboardInProgressToolbar
+        v-if="
+          activeDashboardTab === 'in-progress' &&
+          (inProgressDashboardItems.length > 0 ||
+            inProgressSearch ||
+            batchStatuses.length ||
+            inProgressFilter !== 'all')
+        "
+        v-model:search="inProgressSearch"
+        v-model:kind="inProgressFilter"
+        v-model:statuses="batchStatuses"
+        :kinds="inProgressFilterOptions"
+        :result-summary="activeResultSummary"
+        :has-batches="bulkSubmissions.length > 0"
+      />
+
       <DashboardPublishedToolbar
         v-if="showPublishedToolbar"
         v-model:search="publishedSearch"
@@ -2515,7 +2627,12 @@ function posterMenuItems(poster: Poster) {
       <section
         v-else-if="
           activeTabHasItems ||
-          (activeDashboardTab === 'published' && publishedTabHasItems)
+          (activeDashboardTab === 'published' && publishedTabHasItems) ||
+          (activeDashboardTab === 'in-progress' &&
+            (inProgressDashboardItems.length > 0 ||
+              inProgressSearch ||
+              batchStatuses.length ||
+              inProgressFilter !== 'all'))
         "
         class="space-y-3"
       >
@@ -2552,7 +2669,15 @@ function posterMenuItems(poster: Poster) {
         >
           <Icon name="i-lucide-search-x" class="text-muted h-12 w-12" />
 
-          <h3 class="text-lg font-medium">No posters match</h3>
+          <h3 class="text-lg font-medium">
+            No
+            {{
+              activeDashboardTab === "in-progress"
+                ? "drafts or batches"
+                : "posters"
+            }}
+            match
+          </h3>
 
           <p class="text-muted text-sm">
             Try another search or filter.
@@ -2568,7 +2693,11 @@ function posterMenuItems(poster: Poster) {
             variant="outline"
             icon="i-lucide-x"
             label="Clear search and filters"
-            @click="clearPublishedSearchAndFilters"
+            @click="
+              activeDashboardTab === 'in-progress'
+                ? clearInProgressSearchAndFilters()
+                : clearPublishedSearchAndFilters()
+            "
           />
         </div>
 
@@ -2577,7 +2706,11 @@ function posterMenuItems(poster: Poster) {
             <template v-if="item.type === 'bulk'">
               <DashboardBulkSubmissionCard
                 :bulk="item.bulk"
-                :highlight="publishedHighlight?.title"
+                :highlight="
+                  activeDashboardTab === 'in-progress'
+                    ? [inProgressSearch]
+                    : publishedHighlight?.title
+                "
                 :summary-panel-id="
                   item.batch ? `batch-summary-${item.bulk.id}` : undefined
                 "

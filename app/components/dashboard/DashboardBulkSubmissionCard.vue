@@ -2,6 +2,10 @@
 import dayjs from "dayjs";
 import type { DashboardBulkSubmission } from "#shared/types/dashboardFeed";
 import { shareBulkCompletionPath, shareNewBulkPath } from "~/utils/sharePaths";
+import {
+  dashboardBatchStatus,
+  DASHBOARD_BATCH_STATUS_OPTIONS,
+} from "~/utils/dashboardBatchStatus";
 
 const props = defineProps<{
   bulk: DashboardBulkSubmission;
@@ -113,8 +117,12 @@ function statusPresentation() {
     };
   }
 
+  const phase = dashboardBatchStatus(props.bulk);
+
   return {
-    label: "Draft",
+    label:
+      DASHBOARD_BATCH_STATUS_OPTIONS.find((option) => option.value === phase)
+        ?.label ?? "Draft",
     color: "warning" as const,
     icon: "i-lucide-file-pen-line",
   };

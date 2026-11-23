@@ -2,12 +2,17 @@ import type { LocationQueryValue } from "vue-router";
 import type { PosterRepository } from "#shared/types/dashboardFeed";
 import type {
   DashboardView,
+  InProgressFilter,
   PublishedFilter,
   PublishedSort,
 } from "~/types/dashboard";
+import {
+  DASHBOARD_BATCH_STATUS_OPTIONS,
+  type DashboardBatchStatus,
+} from "~/utils/dashboardBatchStatus";
 
-// The dashboard's view and its Published search, filters and sort live in the
-// query string, so a filtered list survives a reload and can be linked to.
+// The dashboard's views, searches and filters live in the query string, so
+// each status keeps its own search and a filtered list survives a reload.
 // As on profile pages, each change replaces the current history entry.
 
 type QueryPatch = Record<string, string | string[] | undefined>;
@@ -103,6 +108,40 @@ export function useDashboardQuery(defaultView: Ref<DashboardView>) {
     set: (value) => updateQuery({ show: value === "all" ? undefined : value }),
   });
 
+  const progressKind = computed<InProgressFilter>({
+    get: () =>
+      oneOf(route.query.progress, ["all", "individual", "bulk"] as const) ??
+      "all",
+    set: (value) =>
+      updateQuery({
+        progress: value === "all" ? undefined : value,
+        ...(value === "individual" ? { batchStatus: undefined } : {}),
+      }),
+  });
+  const progressSearch = computed<string>({
+    get: () =>
+      typeof route.query.progressSearch === "string"
+        ? route.query.progressSearch
+        : "",
+    set: (value) => updateQuery({ progressSearch: value.trim() || undefined }),
+  });
+  const batchStatuses = computed<DashboardBatchStatus[]>({
+    get: () =>
+      queryList(route.query.batchStatus).filter(
+        (value): value is DashboardBatchStatus =>
+          DASHBOARD_BATCH_STATUS_OPTIONS.some(
+            (option) => option.value === value,
+          ),
+      ),
+    set: (values) =>
+      updateQuery({
+        batchStatus: values.length ? values : undefined,
+        ...(values.length && progressKind.value === "individual"
+          ? { progress: "bulk" }
+          : {}),
+      }),
+  });
+
   // The submitted search, in the Discover syntax.
   const search = computed<string>({
     get: () =>
@@ -173,6 +212,9 @@ export function useDashboardQuery(defaultView: Ref<DashboardView>) {
   return {
     view,
     kind,
+    progressKind,
+    progressSearch,
+    batchStatuses,
     search,
     sort,
     repositories,
