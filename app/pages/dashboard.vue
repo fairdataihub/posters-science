@@ -607,7 +607,7 @@ const publishedBatches = computed((): PublishedBatch[] => {
 // only.
 const PUBLISHED_BATCH_ROWS_SHOWN = 10;
 const toggledPublishedBatches = ref(new Set<string>());
-const fullyShownPublishedBatches = ref(new Set<string>());
+const shownPublishedBatchRows = ref<Record<string, number>>({});
 
 watch(publishedNarrowed, () => {
   toggledPublishedBatches.value = new Set();
@@ -621,6 +621,10 @@ function togglePublishedBatch(bulkId: string) {
   const toggled = new Set(toggledPublishedBatches.value);
 
   if (!toggled.delete(bulkId)) toggled.add(bulkId);
+  shownPublishedBatchRows.value = {
+    ...shownPublishedBatchRows.value,
+    [bulkId]: PUBLISHED_BATCH_ROWS_SHOWN,
+  };
 
   toggledPublishedBatches.value = toggled;
 }
@@ -696,16 +700,27 @@ function publishedBatchPosterDetails(bulkId: string, poster: Poster) {
 }
 
 function shownPublishedBatchPosters(bulkId: string, batchPosters: Poster[]) {
-  return fullyShownPublishedBatches.value.has(bulkId)
-    ? batchPosters
-    : batchPosters.slice(0, PUBLISHED_BATCH_ROWS_SHOWN);
+  return batchPosters.slice(
+    0,
+    shownPublishedBatchRows.value[bulkId] ?? PUBLISHED_BATCH_ROWS_SHOWN,
+  );
 }
 
-function showAllPublishedBatchPosters(bulkId: string) {
-  fullyShownPublishedBatches.value = new Set([
-    ...fullyShownPublishedBatches.value,
-    bulkId,
-  ]);
+function showMorePublishedBatchPosters(bulkId: string) {
+  shownPublishedBatchRows.value = {
+    ...shownPublishedBatchRows.value,
+    [bulkId]:
+      (shownPublishedBatchRows.value[bulkId] ?? PUBLISHED_BATCH_ROWS_SHOWN) +
+      PUBLISHED_BATCH_ROWS_SHOWN,
+  };
+}
+
+async function closePublishedBatch(bulkId: string) {
+  togglePublishedBatch(bulkId);
+  await nextTick();
+  const toggle = document.getElementById(`batch-toggle-${bulkId}`);
+  toggle?.focus({ preventScroll: true });
+  toggle?.scrollIntoView({ block: "nearest", behavior: "smooth" });
 }
 
 function clearPublishedSearchAndFilters() {
@@ -2611,7 +2626,7 @@ function posterMenuItems(poster: Poster) {
         :year-options="yearOptions"
         :license-options="licenseOptions"
         :deleted-count="tombstonedPosterCount"
-        :poster-count="filteredPublishedPosters.length"
+        :result-summary="activeResultSummary"
         :searching="publishedSearchPending"
       />
     </template>
@@ -2762,12 +2777,25 @@ function posterMenuItems(poster: Poster) {
                   Could not load this batch's file names.
                 </p>
 
-                <p
-                  v-if="item.batch.posters.length < item.batch.total"
-                  class="text-muted text-xs"
-                >
-                  Showing {{ item.batch.posters.length.toLocaleString() }} of
-                  {{ item.batch.total.toLocaleString() }} posters in this batch
+                <p class="text-muted text-xs" aria-live="polite">
+                  Showing
+                  {{
+                    shownPublishedBatchPosters(
+                      item.bulk.id,
+                      item.batch.posters,
+                    ).length.toLocaleString()
+                  }}
+                  of {{ item.batch.posters.length.toLocaleString() }} poster{{
+                    item.batch.posters.length === 1 ? "" : "s"
+                  }}
+                  <template v-if="item.batch.posters.length < item.batch.total">
+                    matching your filters ({{
+                      item.batch.total.toLocaleString()
+                    }}
+                    in this batch)
+                  </template>
+
+                  <template v-else>in this batch</template>
                 </p>
 
                 <div
@@ -3014,19 +3042,32 @@ function posterMenuItems(poster: Poster) {
                   </div>
                 </div>
 
-                <UButton
-                  v-if="
-                    item.batch.posters.length >
-                    shownPublishedBatchPosters(item.bulk.id, item.batch.posters)
-                      .length
-                  "
-                  color="neutral"
-                  variant="ghost"
-                  size="xs"
-                  icon="i-lucide-chevron-down"
-                  :label="`Show ${(item.batch.posters.length - PUBLISHED_BATCH_ROWS_SHOWN).toLocaleString()} more`"
-                  @click="showAllPublishedBatchPosters(item.bulk.id)"
-                />
+                <div class="flex flex-wrap items-center gap-2">
+                  <UButton
+                    v-if="
+                      item.batch.posters.length >
+                      shownPublishedBatchPosters(
+                        item.bulk.id,
+                        item.batch.posters,
+                      ).length
+                    "
+                    color="neutral"
+                    variant="ghost"
+                    size="xs"
+                    icon="i-lucide-chevron-down"
+                    :label="`Show ${Math.min(PUBLISHED_BATCH_ROWS_SHOWN, item.batch.posters.length - shownPublishedBatchPosters(item.bulk.id, item.batch.posters).length)} more`"
+                    @click="showMorePublishedBatchPosters(item.bulk.id)"
+                  />
+
+                  <UButton
+                    label="Hide posters"
+                    icon="i-lucide-chevron-up"
+                    color="neutral"
+                    variant="ghost"
+                    size="xs"
+                    @click="closePublishedBatch(item.bulk.id)"
+                  />
+                </div>
               </div>
             </template>
 

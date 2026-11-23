@@ -27,12 +27,8 @@ const props = defineProps<{
   licenseOptions: FacetOption[];
   /** How many deleted posters the switch would show or hide. */
   deletedCount: number;
-  /**
-   * Posters listed, the same count as the sidebar's for the kind when no
-   * search or filter is on. Bulk upload cards aren't counted, as each one
-   * says how many posters it holds.
-   */
-  posterCount: number;
+  /** Names batch cards and their poster contents separately. */
+  resultSummary: string;
   searching?: boolean;
 }>();
 
@@ -111,9 +107,7 @@ const checkedYears = computed<string[]>({
 const resultLabel = computed(() => {
   if (props.searching) return "Searching...";
 
-  const posters = `${props.posterCount.toLocaleString()} poster${props.posterCount === 1 ? "" : "s"}`;
-
-  return search.value || filterCount.value > 0 ? `${posters} found` : posters;
+  return props.resultSummary;
 });
 
 // Active filters, shown as removable badges like on profile pages.
@@ -194,7 +188,7 @@ const activeBadges = computed(() => {
       @submit="submitSearch"
     >
       <div class="flex grow items-center justify-between gap-3">
-        <p class="text-muted text-sm whitespace-nowrap" aria-live="polite">
+        <p class="text-muted text-sm" aria-live="polite">
           {{ resultLabel }}
         </p>
 

@@ -145,7 +145,9 @@ const description = computed(() => {
 
 function actionLabel() {
   if (opensSummaryInPlace.value) {
-    return props.summaryExpanded ? "Hide batch summary" : "View batch summary";
+    return props.summaryExpanded
+      ? "Hide posters"
+      : `View posters (${props.bulk.posterCount ?? 0})`;
   }
   if (props.bulk.status === "completed") return "View batch summary";
   if (props.bulk.status === "failed") return "Resolve issue";
@@ -261,6 +263,7 @@ function continueImport() {
           <div class="flex items-center gap-2 max-md:flex-wrap" @click.stop>
             <UButton
               v-if="opensSummaryInPlace"
+              :id="`batch-toggle-${bulk.id}`"
               color="primary"
               variant="subtle"
               :label="actionLabel()"
