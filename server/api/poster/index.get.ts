@@ -9,6 +9,11 @@ import {
   splitBulkSubmissionsForDashboard,
 } from "~~/server/utils/bulkImportDashboard";
 import { tryCompleteBulkBatchIfReady } from "~~/server/utils/bulkImportZenodoBatchCompletion";
+import {
+  claimedPosterVersionsWhere,
+  posterLicenseBucket,
+  posterRepository,
+} from "~~/server/utils/dashboardPublished";
 
 import {
   posterCountsAsDashboardInProgress,
@@ -212,6 +217,9 @@ export default defineEventHandler(async (event) => {
       claimed: false,
       claimedAt: null as Date | null,
       bulkSubmission: bulkSubmissionByRootId.get(rootPosterId) ?? null,
+      // For the Published filters.
+      repository: posterRepository(poster),
+      licenseBucket: posterLicenseBucket(poster.posterMetadata?.license),
     };
   });
 
@@ -264,9 +272,8 @@ export default defineEventHandler(async (event) => {
 
   const bulkSubmissions = bulkSubmissionRows.map(mapBulkSubmissionRow);
 
-  const completedBulkSubmissions = completedBulkSubmissionRows.map(
-    mapBulkSubmissionRow,
-  );
+  const completedBulkSubmissions =
+    completedBulkSubmissionRows.map(mapBulkSubmissionRow);
 
   const bulkHiddenPosterIds = await posterIdsHiddenFromBulkDashboard(
     userId,
@@ -301,8 +308,7 @@ export default defineEventHandler(async (event) => {
       updatedAt: bulk.updatedAt,
     })),
   ].sort(
-    (a, b) =>
-      new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
   );
 
   return {
@@ -335,13 +341,7 @@ async function loadClaimedPosters(userId: string) {
 
   const versions = await prisma.poster.findMany({
     include: posterInclude,
-    where: {
-      status: "published",
-      isLatestVersion: true,
-      // Never list a poster the user already owns twice.
-      NOT: { userId },
-      OR: [{ id: { in: rootIds } }, { versionRootId: { in: rootIds } }],
-    },
+    where: claimedPosterVersionsWhere(userId, rootIds),
     orderBy: { versionSequence: "desc" },
   });
 
@@ -364,5 +364,7 @@ async function loadClaimedPosters(userId: string) {
     claimed: true,
     claimedAt: claimedAt.get(rootPosterId) ?? null,
     bulkSubmission: null as { id: string; name: string } | null,
+    repository: posterRepository(poster),
+    licenseBucket: posterLicenseBucket(poster.posterMetadata?.license),
   }));
 }
