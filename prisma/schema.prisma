@@ -445,6 +445,10 @@ model BulkSubmission {
 
   // setup | upload | conference | submit
   wizardStep String @default("upload")
+  // The release (deploy run number) the wizard last opened this batch on. A
+  // batch opened on a higher release starts again at the first step, so
+  // organizers see steps added since. Null for batches from before this was kept.
+  wizardRelease Int?
   // draft | processing | completed | failed
   status String @default("draft")
   stagedPosters Json @default("[]")

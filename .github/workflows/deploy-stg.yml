@@ -55,6 +55,9 @@ jobs:
       NUXT_UMAMI_WEBSITE_ID: ${{ secrets.NUXT_UMAMI_WEBSITE_ID }}
       # FEATURE FLAG (versioning): show the user poster versioning workflow on staging
       NUXT_PUBLIC_VERSIONING_ENABLED: "true"
+      # Bulk wizard release: goes up on every deploy, so batches opened
+      # after one start again at the first step.
+      NUXT_PUBLIC_WIZARD_RELEASE: ${{ github.run_number }}
       NUXT_FEATURES: ${{ secrets.NUXT_FEATURES }}
 
     steps:

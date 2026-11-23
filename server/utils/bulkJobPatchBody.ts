@@ -37,6 +37,8 @@ export const updateBulkJobBodySchema = z
   .strictObject({
     name: bulkImportNameSchema.optional(),
     wizardStep: z.enum(BULK_IMPORT_WIZARD_STEPS.map((step) => step.id)).optional(),
+    // The wizard was opened on this release (the server stamps its own id).
+    releaseSeen: z.literal(true).optional(),
     conference: batchConferenceSchema.optional(),
     uniformLicense: z
       .enum(BULK_IMPORT_ACCEPTABLE_LICENSES.map((license) => license.value))

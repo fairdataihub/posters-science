@@ -3,6 +3,7 @@ import { Prisma } from "#shared/generated/client";
 import type { BulkPosterSubmissionJob } from "#shared/types/bulkPosterSubmissionJob";
 import type { BulkImportStagedPoster } from "#shared/types/bulkPosterSubmissionJob";
 import prisma from "~~/server/utils/prisma";
+import { currentWizardRelease } from "~~/server/utils/bulkImportWizardRelease";
 import type {
   BulkPosterSubmissionJobRepository,
   CreateBulkPosterSubmissionJobInput,
@@ -14,6 +15,7 @@ type BulkSubmissionRow = {
   userId: string;
   name: string;
   wizardStep: string;
+  wizardRelease: number | null;
   status: string;
   stagedPosters: unknown;
   posterCount: number | null;
@@ -46,6 +48,7 @@ function toApiJob(record: BulkSubmissionRow): BulkPosterSubmissionJob {
     userId: record.userId,
     name: record.name,
     wizardStep: record.wizardStep as BulkPosterSubmissionJob["wizardStep"],
+    wizardRelease: record.wizardRelease,
     status: record.status as BulkPosterSubmissionJob["status"],
     stagedPosters: parseStagedPosters(record.stagedPosters),
     posterCount: record.posterCount,
@@ -68,6 +71,9 @@ function buildUpdateData(
   }
   if (patch.wizardStep !== undefined) {
     data.wizardStep = patch.wizardStep;
+  }
+  if (patch.wizardRelease !== undefined) {
+    data.wizardRelease = patch.wizardRelease;
   }
   if (patch.status !== undefined) {
     data.status = patch.status;
@@ -109,6 +115,8 @@ export const prismaBulkPosterSubmissionJobRepository: BulkPosterSubmissionJobRep
           userId: input.userId,
           name: input.name.trim(),
           wizardStep: "upload",
+          // A new batch starts on this release, so it isn't sent back.
+          wizardRelease: currentWizardRelease(),
           status: "draft",
           managedConferenceId: input.managedConferenceId ?? null,
           stagedPosters: [],

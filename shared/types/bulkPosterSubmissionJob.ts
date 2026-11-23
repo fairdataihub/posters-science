@@ -19,6 +19,11 @@ export type BulkPosterSubmissionJob = {
   userId: string;
   name: string;
   wizardStep: BulkImportWizardStep;
+  /**
+   * The release (deploy run number) the wizard last opened this batch on;
+   * null for batches from before this was kept. See bulkImportWizardRelease.
+   */
+  wizardRelease: number | null;
   status: BulkPosterSubmissionJobStatus;
   /** Posters uploaded to Bunny under this job (before extraction). */
   stagedPosters: BulkImportStagedPoster[];
@@ -39,6 +44,7 @@ export type CreateBulkPosterSubmissionJobBody = {
 export type UpdateBulkPosterSubmissionJobBody = {
   name?: string;
   wizardStep?: BulkImportWizardStep;
+  wizardRelease?: number | null;
   status?: BulkPosterSubmissionJobStatus;
   stagedPosters?: BulkImportStagedPoster[];
   posterCount?: number | null;
