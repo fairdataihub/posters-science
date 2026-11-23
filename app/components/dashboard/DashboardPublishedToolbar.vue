@@ -235,7 +235,7 @@ const activeBadges = computed(() => {
                     :aria-pressed="kind === option.value"
                     @click="kind = option.value"
                   >
-                    {{ option.label }} ({{ option.count.toLocaleString() }})
+                    {{ option.label }}
                   </UButton>
                 </div>
               </div>

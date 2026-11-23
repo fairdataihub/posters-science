@@ -321,19 +321,17 @@ const showSuggestedTab = computed(
     (orcidSuggestionCount.value > 0 ||
       activeDashboardTab.value === "suggested"),
 );
-// The views listed in the sidebar, each with how many items it holds.
+// Status navigation stays simple; totals are shown beside the results.
 const dashboardViews = computed((): DashboardViewOption[] => [
   {
     label: "In progress",
     icon: "i-lucide-pencil-line",
     value: "in-progress",
-    count: inProgressDashboardItems.value.length,
   },
   {
     label: "Published",
     icon: "i-lucide-circle-check",
     value: "published",
-    count: publishedPosters.value.length,
   },
   ...(showSuggestedTab.value
     ? [
@@ -341,7 +339,6 @@ const dashboardViews = computed((): DashboardViewOption[] => [
           label: "Suggested",
           icon: "i-simple-icons-orcid",
           value: "suggested" as const,
-          count: orcidSuggestionCount.value,
         },
       ]
     : []),
@@ -363,10 +360,10 @@ const publishedFilterTests: Record<
   versions: (poster) => publishedVersionHistory(poster).length > 0,
 };
 
-// Every kind is listed, even an empty one, which says how posters get there.
+// Only show specialized categories once the account has relevant content.
 const publishedFilterOptions = computed((): PublishedFilterOption[] => {
   const options: Omit<PublishedFilterOption, "count">[] = [
-    { value: "all", label: "All" },
+    { value: "all", label: "All published" },
     { value: "owned", label: "Shared by you", icon: "i-lucide-upload" },
     { value: "claimed", label: "Claimed", icon: "i-heroicons-hand-raised" },
     { value: "bulk", label: "Bulk uploads", icon: "i-lucide-library-big" },
@@ -382,11 +379,26 @@ const publishedFilterOptions = computed((): PublishedFilterOption[] => {
       : []),
   ];
 
-  return options.map((option) => ({
-    ...option,
-    count: publishedPosters.value.filter(publishedFilterTests[option.value])
-      .length,
-  }));
+  // Availability depends on the account's content, never the current search.
+  return options
+    .map((option) => ({
+      ...option,
+      count: posters.value.filter(
+        (poster) =>
+          poster.status === "published" &&
+          poster.isLatestPublished &&
+          publishedFilterTests[option.value](poster),
+      ).length,
+    }))
+    .filter(
+      (option) =>
+        option.value === "all" ||
+        option.count > 0 ||
+        (option.value === "bulk" &&
+          completedBulkSubmissions.value.length > 0) ||
+        (activeDashboardTab.value === "published" &&
+          option.value === publishedFilter.value),
+    );
 });
 
 const kindPublishedPosters = computed(() =>
@@ -2528,6 +2540,8 @@ function posterMenuItems(poster: Poster) {
       <DashboardSidebarNav
         v-model:view="activeDashboardTab"
         v-model:filter="publishedFilter"
+        v-model:progress-filter="inProgressFilter"
+        :progress-filters="inProgressFilterOptions"
         :collapsed="collapsed"
         :views="dashboardViews"
         :filters="publishedFilterOptions"
@@ -3597,13 +3611,21 @@ function posterMenuItems(poster: Poster) {
           </div>
 
           <h3 class="mb-2 text-lg font-medium text-gray-900 dark:text-gray-100">
-            No posters yet
+            {{
+              activeDashboardTab === "published"
+                ? "No published posters yet"
+                : "No posters in progress"
+            }}
           </h3>
 
           <p
             class="mb-6 text-gray-500 underline-offset-2 group-hover:underline dark:text-gray-400"
           >
-            Get started by sharing your first poster.
+            {{
+              activeDashboardTab === "published"
+                ? "Your published posters will appear here after your first submission."
+                : "Start sharing a poster or bulk upload. Your drafts will appear here."
+            }}
           </p>
         </NuxtLink>
       </div>

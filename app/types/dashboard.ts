@@ -17,7 +17,6 @@ export type DashboardViewOption = {
   value: DashboardView;
   label: string;
   icon: string;
-  count: number;
 };
 
 /** A Published filter as the sidebar lists it. */

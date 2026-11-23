@@ -16,6 +16,11 @@ const feedbackOpen = useState("feedbackOpen", () => false);
 
 const helpItems = computed<NavigationMenuItem[]>(() => [
   {
+    label: "Settings",
+    icon: "i-lucide-settings",
+    to: "/profile",
+  },
+  {
     label: "Contact Us",
     icon: "i-lucide-message-circle",
     onSelect: () => {
