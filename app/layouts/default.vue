@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import type { DropdownMenuItem, NavigationMenuItem } from "@nuxt/ui";
+import type { NavigationMenuItem } from "@nuxt/ui";
 
-const { clear, user } = useUserSession();
+const { user } = useUserSession();
+const { accountMenuItems: profileDropdownItems, logout } = useAccountMenu();
 const feedbackOpen = useState("feedbackOpen", () => false);
 const mobileMenuOpen = ref(false);
 const route = useRoute();
@@ -23,11 +24,6 @@ function openFeedback() {
   mobileMenuOpen.value = false;
   feedbackOpen.value = true;
 }
-
-const logout = async () => {
-  clear();
-  await navigateTo("/");
-};
 
 const headerItems = computed<NavigationMenuItem[]>(() => [
   {
@@ -66,65 +62,6 @@ const headerItems = computed<NavigationMenuItem[]>(() => [
   //     feedbackOpen.value = true;
   //   },
   // },
-]);
-
-const profileDropdownItems = computed((): DropdownMenuItem[][] => [
-  [
-    {
-      label: `${user?.value?.givenName} ${user?.value?.familyName}`,
-      avatar: {
-        src: `https://api.dicebear.com/9.x/shapes/svg?seed=${user?.value?.id}`,
-      },
-      type: "label",
-    },
-    {
-      icon: "material-symbols:dashboard",
-      label: "Dashboard",
-      to: "/dashboard",
-    },
-    {
-      // Your own profile page, public or private.
-      icon: "material-symbols:account-circle",
-      label: "Profile",
-      to: "/profile/me",
-    },
-    {
-      icon: "material-symbols:star",
-      label: "Liked posters",
-      to: "/liked",
-    },
-    {
-      icon: "material-symbols:corporate-fare",
-      label: "Organizations",
-      to: "/organizations",
-    },
-    {
-      icon: "material-symbols:collections-bookmark",
-      label: "Collections",
-      to: "/collections",
-    },
-    {
-      icon: "material-symbols:settings",
-      label: "Settings",
-      to: "/profile",
-    },
-    ...(user?.value?.role === "admin"
-      ? [
-          {
-            icon: "material-symbols:admin-panel-settings",
-            label: "Admin",
-            to: "/admin",
-          },
-        ]
-      : []),
-  ],
-  [
-    {
-      icon: "majesticons:logout",
-      label: "Logout",
-      onSelect: logout,
-    },
-  ],
 ]);
 
 const mobileProfileNavItems = computed<NavigationMenuItem[]>(() => [
@@ -179,10 +116,15 @@ const footerItems: NavigationMenuItem[] = [
 
 <template>
   <!-- fitViewport pages end at the footer with no scroll: main fills only
-       the space the header and footer leave. -->
+       the space the header and footer leave. appShell pages, such as the
+       dashboard, fill the window under the header and scroll inside their
+       own panels, so they have no footer or floating feedback button. -->
   <div
     class="relative"
-    :class="{ 'flex min-h-svh flex-col': route.meta.fitViewport }"
+    :class="{
+      'flex min-h-svh flex-col': route.meta.fitViewport,
+      'flex h-svh flex-col overflow-hidden': route.meta.appShell,
+    }"
   >
     <!-- <UiAuroraBackground class="absolute inset-0 -z-10 h-full" /> -->
 
@@ -219,6 +161,8 @@ const footerItems: NavigationMenuItem[] = [
     <UHeader
       v-model:open="mobileMenuOpen"
       :ui="{
+        // Full width over an appShell page, to line up with its sidebar.
+        container: route.meta.appShell ? 'max-w-none' : undefined,
         left: 'lg:flex-none',
         center: 'flex-1 justify-center',
         right: 'lg:flex-none',
@@ -359,11 +303,16 @@ const footerItems: NavigationMenuItem[] = [
       </template>
     </UHeader>
 
-    <UMain :class="{ 'min-h-0 flex-1': route.meta.fitViewport }">
+    <UMain
+      :class="{
+        'min-h-0 flex-1': route.meta.fitViewport,
+        'relative min-h-0 flex-1': route.meta.appShell,
+      }"
+    >
       <slot />
     </UMain>
 
-    <UFooter>
+    <UFooter v-if="!route.meta.appShell">
       <template #left>
         <div
           class="text-muted flex flex-wrap items-center gap-x-4 gap-y-1 text-sm"
@@ -400,7 +349,7 @@ const footerItems: NavigationMenuItem[] = [
       </template>
     </UFooter>
 
-    <div class="fixed right-6 bottom-6 z-30">
+    <div v-if="!route.meta.appShell" class="fixed right-6 bottom-6 z-30">
       <UButton
         color="info"
         variant="solid"
@@ -415,23 +364,6 @@ const footerItems: NavigationMenuItem[] = [
       </UButton>
     </div>
 
-    <UModal
-      v-model:open="feedbackOpen"
-      title="Share Your Feedback"
-      description="Tell us how the experience was using our platform!"
-      class="max-w-2xl"
-      :ui="{ title: 'text-xl font-semibold' }"
-    >
-      <template #body>
-        <iframe
-          src="https://tally.so/embed/XxEBYP?alignLeft=1&hideTitle=1"
-          width="100%"
-          height="500"
-          frameborder="0"
-          title="Feedback form"
-          class="dark:[filter:invert(1)_contrast(0.9)_brightness(1.2)]"
-        />
-      </template>
-    </UModal>
+    <FeedbackModal />
   </div>
 </template>
