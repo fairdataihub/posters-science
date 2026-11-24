@@ -60,6 +60,9 @@ model User {
   ZenodoToken       ZenodoToken?
   ZenodoDepositions ZenodoDeposition[]
 
+  figshareToken       FigshareToken?
+  figshareDepositions FigshareDeposition[]
+
   linkedAccounts LinkedAccount[]
   posterClaims   PosterClaim[]
 
@@ -78,7 +81,7 @@ model User {
 
   adminAuditLogs AdminAuditLog[] @relation("AdminActions")
 
-  bulkSubmissions BulkSubmission[]
+  bulkSubmissions        BulkSubmission[]
   maintenanceFlagUpdates MaintenanceFlag[] @relation("MaintenanceFlagUpdates")
 
   @@index([emailAddress])
@@ -150,8 +153,9 @@ model Poster {
   created DateTime @default(now())
   updated DateTime @updatedAt
 
-  posterMetadata    PosterMetadata?
-  zenodoDepositions ZenodoDeposition?
+  posterMetadata     PosterMetadata?
+  zenodoDepositions  ZenodoDeposition?
+  figshareDeposition FigshareDeposition?
 
   extractionJob ExtractionJob?
 
@@ -506,7 +510,9 @@ model ZenodoDeposition {
   depositionId           Int     @unique // Last published Zenodo deposition ID
   status                 String  @default("unpublished") // draft, published, unpublished
   lastPublishedZenodoDoi String? // Last published Zenodo DOI
-  /** ISO date (YYYY-MM-DD, UTC) when Zenodo file download embargo ends; null if files are public. */
+  /**
+   * ISO date (YYYY-MM-DD, UTC) when Zenodo file download embargo ends; null if files are public.
+   */
   filesEmbargoUntil      String?
 
   user   User   @relation(fields: [userId], references: [id])
@@ -517,6 +523,57 @@ model ZenodoDeposition {
 
   created DateTime @default(now())
   updated DateTime @updatedAt
+}
+
+model FigshareToken {
+  id String @id @default(cuid(2))
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String @unique
+
+  // oauth: issued by the Figshare OAuth flow, expires and comes with a refresh
+  // token. personal: a personal token the user pasted in, which has no
+  // refresh token and is deleted an hour after it is connected
+  // (server/plugins/figsharePersonalTokenPurge.ts).
+  tokenType String @default("oauth") // oauth | personal
+
+  // Both tokens are encrypted at rest (server/utils/figshareTokenCrypto.ts).
+  accessToken  String
+  refreshToken String?
+  expiresAt    DateTime?
+
+  created DateTime @default(now())
+  updated DateTime @updatedAt
+}
+
+model FigshareDeposition {
+  id String @id @default(cuid(2))
+
+  // The Figshare item. Every version of a poster family is the same item on
+  // Figshare, so later versions of a poster share this id and it is not unique.
+  articleId Int
+
+  // draft-new: item created for this poster and not published yet, removed
+  //   on a failed first attempt.
+  // draft: an existing item being updated for a new version.
+  // published: published and public.
+  // review: published, held for an institution's curation review.
+  status String @default("draft-new")
+
+  lastPublishedDoi String? // Versioned DOI of the last publish, e.g. ...v2
+  figshareVersion  Int? // Figshare's own version number, apart from PosterMetadata.version
+  publicUrl        String?
+
+  user   User   @relation(fields: [userId], references: [id])
+  userId String
+
+  poster   Poster @relation(fields: [posterId], references: [id], onDelete: Cascade)
+  posterId Int    @unique
+
+  created DateTime @default(now())
+  updated DateTime @updatedAt
+
+  @@index([articleId])
 }
 
 model AdminAuditLog {
@@ -558,10 +615,10 @@ model BulkSubmission {
   name String
 
   // setup | upload | conference | submit
-  wizardStep String @default("upload")
+  wizardStep    String @default("upload")
   // draft | processing | completed | failed
-  status String @default("draft")
-  stagedPosters Json @default("[]")
+  status        String @default("draft")
+  stagedPosters Json   @default("[]")
 
   licenseMetadataFileName String?
   licenseMetadataFilePath String?
