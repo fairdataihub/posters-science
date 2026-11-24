@@ -10,6 +10,12 @@ export type DashboardBulkSubmission = {
   createdAt: string;
   updatedAt: string;
   completedAt?: string | null;
+  /** Set while the batch, or some of its posters, are on a worksheet hold. */
+  hold?: {
+    kind: "unsupported_platform" | "worksheet_error" | "posters";
+    platform: string | null;
+    posterCount: number;
+  } | null;
 };
 
 export type DashboardInProgressFeedEntry =

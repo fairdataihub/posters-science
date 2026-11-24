@@ -23,6 +23,7 @@ export default defineEventHandler(async (event) => {
       worksheetHoldReason: true,
       worksheetHoldPlatform: true,
       worksheetHoldProblems: true,
+      worksheetHoldEmail: true,
       postersHeldAt: true,
       heldPosters: true,
       user: {
@@ -49,6 +50,10 @@ export default defineEventHandler(async (event) => {
         problems: hold.worksheetHeldAt ? hold.worksheetHoldProblems : [],
         files: hold.worksheetHoldFiles,
         posters: hold.postersHeldAt ? parseHeldPosters(hold.heldPosters) : [],
+        // The address they confirmed when sending, else the account's.
+        contactEmail:
+          (hold.worksheetHeldAt && hold.worksheetHoldEmail) ||
+          hold.user.emailAddress,
         user: hold.user,
       }))
       .sort((a, b) => a.heldAt.localeCompare(b.heldAt)),

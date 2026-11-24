@@ -486,6 +486,8 @@ model BulkSubmission {
   worksheetHoldReason   String?
   worksheetHoldPlatform String?
   worksheetHoldProblems String[]  @default([])
+  // The email the organizer confirmed we should use about the worksheets.
+  worksheetHoldEmail    String?
 
   // Partial hold: posters no worksheet row linked to (or whose pairing the
   // organizer unlinked), sent to the team from Review. They can't be

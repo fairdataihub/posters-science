@@ -18,6 +18,7 @@ import {
   readPendingPosterSheet,
   writePendingPosterSheet,
 } from "~/utils/posterSheetPending";
+import WorksheetContactEmail from "~/components/conferences/WorksheetContactEmail.vue";
 
 /**
  * Optional second drop zone on the posters step: the organizer's poster
@@ -238,6 +239,16 @@ onBeforeUnmount(() => {
   if (holdTimer) clearInterval(holdTimer);
 });
 
+/** The email we'll use about sent worksheets, confirmed before sending. */
+const { user: sessionUser } = useUserSession();
+const contactEmail = ref(sessionUser.value?.emailAddress ?? "");
+const contactConfirmed = ref(false);
+const contactReady = computed(
+  () =>
+    contactConfirmed.value &&
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail.value.trim()),
+);
+
 /** Other platform card. Sends the files the same way as Send it to us. */
 const otherPlatformName = ref("");
 const otherFiles = ref<File[]>([]);
@@ -262,7 +273,7 @@ function sendOtherPlatform() {
   if (tooManyOtherFiles.value) return;
 
   return sendWorksheets({
-    platform: otherPlatformName.value.trim() || "Other platform (not named)",
+    platform: otherPlatformName.value.trim(),
     files: otherFiles.value,
     problems: [],
     source: "other_platform",
@@ -276,7 +287,13 @@ async function sendWorksheets(request: {
   /** Set by the Other platform card. */
   source?: "other_platform";
 }) {
-  if (!props.bulkJobId || !request.files.length || sendingToTeam.value) return;
+  if (
+    !props.bulkJobId ||
+    !request.files.length ||
+    !contactReady.value ||
+    sendingToTeam.value
+  )
+    return;
   sendingToTeam.value = true;
   sendError.value = null;
   try {
@@ -284,6 +301,7 @@ async function sendWorksheets(request: {
     form.append("platform", request.platform);
     form.append("problems", JSON.stringify(request.problems));
     if (request.source) form.append("source", request.source);
+    form.append("contact_email", contactEmail.value.trim());
     for (const file of request.files) form.append("worksheet", file, file.name);
     const sent = await $fetch<{ heldAt: string }>(
       `/api/bulk-poster-submissions/${props.bulkJobId}/platform-request`,
@@ -299,7 +317,7 @@ async function sendWorksheets(request: {
       request.source === "other_platform"
         ? "unsupported_platform"
         : "worksheet_error";
-    heldPlatform.value = request.platform;
+    heldPlatform.value = request.platform || null;
   } catch (error) {
     // Our own messages (400, 502) say what to do; anything else is generic.
     const data = (
@@ -853,13 +871,6 @@ watch(
           support your platform and email you by {{ heldUntil }}, either way.
           This batch stays on this step until then.
         </p>
-
-        <p class="text-muted">
-          If we can support it, add your worksheet here under the option in our
-          email. If not, you can continue without a worksheet, and we'll read
-          the details from your posters. You can still add or remove poster
-          files meanwhile.
-        </p>
       </template>
 
       <template v-else>
@@ -1034,13 +1045,18 @@ watch(
             </UiFileUpload>
           </UFormField>
 
+          <WorksheetContactEmail
+            v-model:email="contactEmail"
+            v-model:confirmed="contactConfirmed"
+          />
+
           <UButton
             type="submit"
             label="Send it to us"
             icon="i-lucide-send"
             color="primary"
             :loading="sendingToTeam"
-            :disabled="!otherFiles.length || tooManyOtherFiles"
+            :disabled="!otherFiles.length || tooManyOtherFiles || !contactReady"
           />
         </form>
 
@@ -1324,6 +1340,13 @@ watch(
           until then.
         </p>
 
+        <WorksheetContactEmail
+          v-if="rejectedFiles.length"
+          v-model:email="contactEmail"
+          v-model:confirmed="contactConfirmed"
+          class="mt-3"
+        />
+
         <p v-if="sendError" class="text-error mt-2 text-sm" role="alert">
           {{ sendError }}
         </p>
@@ -1345,6 +1368,7 @@ watch(
             icon="i-lucide-send"
             label="Send it to us"
             :loading="sendingToTeam"
+            :disabled="!contactReady"
             @click="sendToTeam"
           />
 

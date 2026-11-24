@@ -190,6 +190,7 @@ export default defineEventHandler(
           : "worksheet_error",
         worksheetHoldPlatform: platform || null,
         worksheetHoldProblems: problems,
+        worksheetHoldEmail: contactEmail || user.emailAddress,
       },
     });
 

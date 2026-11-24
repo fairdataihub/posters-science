@@ -8,6 +8,7 @@ import {
   splitBulkSubmissionsForDashboard,
 } from "~~/server/utils/bulkImportDashboard";
 import { tryCompleteBulkBatchIfReady } from "~~/server/utils/bulkImportZenodoBatchCompletion";
+import { dashboardHold } from "~~/server/utils/bulkWorksheetHold";
 
 import {
   posterCountsAsDashboardInProgress,
@@ -57,6 +58,11 @@ const bulkDashboardSelect = {
   created: true,
   updated: true,
   completedAt: true,
+  worksheetHeldAt: true,
+  worksheetHoldReason: true,
+  worksheetHoldPlatform: true,
+  postersHeldAt: true,
+  heldPosters: true,
 } as const;
 
 async function loadBulkDashboardRows(userId: string) {
@@ -232,6 +238,7 @@ export default defineEventHandler(async (event) => {
     createdAt: bulk.created.toISOString(),
     updatedAt: bulk.updated.toISOString(),
     completedAt: bulk.completedAt?.toISOString() ?? null,
+    hold: dashboardHold(bulk),
   });
 
   const bulkSubmissions = bulkSubmissionRows.map(mapBulkSubmissionRow);

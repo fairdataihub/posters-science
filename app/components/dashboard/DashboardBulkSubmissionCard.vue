@@ -62,6 +62,13 @@ function statusPresentation() {
       icon: "i-lucide-circle-alert",
     };
   }
+  if (props.bulk.hold) {
+    return {
+      label: "On hold",
+      color: "warning" as const,
+      icon: "i-lucide-lock",
+    };
+  }
   if (props.bulk.status === "processing" && props.bulk.hasActiveExtraction) {
     return {
       label: "Extracting metadata",
@@ -78,6 +85,20 @@ function statusPresentation() {
 }
 
 const status = computed(() => statusPresentation());
+
+/** What the hold is waiting on, shown under the poster count. */
+const holdNote = computed(() => {
+  const hold = props.bulk.hold;
+  if (!hold) return null;
+  if (hold.kind === "unsupported_platform") {
+    return `We're looking into supporting ${hold.platform || "your platform"}`;
+  }
+  if (hold.kind === "worksheet_error") return "We're fixing your worksheet";
+
+  return hold.posterCount === 1
+    ? "1 poster is with us; you can publish the rest"
+    : `${hold.posterCount} posters are with us; you can publish the rest`;
+});
 
 const description = computed(() => {
   const count = props.bulk.posterCount ?? 0;
@@ -161,6 +182,15 @@ function continueImport() {
           <div class="flex flex-col gap-1">
             <p class="text-muted line-clamp-2 text-sm">
               {{ description }}
+            </p>
+
+            <p
+              v-if="holdNote"
+              class="flex min-w-0 items-center gap-1.5 text-sm text-amber-700 dark:text-amber-300"
+            >
+              <UIcon name="i-lucide-lock" class="size-3.5 shrink-0" />
+
+              <span class="truncate" :title="holdNote">{{ holdNote }}</span>
             </p>
           </div>
         </div>

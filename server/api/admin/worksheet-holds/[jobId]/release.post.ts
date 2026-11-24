@@ -42,6 +42,7 @@ export default defineEventHandler(async (event) => {
       worksheetHoldReason: null,
       worksheetHoldPlatform: null,
       worksheetHoldProblems: [],
+      worksheetHoldEmail: null,
       postersHeldAt: null,
       heldPosters: [],
     },

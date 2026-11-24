@@ -36,6 +36,7 @@ export default defineEventHandler(async (event) => {
       worksheetHoldPlatform: true,
       worksheetHoldProblems: true,
       worksheetHoldFiles: true,
+      worksheetHoldEmail: true,
       postersHeldAt: true,
       heldPosters: true,
       user: {
@@ -117,6 +118,11 @@ export default defineEventHandler(async (event) => {
   const info = [
     `Batch: ${job.name} (${job.id})`,
     `Organizer: ${name || "Unknown"} <${job.user.emailAddress}>`,
+    job.worksheetHeldAt &&
+    job.worksheetHoldEmail &&
+    job.worksheetHoldEmail !== job.user.emailAddress
+      ? `Reach them at: ${job.worksheetHoldEmail}`
+      : null,
     job.worksheetHeldAt
       ? `Whole batch held since ${job.worksheetHeldAt.toISOString()}: ${
           holdReason(job.worksheetHoldReason) === "unsupported_platform"

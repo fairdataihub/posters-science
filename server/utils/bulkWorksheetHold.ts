@@ -63,3 +63,29 @@ export async function assertPosterNotHeld(userId: string, posterId: number) {
     });
   }
 }
+
+/** The hold shown on a batch's dashboard card, or null when it isn't held. */
+export function dashboardHold(bulk: {
+  worksheetHeldAt: Date | null;
+  worksheetHoldReason: string | null;
+  worksheetHoldPlatform: string | null;
+  postersHeldAt: Date | null;
+  heldPosters: unknown;
+}) {
+  if (bulk.worksheetHeldAt) {
+    return {
+      kind: holdReason(bulk.worksheetHoldReason),
+      platform: bulk.worksheetHoldPlatform,
+      posterCount: 0,
+    };
+  }
+  if (bulk.postersHeldAt) {
+    return {
+      kind: "posters" as const,
+      platform: null,
+      posterCount: parseHeldPosters(bulk.heldPosters).length,
+    };
+  }
+
+  return null;
+}

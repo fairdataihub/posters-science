@@ -23,6 +23,8 @@ type WorksheetHold = {
   problems: string[];
   files: string[];
   posters: HeldPoster[];
+  /** The email they confirmed when sending worksheets, else the account's. */
+  contactEmail: string;
   user: { givenName: string; familyName: string; emailAddress: string };
 };
 
@@ -75,8 +77,7 @@ const columns: ColumnDef<WorksheetHold>[] = [
   { id: "organizer", header: "Organizer" },
   { id: "held", header: "Held" },
   { id: "kind", header: "Why" },
-  { id: "files", header: "Files" },
-  { id: "actions", header: "", enableSorting: false },
+  { id: "actions", header: "Actions", enableSorting: false },
 ];
 
 /** Day N of the 7, starting at day 1 on the day it was sent. */
@@ -115,8 +116,8 @@ async function confirmRelease() {
       title: "Hold released",
       description:
         hold.kind === "unsupported_platform"
-          ? `${hold.name} can continue. Email ${hold.user.emailAddress} whether their platform is supported now.`
-          : `${hold.name} can continue. Email ${hold.user.emailAddress} what's ready.`,
+          ? `${hold.name} can continue. Email ${hold.contactEmail} whether their platform is supported now.`
+          : `${hold.name} can continue. Email ${hold.contactEmail} what's ready.`,
       color: "success",
       icon: "i-heroicons-check-circle",
     });
@@ -164,7 +165,7 @@ async function confirmRelease() {
           :columns="columns"
           :ui="{
             th: 'text-center',
-            td: 'whitespace-normal text-center align-top',
+            td: 'whitespace-normal text-center align-middle',
           }"
         >
           <template #empty>
@@ -207,6 +208,16 @@ async function confirmRelease() {
             >
               {{ row.original.user.emailAddress }}
             </span>
+
+            <span
+              v-if="
+                row.original.contactEmail !== row.original.user.emailAddress
+              "
+              class="mx-auto block max-w-56 truncate text-xs"
+              :title="`Reach at ${row.original.contactEmail}`"
+            >
+              Reach at {{ row.original.contactEmail }}
+            </span>
           </template>
 
           <template #held-cell="{ row }">
@@ -233,11 +244,12 @@ async function confirmRelease() {
               variant="subtle"
               size="sm"
               :label="KINDS[row.original.kind].label"
+              :title="KINDS[row.original.kind].todo"
             />
 
             <span
               v-if="row.original.platform"
-              class="mx-auto mt-1 line-clamp-2 block max-w-56 text-xs font-medium [overflow-wrap:anywhere]"
+              class="text-muted mx-auto mt-1 line-clamp-2 block max-w-48 text-xs [overflow-wrap:anywhere]"
               :title="row.original.platform"
             >
               {{
@@ -246,37 +258,31 @@ async function confirmRelease() {
                   : `Chosen as ${row.original.platform}`
               }}
             </span>
-
-            <span class="text-muted mx-auto mt-0.5 block max-w-56 text-xs">
-              {{ KINDS[row.original.kind].todo }}
-            </span>
-          </template>
-
-          <template #files-cell="{ row }">
-            <UButton
-              v-if="row.original.files.length || row.original.posters.length"
-              size="xs"
-              color="neutral"
-              variant="outline"
-              icon="i-lucide-download"
-              label="Download files"
-              :href="`/api/admin/worksheet-holds/${row.original.jobId}/download`"
-              external
-              download
-            />
-
-            <span v-else class="text-muted text-xs">No files saved</span>
           </template>
 
           <template #actions-cell="{ row }">
-            <UButton
-              size="xs"
-              color="primary"
-              variant="subtle"
-              icon="i-lucide-unlock"
-              label="Release"
-              @click="releaseTarget = row.original"
-            />
+            <div class="flex flex-wrap items-center justify-center gap-2">
+              <UButton
+                v-if="row.original.files.length || row.original.posters.length"
+                size="xs"
+                color="neutral"
+                variant="outline"
+                icon="i-lucide-download"
+                label="Download files"
+                :href="`/api/admin/worksheet-holds/${row.original.jobId}/download`"
+                external
+                download
+              />
+
+              <UButton
+                size="xs"
+                color="primary"
+                variant="subtle"
+                icon="i-lucide-unlock"
+                label="Release hold"
+                @click="releaseTarget = row.original"
+              />
+            </div>
           </template>
         </UTable>
       </div>
@@ -298,7 +304,7 @@ async function confirmRelease() {
         <p class="text-sm">
           Email
           <span class="font-medium [overflow-wrap:anywhere]">{{
-            releaseTarget?.user.emailAddress
+            releaseTarget?.contactEmail
           }}</span>
 
           <template v-if="releaseTarget?.kind === 'unsupported_platform'">
@@ -327,7 +333,7 @@ async function confirmRelease() {
 
           <UButton
             color="primary"
-            label="Release"
+            label="Release hold"
             :loading="releasing"
             @click="confirmRelease"
           />
