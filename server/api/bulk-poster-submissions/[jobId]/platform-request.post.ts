@@ -8,25 +8,13 @@ import {
 } from "~~/server/utils/bulkImportBunnyPaths";
 import prisma from "~~/server/utils/prisma";
 import { requirePosterSheetJob } from "~~/server/utils/bulkPosterSheetPending";
-
-/** Slack mrkdwn treats &, < and > as control characters. */
-function slackText(value: string) {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
-}
+import { slackText } from "~~/server/utils/slackText";
 
 /**
- * "Send it to us" from the worksheet rejection dialog: the organizer's
- * refused worksheet goes to the team, who set it up by hand within 7 days
- * (the hold). The files go to the batch's conference-worksheets folder on
- * Bunny, and Slack gets a hold notice with the chosen format, why the sheet
- * was refused (problems, a JSON list of lines) and the files' Bunny paths.
- * The batch is held (worksheetHeldAt): it can't leave the first step until
- * an admin releases it (POST /api/admin/worksheet-holds/:jobId/release).
- * Without Bunny or NUXT_SLACK_WEBHOOK_URL (local development) the files are
- * not saved or the notice not posted, with a warning; the hold is still set.
+ * Worksheets sent to us, either from the Other platform card
+ * (source=other_platform) or with Send it to us after a worksheet is refused.
+ * The files go to Bunny and the batch stays on the first step until an admin
+ * releases the hold.
  */
 export default defineEventHandler(
   async (event): Promise<{ heldAt: string }> => {
@@ -92,7 +80,6 @@ export default defineEventHandler(
     }
 
     const config = useRuntimeConfig(event);
-    const webhook = config.slackWebhookUrl;
     const { bunnyPrivateStorage, bunnyPrivateStorageKey } = config;
 
     const saved: string[] = [];
@@ -170,33 +157,39 @@ export default defineEventHandler(
       .filter(Boolean)
       .join("\n");
 
-    if (webhook) {
-      const response = await fetch(webhook, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
-        signal: AbortSignal.timeout(10_000),
-      }).catch(() => null);
+    const fromOtherPlatform = field("source") === "other_platform";
 
-      if (!response?.ok) {
-        throw createError({
-          statusCode: 502,
-          statusMessage: "Could not send your worksheet. Try again later.",
-        });
-      }
-    } else {
-      console.warn(
-        "[poster-sheet] NUXT_SLACK_WEBHOOK_URL is not set; the hold notice was not posted",
-      );
-    }
+    // Slack is off for now, so the notice is only logged. Other platform
+    // requests weren't going to be posted either way.
+    // const webhook = config.slackWebhookUrl;
+    // if (webhook && !fromOtherPlatform) {
+    //   const response = await fetch(webhook, {
+    //     method: "POST",
+    //     headers: { "Content-Type": "application/json" },
+    //     body: JSON.stringify({ text }),
+    //     signal: AbortSignal.timeout(10_000),
+    //   }).catch(() => null);
+    //   if (!response?.ok) {
+    //     throw createError({
+    //       statusCode: 502,
+    //       statusMessage: "Could not send your worksheet. Try again later.",
+    //     });
+    //   }
+    // }
+    console.info(`[poster-sheet] Slack notice not sent:\n${text}`);
 
     const heldAt = new Date();
     await prisma.bulkSubmission.update({
       where: { id: job.id },
       data: {
-        posterPlatformDetailsSubmittedToSlack: !!webhook,
+        posterPlatformDetailsSubmittedToSlack: false,
         worksheetHeldAt: heldAt,
         worksheetHoldFiles: saved,
+        worksheetHoldReason: fromOtherPlatform
+          ? "unsupported_platform"
+          : "worksheet_error",
+        worksheetHoldPlatform: platform || null,
+        worksheetHoldProblems: problems,
       },
     });
 

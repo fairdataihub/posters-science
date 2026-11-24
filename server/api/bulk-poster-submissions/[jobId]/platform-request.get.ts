@@ -1,20 +1,40 @@
+import type { WorksheetHoldStatus } from "#shared/types/bulkWorksheetHold";
 import prisma from "~~/server/utils/prisma";
 import { requirePosterSheetJob } from "~~/server/utils/bulkPosterSheetPending";
+import {
+  holdReason,
+  parseHeldPosters,
+} from "~~/server/utils/bulkWorksheetHold";
 
-/**
- * Whether this batch's worksheet is with the team (the worksheet hold), and
- * since when. A held batch stays on the first step until an admin releases it.
- */
+/** The batch's worksheet holds, if any. */
 export default defineEventHandler(
-  async (event): Promise<{ heldAt: string | null }> => {
+  async (event): Promise<WorksheetHoldStatus> => {
     const job = await requirePosterSheetJob(event);
     setResponseHeader(event, "Cache-Control", "no-store");
 
     const record = await prisma.bulkSubmission.findUnique({
       where: { id: job.id },
-      select: { worksheetHeldAt: true },
+      select: {
+        worksheetHeldAt: true,
+        worksheetHoldReason: true,
+        worksheetHoldPlatform: true,
+        postersHeldAt: true,
+        heldPosters: true,
+      },
     });
 
-    return { heldAt: record?.worksheetHeldAt?.toISOString() ?? null };
+    return {
+      heldAt: record?.worksheetHeldAt?.toISOString() ?? null,
+      heldReason: record?.worksheetHeldAt
+        ? holdReason(record.worksheetHoldReason)
+        : null,
+      heldPlatform: record?.worksheetHeldAt
+        ? (record.worksheetHoldPlatform ?? null)
+        : null,
+      postersHeldAt: record?.postersHeldAt?.toISOString() ?? null,
+      heldPosters: record?.postersHeldAt
+        ? parseHeldPosters(record.heldPosters)
+        : [],
+    };
   },
 );

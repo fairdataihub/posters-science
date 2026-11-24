@@ -145,6 +145,46 @@ export function clearPendingPosterSheet(jobId: string): Promise<unknown> {
   return enqueue(jobId, () => $fetch(endpoint(jobId), { method: "DELETE" }));
 }
 
+/** Posters without a row the organizer hasn't dealt with yet. */
+function undecidedUnmatched(pending: PendingPosterSheet): string[] {
+  const decided = new Set(
+    (pending.unmatchedDecided ?? []).map((name) => name.toLowerCase()),
+  );
+
+  return (pending.unmatchedFiles ?? []).filter(
+    (name) => !decided.has(name.toLowerCase()),
+  );
+}
+
+/** Saves the posters without a row, and the ones dealt with, if changed. */
+export function updateUnmatchedPosters(
+  jobId: string | null,
+  change: { unmatchedFiles?: string[]; decided?: string[] },
+) {
+  const pending = readPendingPosterSheet(jobId);
+  if (!jobId || !pending) return;
+  const unmatchedFiles = change.unmatchedFiles ?? pending.unmatchedFiles ?? [];
+  const unmatchedDecided = [
+    ...new Set([
+      ...(pending.unmatchedDecided ?? []),
+      ...(change.decided ?? []),
+    ]),
+  ];
+  const same = (a: string[] = [], b: string[] = []) =>
+    a.length === b.length && a.every((value, i) => value === b[i]);
+  if (
+    same(unmatchedFiles, pending.unmatchedFiles) &&
+    same(unmatchedDecided, pending.unmatchedDecided)
+  ) {
+    return;
+  }
+  void writePendingPosterSheet(jobId, {
+    ...pending,
+    unmatchedFiles,
+    unmatchedDecided,
+  });
+}
+
 /**
  * Drop rows for posters whose sheet values were saved; keep the rest pending.
  * Flagged pairings stay until each is accepted or unlinked; the sheet is
@@ -170,7 +210,8 @@ export function forgetSavedPosterSheetRows(
   if (
     Object.keys(sheets).length === 0 &&
     !waiting &&
-    flaggedRowsToReview(next).length === 0
+    flaggedRowsToReview(next).length === 0 &&
+    undecidedUnmatched(next).length === 0
   ) {
     void clearPendingPosterSheet(jobId);
   } else {

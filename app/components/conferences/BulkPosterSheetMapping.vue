@@ -3,6 +3,15 @@ import type {
   PosterSheetIssue,
   PosterSheetMappingResult,
 } from "#shared/types/posterSheetMapping";
+import type {
+  WorksheetHoldReason,
+  WorksheetHoldStatus,
+} from "#shared/types/bulkWorksheetHold";
+import {
+  CONFERENCE_WORKSHEET_ACCEPT,
+  MAX_CONFERENCE_WORKSHEET_FILES,
+  conferenceWorksheetRejection,
+} from "#shared/utils/conferenceWorksheets";
 import {
   clearPendingPosterSheet,
   loadPendingPosterSheet,
@@ -77,10 +86,10 @@ const PLATFORM_OPTIONS: { label: string; value: SheetPlatform }[] = [
   { label: "Curious", value: "curious" },
 ];
 /**
- * Asked first as cards: which platform the sheet is from, or none. The drop
- * zone shows once a platform is picked.
+ * The cards: a supported platform, another platform, or no worksheet. The
+ * drop zone shows once a supported platform is picked.
  */
-type SheetChoice = SheetPlatform | "skip";
+type SheetChoice = SheetPlatform | "other" | "skip";
 const choice = ref<SheetChoice | undefined>(undefined);
 const CHOICE_CARDS: {
   label: string;
@@ -100,6 +109,12 @@ const CHOICE_CARDS: {
     logo: "/assets/images/curious_conference_logo.svg",
     description: "Poster information worksheet (.xlsx)",
     value: "curious",
+  },
+  {
+    label: "Other platform",
+    description:
+      "Send us worksheets from a platform we don't support yet, so we can look into it",
+    value: "other",
   },
   {
     label: "Skip this step",
@@ -129,6 +144,10 @@ function sheetCheck(): string | null {
 const CHOICE_CHECKS: Record<SheetChoice, () => string | null> = {
   easychair: sheetCheck,
   curious: sheetCheck,
+  other: () =>
+    otherFiles.value.length
+      ? "Choose Send it to us to send your worksheets, or choose Skip this step."
+      : "Add your worksheets and send them to us, or choose Skip this step.",
   skip: () => null,
 };
 /** Why Save and continue was refused, shown under the cards. */
@@ -139,7 +158,9 @@ function validate(): string | null {
   // Held: the team has the worksheet, and the batch waits here for it.
   if (heldAt.value) {
     stepProblem.value =
-      "We're setting up your worksheet. You can continue once we've emailed you that it's ready.";
+      heldReason.value === "unsupported_platform"
+        ? "We're looking into supporting your platform. You can continue once we've emailed you."
+        : "We're fixing your worksheet. You can continue once we've emailed you that it's ready.";
 
     return stepProblem.value;
   }
@@ -169,17 +190,26 @@ const sendingToTeam = ref(false);
 const sendError = ref<string | null>(null);
 /** When the worksheet was sent to the team, while the batch is held. */
 const heldAt = ref<string | null>(null);
+const heldReason = ref<WorksheetHoldReason | null>(null);
+const heldPlatform = ref<string | null>(null);
 /** The hold was released while this page was open. */
 const holdReleased = ref(false);
+/** Why the released hold was set, for the note after release. */
+const releasedReason = ref<WorksheetHoldReason | null>(null);
 
 async function loadHold() {
   if (!props.bulkJobId) return;
   try {
-    const result = await $fetch<{ heldAt: string | null }>(
+    const result = await $fetch<WorksheetHoldStatus>(
       `/api/bulk-poster-submissions/${props.bulkJobId}/platform-request`,
     );
-    if (heldAt.value && !result.heldAt) holdReleased.value = true;
+    if (heldAt.value && !result.heldAt) {
+      holdReleased.value = true;
+      releasedReason.value = heldReason.value;
+    }
     heldAt.value = result.heldAt;
+    heldReason.value = result.heldReason;
+    heldPlatform.value = result.heldPlatform;
   } catch {
     // Not loaded: keep what we have; the server still enforces the hold.
   }
@@ -208,31 +238,68 @@ onBeforeUnmount(() => {
   if (holdTimer) clearInterval(holdTimer);
 });
 
-async function sendToTeam() {
-  if (!props.bulkJobId || !rejectedFiles.value.length || sendingToTeam.value)
-    return;
+/** Other platform card. Sends the files the same way as Send it to us. */
+const otherPlatformName = ref("");
+const otherFiles = ref<File[]>([]);
+const otherUploadRef = ref<{ clearFiles: () => void } | null>(null);
+const tooManyOtherFiles = computed(
+  () => otherFiles.value.length > MAX_CONFERENCE_WORKSHEET_FILES,
+);
+
+/** From the rejection dialog: the refused files and why they were refused. */
+function sendToTeam() {
+  return sendWorksheets({
+    platform: platformLabel.value,
+    files: rejectedFiles.value,
+    problems: rejectionIssues.value.map((issue) =>
+      [issuePlace(issue), issue.message].filter(Boolean).join(": "),
+    ),
+  });
+}
+
+/** From the Other platform card. */
+function sendOtherPlatform() {
+  if (tooManyOtherFiles.value) return;
+
+  return sendWorksheets({
+    platform: otherPlatformName.value.trim() || "Other platform (not named)",
+    files: otherFiles.value,
+    problems: [],
+    source: "other_platform",
+  });
+}
+
+async function sendWorksheets(request: {
+  platform: string;
+  files: File[];
+  problems: string[];
+  /** Set by the Other platform card. */
+  source?: "other_platform";
+}) {
+  if (!props.bulkJobId || !request.files.length || sendingToTeam.value) return;
   sendingToTeam.value = true;
   sendError.value = null;
   try {
     const form = new FormData();
-    form.append("platform", platformLabel.value);
-    form.append(
-      "problems",
-      JSON.stringify(
-        rejectionIssues.value.map((issue) =>
-          [issuePlace(issue), issue.message].filter(Boolean).join(": "),
-        ),
-      ),
-    );
-    for (const file of rejectedFiles.value)
-      form.append("worksheet", file, file.name);
+    form.append("platform", request.platform);
+    form.append("problems", JSON.stringify(request.problems));
+    if (request.source) form.append("source", request.source);
+    for (const file of request.files) form.append("worksheet", file, file.name);
     const sent = await $fetch<{ heldAt: string }>(
       `/api/bulk-poster-submissions/${props.bulkJobId}/platform-request`,
       { method: "POST", body: form },
     );
     removeSheet();
     choice.value = undefined;
+    otherPlatformName.value = "";
+    otherFiles.value = [];
+    otherUploadRef.value?.clearFiles();
     heldAt.value = sent.heldAt;
+    heldReason.value =
+      request.source === "other_platform"
+        ? "unsupported_platform"
+        : "worksheet_error";
+    heldPlatform.value = request.platform;
   } catch (error) {
     // Our own messages (400, 502) say what to do; anything else is generic.
     const data = (
@@ -768,23 +835,54 @@ watch(
     <!-- Held: the team has the worksheet; the batch waits on this step -->
     <div
       v-if="heldAt"
-      class="space-y-2 rounded-lg border border-amber-200 bg-amber-50/60 p-3 text-sm dark:border-amber-900 dark:bg-amber-950/20"
+      class="space-y-2 rounded-lg border border-amber-200 bg-amber-50/60 p-3 text-sm [overflow-wrap:anywhere] dark:border-amber-900 dark:bg-amber-950/20"
       role="status"
     >
-      <p class="flex items-center gap-2 font-semibold">
-        <UIcon name="i-lucide-clock" class="size-4 shrink-0 text-amber-600" />
-        We're setting up your worksheet
-      </p>
+      <template v-if="heldReason === 'unsupported_platform'">
+        <p class="flex items-start gap-2 font-semibold">
+          <UIcon
+            name="i-lucide-clock"
+            class="mt-0.5 size-4 shrink-0 text-amber-600"
+          />
+          We're looking into supporting
+          {{ heldPlatform || "your platform" }}
+        </p>
 
-      <p>
-        Thanks for sending it. We'll have it ready by {{ heldUntil }} and email
-        you. This batch stays on this step until then.
-      </p>
+        <p>
+          Thanks for sending your worksheets. We'll look into whether we can
+          support your platform and email you by {{ heldUntil }}, either way.
+          This batch stays on this step until then.
+        </p>
 
-      <p class="text-muted">
-        Once we've emailed you, come back here and add your worksheet again. You
-        can still add or remove poster files meanwhile.
-      </p>
+        <p class="text-muted">
+          If we can support it, add your worksheet here under the option in our
+          email. If not, you can continue without a worksheet, and we'll read
+          the details from your posters. You can still add or remove poster
+          files meanwhile.
+        </p>
+      </template>
+
+      <template v-else>
+        <p class="flex items-start gap-2 font-semibold">
+          <UIcon
+            name="i-lucide-clock"
+            class="mt-0.5 size-4 shrink-0 text-amber-600"
+          />
+          We're fixing your worksheet
+        </p>
+
+        <p>
+          Thanks for sending it. We'll look into why we couldn't read it, have
+          it ready by {{ heldUntil }} and email you. This batch stays on this
+          step until then.
+        </p>
+
+        <p class="text-muted">
+          Once we've emailed you, come back here and add your worksheet again
+          (the fixed file from our email, if we send one). You can still add or
+          remove poster files meanwhile.
+        </p>
+      </template>
     </div>
 
     <template v-else>
@@ -793,8 +891,16 @@ watch(
         color="success"
         variant="subtle"
         icon="i-lucide-circle-check"
-        title="Your worksheet is ready to add"
-        description="Add your worksheet again below, using the option from our email."
+        :title="
+          releasedReason === 'unsupported_platform'
+            ? 'You can continue'
+            : 'Your worksheet is ready to add'
+        "
+        :description="
+          releasedReason === 'unsupported_platform'
+            ? `If our email says we now support your platform, add your worksheet below under that option. Otherwise choose Skip this step, and we'll read the details from your posters.`
+            : 'Add your worksheet again below, using the option from our email.'
+        "
         close
         @update:open="holdReleased = false"
       />
@@ -806,13 +912,13 @@ watch(
           </span>
 
           <span class="text-muted mt-1 block">
-            Not every conference platform is supported yet. On another one? Add
-            your worksheet under the closest option; if we can't read it, you
-            can send it to us to set up.
+            Not every conference platform is supported yet. On another one?
+            Choose Other platform and send us your worksheets, and we'll look
+            into supporting it.
           </span>
         </legend>
 
-        <div class="grid gap-3 sm:grid-cols-3">
+        <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <button
             v-for="card in CHOICE_CARDS"
             :key="card.value"
@@ -876,6 +982,72 @@ watch(
         <UIcon name="i-lucide-circle-alert" class="size-4 shrink-0" />
         {{ stepProblem }}
       </p>
+
+      <!-- Other platform: send the worksheets to the team (holds the batch) -->
+      <div
+        v-if="choice === 'other' && !confirmedName"
+        class="border-default bg-elevated/40 space-y-3 rounded-lg border p-3 text-sm"
+      >
+        <div>
+          <p>
+            Send us your platform's worksheets and we'll look into supporting
+            it. We'll email you within 7 days, whether or not we can. This batch
+            stays on this step until then.
+          </p>
+
+          <p class="text-muted">
+            Not now? Choose Skip this step, and we'll read the details from your
+            posters.
+          </p>
+        </div>
+
+        <form class="space-y-2" @submit.prevent="sendOtherPlatform">
+          <UFormField label="Platform">
+            <UInput
+              v-model="otherPlatformName"
+              placeholder="e.g. Oxford Abstracts, ConfTool"
+              :maxlength="100"
+              class="w-full"
+            />
+          </UFormField>
+
+          <UFormField
+            label="Worksheet files"
+            required
+            :error="
+              tooManyOtherFiles
+                ? `Add up to ${MAX_CONFERENCE_WORKSHEET_FILES} files.`
+                : undefined
+            "
+          >
+            <UiFileUpload
+              ref="otherUploadRef"
+              multiple
+              title="Add your worksheet files"
+              :description="`Drag and drop up to ${MAX_CONFERENCE_WORKSHEET_FILES} files here, or click to browse.`"
+              hint="Spreadsheet, CSV, TSV, JSON or XML, up to 10 MB each."
+              :accept="CONFERENCE_WORKSHEET_ACCEPT"
+              :validate-file="conferenceWorksheetRejection"
+              @on-change="otherFiles = $event"
+            >
+              <UiFileUploadGrid />
+            </UiFileUpload>
+          </UFormField>
+
+          <UButton
+            type="submit"
+            label="Send it to us"
+            icon="i-lucide-send"
+            color="primary"
+            :loading="sendingToTeam"
+            :disabled="!otherFiles.length || tooManyOtherFiles"
+          />
+        </form>
+
+        <p v-if="sendError" class="text-error" role="alert">
+          {{ sendError }}
+        </p>
+      </div>
 
       <!-- The worksheet in use -->
       <div
@@ -1148,7 +1320,8 @@ watch(
 
         <p v-if="rejectedFiles.length" class="text-muted mt-4 text-sm">
           Can't fix it, or it's from another platform? Send it to us and we'll
-          set it up within 7 days. Hold off publishing until we email you.
+          take a look and email you within 7 days. This batch stays on this step
+          until then.
         </p>
 
         <p v-if="sendError" class="text-error mt-2 text-sm" role="alert">

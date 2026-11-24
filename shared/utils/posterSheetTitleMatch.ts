@@ -368,3 +368,25 @@ export function rowsWithoutPoster(pending: PendingPosterSheet | null): number {
 
   return pending.matchRows.filter((row) => !matched.has(row.row_key)).length;
 }
+
+/** Posters no worksheet row is linked to, either never matched or unlinked. */
+export function postersWithoutRow(
+  pending: PendingPosterSheet | null,
+  posters: { id: number | string; fileName: string }[],
+): { posterId: number; fileName: string; reason: "no_row" | "unlinked" }[] {
+  if (!pending) return [];
+  const linked = linkedFileNames(pending);
+  const unlinked = new Set(
+    (pending.rejectedMatches ?? []).map((pair) =>
+      lower(pair.slice(pair.indexOf("|") + 1)),
+    ),
+  );
+
+  return posters
+    .filter((poster) => !linked.has(lower(poster.fileName)))
+    .map((poster) => ({
+      posterId: Number(poster.id),
+      fileName: poster.fileName,
+      reason: unlinked.has(lower(poster.fileName)) ? "unlinked" : "no_row",
+    }));
+}

@@ -41,6 +41,14 @@ type ReviewPoster = PosterResponse & {
 
 const toast = useToast();
 
+/** Posters held at Review don't block the rest of the batch. */
+const worksheetHold = useWorksheetHold(() => props.bulkImportJobId);
+onMounted(() => void worksheetHold.load());
+
+function isHeld(posterId: number | null | undefined) {
+  return posterId != null && worksheetHold.heldPosterIds.value.has(posterId);
+}
+
 const reviewableItems = computed(() =>
   props.items.filter(
     (item) => item.posterId != null && item.status === "completed",
@@ -444,6 +452,7 @@ const creators = computed(() => {
 const invalidMetadataItems = computed(() =>
   reviewableItems.value.filter((item) => {
     if (item.posterId == null) return false;
+    if (isHeld(item.posterId)) return false;
     const result = validationByPosterId.value[item.posterId];
     return result != null && !result.valid;
   }),
@@ -667,8 +676,17 @@ onUnmounted(() => {
           <span class="min-w-0 flex-1 [overflow-wrap:anywhere]">{{
             item.fileName
           }}</span>
+
+          <UBadge
+            v-if="isHeld(item.posterId)"
+            color="warning"
+            variant="subtle"
+            size="sm"
+            label="With us"
+            class="shrink-0"
+          />
           <UIcon
-            v-if="
+            v-else-if="
               item.posterId != null &&
               validationByPosterId[item.posterId] &&
               !validationByPosterId[item.posterId]!.valid

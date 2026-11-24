@@ -248,4 +248,10 @@ export type PendingPosterSheet = {
   beforeSheet?: Record<string, Record<string, Record<string, string>[]>>;
   /** Poster file names the browser had when the sheet was mapped (some may still be uploading) */
   browserFileNames?: string[];
+  /**
+   * Posters with no worksheet row at Review, and the ones the organizer has
+   * already sent to us or kept as read. The sheet is kept until all are done.
+   */
+  unmatchedFiles?: string[];
+  unmatchedDecided?: string[];
 };

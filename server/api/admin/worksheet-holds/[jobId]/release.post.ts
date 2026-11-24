@@ -1,7 +1,6 @@
 /**
- * Release a worksheet hold: the batch can leave its first step again, where
- * the organizer adds their worksheet again (under a format added since, or a
- * file the team fixed for them). The app sends no email; the team does.
+ * Releases a batch's worksheet holds. The organizer isn't emailed by the
+ * app; we email them ourselves.
  */
 export default defineEventHandler(async (event) => {
   const session = await requireAdminSession(event);
@@ -18,6 +17,10 @@ export default defineEventHandler(async (event) => {
       name: true,
       worksheetHeldAt: true,
       worksheetHoldFiles: true,
+      worksheetHoldReason: true,
+      worksheetHoldPlatform: true,
+      postersHeldAt: true,
+      heldPosters: true,
       user: { select: { emailAddress: true } },
     },
   });
@@ -25,7 +28,7 @@ export default defineEventHandler(async (event) => {
   if (!job) {
     throw createError({ statusCode: 404, statusMessage: "Batch not found" });
   }
-  if (!job.worksheetHeldAt) {
+  if (!job.worksheetHeldAt && !job.postersHeldAt) {
     throw createError({
       statusCode: 409,
       statusMessage: "This batch is not on hold",
@@ -34,7 +37,14 @@ export default defineEventHandler(async (event) => {
 
   await prisma.bulkSubmission.update({
     where: { id: job.id },
-    data: { worksheetHeldAt: null },
+    data: {
+      worksheetHeldAt: null,
+      worksheetHoldReason: null,
+      worksheetHoldPlatform: null,
+      worksheetHoldProblems: [],
+      postersHeldAt: null,
+      heldPosters: [],
+    },
   });
 
   await logAdminAction({
@@ -46,7 +56,11 @@ export default defineEventHandler(async (event) => {
       batchName: job.name,
       organizerEmail: job.user.emailAddress,
       heldAt: job.worksheetHeldAt,
+      reason: job.worksheetHoldReason,
+      platform: job.worksheetHoldPlatform,
       files: job.worksheetHoldFiles,
+      postersHeldAt: job.postersHeldAt,
+      heldPosters: job.heldPosters,
     },
   });
 
