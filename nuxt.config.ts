@@ -154,6 +154,21 @@ export default defineNuxtConfig({
     // 32 random bytes as base64, used to encrypt stored Zenodo tokens.
     // NUXT_ZENODO_TOKEN_ENCRYPTION_KEY. Changing it disconnects every user.
     zenodoTokenEncryptionKey: "",
+    // Publish to Figshare. A personal token works with just the endpoints. The
+    // Sign in with Figshare button stays hidden until the client id, secret and
+    // redirect address are set (NUXT_FIGSHARE_CLIENT_ID and so on). The
+    // redirect address must match the Figshare application's exactly.
+    figshareEndpoint: "https://figshare.com",
+    figshareApiEndpoint: "https://api.figshare.com/v2",
+    figshareClientId: "",
+    figshareClientSecret: "",
+    figshareRedirectUri: "",
+    // Optional. Falls back to zenodoTokenEncryptionKey when empty.
+    figshareTokenEncryptionKey: "",
+    // Figshare has no sandbox and published items can't be deleted, so outside
+    // production a publish run stops at a private draft. Set
+    // NUXT_FIGSHARE_ALLOW_PUBLISH=true to really publish from another site.
+    figshareAllowPublish: false,
     // Sign in with ORCID. The button stays hidden until all four are set.
     // NUXT_ORCID_ENDPOINT is https://orcid.org or https://sandbox.orcid.org, and
     // NUXT_ORCID_REDIRECT_URI must match the client's registered address exactly.
