@@ -867,9 +867,10 @@ watch(
         </p>
 
         <p>
-          Thanks for sending your worksheets. We'll look into whether we can
-          support your platform and email you by {{ heldUntil }}, either way.
-          This batch stays on this step until then.
+          Thanks for sending your worksheets. This batch is on hold while we
+          look into whether we can support your platform. We'll email you by
+          {{ heldUntil }} either way, and the batch stays on this step until
+          then.
         </p>
       </template>
 
@@ -883,9 +884,9 @@ watch(
         </p>
 
         <p>
-          Thanks for sending it. We'll look into why we couldn't read it, have
-          it ready by {{ heldUntil }} and email you. This batch stays on this
-          step until then.
+          Thanks for sending it. This batch is on hold while we look into why
+          we couldn't read your worksheet. We'll email you by
+          {{ heldUntil }}, and the batch stays on this step until then.
         </p>
 
         <p class="text-muted">
@@ -923,9 +924,11 @@ watch(
           </span>
 
           <span class="text-muted mt-1 block">
-            Not every conference platform is supported yet. On another one?
-            Choose Other platform and send us your worksheets, and we'll look
-            into supporting it.
+            Not every conference platform is supported. If you see your
+            conference platform below and have worksheets with your poster
+            data, select it. If your worksheets are from another platform,
+            choose Other platform and send them to us, and we'll look into
+            supporting it. If you don't have worksheets, choose Skip this step.
           </span>
         </legend>
 
@@ -1002,13 +1005,14 @@ watch(
         <div>
           <p>
             Send us your platform's worksheets and we'll look into supporting
-            it. We'll email you within 7 days, whether or not we can. This batch
-            stays on this step until then.
+            it. While we take a look, your batch will be on hold on this step
+            for up to 7 days. We'll email you either way to let you know whether
+            we can support your platform.
           </p>
 
           <p class="text-muted">
-            Not now? Choose Skip this step, and we'll read the details from your
-            posters.
+            If you'd rather not send your worksheets, select "Skip this step"
+            and we'll extract the details from your posters instead.
           </p>
         </div>
 
@@ -1048,6 +1052,7 @@ watch(
           <WorksheetContactEmail
             v-model:email="contactEmail"
             v-model:confirmed="contactConfirmed"
+            help="We'll take a look at your worksheets and let you know within 7 days whether we can support your platform."
           />
 
           <UButton
@@ -1335,15 +1340,16 @@ watch(
         </ol>
 
         <p v-if="rejectedFiles.length" class="text-muted mt-4 text-sm">
-          Can't fix it, or it's from another platform? Send it to us and we'll
-          take a look and email you within 7 days. This batch stays on this step
-          until then.
+          Can't fix it, or it's from another platform? Send it to us. While we
+          take a look, your batch will be on hold on this step for up to 7 days,
+          and we'll email you once we know more.
         </p>
 
         <WorksheetContactEmail
           v-if="rejectedFiles.length"
           v-model:email="contactEmail"
           v-model:confirmed="contactConfirmed"
+          help="We'll take a look at your worksheet and let you know within 7 days how to add it."
           class="mt-3"
         />
 

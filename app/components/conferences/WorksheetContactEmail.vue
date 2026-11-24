@@ -4,6 +4,16 @@
  * Starts with the account email; the organizer confirms it or changes it.
  */
 
+const props = withDefaults(
+  defineProps<{
+    /** What we'll email about, under the field. Differs per flow. */
+    help?: string;
+  }>(),
+  {
+    help: "We'll take a look at your worksheets and email you here within 7 days.",
+  },
+);
+
 const email = defineModel<string>("email", { required: true });
 const confirmed = defineModel<boolean>("confirmed", { required: true });
 
@@ -18,10 +28,12 @@ watch(email, () => {
 </script>
 
 <template>
-  <div class="space-y-2">
+  <div
+    class="border-default bg-default space-y-2 rounded-md border p-3"
+  >
     <UFormField
       label="Best email to reach you"
-      help="We'll email you here about these worksheets."
+      :help="props.help"
       :error="
         email.trim() && invalid ? 'Enter a valid email address.' : undefined
       "
