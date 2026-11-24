@@ -68,7 +68,7 @@ Sign in and select **Like** on any poster. Your liked posters are listed under *
 1. Go to [Share a Poster](/share/new) and upload your poster file.
 2. Posters.science reads the poster and fills in its metadata for you, such as the title, authors, affiliations and keywords.
 3. Review the metadata and correct anything that's wrong.
-4. Archive the poster on Zenodo, or download the files to share somewhere else.
+4. Archive the poster on Zenodo or Figshare, or download the files to share somewhere else.
 
 You need an account to share a poster.
 
@@ -90,11 +90,15 @@ Yes. Upload it, review the metadata, and choose **Download Locally** when you pu
 
 ### Can I publish to Figshare?
 
-Not yet. Figshare support is planned.
+Yes. Choose **Figshare** when you publish, then connect your Figshare account by signing in or by pasting a personal token. The poster is published on your own Figshare account as an item of type Poster, with a DOI. You pick one or more categories and a license from the ones your Figshare account offers.
+
+Figshare has fewer metadata fields than Zenodo. The conference goes into the item's description, and details Figshare can't hold, such as affiliations, stay in the `poster.json` file that is uploaded with your poster.
+
+If your account belongs to an institution that reviews items before they go public, your poster is published on Posters.science once the institution approves it. Publish again from the same page to finish.
 
 ### Can I change a poster after it's published?
 
-Publishing creates a permanent record on Zenodo, so check your metadata carefully first. If something needs to change on a poster you've already published, [contact us](https://tally.so/r/XxEBYP).
+Publishing creates a permanent record on Zenodo or Figshare, so check your metadata carefully first. If something needs to change on a poster you've already published, [contact us](https://tally.so/r/XxEBYP).
 
 ### What is the poster.json file?
 
