@@ -62,7 +62,7 @@ Posters.science is developed by the [FAIR Data Innovations Hub](https://fairdata
 | [posters-science-extraction-api](https://github.com/fairdataihub/posters-science-extraction-api)   | Extraction API service used by the platform                                                                 |
 | [poster-sentry](https://github.com/fairdataihub/poster-sentry)                                     | Lightweight multimodal scientific poster classifier                                                         |
 | [poster-sentry-training](https://github.com/fairdataihub/poster-sentry-training)                   | Training data and scripts for the poster-sentry classifier                                                  |
-| [posters-science-user-docs](https://docs.posters.science)                                           | User documentation site                                                                                     |
+| [posters-science-user-docs](https://docs.posters.science)                                          | User documentation site                                                                                     |
 | [posters-science-dev-docs](https://github.com/fairdataihub/posters-science-dev-docs)               | Developer documentation site ([live](https://dev.posters.science))                                          |
 | [posters-science-survey](https://github.com/fairdataihub/posters-science-survey)                   | Community survey on scientific poster sharing practices                                                     |
 | [poster-sharing-reuse-paper-code](https://github.com/fairdataihub/poster-sharing-reuse-paper-code) | Analysis code for the poster sharing and reuse study                                                        |
@@ -100,7 +100,7 @@ flowchart TD
 | Frontend               | [Nuxt 3](https://nuxt.com/), [Nuxt UI](https://ui.nuxt.com/), [Tailwind CSS](https://tailwindcss.com/) |
 | Backend                | Nuxt server routes ([Nitro](https://nitro.build/))                                                     |
 | Database               | [PostgreSQL](https://www.postgresql.org/) via [Prisma](https://www.prisma.io/)                         |
-| Poster Extraction      | [poster2json](https://github.com/fairdataihub/poster2json) (Python, Llama 3.1, pdfplumber)            |
+| Poster Extraction      | [poster2json](https://github.com/fairdataihub/poster2json) (Python, Llama 3.1, pdfplumber)             |
 | File Storage           | CDN-backed object storage                                                                              |
 | Repository Integration | [Zenodo](https://zenodo.org/)                                                                          |
 | Deployment             | [Docker](https://www.docker.com/)                                                                      |
@@ -150,6 +150,8 @@ flowchart TD
 
 6. Open the application at [http://localhost:3000](http://localhost:3000)
 
+   To test Sign in with ORCID or Sign in with Figshare, start the server with `pnpm dev:https` instead and open [https://127.0.0.1:3000](https://127.0.0.1:3000). See [Sign-in over https](#sign-in-over-https).
+
 ## Development
 
 ### Database
@@ -165,6 +167,27 @@ Stop the database:
 ```bash
 docker-compose -f ./dev-docker-compose.yaml down
 ```
+
+### Sign-in over https
+
+ORCID and Figshare only send people back to the exact `https` address registered with them. `pnpm dev` serves `http://localhost:3000`, so their sign-in can't come back to it. To test either one:
+
+1. Stop any running dev server, then start it over https on `127.0.0.1`:
+
+   ```bash
+   pnpm dev:https
+   ```
+
+   This runs `nuxt dev --https --host 127.0.0.1`, which makes a self-signed certificate.
+
+2. Open [https://127.0.0.1:3000](https://127.0.0.1:3000), not `localhost`. The browser warns about the certificate once; choose Advanced, then Continue.
+
+The rest of the app works the same with either command, so plain `pnpm dev` is fine when you aren't testing these sign-ins.
+
+| Problem                                          | Fix                                                                                                                         |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| Back on the site but not signed in               | You started from `localhost`. The sign-in cookie belongs to the address you opened, so start from `https://127.0.0.1:3000`. |
+| The dev server started on a port other than 3000 | Free port 3000, or register a second redirect address with that port and update `.env` to match.                            |
 
 ### ORCID sign-in
 
@@ -192,16 +215,8 @@ Local development signs in through the [ORCID sandbox](https://sandbox.orcid.org
 
 #### Each time you test
 
-1. Stop any running dev server, then start it over https on `127.0.0.1`:
-
-   ```bash
-   pnpm dev:https
-   ```
-
-   This runs `nuxt dev --https --host 127.0.0.1`, which makes a self-signed certificate.
-
-2. Open [https://127.0.0.1:3000](https://127.0.0.1:3000), not `localhost`. The browser warns about the certificate once; choose Advanced, then Continue.
-3. Try a flow:
+1. Start the server with `pnpm dev:https` and open [https://127.0.0.1:3000](https://127.0.0.1:3000) (see [Sign-in over https](#sign-in-over-https)).
+2. Try a flow:
 
    | Flow              | Where                                                                            |
    | ----------------- | -------------------------------------------------------------------------------- |
@@ -214,13 +229,60 @@ With `NUXT_SITE_ENV=development`, new ORCID accounts skip email verification on 
 
 #### Troubleshooting
 
-| Problem                                          | Fix                                                                                                                                                  |
-| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ORCID says the redirect URI doesn't match        | The URI registered in Developer Tools, `NUXT_ORCID_REDIRECT_URI` and the address in your browser must match exactly, including `https` and the port. |
-| Back on the site but not signed in               | You started from `localhost`. The sign-in cookie belongs to the address you opened, so start from `https://127.0.0.1:3000`.                          |
-| The dev server started on a port other than 3000 | Free port 3000, or register a second redirect URI with that port and update `.env` to match.                                                         |
-| No ORCID button                                  | One of the four `NUXT_ORCID_*` values is empty. Restart the dev server after editing `.env`.                                                         |
-| No email from the sandbox                        | The sandbox only emails `@mailinator.com` addresses.                                                                                                 |
+| Problem                                   | Fix                                                                                                                                                  |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ORCID says the redirect URI doesn't match | The URI registered in Developer Tools, `NUXT_ORCID_REDIRECT_URI` and the address in your browser must match exactly, including `https` and the port. |
+| No ORCID button                           | One of the four `NUXT_ORCID_*` values is empty. Restart the dev server after editing `.env`.                                                         |
+| No email from the sandbox                 | The sandbox only emails `@mailinator.com` addresses.                                                                                                 |
+
+See also the [Sign-in over https](#sign-in-over-https) table.
+
+### Figshare publishing
+
+Figshare has no public sandbox, so local testing uses real [figshare.com](https://figshare.com) accounts. Outside production (`NUXT_SITE_ENV` is not `production`), publishing stops at a **private draft**: the item is created on Figshare with its metadata and files, but never published. Only you can see the draft, and you can delete it from My data on Figshare. Published items can't be deleted, so keep `NUXT_FIGSHARE_ALLOW_PUBLISH=false`.
+
+People connect their Figshare account in one of two ways:
+
+| Way                   | Needs                                                                                                  |
+| --------------------- | ------------------------------------------------------------------------------------------------------ |
+| Personal token        | Works with `pnpm dev` or `pnpm dev:https`. Posters.science deletes the token an hour after it's added. |
+| Sign in with Figshare | A Figshare application in `.env`, and `pnpm dev:https`                                                 |
+
+#### One-time setup
+
+1. **Check the encryption key.** Figshare tokens are stored encrypted with `NUXT_FIGSHARE_TOKEN_ENCRYPTION_KEY`, or with `NUXT_ZENODO_TOKEN_ENCRYPTION_KEY` when that one is empty. At least one must be set; `.env.example` shows how to make one.
+2. **For Sign in with Figshare, register an application** at [figshare.com/account/applications](https://figshare.com/account/applications) with this callback URL exactly:
+
+   ```text
+   https://127.0.0.1:3000/api/figshare/callback
+   ```
+
+   An application takes only one callback URL. Every local copy uses this same address, so developers can share one dev application, while staging and production each have their own.
+
+3. **Add the application to `.env`.** The Sign in with Figshare tab stays hidden until all three are set.
+
+   ```bash
+   NUXT_FIGSHARE_CLIENT_ID=your-client-id
+   NUXT_FIGSHARE_CLIENT_SECRET=your-client-secret
+   NUXT_FIGSHARE_REDIRECT_URI=https://127.0.0.1:3000/api/figshare/callback
+   ```
+
+#### Each time you test
+
+1. For Sign in with Figshare, start the server with `pnpm dev:https` and open [https://127.0.0.1:3000](https://127.0.0.1:3000) (see [Sign-in over https](#sign-in-over-https)).
+2. Upload a poster and finish Review Metadata, then choose **Figshare** on the Submit Poster page.
+3. Connect with a personal token or **Sign in with Figshare**, pick categories and a license, then click **Create private draft on Figshare**.
+4. Open the draft from the link at the end to check its metadata, then delete it on Figshare.
+
+#### Troubleshooting
+
+| Problem                                                  | Fix                                                                                                                                       |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Figshare says `invalid_request` about the `redirect_uri` | `NUXT_FIGSHARE_REDIRECT_URI` must match the application's callback URL exactly. `localhost` and `127.0.0.1` count as different addresses. |
+| No Sign in with Figshare tab                             | One of the three `NUXT_FIGSHARE_*` application values is empty. Restart the dev server after editing `.env`.                              |
+| "Figshare publishing isn't available right now"          | Neither token encryption key is set.                                                                                                      |
+| A personal token stopped working                         | Personal tokens are deleted an hour after they're added. Connect again.                                                                   |
+| A maintenance notice instead of the Figshare form        | Figshare publication is paused in `/admin` under Maintenance.                                                                             |
 
 ### Prisma
 
