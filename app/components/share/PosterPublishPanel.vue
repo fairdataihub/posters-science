@@ -4,6 +4,7 @@ import { LICENSE_OPTIONS_WITH_SUGGESTED } from "~/utils/poster_schema";
 import { normalizeZenodoRecordWebUrl } from "#shared/utils/zenodoRecordWebUrl";
 import { resolveDoiUrl } from "#shared/utils/doi";
 import ZenodoConnectPanel from "~/components/share/ZenodoConnectPanel.vue";
+import FigsharePublishSection from "~/components/share/FigsharePublishSection.vue";
 import { useZenodoReleaseConnection } from "~/composables/useZenodoReleaseConnection";
 
 const props = defineProps<{
@@ -65,9 +66,7 @@ const zenodoPaused = computed(() => zenodoMaintenance.value.off !== null);
 // returning from OAuth mid pause lands back on the picker.
 const queryRepo = useRoute().query.repository;
 const requestedRepository: Repository =
-  queryRepo === "zenodo" ||
-  queryRepo === "figshare" ||
-  queryRepo === "download"
+  queryRepo === "zenodo" || queryRepo === "figshare" || queryRepo === "download"
     ? queryRepo
     : null;
 const selectedRepository = ref<Repository>(
@@ -76,22 +75,28 @@ const selectedRepository = ref<Repository>(
     : requestedRepository,
 );
 
+// Versions stay in the repository their family is in. Set from the Zenodo
+// status, which knows where the previous version was published.
+const familyOnFigshare = ref(false);
+
 const repositories = computed(() => [
   {
     id: "zenodo" as const,
     name: "Zenodo",
     icon: "i-simple-icons-zenodo",
     description: "General-purpose open repository",
-    enabled: !zenodoPaused.value,
+    enabled: !zenodoPaused.value && !familyOnFigshare.value,
     unavailable: zenodoPaused.value,
+    badge: familyOnFigshare.value ? "Earlier versions are on Figshare" : "",
   },
   {
     id: "figshare" as const,
     name: "Figshare",
     icon: "i-simple-icons-figshare",
-    description: "Research data repository",
-    enabled: false,
+    description: "Research repository for posters, figures and data",
+    enabled: true,
     unavailable: false,
+    badge: "",
   },
   {
     id: "download" as const,
@@ -100,12 +105,13 @@ const repositories = computed(() => [
     description: "Download files to your computer to share on another platform",
     enabled: true,
     unavailable: false,
+    badge: "",
   },
 ]);
 
-watch(zenodoPaused, (paused) => {
-  if (paused && selectedRepository.value === "zenodo") {
-    selectedRepository.value = null;
+watch([zenodoPaused, familyOnFigshare], ([paused, onFigshare]) => {
+  if ((paused || onFigshare) && selectedRepository.value === "zenodo") {
+    selectedRepository.value = onFigshare ? "figshare" : null;
   }
 });
 
@@ -299,8 +305,7 @@ const zenodoRecordUrl = computed(() => {
     typeof data.recordId === "number" && Number.isFinite(data.recordId)
       ? data.recordId
       : undefined;
-  const raw =
-    typeof data.recordUrl === "string" ? data.recordUrl : undefined;
+  const raw = typeof data.recordUrl === "string" ? data.recordUrl : undefined;
 
   return (
     normalizeZenodoRecordWebUrl(raw, {
@@ -419,6 +424,7 @@ const zenodo = useZenodoReleaseConnection({
       selectedLicense.value = previousVersionLicense.value;
     }
     isPosterVersion.value = Boolean(data.isVersion);
+    familyOnFigshare.value = Boolean(data.familyOnFigshare);
     if (isPosterVersion.value) depositionMode.value = "existing";
     if (linkedDepositionId.value) {
       depositionMode.value = "existing";
@@ -640,7 +646,11 @@ async function handleArchive() {
 
           <span class="text-muted text-xs">{{ repo.description }}</span>
 
-          <UBadge v-if="repo.unavailable" color="warning" variant="subtle">
+          <UBadge v-if="repo.badge" color="neutral" variant="subtle">
+            {{ repo.badge }}
+          </UBadge>
+
+          <UBadge v-else-if="repo.unavailable" color="warning" variant="subtle">
             Temporarily Unavailable
           </UBadge>
 
@@ -928,6 +938,14 @@ async function handleArchive() {
         </template>
       </ZenodoConnectPanel>
     </div>
+
+    <!-- Figshare section -->
+    <FigsharePublishSection
+      v-if="selectedRepository === 'figshare'"
+      :poster-id="id"
+      :poster-details-url="posterDetailsUrl"
+      @published="afterPublished"
+    />
 
     <!-- Download section -->
     <div

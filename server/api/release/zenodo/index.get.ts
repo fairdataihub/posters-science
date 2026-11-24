@@ -41,9 +41,15 @@ export default defineEventHandler(async (event) => {
           ...posterFamilyWhere(poster.versionRootId),
         },
         orderBy: { versionSequence: "desc" },
-        select: { posterMetadata: { select: { license: true } } },
+        select: {
+          posterMetadata: { select: { license: true } },
+          figshareDeposition: { select: { articleId: true } },
+        },
       })
     : null;
+  // Versions stay in the repository their family is in, so a family on
+  // Figshare cannot continue on Zenodo.
+  const familyOnFigshare = Boolean(previousVersion?.figshareDeposition);
   const suggestedLicense =
     previousVersion?.posterMetadata?.license ?? undefined;
   let linkedDepositionId =
@@ -226,6 +232,7 @@ export default defineEventHandler(async (event) => {
       linkedDeposition,
       suggestedLicense,
       isVersion: Boolean(poster?.versionRootId),
+      familyOnFigshare,
     };
   } catch (error: unknown) {
     const errorMessage =

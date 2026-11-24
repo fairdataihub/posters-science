@@ -16,6 +16,8 @@ export type ZenodoReleaseStatusResponse = {
   linkedDeposition?: unknown;
   suggestedLicense?: string;
   isVersion?: boolean;
+  /** Earlier versions of this poster are on Figshare. */
+  familyOnFigshare?: boolean;
   message?: string;
 };
 
