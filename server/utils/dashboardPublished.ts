@@ -140,8 +140,10 @@ export async function matchDashboardPublishedSearch(
 
 /**
  * Where a published poster is archived, for the dashboard's Repository
- * filter. Figshare is told apart the way the Discover source filter does it,
- * and Discover counts every other auto-indexed poster as Zenodo's.
+ * filter. A poster published to Figshare from Posters.science has its own
+ * record; other Figshare posters are told apart the way the Discover source
+ * filter does it, and Discover counts every other auto-indexed poster as
+ * Zenodo's.
  */
 export function posterRepository(poster: {
   automated: boolean;
@@ -152,6 +154,7 @@ export function posterRepository(poster: {
     status: string;
     lastPublishedZenodoDoi: string | null;
   } | null;
+  figshareDeposition?: { status: string } | null;
 }): PosterRepository {
   const doi = (poster.posterMetadata?.doi ?? "")
     .trim()
@@ -159,6 +162,7 @@ export function posterRepository(poster: {
     .replace(/^https?:\/\/(dx\.)?doi\.org\//, "");
 
   if (
+    poster.figshareDeposition?.status === "published" ||
     poster.imageUrl.toLowerCase().includes("/figshare_") ||
     doi.startsWith("10.6084/")
   ) {

@@ -51,6 +51,9 @@ const posterInclude = {
       filesEmbargoUntil: true,
     },
   },
+  // Institutional Figshare portals mint DOIs under their own prefix, so the
+  // dashboard's Repository filter checks this record too.
+  figshareDeposition: { select: { status: true } },
 } as const;
 
 const bulkDashboardSelect = {
