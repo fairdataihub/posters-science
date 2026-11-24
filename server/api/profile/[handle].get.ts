@@ -1,5 +1,10 @@
 import { parseProfileParam, profilePath } from "#shared/utils/profile";
 import {
+  collectionSummarySelect,
+  publicCollectionWhere,
+  toCollectionSummaries,
+} from "../../utils/collections";
+import {
   latestPublicPosterVersions,
   matchProfilePosterSearch,
   profilePosterSelect,
@@ -60,16 +65,24 @@ export default defineEventHandler(async (event) => {
     claims.map((claim) => [claim.posterId, claim.created]),
   );
 
-  const [ownedVersions, claimedByRoot, liked] = await Promise.all([
-    prisma.poster.findMany({
-      where: { ...publicPosterListing, userId: user.id },
-      orderBy: { versionSequence: "desc" },
-      select: profilePosterSelect,
-    }),
-    latestPublicPosterVersions(claims.map((claim) => claim.posterId)),
-    // Liked posters are only ever loaded when the user opted in.
-    user.profileShowLikes ? loadLikedPosters(user.id) : null,
-  ]);
+  const [ownedVersions, claimedByRoot, liked, collectionRows] =
+    await Promise.all([
+      prisma.poster.findMany({
+        where: { ...publicPosterListing, userId: user.id },
+        orderBy: { versionSequence: "desc" },
+        select: profilePosterSelect,
+      }),
+      latestPublicPosterVersions(claims.map((claim) => claim.posterId)),
+      // Liked posters are only ever loaded when the user opted in.
+      user.profileShowLikes ? loadLikedPosters(user.id) : null,
+      // Public collections only, even for the owner, so the preview matches
+      // what visitors see.
+      prisma.collection.findMany({
+        where: { ...publicCollectionWhere, ownerId: user.id },
+        orderBy: { updated: "desc" },
+        select: collectionSummarySelect,
+      }),
+    ]);
 
   const cards = new Map<number, ProfilePosterCard>();
 
@@ -118,6 +131,7 @@ export default defineEventHandler(async (event) => {
     posters,
     // Null when the user hasn't chosen to show their likes.
     likedPosters: liked,
+    collections: await toCollectionSummaries(collectionRows),
     searchMatches: await matchProfilePosterSearch(getQuery(event).search, [
       ...posters,
       ...(liked ?? []),

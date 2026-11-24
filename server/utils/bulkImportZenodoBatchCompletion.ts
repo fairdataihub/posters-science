@@ -1,5 +1,6 @@
 import { isZenodoFileEmbargoActive } from "#shared/utils/zenodoFileEmbargoAccess";
 import type { BulkImportSubmissionSummary } from "#shared/types/bulkImportLicenses";
+import { collectionPath } from "#shared/utils/collection";
 import { posterFamilyRootId } from "~~/server/utils/posterVersions";
 import { findBulkSubmissionJobForPoster } from "~~/server/utils/bulkSubmissionForPoster";
 import { orderedBulkImportPosterEntries } from "~~/server/utils/bulkImportOrderedPosters";
@@ -214,6 +215,7 @@ export async function buildBulkSubmissionCompletion(
   latestActiveEmbargoUntil: string | null;
   /** When false, hide in-app early release until Zenodo publish stored embargo metadata. */
   fileEmbargoEarlyReleaseReady: boolean;
+  collection: { id: string; path: string; name: string } | null;
 } | null> {
   const job = await prisma.bulkSubmission.findFirst({
     where: { id: jobId, userId },
@@ -223,6 +225,9 @@ export async function buildBulkSubmissionCompletion(
       status: true,
       completedAt: true,
       submissionSummary: true,
+      collection: {
+        select: { id: true, profileId: true, slug: true, name: true },
+      },
     },
   });
 
@@ -315,5 +320,12 @@ export async function buildBulkSubmissionCompletion(
     activeEmbargoCount: embargoStatus.activeEmbargoCount,
     latestActiveEmbargoUntil: embargoStatus.latestActiveEmbargoUntil,
     fileEmbargoEarlyReleaseReady,
+    collection: job.collection
+      ? {
+          id: job.collection.id,
+          path: collectionPath(job.collection.profileId, job.collection.slug),
+          name: job.collection.name,
+        }
+      : null,
   };
 }

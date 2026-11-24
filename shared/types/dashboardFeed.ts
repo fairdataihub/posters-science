@@ -1,3 +1,10 @@
+/** The collection made from a bulk upload, if any. */
+export type BulkSubmissionCollectionLink = {
+  id: string;
+  path: string;
+  name: string;
+};
+
 /** Bulk import row included in `GET /api/poster` (in-progress only). */
 export type DashboardBulkSubmission = {
   id: string;
@@ -10,6 +17,8 @@ export type DashboardBulkSubmission = {
   createdAt: string;
   updatedAt: string;
   completedAt?: string | null;
+  /** Set once a collection was made from this upload. */
+  collection?: BulkSubmissionCollectionLink | null;
   /** Set while the batch, or some of its posters, are on a worksheet hold. */
   hold?: {
     kind: "unsupported_platform" | "worksheet_error" | "posters";
@@ -39,4 +48,18 @@ export type DashboardPosterFeedResponse = {
   inProgressFeed: DashboardInProgressFeedEntry[];
   /** Poster IDs still managed by an open bulk job (hide duplicate published cards). */
   activeBulkManagedPosterIds?: number[];
+};
+
+/** Where a published poster is archived, for the dashboard's filters. */
+export type PosterRepository = "zenodo" | "figshare" | "other";
+
+/**
+ * `GET /api/user/dashboard-search`: what in the user's Published list matches
+ * a Discover-style search. Both are null when there is no search.
+ */
+export type DashboardSearchMatches = {
+  /** Version roots of the matching posters. */
+  rootIds: number[] | null;
+  /** Bulk uploads whose name holds the search's free text. */
+  bulkSubmissionIds: string[] | null;
 };

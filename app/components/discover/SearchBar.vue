@@ -17,11 +17,14 @@ const props = withDefaults(
     committed?: string;
     placeholder?: string;
     buttonLabel?: string;
+    /** What the search finds, for the line under the input. */
+    scope?: "posters" | "collections" | "drafts";
   }>(),
   {
     committed: "",
     placeholder: "Search title, author, affiliation, DOI, ORCID...",
     buttonLabel: "Search Posters",
+    scope: "posters",
   },
 );
 
@@ -46,7 +49,28 @@ const searchHelp = (
 }));
 
 const searchScopeLabel = computed(() => {
+  if (props.scope === "drafts") {
+    return props.committed
+      ? `Searching draft titles, descriptions and batch names for "${props.committed}".`
+      : "";
+  }
   const { clauses, freeText } = parseDiscoverSearch(props.committed);
+
+  if (props.scope === "collections") {
+    if (clauses.length === 0) {
+      return freeText
+        ? `Searching collection names, descriptions, conferences and owners, and the posters inside, for "${freeText}".`
+        : "";
+    }
+
+    const parts = clauses.map(
+      ({ field, term }) => `${DISCOVER_SEARCH_FIELD_LABELS[field]} "${term}"`,
+    );
+
+    if (freeText) parts.push(`"${freeText}"`);
+
+    return `Collections matching ${parts.join(" and ")}.`;
+  }
 
   if (clauses.length === 0) {
     return freeText ? `Searching ${FREE_TEXT_SCOPE} for "${freeText}".` : "";
@@ -79,7 +103,7 @@ const searchScopeLabel = computed(() => {
           />
 
           <template #content>
-            <div class="space-y-2 text-xs">
+            <div v-if="scope !== 'drafts'" class="space-y-2 text-xs">
               <p>
                 A plain search looks at the {{ FREE_TEXT_SCOPE }}. Pasting an
                 ORCID, ROR or DOI searches for that identifier.
@@ -100,6 +124,11 @@ const searchScopeLabel = computed(() => {
                 </template>
               </ul>
             </div>
+
+            <p v-else class="max-w-xs text-xs">
+              Search your draft titles, descriptions and batch names. Choose a
+              batch status under Filters to find uploads that need attention.
+            </p>
           </template>
         </UTooltip>
 

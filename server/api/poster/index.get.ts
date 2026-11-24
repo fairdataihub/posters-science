@@ -1,3 +1,4 @@
+import { collectionPath } from "#shared/utils/collection";
 import {
   bulkSubmissionHasActiveExtraction,
   posterIdsFromBulkSubmissionSummary,
@@ -8,6 +9,11 @@ import {
   splitBulkSubmissionsForDashboard,
 } from "~~/server/utils/bulkImportDashboard";
 import { tryCompleteBulkBatchIfReady } from "~~/server/utils/bulkImportZenodoBatchCompletion";
+import {
+  claimedPosterVersionsWhere,
+  posterLicenseBucket,
+  posterRepository,
+} from "~~/server/utils/dashboardPublished";
 import { dashboardHold } from "~~/server/utils/bulkWorksheetHold";
 
 import {
@@ -58,6 +64,9 @@ const bulkDashboardSelect = {
   created: true,
   updated: true,
   completedAt: true,
+  collection: {
+    select: { id: true, profileId: true, slug: true, name: true },
+  },
   worksheetHeldAt: true,
   worksheetHoldReason: true,
   worksheetHoldPlatform: true,
@@ -180,6 +189,22 @@ export default defineEventHandler(async (event) => {
     }),
   );
 
+  // The bulk upload each poster family came from, for the Published tab's
+  // filter. A bulk upload lists the posters it created, which are the first
+  // version of each family, so later versions are matched through the root.
+  const bulkSubmissionByRootId = new Map<
+    number,
+    { id: string; name: string }
+  >();
+
+  for (const bulk of [...bulkSubmissionRows, ...completedBulkSubmissionRows]) {
+    for (const posterId of posterIdsFromBulkSubmissionSummary(
+      bulk.submissionSummary,
+    )) {
+      bulkSubmissionByRootId.set(posterId, { id: bulk.id, name: bulk.name });
+    }
+  }
+
   const owned = posterRows.map((poster) => {
     const rootPosterId = posterFamilyRootId(poster);
     const details = familyDetails.get(rootPosterId)!;
@@ -197,6 +222,10 @@ export default defineEventHandler(async (event) => {
       activeVersionDraft: isLatestPublished ? details.activeVersionDraft : null,
       claimed: false,
       claimedAt: null as Date | null,
+      bulkSubmission: bulkSubmissionByRootId.get(rootPosterId) ?? null,
+      // For the Published filters.
+      repository: posterRepository(poster),
+      licenseBucket: posterLicenseBucket(poster.posterMetadata?.license),
     };
   });
 
@@ -238,14 +267,20 @@ export default defineEventHandler(async (event) => {
     createdAt: bulk.created.toISOString(),
     updatedAt: bulk.updated.toISOString(),
     completedAt: bulk.completedAt?.toISOString() ?? null,
+    collection: bulk.collection
+      ? {
+          id: bulk.collection.id,
+          path: collectionPath(bulk.collection.profileId, bulk.collection.slug),
+          name: bulk.collection.name,
+        }
+      : null,
     hold: dashboardHold(bulk),
   });
 
   const bulkSubmissions = bulkSubmissionRows.map(mapBulkSubmissionRow);
 
-  const completedBulkSubmissions = completedBulkSubmissionRows.map(
-    mapBulkSubmissionRow,
-  );
+  const completedBulkSubmissions =
+    completedBulkSubmissionRows.map(mapBulkSubmissionRow);
 
   const bulkHiddenPosterIds = await posterIdsHiddenFromBulkDashboard(
     userId,
@@ -280,8 +315,7 @@ export default defineEventHandler(async (event) => {
       updatedAt: bulk.updatedAt,
     })),
   ].sort(
-    (a, b) =>
-      new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
   );
 
   return {
@@ -314,13 +348,7 @@ async function loadClaimedPosters(userId: string) {
 
   const versions = await prisma.poster.findMany({
     include: posterInclude,
-    where: {
-      status: "published",
-      isLatestVersion: true,
-      // Never list a poster the user already owns twice.
-      NOT: { userId },
-      OR: [{ id: { in: rootIds } }, { versionRootId: { in: rootIds } }],
-    },
+    where: claimedPosterVersionsWhere(userId, rootIds),
     orderBy: { versionSequence: "desc" },
   });
 
@@ -342,5 +370,8 @@ async function loadClaimedPosters(userId: string) {
     activeVersionDraft: null,
     claimed: true,
     claimedAt: claimedAt.get(rootPosterId) ?? null,
+    bulkSubmission: null as { id: string; name: string } | null,
+    repository: posterRepository(poster),
+    licenseBucket: posterLicenseBucket(poster.posterMetadata?.license),
   }));
 }

@@ -37,8 +37,13 @@ To search one field, put its name and a colon in front of your term:
 | Funder           | `funder:NIH`                 |
 | Award or grant   | `award:R01`                  |
 | Text on a poster | `content:"random forest"`    |
+| Collection name  | `collection:AGU`             |
 
 You can combine several, such as `author:"Jane Doe" conference:ISMB`. The filters next to the results narrow things down by language, license, year, institution and funder.
+
+### How do I find posters that list my ORCID iD?
+
+Search for `orcid:` followed by your iD, such as `orcid:0000-0002-1825-0097`. If your account has an ORCID iD, you can also turn on **Posters with my ORCID iD** in the filters on the [Find Posters](/discover) page.
 
 ### What does "Auto-indexed" mean?
 
@@ -109,6 +114,12 @@ Anyone with an account who is one of the poster's authors. Only auto-indexed pos
 
 Open the poster, select **Claim this poster** in the Authors section, and confirm. You don't need to choose which author you are.
 
+### Why does my dashboard suggest posters?
+
+If you verified your ORCID iD by signing in with ORCID, the **Suggested** tab of your [dashboard](/dashboard) lists auto-indexed posters whose author list includes that iD. An iD typed on your [Settings page](/profile) isn't used for suggestions until you verify it with ORCID there. Posters you shared yourself or already claimed are left out.
+
+The author list comes from each poster's repository record, so a suggestion can be wrong. Claim only the posters you authored. Select **Claim** on a poster, or **Claim all** for the whole list. Select **Not me** to stop seeing a poster, or **Hide** to hide the tab. You can show them again from the ORCID section of your Settings page.
+
 ### Is my claim checked?
 
 Not when you make it. By claiming, you confirm that you are one of the authors and agree to the [Terms of Use](/terms). Claims that turn out not to be genuine can be removed.
@@ -127,7 +138,7 @@ Author names are shown exactly as they appear in the original record, so citatio
 
 ### How do I remove a claim?
 
-Select **Remove claim** on the poster in your dashboard, or **Remove** next to "Claimed by you" on the poster's page. You can claim it again later.
+Open the menu (three dots) on the poster in your dashboard and select **Remove claim**, or select **Remove** next to "Claimed by you" on the poster's page. The poster also comes off any organization pages you showed it on, but stays in your collections. You can claim it again later.
 
 ### Someone claimed a poster they didn't author. What can I do?
 
@@ -140,6 +151,40 @@ Yes. If an auto-indexed poster has wrong details, isn't a poster, or you'd like 
 ### What happens if a poster I claimed is removed?
 
 We sometimes retire (tombstone) a poster record, for example when it's a duplicate. It's hidden from Discover and your public profile, and stays on your dashboard marked **Tombstoned** with the reason. Your claim is kept, so if we restore the poster it comes back for you. Only our team can restore a poster, so [contact us](https://tally.so/r/XxEBYP) if you have questions.
+
+## Collections
+
+### What is a collection?
+
+A named group of posters, such as the posters from one conference, project or lab, with its own page to share. A collection only groups posters for viewing. Each poster still belongs to the person who published it.
+
+### How do I make a collection?
+
+Go to [Collections](/collections) and select **New collection**. You can also select **Add to collection** on any poster in [Discover](/discover) or on its page, or **Collections** in the menu of a published poster in your dashboard, and type a name. After a bulk upload, select **Create collection from this batch** to start one with the upload's published posters already in it.
+
+### Which posters can I add?
+
+Any published poster on Posters.science, including ones other people shared and auto-indexed ones. A collection's page lists your own published and claimed posters to add. For anyone else's, select **Add to collection** on the poster in Discover or on its page. A collection holds up to 500 posters, and you can have up to 100 collections.
+
+### Who can see my collection?
+
+Only you, until you make it public from its Settings tab. A public collection can be seen by anyone with the link and shows its name, description, conference, posters, and your name as its owner. It also appears on Discover, on your public profile if you have one, and on organization pages you choose. Search engines are asked not to index it.
+
+### Can I give my collection its own link?
+
+Yes. Open the collection's **Settings** tab and set a **Custom link**, such as `/collection/agu-2026-lab-posters`. It can use letters, numbers and hyphens, and each one can only be used by one collection. The original link with the collection's id keeps working and opens the custom one. If you change or remove the custom link, links that use the old one stop working.
+
+### Can I show a collection on an organization page?
+
+Yes, on any organization you belong to. Open the collection's **Organizations** tab, or the organization's **Collections** tab. Organization owners can take it off their page, but only you can edit it.
+
+### How do I find collections?
+
+On the [Discover](/discover) page, turn on **Show collections** to see matching collections above the posters. **See all** opens every collection that matches. A collection matches when your search is in its name, description, conference or owner's name, or when it holds a poster that matches. Use `collection:` to find posters in a collection by its name.
+
+### What happens to a collection if a poster is removed?
+
+A retired poster disappears from the collection while it is retired and comes back if it is restored. Removing your claim on a poster doesn't take it out of your collections.
 
 ## Your profile and account
 
@@ -165,11 +210,19 @@ It looks like `posters.science/profile/k3x9p2q7m4`. The letters and numbers are 
 
 ### Why do I need to verify my email address?
 
-Verifying your email confirms that the address is yours and that you can recover your account. You can sign in once it's verified. If the email didn't arrive, check your spam folder. When you try to sign in with an unverified address, the sign-in page offers **Send a new verification email**.
+Verifying your email confirms that the address is yours and that you can recover your account. You can sign in once it's verified, with your password or with ORCID. If you sign up with ORCID and keep the email address your ORCID record shares publicly, ORCID has already confirmed it and we skip this step. If the email didn't arrive, check your spam folder. When you try to sign in with an unverified address, the sign-in page offers **Send a new verification email**.
+
+### Can I sign in with ORCID?
+
+Yes. Select **Sign in with ORCID** on the [sign-in page](/login), or **Sign up with ORCID** on the [sign-up page](/signup) if you're new. The first time, we ask for an email address so we can reach you about your account and posters.
+
+If you already have an account, sign in with your password first and select **Link ORCID** on your [Settings page](/profile). After that you can use either one. Each ORCID iD can be linked to one account only.
+
+You can unlink ORCID from the same page once your account has a password, so you can still sign in afterwards.
 
 ### I forgot my password. What should I do?
 
-Select **Forgot your password?** on the [sign-in page](/login) and we'll email you a link to set a new one.
+Select **Forgot your password?** on the [sign-in page](/login) and we'll email you a link to set a new one. This also works if you signed up with ORCID and never set a password.
 
 ### How do I change my name, affiliation or bio?
 
@@ -177,7 +230,11 @@ Edit them on your [Settings page](/profile).
 
 ### How do I add my ORCID iD?
 
-Enter it in the **ORCID iD** field on your [Settings page](/profile). You can paste the 16-digit iD or your orcid.org link. We check that the iD exists on ORCID, then show it on your public profile with a link to your ORCID record.
+Select **Link ORCID** on your [Settings page](/profile) and sign in to ORCID. ORCID confirms the iD is yours, and you can then also sign in with it.
+
+If you'd rather not link it, type it in the **ORCID iD** field on the same page. You can paste the 16-digit iD or your orcid.org link, and we check that the iD exists on ORCID.
+
+Either way, it shows on your public profile with a link to your ORCID record. A linked iD is shown instead of a typed one.
 
 ### How do I delete my account?
 

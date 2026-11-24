@@ -12,7 +12,7 @@ import { escapeLike } from "#shared/utils/searchQuery";
 
 type JsonField = Exclude<
   DiscoverSearchField,
-  "title" | "description" | "doi" | "conference"
+  "title" | "description" | "doi" | "conference" | "collection"
 >;
 
 export type DiscoverSearchFilter = {
@@ -157,6 +157,20 @@ function columnCondition(
           },
         },
       };
+    // Posters in a public collection with this in its name. Collections hold
+    // the version root, so a later version matches through its root. Same
+    // rule as publicCollectionWhere in collections.ts, which imports this file.
+    case "collection": {
+      const inCollection = {
+        collectionItems: {
+          some: {
+            collection: { isPublic: true, hiddenAt: null, name: contains },
+          },
+        },
+      };
+
+      return { OR: [inCollection, { versionRoot: { is: inCollection } }] };
+    }
   }
 }
 
@@ -165,6 +179,7 @@ const COLUMN_FIELDS = new Set<DiscoverSearchField>([
   "description",
   "doi",
   "conference",
+  "collection",
 ]);
 
 function isColumnField(
@@ -173,14 +188,31 @@ function isColumnField(
   return COLUMN_FIELDS.has(field);
 }
 
-async function postersMatching(conditions: Prisma.Sql[]): Promise<number[]> {
+export type DiscoverSearchOptions = {
+  /**
+   * Poster version ids to search instead of every public poster, such as the
+   * posters on a user's dashboard, which include retired ones.
+   */
+  scope?: number[];
+};
+
+async function postersMatching(
+  conditions: Prisma.Sql[],
+  scope?: number[],
+): Promise<number[]> {
+  if (scope?.length === 0) return [];
+
+  const listing = scope
+    ? Prisma.sql`p.id = ANY(${scope}::int[])`
+    : Prisma.sql`p.status = 'published'
+      AND p.tombstone = false
+      AND p."isLatestVersion" = true`;
+
   const rows = await prisma.$queryRaw<Array<{ poster_id: number }>>`
     SELECT p.id AS poster_id
     FROM "PosterMetadata" pm
     JOIN "Poster" p ON pm."posterId" = p.id
-    WHERE p.status = 'published'
-      AND p.tombstone = false
-      AND p."isLatestVersion" = true
+    WHERE ${listing}
       AND ${Prisma.join(conditions, " AND ")}
   `;
 
@@ -189,6 +221,7 @@ async function postersMatching(conditions: Prisma.Sql[]): Promise<number[]> {
 
 export async function buildDiscoverSearchFilter(
   parsed: ParsedDiscoverSearch,
+  { scope }: DiscoverSearchOptions = {},
 ): Promise<DiscoverSearchFilter> {
   const where: Prisma.PosterWhereInput[] = [];
   const jsonConditions: Prisma.Sql[] = [];
@@ -202,20 +235,25 @@ export async function buildDiscoverSearchFilter(
   }
 
   const ids =
-    jsonConditions.length > 0 ? await postersMatching(jsonConditions) : null;
+    jsonConditions.length > 0
+      ? await postersMatching(jsonConditions, scope)
+      : null;
 
   if (parsed.freeText) {
     const term = parsed.freeText;
-    const jsonIds = await postersMatching([
-      Prisma.sql`(${Prisma.join(
-        [
-          jsonCondition("keyword", term),
-          jsonCondition("author", term),
-          jsonCondition("affiliation", term),
-        ],
-        " OR ",
-      )})`,
-    ]);
+    const jsonIds = await postersMatching(
+      [
+        Prisma.sql`(${Prisma.join(
+          [
+            jsonCondition("keyword", term),
+            jsonCondition("author", term),
+            jsonCondition("affiliation", term),
+          ],
+          " OR ",
+        )})`,
+      ],
+      scope,
+    );
 
     const anyOf: Prisma.PosterWhereInput[] = [
       columnCondition("title", term),

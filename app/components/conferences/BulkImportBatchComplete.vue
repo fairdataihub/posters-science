@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { BulkSubmissionCompletionResponse } from "#shared/types/bulkSubmissionCompletion";
 import dayjs from "dayjs";
+import BulkImportBatchOrganizations from "./BulkImportBatchOrganizations.vue";
 
 const props = defineProps<{
   jobId: string;
@@ -12,6 +13,7 @@ const { data, error, status } =
   );
 
 const loading = computed(() => status.value === "pending");
+const organizationsOpen = ref(false);
 
 const completedLabel = computed(() => {
   const at = data.value?.completedAt ?? data.value?.zenodoBatchCompletedAt;
@@ -149,7 +151,41 @@ useSeoMeta({
           label="Back to dashboard"
           to="/dashboard"
         />
+
+        <UButton
+          color="neutral"
+          variant="subtle"
+          icon="i-lucide-building-2"
+          label="Add to organization"
+          @click="organizationsOpen = true"
+        />
+
+        <UButton
+          v-if="data.collection"
+          color="neutral"
+          variant="subtle"
+          icon="i-lucide-library-big"
+          label="View collection"
+          :to="`/collections/${data.collection.id}`"
+        />
+
+        <UButton
+          v-else
+          color="primary"
+          variant="subtle"
+          icon="i-lucide-library-big"
+          label="Create collection from this batch"
+          :to="{
+            path: '/collections',
+            query: { new: '1', fromBatch: data.jobId },
+          }"
+        />
       </div>
+
+      <BulkImportBatchOrganizations
+        v-model:open="organizationsOpen"
+        :job-id="data.jobId"
+      />
     </template>
   </div>
 </template>

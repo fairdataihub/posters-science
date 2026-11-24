@@ -166,6 +166,62 @@ Stop the database:
 docker-compose -f ./dev-docker-compose.yaml down
 ```
 
+### ORCID sign-in
+
+Local development signs in through the [ORCID sandbox](https://sandbox.orcid.org), a test copy of ORCID with no real records. The sandbox only sends email to `@mailinator.com` addresses, so test accounts use [Mailinator](https://www.mailinator.com) inboxes.
+
+#### One-time setup
+
+1. **Create a sandbox ORCID account.** Register at [sandbox.orcid.org/register](https://sandbox.orcid.org/register) with any `@mailinator.com` address, for example `yourname-posters@mailinator.com`.
+2. **Verify the email.** Open [mailinator.com](https://www.mailinator.com), type the part before the `@` into the inbox search and open ORCID's email. No Mailinator account is needed.
+   - Mailinator inboxes are public. Use a password you don't use anywhere else.
+3. **Register a sandbox app.** In the sandbox, open [Developer Tools](https://sandbox.orcid.org/developer-tools) (it needs the verified email) and add this redirect URI exactly:
+
+   ```text
+   https://127.0.0.1:3000/api/auth/orcid
+   ```
+
+4. **Add the credentials to `.env`.** The ORCID buttons stay hidden until all four are set.
+
+   ```bash
+   NUXT_ORCID_ENDPOINT=https://sandbox.orcid.org
+   NUXT_ORCID_CLIENT_ID=APP-XXXXXXXXXXXXXXXX
+   NUXT_ORCID_CLIENT_SECRET=your-sandbox-client-secret
+   NUXT_ORCID_REDIRECT_URI=https://127.0.0.1:3000/api/auth/orcid
+   ```
+
+#### Each time you test
+
+1. Stop any running dev server, then start it over https on `127.0.0.1`:
+
+   ```bash
+   pnpm dev:orcid
+   ```
+
+   This runs `nuxt dev --https --host 127.0.0.1`, which makes a self-signed certificate.
+
+2. Open [https://127.0.0.1:3000](https://127.0.0.1:3000), not `localhost`. The browser warns about the certificate once; choose Advanced, then Continue.
+3. Try a flow:
+
+   | Flow              | Where                                                                            |
+   | ----------------- | -------------------------------------------------------------------------------- |
+   | Sign up           | `/signup`, **Sign up with ORCID**                                                |
+   | Sign in           | `/login`, **Sign in with ORCID**                                                 |
+   | Link ORCID        | Settings (`/profile`), **Verify with ORCID** in the ORCID section                |
+   | Another test user | Sign out of the sandbox, then register again with a different Mailinator address |
+
+With `NUXT_SITE_ENV=development`, new ORCID accounts skip email verification on Posters.science, so you don't need to open a Mailinator inbox to finish signing up.
+
+#### Troubleshooting
+
+| Problem                                          | Fix                                                                                                                                                  |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ORCID says the redirect URI doesn't match        | The URI registered in Developer Tools, `NUXT_ORCID_REDIRECT_URI` and the address in your browser must match exactly, including `https` and the port. |
+| Back on the site but not signed in               | You started from `localhost`. The sign-in cookie belongs to the address you opened, so start from `https://127.0.0.1:3000`.                          |
+| The dev server started on a port other than 3000 | Free port 3000, or register a second redirect URI with that port and update `.env` to match.                                                         |
+| No ORCID button                                  | One of the four `NUXT_ORCID_*` values is empty. Restart the dev server after editing `.env`.                                                         |
+| No email from the sandbox                        | The sandbox only emails `@mailinator.com` addresses.                                                                                                 |
+
 ### Prisma
 
 The application uses [Prisma](https://www.prisma.io/) to interact with the database.

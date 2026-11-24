@@ -53,8 +53,9 @@ const tabs = [
   { label: "Audit Log", icon: "material-symbols:history", value: "audit" },
 ];
 
-// Organizations sit under the Users tab, but in their own table: they have no
-// role or email to act on, so the Make Admin and Delete actions never apply.
+// Organizations and collections sit under the Users tab, each in their own
+// table: they have no role or email to act on, so the Make Admin and Delete
+// actions never apply.
 const usersView = ref("people");
 const usersViews = [
   { label: "People", icon: "material-symbols:person", value: "people" },
@@ -62,6 +63,11 @@ const usersViews = [
     label: "Organizations",
     icon: "material-symbols:corporate-fare",
     value: "organizations",
+  },
+  {
+    label: "Collections",
+    icon: "material-symbols:collections-bookmark",
+    value: "collections",
   },
 ];
 
@@ -138,6 +144,10 @@ async function onChanged() {
 
         <div v-show="usersView === 'organizations'">
           <AdminOrganizationsTable @changed="onChanged" />
+        </div>
+
+        <div v-show="usersView === 'collections'">
+          <AdminCollectionsTable @changed="onChanged" />
         </div>
       </div>
 

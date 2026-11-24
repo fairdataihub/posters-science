@@ -1,3 +1,5 @@
+import type { BulkSubmissionCollectionLink } from "./dashboardFeed";
+
 export type BulkSubmissionCompletionPoster = {
   posterId: number;
   rootPosterId: number;
@@ -23,6 +25,28 @@ export type BulkSubmissionCompletionResponse = {
   latestActiveEmbargoUntil: string | null;
   /** False when embargo dates were not persisted from Zenodo publish — early release is hidden. */
   fileEmbargoEarlyReleaseReady: boolean;
+  /** Set once a collection was made from this upload. */
+  collection: BulkSubmissionCollectionLink | null;
+};
+
+/** One of the person's organizations, for showing a whole batch on its page. */
+export type BulkBatchOrganization = {
+  id: string;
+  name: string;
+  path: string;
+  avatarUrl: string;
+  isPublic: boolean;
+  hidden: boolean;
+  /** How many of the batch's posters this organization already shows. */
+  listedCount: number;
+};
+
+export type BulkBatchOrganizations = {
+  /** Version roots of the batch's posters that can go on an organization page. */
+  posterIds: number[];
+  /** The batch's posters that can't be listed yet, such as unpublished ones. */
+  skippedCount: number;
+  organizations: BulkBatchOrganization[];
 };
 
 export type BulkReleaseFileEmbargoResponse = {

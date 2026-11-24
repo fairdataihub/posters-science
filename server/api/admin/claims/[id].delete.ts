@@ -41,7 +41,8 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, statusMessage: "Claim not found" });
   }
 
-  // The claimant's organization listings for this poster depended on the claim.
+  // The claimant's organization listings for this poster depended on the
+  // claim. Collections can hold any public poster, so their items stay.
   const [, listings] = await prisma.$transaction([
     prisma.posterClaim.delete({ where: { id: claim.id } }),
     prisma.organizationPoster.deleteMany({
