@@ -1,0 +1,76 @@
+name: Dependabot Node Sync
+
+on:
+  pull_request_target:
+    types: [opened, synchronize]
+
+permissions:
+  contents: write
+
+jobs:
+  sync-node:
+    name: Sync Node version across files
+    if: github.actor == 'dependabot[bot]' && (github.base_ref == 'staging' || github.base_ref == 'main')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check for Dockerfile Node bump and sync files
+        env:
+          GIT_USER_NAME: ${{ secrets.GIT_USER_NAME }}
+          GIT_USER_EMAIL: ${{ secrets.GIT_USER_EMAIL }}
+        run: |
+          # Check if Dockerfile was modified in this PR
+          if ! git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -q '^Dockerfile$'; then
+            echo "Dockerfile was not modified in this PR. Skipping sync."
+            exit 0
+          fi
+
+          # Extract semantic version from Dockerfile (e.g. 22.23.5)
+          NODE_VERSION=$(grep -E '^FROM node:[0-9]+' Dockerfile | head -n1 | sed -E 's/FROM node:([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+          echo "Detected Docker Node version: $NODE_VERSION"
+
+          if [ -z "$NODE_VERSION" ]; then
+            echo "No semantic Node version detected in Dockerfile. Skipping sync."
+            exit 0
+          fi
+
+          # Update mise.toml if present
+          if [ -f "mise.toml" ] && grep -q 'node =' mise.toml; then
+            sed -i -E "s/node = \"[0-9]+\.[0-9]+\.[0-9]+\"/node = \"$NODE_VERSION\"/" mise.toml
+            echo "Updated mise.toml to $NODE_VERSION"
+          fi
+
+          # Update all GitHub Actions workflow files with node-version
+          for wf in .github/workflows/*.yml; do
+            if [ -f "$wf" ] && grep -q 'node-version:' "$wf"; then
+              sed -i -E "s/node-version: [0-9]+\.[0-9]+\.[0-9]+/node-version: $NODE_VERSION/g" "$wf"
+              echo "Updated $wf to $NODE_VERSION"
+            fi
+          done
+
+          # Update .node-version or .nvmrc if present
+          if [ -f ".node-version" ]; then
+            echo "$NODE_VERSION" > .node-version
+          fi
+          if [ -f ".nvmrc" ]; then
+            echo "$NODE_VERSION" > .nvmrc
+          fi
+
+          # Check if there are changes to commit
+          if ! git diff --quiet; then
+            COMMIT_USER="${GIT_USER_NAME:-github-actions[bot]}"
+            COMMIT_EMAIL="${GIT_USER_EMAIL:-github-actions[bot]@users.noreply.github.com}"
+            git config user.name "$COMMIT_USER"
+            git config user.email "$COMMIT_EMAIL"
+            git commit -am "fix: :bug: Run deploy/metrics workflows and mise on Node $NODE_VERSION"
+            git push
+            echo "Committed and pushed synchronized Node version updates."
+          else
+            echo "All files already in sync with Node $NODE_VERSION."
+          fi

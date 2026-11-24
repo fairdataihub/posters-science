@@ -1,8 +1,8 @@
 version: 2
 updates:
   # Propose Node base image bumps (security releases) for the Dockerfile.
-  # When merging one, bump node-version in the deploy and metrics workflows
-  # and node in mise.toml to the same version.
+  # When Dependabot opens a PR, dependabot-sync-node.yml automatically updates
+  # node-version in workflows and mise.toml to match.
   - package-ecosystem: docker
     directory: /
     target-branch: staging
