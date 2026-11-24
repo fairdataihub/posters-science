@@ -4,7 +4,7 @@ import { normalizeVersionRelatedIdentifiers } from "./posterVersions";
 
 /**
  * Transforms PosterMetadata from the database into
- * the poster_schema.json structure for Zenodo upload.
+ * the poster_schema.json structure for a Zenodo or Figshare upload.
  */
 export function buildPosterJson(
   meta: PosterMetadata,
@@ -12,6 +12,10 @@ export function buildPosterJson(
     title?: string;
     description?: string;
     zenodoDoi?: string;
+    /** The repository receiving the deposit. Defaults to Zenodo. */
+    repository?: "zenodo" | "figshare";
+    /** The DOI reserved by the repository for this deposit. */
+    depositDoi?: string;
     publishedAt?: Date;
     includePublisher?: boolean;
     useStoredPublicationYear?: boolean;
@@ -21,7 +25,14 @@ export function buildPosterJson(
     ? (meta.publicationYear ?? new Date().getFullYear())
     : new Date().getFullYear();
 
-  const doi = meta.doi ?? undefined;
+  const repository = options?.repository ?? "zenodo";
+  const depositDoi = options?.depositDoi ?? options?.zenodoDoi;
+  // A Figshare deposit carries the DOI Figshare reserved for it, so the file
+  // names its own DOI (crosswalk/figshare.md, "The deposited poster.json").
+  const doi =
+    (repository === "figshare" ? depositDoi : undefined) ??
+    meta.doi ??
+    undefined;
   let prefix: string | undefined;
   let suffix: string | undefined;
 
@@ -34,13 +45,22 @@ export function buildPosterJson(
     }
   }
 
+  // Each repository's re3data DOI: Zenodo r3d100010468, figshare r3d100010066.
+  // DataCite spells the figshare.com publisher in lowercase.
   const publisher = options?.includePublisher
-    ? {
-        name: "Zenodo",
-        publisherIdentifier: "https://doi.org/10.17616/R3QP53",
-        publisherIdentifierScheme: "DOI",
-        schemeURI: "https://doi.org",
-      }
+    ? repository === "figshare"
+      ? {
+          name: "figshare",
+          publisherIdentifier: "https://doi.org/10.17616/R3PK5R",
+          publisherIdentifierScheme: "DOI",
+          schemeURI: "https://doi.org",
+        }
+      : {
+          name: "Zenodo",
+          publisherIdentifier: "https://doi.org/10.17616/R3QP53",
+          publisherIdentifierScheme: "DOI",
+          schemeURI: "https://doi.org",
+        }
     : undefined;
 
   const conference = buildConference(meta);
@@ -110,11 +130,13 @@ export function buildPosterJson(
     : [];
 
   const validIdentifiers = filterIdentifiers(meta.identifiers);
-  const zenodoDoi = options?.zenodoDoi;
-  const mergedIdentifiers = zenodoDoi
+  const mergedIdentifiers = depositDoi
     ? [
-        { identifier: zenodoDoi, identifierType: "DOI" },
-        ...(validIdentifiers ?? []),
+        { identifier: depositDoi, identifierType: "DOI" },
+        ...(validIdentifiers ?? []).filter(
+          (entry) =>
+            (entry as { identifier?: unknown }).identifier !== depositDoi,
+        ),
       ]
     : validIdentifiers;
   const validRelatedIdentifiers = filterRelatedIdentifiers(
@@ -138,7 +160,7 @@ export function buildPosterJson(
           {
             date: formatDateISO(options.publishedAt),
             dateType: "Submitted",
-            dateInformation: "Submitted to Zenodo through Posters.science",
+            dateInformation: `Submitted to ${repository === "figshare" ? "Figshare" : "Zenodo"} through Posters.science`,
           },
           ...existingDates,
         ]
