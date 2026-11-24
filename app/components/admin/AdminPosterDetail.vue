@@ -22,6 +22,13 @@ type DetailResponse = {
     user: PosterOwner;
     posterMetadata: Record<string, unknown> | null;
     zenodoDepositions: Record<string, unknown> | null;
+    figshareDeposition: {
+      articleId: number;
+      status: string;
+      lastPublishedDoi: string | null;
+      figshareVersion: number | null;
+      publicUrl: string | null;
+    } | null;
     extractionJob: Record<string, unknown> | null;
   };
   rootId: number;
@@ -277,6 +284,52 @@ const creators = computed(() => {
 
           <p v-else class="text-muted text-sm">
             No Zenodo deposition is linked to this poster.
+          </p>
+        </section>
+
+        <USeparator />
+
+        <section class="space-y-2">
+          <h3 class="text-sm font-semibold">Figshare</h3>
+
+          <dl
+            v-if="poster.figshareDeposition"
+            class="grid grid-cols-2 gap-x-4 gap-y-1 text-sm"
+          >
+            <dt class="text-muted">Item id</dt>
+
+            <dd class="font-mono">
+              <ULink
+                v-if="poster.figshareDeposition.publicUrl"
+                :to="poster.figshareDeposition.publicUrl"
+                target="_blank"
+                class="text-primary underline"
+              >
+                {{ poster.figshareDeposition.articleId }}
+              </ULink>
+
+              <template v-else>
+                {{ poster.figshareDeposition.articleId }}
+              </template>
+            </dd>
+
+            <dt class="text-muted">Status</dt>
+
+            <dd>{{ poster.figshareDeposition.status }}</dd>
+
+            <dt class="text-muted">Figshare version</dt>
+
+            <dd>{{ poster.figshareDeposition.figshareVersion ?? "-" }}</dd>
+
+            <dt class="text-muted">Last published DOI</dt>
+
+            <dd class="font-mono">
+              {{ poster.figshareDeposition.lastPublishedDoi ?? "-" }}
+            </dd>
+          </dl>
+
+          <p v-else class="text-muted text-sm">
+            No Figshare item is linked to this poster.
           </p>
         </section>
 

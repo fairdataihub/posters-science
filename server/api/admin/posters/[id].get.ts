@@ -15,6 +15,7 @@ export default defineEventHandler(async (event) => {
       description: true,
       posterMetadata: true,
       zenodoDepositions: true,
+      figshareDeposition: true,
       extractionJob: true,
     },
   });
