@@ -195,7 +195,7 @@ Local development signs in through the [ORCID sandbox](https://sandbox.orcid.org
 1. Stop any running dev server, then start it over https on `127.0.0.1`:
 
    ```bash
-   pnpm dev:orcid
+   pnpm dev:https
    ```
 
    This runs `nuxt dev --https --host 127.0.0.1`, which makes a self-signed certificate.
