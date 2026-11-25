@@ -86,6 +86,15 @@ const router = useRouter();
 const { data: featureFlags } = useLazyFetch<FeatureFlags>("/api/features", {
   server: false,
 });
+/** The flags, waiting for them if the lazy fetch hasn't returned yet. */
+async function currentFeatureFlags(): Promise<FeatureFlags | null> {
+  if (featureFlags.value) return featureFlags.value;
+  try {
+    return await $fetch<FeatureFlags>("/api/features");
+  } catch {
+    return null;
+  }
+}
 const posterSheetRef = ref<InstanceType<typeof BulkPosterSheetMapping> | null>(
   null,
 );
@@ -804,9 +813,13 @@ async function ensureResumeJobLoaded() {
     // again at the first step, so the organizer walks through any steps
     // added since. Progress is kept; Continue moves forward again. A page
     // loaded before a deploy (lower than the batch) leaves it alone.
+    // Only while poster worksheets are on: with the flag off there are no new
+    // steps to see, so production batches aren't sent back on every deploy.
+    // Unstamped batches are sent back once when the flag is turned on.
     const firstStep = wizardSteps[0]!.id;
     const release = Number(useRuntimeConfig().public.wizardRelease) || 0;
-    if ((job.wizardRelease ?? -1) < release) {
+    const flags = await currentFeatureFlags();
+    if (flags?.poster_sheet_mapping && (job.wizardRelease ?? -1) < release) {
       const sendBack = !pinnedToPublish && step !== firstStep;
       if (sendBack) {
         step = firstStep;
