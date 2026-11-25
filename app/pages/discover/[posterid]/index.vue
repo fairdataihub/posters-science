@@ -32,7 +32,7 @@ const { data: apiData, error } = await useFetch(
 if (error.value) {
   console.error(error.value);
   useSeoMeta({
-    title: "Poster Not Found - Posters.science",
+    title: "Poster Not Found",
     description:
       "The requested poster could not be found or has not been indexed.",
     ogTitle: "Poster Not Found - Posters.science",
@@ -302,7 +302,7 @@ const posterDescription = (
 const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent(posterTitle)}&description=${encodeURIComponent(posterDescription)}&app=posters-science&org=fairdataihub`;
 
 useSeoMeta({
-  title: `${posterTitle} - Posters.science`,
+  title: posterTitle,
   description: posterDescription,
   ogTitle: posterTitle,
   ogDescription: posterDescription,

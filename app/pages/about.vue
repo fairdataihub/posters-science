@@ -2,7 +2,7 @@
 const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("About - Posters.science")}&description=${encodeURIComponent("Posters.science is a platform for discovering and sharing scientific posters, a project by the FAIR Data Innovations Hub.")}&app=posters-science&org=fairdataihub`;
 
 useSeoMeta({
-  title: "About - Posters.science",
+  title: "About",
   description:
     "Posters.science is a platform for discovering and sharing scientific posters, a project by the FAIR Data Innovations Hub.",
   ogTitle: "About - Posters.science",

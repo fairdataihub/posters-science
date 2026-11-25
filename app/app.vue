@@ -41,7 +41,12 @@ useHead({
 useSeoMeta({
   ogImage:
     "https://kalai.fairdataihub.org/api/generate?title=Hello&description=This%20is%20a%20Nuxt%20starter%20template&app=fairdataihub&org=fairdataihub",
-  titleTemplate: "%s - Posters.science",
+  // Pages give only their own name and the site name is added here once. The
+  // home page's title is the site name alone.
+  titleTemplate: (title) =>
+    !title || title === "Posters.science"
+      ? "Posters.science"
+      : `${title} - Posters.science`,
   twitterCard: "summary_large_image",
   twitterImage:
     "https://kalai.fairdataihub.org/api/generate?title=Hello&description=This%20is%20a%20Nuxt%20starter%20template&app=fairdataihub&org=fairdataihub",

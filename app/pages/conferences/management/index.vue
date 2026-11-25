@@ -13,7 +13,7 @@ definePageMeta({
 const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Conference management - Posters.science")}&description=${encodeURIComponent("Manage conferences on Posters.science")}&app=posters-science&org=fairdataihub`;
 
 useSeoMeta({
-  title: "Conference management - Posters.science",
+  title: "Conference management",
   description:
     "Manage conference registrations and poster import on Posters.science.",
   ogTitle: "Conference management - Posters.science",
@@ -169,6 +169,7 @@ function conferenceDetailPath(conference: ManagedConference) {
                   Submitted
                   {{ dayjs(conference.submittedAt).format("MMMM D, YYYY") }}
                 </span>
+
                 <div class="ml-auto flex items-center gap-2" @click.stop>
                   <UButton
                     v-if="conference.status === 'approved'"
@@ -179,6 +180,7 @@ function conferenceDetailPath(conference: ManagedConference) {
                     size="xs"
                     to="/share/new-bulk"
                   />
+
                   <UButton
                     color="primary"
                     variant="subtle"

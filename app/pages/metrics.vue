@@ -4,7 +4,7 @@ import WordCloud from "~/components/metrics/WordCloud.vue";
 const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Metrics - Posters.science")}&description=${encodeURIComponent("Usage and growth metrics for the Posters.science platform")}&app=posters-science&org=fairdataihub`;
 
 useSeoMeta({
-  title: "Metrics - Posters.science",
+  title: "Metrics",
   description: "Usage and growth metrics for the Posters.science platform.",
   ogTitle: "Metrics - Posters.science",
   ogDescription: "Usage and growth metrics for the Posters.science platform.",

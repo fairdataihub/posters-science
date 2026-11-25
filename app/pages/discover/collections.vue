@@ -18,7 +18,7 @@ import {
 const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Discover Collections - Posters.science")}&description=${encodeURIComponent("Browse groups of posters from conferences, projects and labs.")}&app=posters-science&org=fairdataihub`;
 
 useSeoMeta({
-  title: "Discover Collections - Posters.science",
+  title: "Discover Collections",
   description: "Browse groups of posters from conferences, projects and labs.",
   ogTitle: "Discover Collections - Posters.science",
   ogDescription:
