@@ -33,10 +33,6 @@ const hiding = ref(false);
 
 const suggestions = computed(() => props.data?.suggestions ?? []);
 
-function fallbackImage(suggestion: OrcidSuggestion) {
-  return `https://api.dicebear.com/9.x/shapes/svg?seed=${suggestion.posterId}`;
-}
-
 function posterPath(suggestion: OrcidSuggestion) {
   return `/discover/${suggestion.versionId}`;
 }
@@ -374,8 +370,9 @@ async function hide() {
             <div
               class="h-full w-[150px] shrink-0 overflow-hidden max-md:h-44 max-md:w-full max-md:border-b max-md:border-gray-100 dark:max-md:border-gray-800"
             >
-              <img
-                :src="suggestion.imageUrl || fallbackImage(suggestion)"
+              <PosterImage
+                :src="suggestion.imageUrl"
+                :seed="suggestion.posterId"
                 :alt="suggestion.title || 'Untitled poster'"
                 loading="lazy"
                 class="max-h-[150px] w-full object-contain p-2 transition-transform duration-300 group-hover:scale-105 max-md:h-full max-md:max-h-none max-md:p-3"
