@@ -13,8 +13,8 @@ const props = defineProps<{
   highlight?: string[];
   /**
    * On Published, a finished batch shows its summary and posters in a panel
-   * under the card instead of opening the summary page. This is that
-   * panel's id, left out where there is none.
+   * inside the card (the default slot) instead of opening the summary page.
+   * This is that panel's id, left out where there is none.
    */
   summaryPanelId?: string;
   summaryExpanded?: boolean;
@@ -147,7 +147,7 @@ function actionLabel() {
   if (opensSummaryInPlace.value) {
     return props.summaryExpanded
       ? "Hide posters"
-      : `View posters (${props.bulk.posterCount ?? 0})`;
+      : `Show posters (${props.bulk.posterCount ?? 0})`;
   }
   if (props.bulk.status === "completed") return "View batch summary";
   if (props.bulk.status === "failed") return "Resolve issue";
@@ -178,11 +178,15 @@ function continueImport() {
 <template>
   <UPageCard
     variant="ghost"
-    class="group border-default h-50 cursor-pointer overflow-hidden rounded-none border-t border-b transition-all duration-300 max-md:h-auto max-md:rounded-xl max-md:border max-md:bg-white max-md:shadow-sm max-md:hover:shadow-md dark:max-md:bg-gray-950"
+    :ui="{ container: 'min-w-0' }"
+    class="group border-default cursor-pointer overflow-hidden rounded-none border-t border-b transition-all duration-300 max-md:h-auto max-md:rounded-xl max-md:border max-md:bg-white max-md:shadow-sm max-md:hover:shadow-md dark:max-md:bg-gray-950"
     @click="continueImport"
   >
+    <!-- The container's min-w-0 lets the card hold the batch's posters,
+         whose one-line titles would otherwise widen it past a phone's
+         screen. -->
     <div
-      class="flex h-full gap-8 max-md:h-auto max-md:flex-col max-md:gap-0 md:items-stretch"
+      class="flex h-37.5 gap-8 max-md:h-auto max-md:flex-col max-md:gap-0 md:items-stretch"
     >
       <div
         class="max-md:border-default h-full w-[150px] shrink-0 overflow-hidden max-md:h-44 max-md:w-full max-md:border-b"
@@ -323,5 +327,8 @@ function continueImport() {
         </div>
       </div>
     </div>
+
+    <!-- The batch's summary panel, under the card's text. -->
+    <slot />
   </UPageCard>
 </template>
