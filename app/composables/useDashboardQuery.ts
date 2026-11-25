@@ -201,7 +201,9 @@ export function useDashboardQuery(defaultView: Ref<DashboardView>) {
       if (route.query.deleted === "hide") return false;
       if (route.query.deleted === "show") return true;
 
-      return showDeletedCookie.value;
+      // useCookie sets null, not its default, when the cookie is deleted while
+      // the page is open (cleared site data, another tab).
+      return showDeletedCookie.value === true;
     },
     set: (show) => {
       showDeletedCookie.value = show;
