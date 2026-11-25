@@ -268,11 +268,21 @@ export function figshareConferenceBlock(meta: PosterMetadata) {
   return html;
 }
 
+/** Where text cut to fit went; poster.json keeps the full text. */
+function fitNote(
+  part: "description" | "abstract",
+  how: "Shortened" | "Left out",
+) {
+  return `<p><em>${how} to fit Figshare's 20,000-character limit. The full ${part} is in poster.json, one of this item's files.</em></p>`;
+}
+
 /**
  * One HTML description: the poster's description, the submission abstract
  * under "Abstract", then the conference block. Over Figshare's 20,000
- * characters the conference block stays whole and the longer of the other two
- * is shortened first, at a word.
+ * characters the conference block and the description stay whole and the
+ * abstract is shortened, at a word. Only when the description and conference
+ * block are too long on their own is the abstract left out and the
+ * description shortened. A note says poster.json has whatever was cut.
  */
 export function buildFigshareDescription(
   posterDescription: string,
@@ -284,11 +294,30 @@ export function buildFigshareDescription(
 
   if (abstract && abstract === description) abstract = "";
 
+  // An abstract cut down to nothing still leaves its heading and note.
+  const hasAbstract = !!abstract;
+  let descriptionShortened = false;
+  let abstractShortened = false;
+
   const conference = figshareConferenceBlock(meta) ?? "";
+  const abstractSection = () => {
+    if (abstract) {
+      return `<h3>Abstract</h3>${paragraphs(abstract)}${
+        abstractShortened ? fitNote("abstract", "Shortened") : ""
+      }`;
+    }
+
+    return hasAbstract
+      ? `<h3>Abstract</h3>${fitNote("abstract", "Left out")}`
+      : "";
+  };
   const render = () =>
     [
-      description ? paragraphs(description) : "",
-      abstract ? `<h3>Abstract</h3>${paragraphs(abstract)}` : "",
+      description
+        ? paragraphs(description) +
+          (descriptionShortened ? fitNote("description", "Shortened") : "")
+        : "",
+      abstractSection(),
       conference,
     ].join("");
 
@@ -300,14 +329,20 @@ export function buildFigshareDescription(
     html.length > FIGSHARE_DESCRIPTION_MAX && guard < 50;
     guard += 1
   ) {
-    const over = html.length - FIGSHARE_DESCRIPTION_MAX;
+    const cutAbstract = !!abstract;
 
-    if (description.length >= abstract.length && description) {
-      description = shortenAtWord(description, description.length - over - 20);
-    } else if (abstract) {
+    if (!cutAbstract && !description) break;
+
+    // Add the note before measuring, so the cut makes room for it too.
+    if (cutAbstract) abstractShortened = true;
+    else descriptionShortened = true;
+
+    const over = render().length - FIGSHARE_DESCRIPTION_MAX;
+
+    if (cutAbstract) {
       abstract = shortenAtWord(abstract, abstract.length - over - 20);
     } else {
-      break;
+      description = shortenAtWord(description, description.length - over - 20);
     }
 
     html = render();
