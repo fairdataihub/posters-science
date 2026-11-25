@@ -198,19 +198,45 @@ function continueImport() {
         class="flex h-full w-full min-w-0 flex-col justify-between py-1 max-md:h-auto max-md:gap-3 max-md:p-4 max-md:py-4"
       >
         <div class="flex flex-col gap-2">
-          <div class="flex flex-wrap items-center gap-2">
-            <UBadge
-              :color="status.color"
-              variant="solid"
-              size="sm"
-              :icon="status.icon"
-            >
-              {{ status.label }}
-            </UBadge>
+          <!-- The badges, with the batch's "..." menu at the end of the same
+               line, as on poster cards. -->
+          <div class="flex items-start justify-between gap-2">
+            <div class="flex flex-wrap items-center gap-2">
+              <UBadge
+                :color="status.color"
+                variant="solid"
+                size="sm"
+                :icon="status.icon"
+              >
+                {{ status.label }}
+              </UBadge>
 
-            <UBadge color="neutral" variant="soft" size="sm">
-              Bulk submission
-            </UBadge>
+              <UBadge color="neutral" variant="soft" size="sm">
+                Bulk submission
+              </UBadge>
+            </div>
+
+            <div
+              v-if="bulkMenuItems.length"
+              class="-my-0.5 shrink-0"
+              @click.stop
+              @keydown.enter.stop
+              @keydown.space.stop
+            >
+              <UDropdownMenu
+                :items="bulkMenuItems"
+                :content="{ align: 'end' }"
+                :ui="{ itemLeadingIcon: 'self-center' }"
+              >
+                <UButton
+                  color="neutral"
+                  variant="ghost"
+                  icon="i-lucide-ellipsis-vertical"
+                  size="xs"
+                  aria-label="More bulk import actions"
+                />
+              </UDropdownMenu>
+            </div>
           </div>
 
           <h3
@@ -293,21 +319,6 @@ function continueImport() {
               size="xs"
               @click="continueImport"
             />
-
-            <UDropdownMenu
-              v-if="bulkMenuItems.length"
-              :items="bulkMenuItems"
-              :content="{ align: 'end' }"
-              :ui="{ itemLeadingIcon: 'self-center' }"
-            >
-              <UButton
-                color="neutral"
-                variant="ghost"
-                icon="i-lucide-ellipsis-vertical"
-                size="xs"
-                aria-label="More bulk import actions"
-              />
-            </UDropdownMenu>
           </div>
         </div>
       </div>
