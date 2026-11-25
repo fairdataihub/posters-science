@@ -26,6 +26,11 @@ export type PosterSheetIssue = {
   missing: string[];
   /** Columns the header row has */
   found: string[];
+  /**
+   * The organizer added the wrong files (a file type, an extra or missing
+   * file) and can fix it without us, so the dialog doesn't offer Send it to us.
+   */
+  fixable?: boolean;
 };
 
 export type PosterSheetColumnSource =
