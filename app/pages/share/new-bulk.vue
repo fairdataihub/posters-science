@@ -10,6 +10,7 @@ import {
 
 definePageMeta({
   middleware: ["auth"],
+  appShell: true,
 });
 
 const route = useRoute();
@@ -17,6 +18,7 @@ const route = useRoute();
 const jobIdFromQuery = computed(() => {
   const raw = route.query.jobId;
   const value = Array.isArray(raw) ? raw[0] : raw;
+
   return typeof value === "string" && value.length > 0 ? value : null;
 });
 
@@ -55,6 +57,7 @@ const resumeLoading = computed(
 const wizardStepFromQuery = computed(() => {
   const raw = route.query[SHARE_BULK_IMPORT_STEP_QUERY];
   const value = Array.isArray(raw) ? raw[0] : raw;
+
   return normalizeBulkImportWizardStep(
     typeof value === "string" ? value : undefined,
   );
@@ -87,7 +90,6 @@ watch(
   { immediate: true },
 );
 
-
 const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Share Posters in bulk - Posters.science")}&description=${encodeURIComponent("Import multiple posters with license metadata")}&app=posters-science&org=fairdataihub`;
 
 useSeoMeta({
@@ -102,29 +104,35 @@ useSeoMeta({
 </script>
 
 <template>
-  <div class="mx-auto flex w-full max-w-screen-xl flex-col gap-6 px-6 pt-8 pb-12">
-    <ConferenceBulkImport
-      v-if="!resumeJobId || resumeStatus !== 'pending'"
-      :key="wizardKey"
-      :initial-job-id="resumeJobId ?? undefined"
-      :initial-import-name="resumeJob?.name"
-      :initial-step="initialWizardStep"
-      :resume-loading="resumeLoading"
-      @job-created="createdJobId = $event"
-    />
-
-    <div
-      v-else
-      class="flex flex-col items-center justify-center gap-3 py-16"
-      aria-live="polite"
-      aria-busy="true"
-    >
-      <UIcon
-        name="i-lucide-loader-circle"
-        class="size-10 animate-spin text-primary"
+  <DashboardPage
+    title="Share Posters in bulk"
+    :breadcrumb="[{ label: 'Share Posters', to: '/share' }]"
+    description="Import multiple poster files with license metadata."
+  >
+    <div class="mx-auto w-full max-w-screen-xl">
+      <ConferenceBulkImport
+        v-if="!resumeJobId || resumeStatus !== 'pending'"
+        :key="wizardKey"
+        :initial-job-id="resumeJobId ?? undefined"
+        :initial-import-name="resumeJob?.name"
+        :initial-step="initialWizardStep"
+        :resume-loading="resumeLoading"
+        @job-created="createdJobId = $event"
       />
-      <p class="text-muted text-sm">Loading bulk import…</p>
-    </div>
-  </div>
-</template>
 
+      <div
+        v-else
+        class="flex flex-col items-center justify-center gap-3 py-16"
+        aria-live="polite"
+        aria-busy="true"
+      >
+        <UIcon
+          name="i-lucide-loader-circle"
+          class="text-primary size-10 animate-spin"
+        />
+
+        <p class="text-muted text-sm">Loading bulk import…</p>
+      </div>
+    </div>
+  </DashboardPage>
+</template>
