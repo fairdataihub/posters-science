@@ -17,6 +17,7 @@ import type { OrcidSuggestions } from "#shared/types/orcidSuggestions";
 
 definePageMeta({
   middleware: ["auth"],
+  appShell: true,
 });
 
 const { clear, user } = useUserSession();
@@ -563,655 +564,644 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
 </script>
 
 <template>
-  <div class="min-h-screen bg-gray-50 dark:bg-gray-900">
-    <UContainer>
-      <UPage>
-        <UPageHeader
-          :ui="{
-            container: 'flex w-full flex-1',
-          }"
-        >
-          <template #title>
-            <div class="flex min-w-full items-center justify-between gap-2">
-              <div class="flex items-center gap-3">
-                <UAvatar
-                  :src="`https://api.dicebear.com/9.x/thumbs/svg?seed=${userData?.id}`"
-                  alt="User avatar"
-                />
+  <DashboardPage title="Settings">
+    <template #description>
+      <span class="inline-flex items-center gap-2">
+        <UAvatar
+          :src="`https://api.dicebear.com/9.x/thumbs/svg?seed=${userData?.id}`"
+          alt="User avatar"
+          size="2xs"
+        />
 
-                <h1 class="text-2xl font-bold">
-                  {{
-                    userData?.givenName || userData?.familyName
-                      ? `${userData?.givenName} ${userData?.familyName}`
-                      : userData?.id
-                  }}
-                </h1>
-              </div>
+        {{
+          userData?.givenName || userData?.familyName
+            ? `${userData?.givenName} ${userData?.familyName}`
+            : userData?.id
+        }}
+      </span>
+    </template>
 
-              <UButton
-                v-if="user?.role === 'admin'"
-                to="/admin"
-                icon="material-symbols:admin-panel-settings"
-                label="Admin Panel"
-                color="neutral"
+    <template v-if="user?.role === 'admin'" #actions>
+      <UButton
+        to="/admin"
+        icon="material-symbols:admin-panel-settings"
+        label="Admin Panel"
+        color="neutral"
+        variant="subtle"
+        size="sm"
+      />
+    </template>
+
+    <div class="mx-auto w-full max-w-(--ui-container)">
+      <UPageBody class="mt-0 pb-0">
+        <div class="space-y-6">
+          <!-- Public profile -->
+          <UCard>
+            <div class="flex flex-wrap items-center gap-2">
+              <h2 class="text-lg font-semibold">Public profile</h2>
+
+              <UBadge
+                :color="userData?.profilePublic ? 'success' : 'neutral'"
                 variant="subtle"
-                size="sm"
-              />
-            </div>
-          </template>
-        </UPageHeader>
-
-        <UPageBody>
-          <div class="space-y-6">
-            <!-- Public profile -->
-            <UCard>
-              <div class="flex flex-wrap items-center gap-2">
-                <h2 class="text-lg font-semibold">Public profile</h2>
-
-                <UBadge
-                  :color="userData?.profilePublic ? 'success' : 'neutral'"
-                  variant="subtle"
-                  :icon="
-                    userData?.profilePublic
-                      ? 'i-heroicons-globe-alt'
-                      : 'i-heroicons-lock-closed'
-                  "
-                >
-                  {{ userData?.profilePublic ? "Public" : "Private" }}
-                </UBadge>
-              </div>
-
-              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                {{
+                :icon="
                   userData?.profilePublic
-                    ? "Anyone with the link can see your name, affiliation, ORCID iD, bio and the posters you have published and claimed. Drafts stay private on your dashboard, and your email address is never shown."
-                    : "Make your profile public to share a page listing the posters you have published and claimed, with your name, affiliation, ORCID iD and bio. Drafts stay private on your dashboard, and your email address is never shown."
-                }}
-              </p>
+                    ? 'i-heroicons-globe-alt'
+                    : 'i-heroicons-lock-closed'
+                "
+              >
+                {{ userData?.profilePublic ? "Public" : "Private" }}
+              </UBadge>
+            </div>
 
-              <template v-if="userData?.profilePublic">
-                <div
-                  v-if="userData.profilePath"
-                  class="mt-4 flex flex-wrap items-center gap-2"
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              {{
+                userData?.profilePublic
+                  ? "Anyone with the link can see your name, affiliation, ORCID iD, bio and the posters you have published and claimed. Drafts stay private on your dashboard, and your email address is never shown."
+                  : "Make your profile public to share a page listing the posters you have published and claimed, with your name, affiliation, ORCID iD and bio. Drafts stay private on your dashboard, and your email address is never shown."
+              }}
+            </p>
+
+            <template v-if="userData?.profilePublic">
+              <div
+                v-if="userData.profilePath"
+                class="mt-4 flex flex-wrap items-center gap-2"
+              >
+                <code
+                  class="rounded bg-gray-100 px-2 py-1 text-sm break-all dark:bg-gray-800"
                 >
-                  <code
-                    class="rounded bg-gray-100 px-2 py-1 text-sm break-all dark:bg-gray-800"
-                  >
-                    {{ publicProfileUrl }}
-                  </code>
-
-                  <UButton
-                    size="sm"
-                    color="neutral"
-                    variant="outline"
-                    icon="i-lucide-link"
-                    @click="copyProfileLink"
-                  >
-                    Copy link
-                  </UButton>
-
-                  <UButton
-                    :to="userData.profilePath"
-                    size="sm"
-                    color="neutral"
-                    variant="outline"
-                    icon="i-heroicons-arrow-top-right-on-square"
-                  >
-                    View public profile
-                  </UButton>
-                </div>
-
-                <USeparator class="my-4" />
-
-                <div
-                  class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div>
-                    <p class="text-sm font-medium">Make your profile private</p>
-
-                    <p class="text-muted text-sm">
-                      Only you will see it. Anyone else who opens your link gets
-                      a not found page until you make it public again.
-                    </p>
-                  </div>
-
-                  <UButton
-                    size="sm"
-                    color="warning"
-                    variant="subtle"
-                    icon="i-heroicons-lock-closed"
-                    class="shrink-0 self-start sm:self-auto"
-                    :loading="publicSaving"
-                    @click="setProfilePublic(false)"
-                  >
-                    Make profile private
-                  </UButton>
-                </div>
-              </template>
-
-              <div v-else class="mt-4 flex flex-wrap items-center gap-2">
-                <UButton
-                  size="sm"
-                  color="primary"
-                  icon="i-heroicons-globe-alt"
-                  :loading="publicSaving"
-                  @click="setProfilePublic(true)"
-                >
-                  Make profile public
-                </UButton>
+                  {{ publicProfileUrl }}
+                </code>
 
                 <UButton
-                  to="/profile/me"
                   size="sm"
                   color="neutral"
                   variant="outline"
-                  icon="i-heroicons-eye"
+                  icon="i-lucide-link"
+                  @click="copyProfileLink"
                 >
-                  Preview your profile
+                  Copy link
+                </UButton>
+
+                <UButton
+                  :to="userData.profilePath"
+                  size="sm"
+                  color="neutral"
+                  variant="outline"
+                  icon="i-heroicons-arrow-top-right-on-square"
+                >
+                  View public profile
                 </UButton>
               </div>
 
               <USeparator class="my-4" />
 
-              <USwitch
-                :model-value="userData?.profileShowLikes ?? false"
-                :loading="showLikesSaving"
-                :disabled="showLikesSaving"
-                label="Show my liked posters on my public profile"
-                :description="
-                  userData?.profilePublic
-                    ? 'Adds a Liked tab to your profile that anyone with the link can see.'
-                    : 'Adds a Liked tab to your profile once you make it public.'
-                "
-                @update:model-value="setShowLikes"
-              />
-            </UCard>
-
-            <!-- Edit Profile Form -->
-            <UCard>
-              <h2 class="mb-6 text-xl font-semibold">Edit profile</h2>
-
-              <UForm
-                :schema="schema"
-                :state="state"
-                class="space-y-6"
-                @submit="onSubmit"
-              >
-                <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
-                  <UFormField label="First name" name="givenName" required>
-                    <UInput
-                      v-model="state.givenName"
-                      type="text"
-                      placeholder="e.g. Jane"
-                    />
-                  </UFormField>
-
-                  <UFormField label="Last name" name="familyName" required>
-                    <UInput
-                      v-model="state.familyName"
-                      type="text"
-                      placeholder="e.g. Smith"
-                    />
-                  </UFormField>
-
-                  <UFormField
-                    label="Affiliation"
-                    name="affiliation"
-                    class="md:col-span-2"
-                    help="Shown on your public profile."
-                  >
-                    <UInput
-                      v-model="state.affiliation"
-                      type="text"
-                      placeholder="e.g. University of California San Diego"
-                      :maxlength="PROFILE_AFFILIATION_MAX"
-                      class="w-full"
-                    />
-                  </UFormField>
-
-                  <UFormField
-                    label="Bio"
-                    name="bio"
-                    class="md:col-span-2"
-                    :help="`Shown on your public profile. ${state.bio.length}/${PROFILE_BIO_MAX} characters.`"
-                  >
-                    <UTextarea
-                      v-model="state.bio"
-                      placeholder="A sentence or two about your research"
-                      :maxlength="PROFILE_BIO_MAX"
-                      :rows="3"
-                      autoresize
-                      class="w-full"
-                    />
-                  </UFormField>
-                </div>
-
-                <div class="flex items-center justify-between gap-4">
-                  <UButton type="submit" :loading="loading" color="primary">
-                    Save changes
-                  </UButton>
-
-                  <p class="text-sm text-gray-500 dark:text-gray-400">
-                    Last updated:
-                    {{
-                      userData?.updated
-                        ? new Date(userData.updated).toLocaleString()
-                        : "-"
-                    }}
-                  </p>
-                </div>
-              </UForm>
-            </UCard>
-
-            <!-- ORCID iD: verified through ORCID sign-in, or typed in -->
-            <UCard id="orcid">
-              <div class="flex flex-wrap items-center gap-2">
-                <h2 class="text-lg font-semibold">ORCID iD</h2>
-
-                <UBadge
-                  v-if="linkedOrcid"
-                  color="success"
-                  variant="subtle"
-                  icon="i-heroicons-check-badge"
-                  label="Verified"
-                />
-
-                <!-- Only when there's a way to verify it. -->
-                <UBadge
-                  v-else-if="savedTypedOrcid && orcidAvailable"
-                  color="neutral"
-                  variant="subtle"
-                  icon="i-heroicons-pencil-square"
-                  label="Not verified"
-                />
-              </div>
-
-              <p class="text-muted mt-1 text-sm">
-                {{ orcidCardDescription }}
-              </p>
-
               <div
-                v-if="linkedOrcid"
-                class="mt-4 flex flex-wrap items-center gap-3"
+                class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
               >
-                <ProfileOrcidBadge :orcid="linkedOrcid" />
-
-                <UTooltip
-                  text="Set a password first, so you can still sign in after unlinking."
-                  :disabled="hasPassword"
-                >
-                  <UButton
-                    color="neutral"
-                    variant="outline"
-                    label="Unlink"
-                    :loading="unlinkingOrcid"
-                    :disabled="!hasPassword"
-                    @click="unlinkOrcid"
-                  />
-                </UTooltip>
-              </div>
-
-              <template v-else>
-                <UForm
-                  :schema="orcidSchema"
-                  :state="orcidState"
-                  class="mt-4"
-                  @submit="saveTypedOrcid"
-                >
-                  <!-- Checked as the user types, not only after leaving the
-                       field, so a bad iD gets its message while the focus
-                       ring would otherwise look like an error border. -->
-                  <UFormField
-                    v-slot="{ error }"
-                    label="Your iD"
-                    name="orcid"
-                    :error="orcidServerError"
-                    eager-validation
-                    :validate-on-input-delay="500"
-                  >
-                    <div class="flex flex-wrap items-start gap-2">
-                      <UInput
-                        v-model="orcidState.orcid"
-                        type="text"
-                        placeholder="0000-0002-1825-0097"
-                        autocomplete="off"
-                        spellcheck="false"
-                        class="w-full max-w-sm"
-                        :ui="{ trailing: 'pe-1' }"
-                      >
-                        <template #leading>
-                          <UIcon
-                            name="i-simple-icons-orcid"
-                            class="size-5 text-[#A6CE39]"
-                          />
-                        </template>
-
-                        <template v-if="error" #trailing>
-                          <UIcon
-                            name="i-heroicons-exclamation-circle"
-                            class="text-error me-1.5 size-5"
-                          />
-                        </template>
-
-                        <template v-else-if="orcidRecordUrl" #trailing>
-                          <UTooltip text="Open this iD on orcid.org">
-                            <UButton
-                              :to="orcidRecordUrl"
-                              target="_blank"
-                              color="neutral"
-                              variant="link"
-                              size="sm"
-                              icon="i-heroicons-arrow-top-right-on-square"
-                              aria-label="Open this iD on orcid.org"
-                            />
-                          </UTooltip>
-                        </template>
-                      </UInput>
-
-                      <UButton
-                        type="submit"
-                        color="primary"
-                        label="Save"
-                        :loading="orcidSaving"
-                        :disabled="!orcidChanged"
-                      />
-                    </div>
-                  </UFormField>
-                </UForm>
-
-                <div
-                  v-if="orcidAvailable"
-                  class="border-default mt-4 flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div>
-                    <p class="text-sm font-medium">
-                      {{
-                        savedTypedOrcid
-                          ? "Verify your iD"
-                          : "Add a verified iD instead"
-                      }}
-                    </p>
-
-                    <p class="text-muted text-sm">
-                      Sign in to ORCID to confirm the iD is yours. The verified
-                      iD replaces a typed one on your public profile, and you
-                      can then sign in here with ORCID.
-                    </p>
-                  </div>
-
-                  <div class="shrink-0">
-                    <AuthOrcidButton
-                      intent="link"
-                      source="link"
-                      label="Verify with ORCID"
-                      redirect="/profile"
-                    />
-                  </div>
-                </div>
-              </template>
-
-              <div
-                v-if="orcidSuggestions?.orcid"
-                id="suggested-posters"
-                class="border-default mt-4 border-t pt-4"
-              >
-                <h3 class="text-sm font-medium">Suggested posters</h3>
-
-                <p class="text-muted mt-1 text-sm">
-                  <template v-if="orcidSuggestions.hidden">
-                    Suggested posters are hidden on your dashboard.
-                  </template>
-
-                  <template
-                    v-else-if="
-                      orcidSuggestions.source === 'typed' &&
-                      orcidSuggestions.total > 0
-                    "
-                  >
-                    {{
-                      orcidSuggestions.total === 1
-                        ? "1 auto-indexed poster lists"
-                        : `${orcidSuggestions.total.toLocaleString()} auto-indexed posters list`
-                    }}
-                    the iD you typed for one of their authors. Verify it with
-                    ORCID to see them on your dashboard and claim the ones you
-                    authored.
-                  </template>
-
-                  <template v-else-if="orcidSuggestions.source === 'typed'">
-                    Once you verify your iD with ORCID, auto-indexed posters
-                    that list it are suggested on your dashboard.
-                  </template>
-
-                  <template v-else-if="orcidSuggestions.total > 0">
-                    {{
-                      orcidSuggestions.total === 1
-                        ? "1 auto-indexed poster lists"
-                        : `${orcidSuggestions.total.toLocaleString()} auto-indexed posters list`
-                    }}
-                    your verified iD for one of their authors. Claim the ones
-                    you authored from your dashboard.
-                  </template>
-
-                  <template v-else>
-                    Auto-indexed posters that list your verified iD appear in
-                    the Suggested tab of your dashboard. None are waiting right
-                    now.
-                  </template>
-
-                  <template
-                    v-if="
-                      !orcidSuggestions.hidden &&
-                      orcidSuggestions.dismissedCount > 0
-                    "
-                  >
-                    You marked
-                    {{
-                      orcidSuggestions.dismissedCount === 1
-                        ? "1 poster"
-                        : `${orcidSuggestions.dismissedCount} posters`
-                    }}
-                    as not yours.
-                  </template>
-                </p>
-
-                <div class="mt-3 flex flex-wrap items-center gap-3">
-                  <UButton
-                    v-if="
-                      orcidSuggestions.source === 'linked' &&
-                      !orcidSuggestions.hidden &&
-                      orcidSuggestions.total > 0
-                    "
-                    to="/dashboard?tab=suggested"
-                    color="neutral"
-                    variant="outline"
-                    trailing-icon="i-lucide-arrow-right"
-                    label="Review on your dashboard"
-                  />
-
-                  <UButton
-                    v-if="orcidSuggestionsOff"
-                    color="neutral"
-                    variant="outline"
-                    icon="i-lucide-eye"
-                    label="Show them again"
-                    :loading="restoringSuggestions"
-                    @click="showSuggestionsAgain"
-                  />
-                </div>
-              </div>
-            </UCard>
-
-            <!-- Account info (read-only) -->
-            <UCard>
-              <h2 class="mb-4 text-lg font-semibold">Account</h2>
-
-              <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
-                  <label
-                    class="block text-sm font-medium text-gray-700 dark:text-gray-300"
-                  >
-                    Email Address
-                  </label>
+                  <p class="text-sm font-medium">Make your profile private</p>
 
-                  <p class="mt-1 text-gray-900 dark:text-white">
-                    {{ userData?.emailAddress }}
+                  <p class="text-muted text-sm">
+                    Only you will see it. Anyone else who opens your link gets a
+                    not found page until you make it public again.
                   </p>
                 </div>
 
-                <div>
-                  <label
-                    class="block text-sm font-medium text-gray-700 dark:text-gray-300"
-                  >
-                    Account created
-                  </label>
-
-                  <p class="mt-1 text-gray-900 dark:text-white">
-                    {{
-                      userData?.created
-                        ? new Date(userData.created).toLocaleDateString()
-                        : "-"
-                    }}
-                  </p>
-                </div>
+                <UButton
+                  size="sm"
+                  color="warning"
+                  variant="subtle"
+                  icon="i-heroicons-lock-closed"
+                  class="shrink-0 self-start sm:self-auto"
+                  :loading="publicSaving"
+                  @click="setProfilePublic(false)"
+                >
+                  Make profile private
+                </UButton>
               </div>
-            </UCard>
+            </template>
 
-            <!-- Actions -->
-            <UCard>
-              <h2 class="mb-4 text-lg font-semibold">Account actions</h2>
+            <div v-else class="mt-4 flex flex-wrap items-center gap-2">
+              <UButton
+                size="sm"
+                color="primary"
+                icon="i-heroicons-globe-alt"
+                :loading="publicSaving"
+                @click="setProfilePublic(true)"
+              >
+                Make profile public
+              </UButton>
+
+              <UButton
+                to="/profile/me"
+                size="sm"
+                color="neutral"
+                variant="outline"
+                icon="i-heroicons-eye"
+              >
+                Preview your profile
+              </UButton>
+            </div>
+
+            <USeparator class="my-4" />
+
+            <USwitch
+              :model-value="userData?.profileShowLikes ?? false"
+              :loading="showLikesSaving"
+              :disabled="showLikesSaving"
+              label="Show my liked posters on my public profile"
+              :description="
+                userData?.profilePublic
+                  ? 'Adds a Liked tab to your profile that anyone with the link can see.'
+                  : 'Adds a Liked tab to your profile once you make it public.'
+              "
+              @update:model-value="setShowLikes"
+            />
+          </UCard>
+
+          <!-- Edit Profile Form -->
+          <UCard>
+            <h2 class="mb-6 text-xl font-semibold">Edit profile</h2>
+
+            <UForm
+              :schema="schema"
+              :state="state"
+              class="space-y-6"
+              @submit="onSubmit"
+            >
+              <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
+                <UFormField label="First name" name="givenName" required>
+                  <UInput
+                    v-model="state.givenName"
+                    type="text"
+                    placeholder="e.g. Jane"
+                  />
+                </UFormField>
+
+                <UFormField label="Last name" name="familyName" required>
+                  <UInput
+                    v-model="state.familyName"
+                    type="text"
+                    placeholder="e.g. Smith"
+                  />
+                </UFormField>
+
+                <UFormField
+                  label="Affiliation"
+                  name="affiliation"
+                  class="md:col-span-2"
+                  help="Shown on your public profile."
+                >
+                  <UInput
+                    v-model="state.affiliation"
+                    type="text"
+                    placeholder="e.g. University of California San Diego"
+                    :maxlength="PROFILE_AFFILIATION_MAX"
+                    class="w-full"
+                  />
+                </UFormField>
+
+                <UFormField
+                  label="Bio"
+                  name="bio"
+                  class="md:col-span-2"
+                  :help="`Shown on your public profile. ${state.bio.length}/${PROFILE_BIO_MAX} characters.`"
+                >
+                  <UTextarea
+                    v-model="state.bio"
+                    placeholder="A sentence or two about your research"
+                    :maxlength="PROFILE_BIO_MAX"
+                    :rows="3"
+                    autoresize
+                    class="w-full"
+                  />
+                </UFormField>
+              </div>
 
               <div class="flex items-center justify-between gap-4">
-                <UModal
-                  :title="passwordActionLabel"
-                  :description="
-                    hasPassword
-                      ? 'Update your account password'
-                      : 'Add a password so you can also log in with your email address'
+                <UButton type="submit" :loading="loading" color="primary">
+                  Save changes
+                </UButton>
+
+                <p class="text-sm text-gray-500 dark:text-gray-400">
+                  Last updated:
+                  {{
+                    userData?.updated
+                      ? new Date(userData.updated).toLocaleString()
+                      : "-"
+                  }}
+                </p>
+              </div>
+            </UForm>
+          </UCard>
+
+          <!-- ORCID iD: verified through ORCID sign-in, or typed in -->
+          <UCard id="orcid">
+            <div class="flex flex-wrap items-center gap-2">
+              <h2 class="text-lg font-semibold">ORCID iD</h2>
+
+              <UBadge
+                v-if="linkedOrcid"
+                color="success"
+                variant="subtle"
+                icon="i-heroicons-check-badge"
+                label="Verified"
+              />
+
+              <!-- Only when there's a way to verify it. -->
+              <UBadge
+                v-else-if="savedTypedOrcid && orcidAvailable"
+                color="neutral"
+                variant="subtle"
+                icon="i-heroicons-pencil-square"
+                label="Not verified"
+              />
+            </div>
+
+            <p class="text-muted mt-1 text-sm">
+              {{ orcidCardDescription }}
+            </p>
+
+            <div
+              v-if="linkedOrcid"
+              class="mt-4 flex flex-wrap items-center gap-3"
+            >
+              <ProfileOrcidBadge :orcid="linkedOrcid" />
+
+              <UTooltip
+                text="Set a password first, so you can still sign in after unlinking."
+                :disabled="hasPassword"
+              >
+                <UButton
+                  color="neutral"
+                  variant="outline"
+                  label="Unlink"
+                  :loading="unlinkingOrcid"
+                  :disabled="!hasPassword"
+                  @click="unlinkOrcid"
+                />
+              </UTooltip>
+            </div>
+
+            <template v-else>
+              <UForm
+                :schema="orcidSchema"
+                :state="orcidState"
+                class="mt-4"
+                @submit="saveTypedOrcid"
+              >
+                <!-- Checked as the user types, not only after leaving the
+                       field, so a bad iD gets its message while the focus
+                       ring would otherwise look like an error border. -->
+                <UFormField
+                  v-slot="{ error }"
+                  label="Your iD"
+                  name="orcid"
+                  :error="orcidServerError"
+                  eager-validation
+                  :validate-on-input-delay="500"
+                >
+                  <div class="flex flex-wrap items-start gap-2">
+                    <UInput
+                      v-model="orcidState.orcid"
+                      type="text"
+                      placeholder="0000-0002-1825-0097"
+                      autocomplete="off"
+                      spellcheck="false"
+                      class="w-full max-w-sm"
+                      :ui="{ trailing: 'pe-1' }"
+                    >
+                      <template #leading>
+                        <UIcon
+                          name="i-simple-icons-orcid"
+                          class="size-5 text-[#A6CE39]"
+                        />
+                      </template>
+
+                      <template v-if="error" #trailing>
+                        <UIcon
+                          name="i-heroicons-exclamation-circle"
+                          class="text-error me-1.5 size-5"
+                        />
+                      </template>
+
+                      <template v-else-if="orcidRecordUrl" #trailing>
+                        <UTooltip text="Open this iD on orcid.org">
+                          <UButton
+                            :to="orcidRecordUrl"
+                            target="_blank"
+                            color="neutral"
+                            variant="link"
+                            size="sm"
+                            icon="i-heroicons-arrow-top-right-on-square"
+                            aria-label="Open this iD on orcid.org"
+                          />
+                        </UTooltip>
+                      </template>
+                    </UInput>
+
+                    <UButton
+                      type="submit"
+                      color="primary"
+                      label="Save"
+                      :loading="orcidSaving"
+                      :disabled="!orcidChanged"
+                    />
+                  </div>
+                </UFormField>
+              </UForm>
+
+              <div
+                v-if="orcidAvailable"
+                class="border-default mt-4 flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div>
+                  <p class="text-sm font-medium">
+                    {{
+                      savedTypedOrcid
+                        ? "Verify your iD"
+                        : "Add a verified iD instead"
+                    }}
+                  </p>
+
+                  <p class="text-muted text-sm">
+                    Sign in to ORCID to confirm the iD is yours. The verified iD
+                    replaces a typed one on your public profile, and you can
+                    then sign in here with ORCID.
+                  </p>
+                </div>
+
+                <div class="shrink-0">
+                  <AuthOrcidButton
+                    intent="link"
+                    source="link"
+                    label="Verify with ORCID"
+                    redirect="/profile"
+                  />
+                </div>
+              </div>
+            </template>
+
+            <div
+              v-if="orcidSuggestions?.orcid"
+              id="suggested-posters"
+              class="border-default mt-4 border-t pt-4"
+            >
+              <h3 class="text-sm font-medium">Suggested posters</h3>
+
+              <p class="text-muted mt-1 text-sm">
+                <template v-if="orcidSuggestions.hidden">
+                  Suggested posters are hidden on your dashboard.
+                </template>
+
+                <template
+                  v-else-if="
+                    orcidSuggestions.source === 'typed' &&
+                    orcidSuggestions.total > 0
                   "
                 >
-                  <UButton
-                    color="primary"
-                    variant="solid"
-                    :label="passwordActionLabel"
-                    icon="i-heroicons-key"
-                  />
+                  {{
+                    orcidSuggestions.total === 1
+                      ? "1 auto-indexed poster lists"
+                      : `${orcidSuggestions.total.toLocaleString()} auto-indexed posters list`
+                  }}
+                  the iD you typed for one of their authors. Verify it with
+                  ORCID to see them on your dashboard and claim the ones you
+                  authored.
+                </template>
 
-                  <template #body>
-                    <UForm
-                      :schema="passwordSchema"
-                      :state="passwordState"
-                      class="space-y-4"
-                      @submit="onChangePassword"
-                    >
-                      <UFormField
-                        v-if="hasPassword"
-                        label="Current password"
-                        name="currentPassword"
-                      >
-                        <UInput
-                          v-model="passwordState.currentPassword"
-                          type="password"
-                          placeholder="Enter current password"
-                        />
-                      </UFormField>
+                <template v-else-if="orcidSuggestions.source === 'typed'">
+                  Once you verify your iD with ORCID, auto-indexed posters that
+                  list it are suggested on your dashboard.
+                </template>
 
-                      <UFormField label="New password" name="newPassword">
-                        <UInput
-                          v-model="passwordState.newPassword"
-                          type="password"
-                          placeholder="Enter new password"
-                        />
-                      </UFormField>
+                <template v-else-if="orcidSuggestions.total > 0">
+                  {{
+                    orcidSuggestions.total === 1
+                      ? "1 auto-indexed poster lists"
+                      : `${orcidSuggestions.total.toLocaleString()} auto-indexed posters list`
+                  }}
+                  your verified iD for one of their authors. Claim the ones you
+                  authored from your dashboard.
+                </template>
 
-                      <UFormField
-                        label="Confirm new password"
-                        name="confirmPassword"
-                      >
-                        <UInput
-                          v-model="passwordState.confirmPassword"
-                          type="password"
-                          placeholder="Confirm new password"
-                        />
-                      </UFormField>
-                    </UForm>
-                  </template>
+                <template v-else>
+                  Auto-indexed posters that list your verified iD appear in the
+                  Suggested tab of your dashboard. None are waiting right now.
+                </template>
 
-                  <template #footer="{ close }">
-                    <div class="flex w-full items-center justify-between gap-3">
-                      <UButton
-                        color="neutral"
-                        variant="subtle"
-                        label="Cancel"
-                        @click="close"
-                      />
-
-                      <UButton
-                        color="primary"
-                        variant="solid"
-                        :label="passwordActionLabel"
-                        icon="i-heroicons-key"
-                        :loading="passwordLoading"
-                        @click="
-                          (e: Event) =>
-                            onChangePassword({
-                              data: passwordState,
-                            } as FormSubmitEvent<PasswordSchema>)
-                        "
-                      />
-                    </div>
-                  </template>
-                </UModal>
-
-                <UModal
-                  title="Delete account"
-                  description="Delete profile and all associated data"
+                <template
+                  v-if="
+                    !orcidSuggestions.hidden &&
+                    orcidSuggestions.dismissedCount > 0
+                  "
                 >
-                  <UTooltip
-                    text="This function is not yet available. Please contact us using the contact form if you wish to delete your account."
+                  You marked
+                  {{
+                    orcidSuggestions.dismissedCount === 1
+                      ? "1 poster"
+                      : `${orcidSuggestions.dismissedCount} posters`
+                  }}
+                  as not yours.
+                </template>
+              </p>
+
+              <div class="mt-3 flex flex-wrap items-center gap-3">
+                <UButton
+                  v-if="
+                    orcidSuggestions.source === 'linked' &&
+                    !orcidSuggestions.hidden &&
+                    orcidSuggestions.total > 0
+                  "
+                  to="/dashboard?tab=suggested"
+                  color="neutral"
+                  variant="outline"
+                  trailing-icon="i-lucide-arrow-right"
+                  label="Review on your dashboard"
+                />
+
+                <UButton
+                  v-if="orcidSuggestionsOff"
+                  color="neutral"
+                  variant="outline"
+                  icon="i-lucide-eye"
+                  label="Show them again"
+                  :loading="restoringSuggestions"
+                  @click="showSuggestionsAgain"
+                />
+              </div>
+            </div>
+          </UCard>
+
+          <!-- Account info (read-only) -->
+          <UCard>
+            <h2 class="mb-4 text-lg font-semibold">Account</h2>
+
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div>
+                <label
+                  class="block text-sm font-medium text-gray-700 dark:text-gray-300"
+                >
+                  Email Address
+                </label>
+
+                <p class="mt-1 text-gray-900 dark:text-white">
+                  {{ userData?.emailAddress }}
+                </p>
+              </div>
+
+              <div>
+                <label
+                  class="block text-sm font-medium text-gray-700 dark:text-gray-300"
+                >
+                  Account created
+                </label>
+
+                <p class="mt-1 text-gray-900 dark:text-white">
+                  {{
+                    userData?.created
+                      ? new Date(userData.created).toLocaleDateString()
+                      : "-"
+                  }}
+                </p>
+              </div>
+            </div>
+          </UCard>
+
+          <!-- Actions -->
+          <UCard>
+            <h2 class="mb-4 text-lg font-semibold">Account actions</h2>
+
+            <div class="flex items-center justify-between gap-4">
+              <UModal
+                :title="passwordActionLabel"
+                :description="
+                  hasPassword
+                    ? 'Update your account password'
+                    : 'Add a password so you can also log in with your email address'
+                "
+              >
+                <UButton
+                  color="primary"
+                  variant="solid"
+                  :label="passwordActionLabel"
+                  icon="i-heroicons-key"
+                />
+
+                <template #body>
+                  <UForm
+                    :schema="passwordSchema"
+                    :state="passwordState"
+                    class="space-y-4"
+                    @submit="onChangePassword"
                   >
+                    <UFormField
+                      v-if="hasPassword"
+                      label="Current password"
+                      name="currentPassword"
+                    >
+                      <UInput
+                        v-model="passwordState.currentPassword"
+                        type="password"
+                        placeholder="Enter current password"
+                      />
+                    </UFormField>
+
+                    <UFormField label="New password" name="newPassword">
+                      <UInput
+                        v-model="passwordState.newPassword"
+                        type="password"
+                        placeholder="Enter new password"
+                      />
+                    </UFormField>
+
+                    <UFormField
+                      label="Confirm new password"
+                      name="confirmPassword"
+                    >
+                      <UInput
+                        v-model="passwordState.confirmPassword"
+                        type="password"
+                        placeholder="Confirm new password"
+                      />
+                    </UFormField>
+                  </UForm>
+                </template>
+
+                <template #footer="{ close }">
+                  <div class="flex w-full items-center justify-between gap-3">
+                    <UButton
+                      color="neutral"
+                      variant="subtle"
+                      label="Cancel"
+                      @click="close"
+                    />
+
+                    <UButton
+                      color="primary"
+                      variant="solid"
+                      :label="passwordActionLabel"
+                      icon="i-heroicons-key"
+                      :loading="passwordLoading"
+                      @click="
+                        (e: Event) =>
+                          onChangePassword({
+                            data: passwordState,
+                          } as FormSubmitEvent<PasswordSchema>)
+                      "
+                    />
+                  </div>
+                </template>
+              </UModal>
+
+              <UModal
+                title="Delete account"
+                description="Delete profile and all associated data"
+              >
+                <UTooltip
+                  text="This function is not yet available. Please contact us using the contact form if you wish to delete your account."
+                >
+                  <UButton
+                    color="error"
+                    variant="soft"
+                    label="Delete account"
+                    disabled
+                    icon="i-heroicons-trash"
+                  />
+                </UTooltip>
+
+                <template #body>
+                  <p class="font-medium text-red-500">
+                    This action is permanent and cannot be undone. All your data
+                    will be deleted. There is no recovery from this!
+                  </p>
+                </template>
+
+                <template #footer="{ close }">
+                  <div class="flex w-full items-center justify-between gap-3">
+                    <UButton
+                      color="neutral"
+                      variant="subtle"
+                      label="Cancel"
+                      @click="close"
+                    />
+
                     <UButton
                       color="error"
-                      variant="soft"
+                      variant="solid"
                       label="Delete account"
-                      disabled
                       icon="i-heroicons-trash"
+                      :loading="deleteLoading"
+                      disabled
+                      @click="onDeleteAccount"
                     />
-                  </UTooltip>
-
-                  <template #body>
-                    <p class="font-medium text-red-500">
-                      This action is permanent and cannot be undone. All your
-                      data will be deleted. There is no recovery from this!
-                    </p>
-                  </template>
-
-                  <template #footer="{ close }">
-                    <div class="flex w-full items-center justify-between gap-3">
-                      <UButton
-                        color="neutral"
-                        variant="subtle"
-                        label="Cancel"
-                        @click="close"
-                      />
-
-                      <UButton
-                        color="error"
-                        variant="solid"
-                        label="Delete account"
-                        icon="i-heroicons-trash"
-                        :loading="deleteLoading"
-                        disabled
-                        @click="onDeleteAccount"
-                      />
-                    </div>
-                  </template>
-                </UModal>
-              </div>
-            </UCard>
-          </div>
-        </UPageBody>
-      </UPage>
-    </UContainer>
-  </div>
+                  </div>
+                </template>
+              </UModal>
+            </div>
+          </UCard>
+        </div>
+      </UPageBody>
+    </div>
+  </DashboardPage>
 </template>

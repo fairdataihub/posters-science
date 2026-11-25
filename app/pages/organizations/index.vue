@@ -3,6 +3,7 @@ import type { MyOrganization } from "#shared/types/organization";
 
 definePageMeta({
   middleware: ["auth"],
+  appShell: true,
 });
 
 useSeoMeta({
@@ -61,170 +62,167 @@ function onCreated(organization: MyOrganization) {
 </script>
 
 <template>
-  <div class="min-h-screen bg-gray-50 dark:bg-gray-900">
-    <UContainer>
-      <UPage>
-        <UPageHeader
-          title="Organizations"
-          description="Organizations have a public page that lists posters from their members. Each poster still belongs to the person who published it."
-          :links="[
+  <DashboardPage
+    title="Organizations"
+    description="Organizations have a public page that lists posters from their members. Each poster still belongs to the person who published it."
+  >
+    <template #actions>
+      <UButton
+        label="New organization"
+        icon="i-heroicons-plus"
+        @click="openCreate"
+      />
+    </template>
+
+    <div class="mx-auto w-full max-w-(--ui-container)">
+      <UPageBody class="mt-0 pb-0">
+        <OrganizationInviteList @accepted="onInviteAccepted" />
+
+        <UAlert
+          v-if="error"
+          color="error"
+          variant="subtle"
+          icon="i-heroicons-exclamation-circle"
+          title="Could not load your organizations"
+          :actions="[
             {
-              label: 'New organization',
-              icon: 'i-heroicons-plus',
-              onClick: openCreate,
+              label: 'Try again',
+              color: 'error',
+              variant: 'solid',
+              onClick: () => refresh(),
             },
           ]"
         />
 
-        <UPageBody>
-          <OrganizationInviteList @accepted="onInviteAccepted" />
-
-          <UAlert
-            v-if="error"
-            color="error"
-            variant="subtle"
-            icon="i-heroicons-exclamation-circle"
-            title="Could not load your organizations"
+        <UiSpinner v-else :loading="status === 'pending'" subtle>
+          <UEmpty
+            v-if="organizations.length === 0"
+            icon="i-lucide-building-2"
+            title="You aren't part of an organization yet"
+            description="Create one for your lab, institute or society. You can use your current account, and you can create as many as you need."
             :actions="[
               {
-                label: 'Try again',
-                color: 'error',
-                variant: 'solid',
-                onClick: () => refresh(),
+                label: 'Create an organization',
+                icon: 'i-heroicons-plus',
+                onClick: openCreate,
               },
             ]"
           />
 
-          <UiSpinner v-else :loading="status === 'pending'" subtle>
-            <UEmpty
-              v-if="organizations.length === 0"
-              icon="i-lucide-building-2"
-              title="You aren't part of an organization yet"
-              description="Create one for your lab, institute or society. You can use your current account, and you can create as many as you need."
-              :actions="[
-                {
-                  label: 'Create an organization',
-                  icon: 'i-heroicons-plus',
-                  onClick: openCreate,
-                },
-              ]"
-            />
+          <ul v-else class="w-full space-y-3">
+            <li v-for="organization in organizations" :key="organization.id">
+              <UCard>
+                <div
+                  class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div class="flex min-w-0 items-center gap-3">
+                    <UAvatar
+                      :src="organization.avatarUrl"
+                      :alt="organization.name"
+                      size="lg"
+                      class="shrink-0"
+                    />
 
-            <ul v-else class="w-full space-y-3">
-              <li v-for="organization in organizations" :key="organization.id">
-                <UCard>
-                  <div
-                    class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
-                  >
-                    <div class="flex min-w-0 items-center gap-3">
-                      <UAvatar
-                        :src="organization.avatarUrl"
-                        :alt="organization.name"
-                        size="lg"
-                        class="shrink-0"
-                      />
+                    <div class="min-w-0">
+                      <NuxtLink
+                        :to="managePath(organization.id)"
+                        class="block font-semibold break-words hover:underline"
+                      >
+                        {{ organization.name }}
+                      </NuxtLink>
 
-                      <div class="min-w-0">
-                        <NuxtLink
-                          :to="managePath(organization.id)"
-                          class="block font-semibold break-words hover:underline"
+                      <div
+                        class="text-muted mt-1 flex flex-wrap items-center gap-2 text-sm"
+                      >
+                        <UBadge
+                          :color="
+                            organization.role === 'owner'
+                              ? 'primary'
+                              : 'neutral'
+                          "
+                          variant="subtle"
+                          size="sm"
                         >
-                          {{ organization.name }}
-                        </NuxtLink>
+                          {{
+                            organization.role === "owner" ? "Owner" : "Member"
+                          }}
+                        </UBadge>
 
-                        <div
-                          class="text-muted mt-1 flex flex-wrap items-center gap-2 text-sm"
+                        <UBadge
+                          v-if="organization.hidden"
+                          color="error"
+                          variant="subtle"
+                          size="sm"
+                          icon="i-heroicons-eye-slash"
                         >
-                          <UBadge
-                            :color="
-                              organization.role === 'owner'
-                                ? 'primary'
-                                : 'neutral'
-                            "
-                            variant="subtle"
-                            size="sm"
-                          >
-                            {{
-                              organization.role === "owner" ? "Owner" : "Member"
-                            }}
-                          </UBadge>
+                          Hidden
+                        </UBadge>
 
-                          <UBadge
-                            v-if="organization.hidden"
-                            color="error"
-                            variant="subtle"
-                            size="sm"
-                            icon="i-heroicons-eye-slash"
-                          >
-                            Hidden
-                          </UBadge>
+                        <UBadge
+                          v-else
+                          :color="
+                            organization.profilePublic ? 'success' : 'neutral'
+                          "
+                          variant="subtle"
+                          size="sm"
+                          :icon="
+                            organization.profilePublic
+                              ? 'i-heroicons-globe-alt'
+                              : 'i-heroicons-lock-closed'
+                          "
+                        >
+                          {{
+                            organization.profilePublic ? "Public" : "Private"
+                          }}
+                        </UBadge>
 
-                          <UBadge
-                            v-else
-                            :color="
-                              organization.profilePublic ? 'success' : 'neutral'
-                            "
-                            variant="subtle"
-                            size="sm"
-                            :icon="
-                              organization.profilePublic
-                                ? 'i-heroicons-globe-alt'
-                                : 'i-heroicons-lock-closed'
-                            "
-                          >
-                            {{
-                              organization.profilePublic ? "Public" : "Private"
-                            }}
-                          </UBadge>
+                        <span>
+                          {{ organization.memberCount }}
+                          {{
+                            organization.memberCount === 1
+                              ? "member"
+                              : "members"
+                          }}
+                        </span>
 
-                          <span>
-                            {{ organization.memberCount }}
-                            {{
-                              organization.memberCount === 1
-                                ? "member"
-                                : "members"
-                            }}
-                          </span>
-
-                          <span>
-                            {{ organization.posterCount }}
-                            {{
-                              organization.posterCount === 1
-                                ? "poster"
-                                : "posters"
-                            }}
-                          </span>
-                        </div>
+                        <span>
+                          {{ organization.posterCount }}
+                          {{
+                            organization.posterCount === 1
+                              ? "poster"
+                              : "posters"
+                          }}
+                        </span>
                       </div>
                     </div>
-
-                    <div class="flex shrink-0 items-center gap-2">
-                      <UButton
-                        :to="organization.path"
-                        size="sm"
-                        color="neutral"
-                        variant="subtle"
-                        label="View page"
-                      />
-
-                      <UButton
-                        size="sm"
-                        color="neutral"
-                        variant="outline"
-                        icon="i-heroicons-cog-6-tooth"
-                        label="Manage"
-                        :to="managePath(organization.id)"
-                      />
-                    </div>
                   </div>
-                </UCard>
-              </li>
-            </ul>
-          </UiSpinner>
-        </UPageBody>
-      </UPage>
-    </UContainer>
+
+                  <div class="flex shrink-0 items-center gap-2">
+                    <UButton
+                      :to="organization.path"
+                      size="sm"
+                      color="neutral"
+                      variant="subtle"
+                      label="View page"
+                    />
+
+                    <UButton
+                      size="sm"
+                      color="neutral"
+                      variant="outline"
+                      icon="i-heroicons-cog-6-tooth"
+                      label="Manage"
+                      :to="managePath(organization.id)"
+                    />
+                  </div>
+                </div>
+              </UCard>
+            </li>
+          </ul>
+        </UiSpinner>
+      </UPageBody>
+    </div>
 
     <OrganizationCreatePane v-model:open="createOpen" @created="onCreated" />
-  </div>
+  </DashboardPage>
 </template>
