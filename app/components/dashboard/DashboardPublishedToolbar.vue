@@ -15,12 +15,13 @@ import type {
   PublishedSort,
 } from "~/types/dashboard";
 
-// The Published view's search row: the Discover search box, one button for
-// every filter and the sort, and the active filters as removable badges, as
-// on profile pages. The page keeps all of it in the query string.
+// The Published view's search row: which kind of poster to show, the Discover
+// search box, one button for every filter and the sort, and the active filters
+// as removable badges, as on profile pages. The page keeps all of it in the
+// query string.
 
 const props = defineProps<{
-  /** The kinds of poster, offered here on small screens only. */
+  /** The kinds of poster, chosen in the Show menu at the start of the row. */
   kinds: PublishedFilterOption[];
   repositoryOptions: FacetOption<PosterRepository>[];
   yearOptions: FacetOption<number>[];
@@ -187,6 +188,17 @@ const activeBadges = computed(() => {
       button-label="Search"
       @submit="submitSearch"
     >
+      <template v-if="kinds.length > 1" #leading>
+        <USelect
+          v-model="kind"
+          :items="kinds"
+          value-key="value"
+          label-key="label"
+          aria-label="Show"
+          class="w-full sm:w-48"
+        />
+      </template>
+
       <div class="flex grow items-center justify-between gap-3">
         <p class="text-muted text-sm" aria-live="polite">
           {{ resultLabel }}
@@ -210,30 +222,6 @@ const activeBadges = computed(() => {
             <div
               class="max-h-[min(36rem,70vh)] w-80 max-w-[calc(100vw-2rem)] space-y-5 overflow-y-auto p-4"
             >
-              <!-- The sidebar lists these on large screens, but it's a menu
-                   on small ones, so they're offered here too. -->
-              <div class="space-y-2 lg:hidden">
-                <p class="text-sm font-medium">Show</p>
-
-                <div
-                  class="flex flex-wrap gap-2"
-                  role="group"
-                  aria-label="Kind of poster"
-                >
-                  <UButton
-                    v-for="option in kinds"
-                    :key="option.value"
-                    size="xs"
-                    :color="kind === option.value ? 'primary' : 'neutral'"
-                    :variant="kind === option.value ? 'solid' : 'outline'"
-                    :aria-pressed="kind === option.value"
-                    @click="kind = option.value"
-                  >
-                    {{ option.label }}
-                  </UButton>
-                </div>
-              </div>
-
               <div class="space-y-2">
                 <p class="text-sm font-medium">Sort by</p>
 
