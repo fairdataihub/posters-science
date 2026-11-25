@@ -22,7 +22,7 @@ export function dashboardBatchStatus(
   batch: DashboardBulkSubmission,
 ): DashboardBatchStatus {
   if (batch.status === "failed") return "failed";
-  // Waiting on us: a worksheet hold on the batch or some of its posters.
+  // Waiting on us: the batch is on a worksheet hold.
   if (batch.hold) return "on_hold";
   if (batch.status === "processing" && batch.hasActiveExtraction) {
     return "extracting";

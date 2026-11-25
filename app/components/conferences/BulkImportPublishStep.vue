@@ -45,17 +45,6 @@ const props = defineProps<{
 }>();
 
 const toast = useToast();
-
-/** Posters held at Review are skipped; the batch stays open until they're published. */
-const worksheetHold = useWorksheetHold(() => props.bulkJobId);
-onMounted(() => void worksheetHold.load());
-
-function rowIsHeld(row: { item: { posterId?: number | null } }) {
-  return (
-    row.item.posterId != null &&
-    worksheetHold.heldPosterIds.value.has(row.item.posterId)
-  );
-}
 const route = useRoute();
 
 // Same Tally feedback modal the single upload flow opens after publishing
@@ -785,7 +774,6 @@ async function publishAllToZenodo() {
 
   for (const row of rows.value) {
     if (row.status === "published" || row.status === "skipped") continue;
-    if (rowIsHeld(row)) continue;
 
     await publishRow(row);
     const current = rows.value.find((entry) => entry.item.id === row.item.id);
@@ -1246,14 +1234,6 @@ watch(
                     </span>
                   </div>
 
-                  <UBadge
-                    v-else-if="rowIsHeld(row)"
-                    color="warning"
-                    variant="subtle"
-                    icon="i-lucide-clock"
-                    label="With us"
-                  />
-
                   <div
                     v-else-if="row.status === 'publishing'"
                     class="text-primary inline-flex items-center gap-2 text-sm"
@@ -1284,15 +1264,6 @@ watch(
           </tbody>
         </table>
       </div>
-
-      <UAlert
-        v-if="worksheetHold.status.value.heldPosters.length"
-        color="warning"
-        variant="soft"
-        icon="i-lucide-clock"
-        title="Some posters are with us"
-        :description="`We're setting up ${worksheetHold.status.value.heldPosters.length} poster(s) from your worksheet, and will email you when they're ready. Publish all skips them; publish them here once we've emailed you.`"
-      />
 
       <UAlert
         v-if="batchStoppedEarly && selectedRepository === 'zenodo'"

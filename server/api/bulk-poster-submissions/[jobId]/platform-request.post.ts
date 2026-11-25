@@ -8,7 +8,7 @@ import {
 } from "~~/server/utils/bulkImportBunnyPaths";
 import prisma from "~~/server/utils/prisma";
 import { requirePosterSheetJob } from "~~/server/utils/bulkPosterSheetPending";
-import { slackText } from "~~/server/utils/slackText";
+import { postToSlack, slackText } from "~~/server/utils/slackText";
 
 /**
  * Worksheets sent to us, either from the Other platform card
@@ -138,51 +138,27 @@ export default defineEventHandler(
       .toISOString()
       .slice(0, 10);
     const name = `${user.givenName ?? ""} ${user.familyName ?? ""}`.trim();
+    const fromOtherPlatform = field("source") === "other_platform";
+    // Short on purpose: the files and details are in Admin > Worksheet holds.
     const text = [
-      `*Poster worksheet on 7-day hold* (email the organizer by ${due})`,
-      `Chosen format: ${slackText(platform || "Not given")}`,
-      `From: ${slackText(name || "Unknown")} (${slackText(user.emailAddress)})`,
-      contactEmail &&
-      contactEmail.toLowerCase() !== user.emailAddress?.toLowerCase()
-        ? `Reply to: ${slackText(contactEmail)}`
-        : null,
-      `Batch: ${slackText(job.name)} (${job.id})`,
-      problems.length
-        ? `Why it was refused:\n${problems.map((line) => `• ${slackText(line)}`).join("\n")}`
-        : null,
-      saved.length
-        ? `Files in Bunny:\n${saved.map((path) => `• \`${slackText(path)}\``).join("\n")}`
-        : null,
+      `*${fromOtherPlatform ? "Worksheet from another platform" : "Worksheet refused"}* · reply by ${due}`,
+      `${fromOtherPlatform ? "Platform" : "Format"}: ${slackText(platform || "Not given")}`,
+      `Organizer: ${slackText(name || "Unknown")} (${slackText(contactEmail || user.emailAddress)})`,
+      `Batch: ${slackText(job.name)}`,
+      ...problems.map((line) => `• ${slackText(line)}`),
     ]
       .filter(Boolean)
       .join("\n");
 
-    const fromOtherPlatform = field("source") === "other_platform";
-
-    // Slack is off for now, so the notice is only logged. Other platform
-    // requests weren't going to be posted either way.
-    // const webhook = config.slackWebhookUrl;
-    // if (webhook && !fromOtherPlatform) {
-    //   const response = await fetch(webhook, {
-    //     method: "POST",
-    //     headers: { "Content-Type": "application/json" },
-    //     body: JSON.stringify({ text }),
-    //     signal: AbortSignal.timeout(10_000),
-    //   }).catch(() => null);
-    //   if (!response?.ok) {
-    //     throw createError({
-    //       statusCode: 502,
-    //       statusMessage: "Could not send your worksheet. Try again later.",
-    //     });
-    //   }
-    // }
-    console.info(`[poster-sheet] Slack notice not sent:\n${text}`);
+    // Ping the team. A failed post is logged, not shown: the hold is still
+    // saved and listed in Admin > Worksheet holds.
+    const posted = await postToSlack(config.slackWebhookUrl, text);
 
     const heldAt = new Date();
     await prisma.bulkSubmission.update({
       where: { id: job.id },
       data: {
-        posterPlatformDetailsSubmittedToSlack: false,
+        posterPlatformDetailsSubmittedToSlack: posted,
         worksheetHeldAt: heldAt,
         worksheetHoldFiles: saved,
         worksheetHoldReason: fromOtherPlatform

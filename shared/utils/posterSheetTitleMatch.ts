@@ -6,6 +6,7 @@ import type {
   PosterSheetPair,
   PosterSheetPairCheck,
   PosterSheetTitleMatch,
+  UnmatchedPoster,
 } from "#shared/types/posterSheetMapping";
 
 /**
@@ -373,7 +374,7 @@ export function rowsWithoutPoster(pending: PendingPosterSheet | null): number {
 export function postersWithoutRow(
   pending: PendingPosterSheet | null,
   posters: { id: number | string; fileName: string }[],
-): { posterId: number; fileName: string; reason: "no_row" | "unlinked" }[] {
+): UnmatchedPoster[] {
   if (!pending) return [];
   const linked = linkedFileNames(pending);
   const unlinked = new Set(

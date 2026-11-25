@@ -1,7 +1,4 @@
-import {
-  holdReason,
-  parseHeldPosters,
-} from "~~/server/utils/bulkWorksheetHold";
+import { holdReason } from "~~/server/utils/bulkWorksheetHold";
 
 /** Batches with a worksheet hold, oldest first. */
 export default defineEventHandler(async (event) => {
@@ -9,12 +6,8 @@ export default defineEventHandler(async (event) => {
   setResponseHeader(event, "Cache-Control", "no-store");
 
   const holds = await prisma.bulkSubmission.findMany({
-    where: {
-      OR: [
-        { worksheetHeldAt: { not: null } },
-        { postersHeldAt: { not: null } },
-      ],
-    },
+    where: { worksheetHeldAt: { not: null } },
+    orderBy: { worksheetHeldAt: "asc" },
     select: {
       id: true,
       name: true,
@@ -24,8 +17,6 @@ export default defineEventHandler(async (event) => {
       worksheetHoldPlatform: true,
       worksheetHoldProblems: true,
       worksheetHoldEmail: true,
-      postersHeldAt: true,
-      heldPosters: true,
       user: {
         select: { givenName: true, familyName: true, emailAddress: true },
       },
@@ -34,28 +25,17 @@ export default defineEventHandler(async (event) => {
   });
 
   return {
-    data: holds
-      .map((hold) => ({
-        jobId: hold.id,
-        name: hold.name,
-        heldAt: [hold.worksheetHeldAt, hold.postersHeldAt]
-          .filter((date): date is Date => date !== null)
-          .sort((a, b) => a.getTime() - b.getTime())[0]!
-          .toISOString(),
-        batchHeld: hold.worksheetHeldAt !== null,
-        kind: hold.worksheetHeldAt
-          ? holdReason(hold.worksheetHoldReason)
-          : "posters_unmatched",
-        platform: hold.worksheetHoldPlatform,
-        problems: hold.worksheetHeldAt ? hold.worksheetHoldProblems : [],
-        files: hold.worksheetHoldFiles,
-        posters: hold.postersHeldAt ? parseHeldPosters(hold.heldPosters) : [],
-        // The address they confirmed when sending, else the account's.
-        contactEmail:
-          (hold.worksheetHeldAt && hold.worksheetHoldEmail) ||
-          hold.user.emailAddress,
-        user: hold.user,
-      }))
-      .sort((a, b) => a.heldAt.localeCompare(b.heldAt)),
+    data: holds.map((hold) => ({
+      jobId: hold.id,
+      name: hold.name,
+      heldAt: hold.worksheetHeldAt!.toISOString(),
+      kind: holdReason(hold.worksheetHoldReason),
+      platform: hold.worksheetHoldPlatform,
+      problems: hold.worksheetHoldProblems,
+      files: hold.worksheetHoldFiles,
+      // The address they confirmed when sending, else the account's.
+      contactEmail: hold.worksheetHoldEmail || hold.user.emailAddress,
+      user: hold.user,
+    })),
   };
 });

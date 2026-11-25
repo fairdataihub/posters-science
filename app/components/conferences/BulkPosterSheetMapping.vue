@@ -171,7 +171,7 @@ function validate(): string | null {
   if (heldAt.value) {
     stepProblem.value =
       heldReason.value === "unsupported_platform"
-        ? "We're looking into supporting your platform. You can continue once we've emailed you."
+        ? "We have your worksheets and will email you within 7 days. You can continue once we've emailed you."
         : "We're fixing your worksheet. You can continue once we've emailed you that it's ready.";
 
     return stepProblem.value;
@@ -965,15 +965,12 @@ watch(
             name="i-lucide-clock"
             class="mt-0.5 size-4 shrink-0 text-amber-600"
           />
-          We're looking into supporting
-          {{ heldPlatform || "your platform" }}
+          We have your {{ heldPlatform || "platform's" }} worksheets
         </p>
 
         <p>
-          Thanks for sending your worksheets. This batch is on hold while we
-          look into whether we can support your platform. We'll email you by
-          {{ heldUntil }} either way, and the batch stays on this step until
-          then.
+          Thanks for sending them. We'll get back to you by {{ heldUntil }}, and
+          the batch stays on this step until then.
         </p>
       </template>
 
@@ -1030,8 +1027,8 @@ watch(
             Not every conference platform is supported. If you see your
             conference platform below and have worksheets with your poster data,
             select it. If your worksheets are from another platform, choose
-            Other platform and send them to us, and we'll look into supporting
-            it. If you don't have worksheets, choose Skip this step.
+            Other platform and send them to us, and we'll get back to you within
+            7 days. If you don't have worksheets, choose Skip this step.
           </span>
         </legend>
 
@@ -1094,10 +1091,8 @@ watch(
       >
         <div>
           <p>
-            Send us your platform's worksheets and we'll look into supporting
-            it. While we take a look, your batch will be on hold on this step
-            for up to 7 days. We'll email you either way to let you know whether
-            we can support your platform.
+            Send us your platform's worksheets and we'll get back to you within
+            7 days. Your batch stays on hold on this step until we reply.
           </p>
 
           <p class="text-muted">
@@ -1142,7 +1137,7 @@ watch(
           <WorksheetContactEmail
             v-model:email="contactEmail"
             v-model:confirmed="contactConfirmed"
-            help="We'll take a look at your worksheets and let you know within 7 days whether we can support your platform."
+            help="We'll get back to you here within 7 days."
           />
 
           <UButton

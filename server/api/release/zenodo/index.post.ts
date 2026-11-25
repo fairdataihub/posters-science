@@ -2,7 +2,6 @@
 // Streams progress events via SSE as each step completes
 import { z } from "zod";
 import { cleanupFailedNewZenodoDeposition } from "../../../utils/zenodo";
-import { assertPosterNotHeld } from "../../../utils/bulkWorksheetHold";
 
 const payloadSchema = z.object({
   posterId: z.string(),
@@ -35,9 +34,6 @@ export default defineEventHandler(async (event) => {
 
   const { posterId, mode, existingDepositionId, license, version } =
     parsed.data;
-
-  // A poster sent to the team from Review waits for its worksheet hold.
-  await assertPosterNotHeld(userId, Number(posterId));
 
   // Publishing only needs the boolean, not the record list.
   const { zenodoToken, message } = await validateZenodoToken(userId, {

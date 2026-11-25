@@ -1437,11 +1437,6 @@ const posterSheetWaiting = ref(0);
 /** Bumped whenever the pending sheet is re-read, so computeds see changes. */
 const posterSheetTick = ref(0);
 
-/* Partial worksheet hold: posters no row is linked to, sent to the team. */
-const worksheetHold = useWorksheetHold(() => props.bulkJobId);
-onMounted(() => void worksheetHold.load());
-const sendingUnmatched = ref(false);
-
 /** Every poster without a worksheet row. */
 const posterSheetUnmatchedAll = computed(() => {
   void posterSheetTick.value;
@@ -1451,7 +1446,7 @@ const posterSheetUnmatchedAll = computed(() => {
   return postersWithoutRow(pending, grid.value.posters);
 });
 
-/** The ones the organizer hasn't sent to us or kept yet. */
+/** The ones the organizer hasn't seen the notice for yet. */
 const posterSheetUnmatched = computed(() => {
   void posterSheetTick.value;
   const pending = readPendingPosterSheet(props.bulkJobId);
@@ -1460,63 +1455,23 @@ const posterSheetUnmatched = computed(() => {
   );
 
   return posterSheetUnmatchedAll.value.filter(
-    (poster) =>
-      !decided.has(poster.fileName.toLowerCase()) &&
-      !worksheetHold.heldPosterIds.value.has(poster.posterId),
+    (poster) => !decided.has(poster.fileName.toLowerCase()),
   );
 });
 
-// The pending sheet is kept until each of these is dealt with.
+// The pending sheet is kept until each of these has been seen.
 watch(posterSheetUnmatchedAll, (all) => {
   updateUnmatchedPosters(props.bulkJobId, {
     unmatchedFiles: all.map((poster) => poster.fileName),
   });
 });
 
-function decideUnmatched(fileNames: string[]) {
-  updateUnmatchedPosters(props.bulkJobId, { decided: fileNames });
+/** OK on the notice: these posters keep what was read from them. */
+function dismissUnmatched() {
+  updateUnmatchedPosters(props.bulkJobId, {
+    decided: posterSheetUnmatched.value.map((poster) => poster.fileName),
+  });
   posterSheetTick.value += 1;
-}
-
-function keepUnmatched() {
-  decideUnmatched(posterSheetUnmatched.value.map((poster) => poster.fileName));
-}
-
-async function sendUnmatchedToTeam() {
-  const posters = posterSheetUnmatched.value;
-  if (!posters.length || sendingUnmatched.value) return;
-  const pending = readPendingPosterSheet(props.bulkJobId);
-  const matched = new Set(Object.keys(pending?.titleMatches ?? {}));
-  sendingUnmatched.value = true;
-  try {
-    await worksheetHold.holdPosters({
-      posters,
-      sheetFileName: pending?.sheetFileName,
-      unmatchedRows: (pending?.matchRows ?? [])
-        .filter((row) => !matched.has(row.row_key))
-        .map((row) => `Row ${row.row}: ${row.title}`),
-    });
-    decideUnmatched(posters.map((poster) => poster.fileName));
-    toast.add({
-      title: "Sent to us",
-      description: `We'll set ${posters.length === 1 ? "this poster" : "these posters"} up within 7 days and email you. You can publish the rest meanwhile.`,
-      color: "success",
-    });
-  } catch (error) {
-    const data = (
-      error as { data?: { statusCode?: number; statusMessage?: string } }
-    )?.data;
-    toast.add({
-      title: "Couldn't send these posters",
-      description:
-        data?.statusCode && data.statusCode < 500 && data.statusMessage
-          ? data.statusMessage
-          : "Try again later.",
-      color: "error",
-    });
-  } finally {
-    sendingUnmatched.value = false;
-  }
 }
 
 function refreshPosterSheetReview() {
@@ -1893,16 +1848,9 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
       </div>
 
       <BulkPosterSheetUnmatched
-        v-if="
-          posterSheetUnmatched.length ||
-          worksheetHold.status.value.heldPosters.length
-        "
+        v-if="posterSheetUnmatched.length"
         :posters="posterSheetUnmatched"
-        :held="worksheetHold.status.value.heldPosters"
-        :held-at="worksheetHold.status.value.postersHeldAt"
-        :sending="sendingUnmatched"
-        @send="sendUnmatchedToTeam"
-        @keep="keepUnmatched"
+        @dismiss="dismissUnmatched"
       />
 
       <BulkPosterSheetTitleMatches

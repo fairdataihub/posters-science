@@ -1,5 +1,5 @@
 /**
- * Releases a batch's worksheet holds. The organizer isn't emailed by the
+ * Releases a batch's worksheet hold. The organizer isn't emailed by the
  * app; we email them ourselves.
  */
 export default defineEventHandler(async (event) => {
@@ -19,8 +19,6 @@ export default defineEventHandler(async (event) => {
       worksheetHoldFiles: true,
       worksheetHoldReason: true,
       worksheetHoldPlatform: true,
-      postersHeldAt: true,
-      heldPosters: true,
       user: { select: { emailAddress: true } },
     },
   });
@@ -28,7 +26,7 @@ export default defineEventHandler(async (event) => {
   if (!job) {
     throw createError({ statusCode: 404, statusMessage: "Batch not found" });
   }
-  if (!job.worksheetHeldAt && !job.postersHeldAt) {
+  if (!job.worksheetHeldAt) {
     throw createError({
       statusCode: 409,
       statusMessage: "This batch is not on hold",
@@ -43,8 +41,6 @@ export default defineEventHandler(async (event) => {
       worksheetHoldPlatform: null,
       worksheetHoldProblems: [],
       worksheetHoldEmail: null,
-      postersHeldAt: null,
-      heldPosters: [],
     },
   });
 
@@ -60,8 +56,6 @@ export default defineEventHandler(async (event) => {
       reason: job.worksheetHoldReason,
       platform: job.worksheetHoldPlatform,
       files: job.worksheetHoldFiles,
-      postersHeldAt: job.postersHeldAt,
-      heldPosters: job.heldPosters,
     },
   });
 

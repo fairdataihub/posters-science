@@ -70,8 +70,6 @@ const bulkDashboardSelect = {
   worksheetHeldAt: true,
   worksheetHoldReason: true,
   worksheetHoldPlatform: true,
-  postersHeldAt: true,
-  heldPosters: true,
 } as const;
 
 async function loadBulkDashboardRows(userId: string) {

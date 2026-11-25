@@ -142,13 +142,10 @@ const holdNote = computed(() => {
   const hold = props.bulk.hold;
   if (!hold) return null;
   if (hold.kind === "unsupported_platform") {
-    return `We're looking into supporting ${hold.platform || "your platform"}`;
+    return `We'll email you about ${hold.platform || "your platform"} within 7 days`;
   }
-  if (hold.kind === "worksheet_error") return "We're fixing your worksheet";
 
-  return hold.posterCount === 1
-    ? "1 poster is with us; you can publish the rest"
-    : `${hold.posterCount} posters are with us; you can publish the rest`;
+  return "We're fixing your worksheet";
 });
 
 const description = computed(() => {

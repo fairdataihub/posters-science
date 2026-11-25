@@ -255,8 +255,16 @@ export type PendingPosterSheet = {
   browserFileNames?: string[];
   /**
    * Posters with no worksheet row at Review, and the ones the organizer has
-   * already sent to us or kept as read. The sheet is kept until all are done.
+   * seen the notice for. The sheet is kept until all are seen.
    */
   unmatchedFiles?: string[];
   unmatchedDecided?: string[];
+};
+
+/** A poster no worksheet row is linked to; it keeps what was read from it. */
+export type UnmatchedPoster = {
+  posterId: number;
+  fileName: string;
+  /** no_row: nothing paired it; unlinked: the organizer unlinked its row */
+  reason: "no_row" | "unlinked";
 };

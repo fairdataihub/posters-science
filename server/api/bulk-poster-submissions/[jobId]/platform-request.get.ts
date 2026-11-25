@@ -1,12 +1,9 @@
 import type { WorksheetHoldStatus } from "#shared/types/bulkWorksheetHold";
 import prisma from "~~/server/utils/prisma";
 import { requirePosterSheetJob } from "~~/server/utils/bulkPosterSheetPending";
-import {
-  holdReason,
-  parseHeldPosters,
-} from "~~/server/utils/bulkWorksheetHold";
+import { holdReason } from "~~/server/utils/bulkWorksheetHold";
 
-/** The batch's worksheet holds, if any. */
+/** The batch's worksheet hold, if any. */
 export default defineEventHandler(
   async (event): Promise<WorksheetHoldStatus> => {
     const job = await requirePosterSheetJob(event);
@@ -18,8 +15,6 @@ export default defineEventHandler(
         worksheetHeldAt: true,
         worksheetHoldReason: true,
         worksheetHoldPlatform: true,
-        postersHeldAt: true,
-        heldPosters: true,
       },
     });
 
@@ -31,10 +26,6 @@ export default defineEventHandler(
       heldPlatform: record?.worksheetHeldAt
         ? (record.worksheetHoldPlatform ?? null)
         : null,
-      postersHeldAt: record?.postersHeldAt?.toISOString() ?? null,
-      heldPosters: record?.postersHeldAt
-        ? parseHeldPosters(record.heldPosters)
-        : [],
     };
   },
 );

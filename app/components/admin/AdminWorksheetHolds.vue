@@ -2,27 +2,22 @@
 import type { ColumnDef } from "@tanstack/vue-table";
 import { parseApiError } from "~/utils/apiError";
 
-import type { HeldPoster } from "#shared/types/bulkWorksheetHold";
+import type { WorksheetHoldReason } from "#shared/types/bulkWorksheetHold";
 
 /**
- * Batches waiting on us: an unsupported platform or a refused worksheet hold
- * the whole batch on step 1; posters with no worksheet row hold only those.
+ * Batches waiting on us: an unsupported platform or a refused worksheet
+ * holds the whole batch on step 1.
  */
-type HoldKind =
-  | "unsupported_platform"
-  | "worksheet_error"
-  | "posters_unmatched";
+type HoldKind = WorksheetHoldReason;
 
 type WorksheetHold = {
   jobId: string;
   name: string;
   heldAt: string;
-  batchHeld: boolean;
   kind: HoldKind;
   platform: string | null;
   problems: string[];
   files: string[];
-  posters: HeldPoster[];
   /** The email they confirmed when sending worksheets, else the account's. */
   contactEmail: string;
   user: { givenName: string; familyName: string; emailAddress: string };
@@ -47,19 +42,13 @@ const KINDS: Record<
     label: "Unsupported platform",
     color: "info",
     icon: "i-lucide-puzzle",
-    todo: "Look into supporting this platform, then release whether or not you add it. Whole batch waits on step 1.",
+    todo: "Reply within 7 days of the hold. Whole batch waits on step 1.",
   },
   worksheet_error: {
     label: "Worksheet problem",
     color: "error",
     icon: "i-lucide-file-warning",
     todo: "Fix the worksheet (or the reader), then release. Whole batch waits on step 1.",
-  },
-  posters_unmatched: {
-    label: "Posters without a row",
-    color: "warning",
-    icon: "i-lucide-file-question",
-    todo: "Only these posters wait; the rest can be published.",
   },
 };
 
@@ -263,7 +252,7 @@ async function confirmRelease() {
           <template #actions-cell="{ row }">
             <div class="flex flex-wrap items-center justify-center gap-2">
               <UButton
-                v-if="row.original.files.length || row.original.posters.length"
+                v-if="row.original.files.length"
                 size="xs"
                 color="neutral"
                 variant="outline"
@@ -294,9 +283,7 @@ async function confirmRelease() {
       :ui="{ description: '[overflow-wrap:anywhere]' }"
       :description="
         releaseTarget
-          ? releaseTarget.batchHeld
-            ? `${releaseTarget.name} can leave the first step again, and its worksheet can be added again. The app doesn't email the organizer.`
-            : `${releaseTarget.name}'s held posters can be published again. The app doesn't email the organizer.`
+          ? `${releaseTarget.name} can leave the first step again, and its worksheet can be added again. The app doesn't email the organizer.`
           : ''
       "
     >
@@ -313,12 +300,10 @@ async function confirmRelease() {
             not, that they can continue without a worksheet.
           </template>
 
-          <template v-else-if="releaseTarget?.kind === 'worksheet_error'">
+          <template v-else>
             that their worksheet is fixed: send the fixed file, or say what to
             change, and they add it again.
           </template>
-
-          <template v-else>what to fix for these posters at Review.</template>
         </p>
       </template>
 

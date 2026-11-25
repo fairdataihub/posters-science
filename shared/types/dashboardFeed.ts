@@ -19,11 +19,10 @@ export type DashboardBulkSubmission = {
   completedAt?: string | null;
   /** Set once a collection was made from this upload. */
   collection?: BulkSubmissionCollectionLink | null;
-  /** Set while the batch, or some of its posters, are on a worksheet hold. */
+  /** Set while the batch is on a worksheet hold. */
   hold?: {
-    kind: "unsupported_platform" | "worksheet_error" | "posters";
+    kind: "unsupported_platform" | "worksheet_error";
     platform: string | null;
-    posterCount: number;
   } | null;
 };
 

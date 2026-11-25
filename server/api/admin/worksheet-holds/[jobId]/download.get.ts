@@ -1,10 +1,7 @@
 import archiver from "archiver";
 import { Readable } from "node:stream";
 import { sendStream, setHeader } from "h3";
-import {
-  holdReason,
-  parseHeldPosters,
-} from "~~/server/utils/bulkWorksheetHold";
+import { holdReason } from "~~/server/utils/bulkWorksheetHold";
 
 const UNSAFE = /[^a-zA-Z0-9._-]+/g;
 
@@ -15,9 +12,8 @@ function safeName(value: string, fallback: string) {
 }
 
 /**
- * Zips a held batch's files: worksheets/, posters/ for posters held from
- * Review, and hold.txt with the details. Files missing from Bunny are listed
- * in hold.txt.
+ * Zips a held batch's worksheet files into worksheets/, with hold.txt for
+ * the details. Files missing from Bunny are listed in hold.txt.
  */
 export default defineEventHandler(async (event) => {
   await requireAdminSession(event);
@@ -37,8 +33,6 @@ export default defineEventHandler(async (event) => {
       worksheetHoldProblems: true,
       worksheetHoldFiles: true,
       worksheetHoldEmail: true,
-      postersHeldAt: true,
-      heldPosters: true,
       user: {
         select: { givenName: true, familyName: true, emailAddress: true },
       },
@@ -48,18 +42,9 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, statusMessage: "Batch not found" });
   }
 
-  const heldPosters = job.postersHeldAt
-    ? parseHeldPosters(job.heldPosters)
-    : [];
-  const posterFiles = heldPosters.length
-    ? await prisma.extractionJob.findMany({
-        where: { posterId: { in: heldPosters.map((p) => p.posterId) } },
-        select: { posterId: true, fileName: true, filePath: true },
-      })
-    : [];
   const worksheetFiles = job.worksheetHeldAt ? job.worksheetHoldFiles : [];
 
-  if (!worksheetFiles.length && !posterFiles.length) {
+  if (!worksheetFiles.length) {
     throw createError({
       statusCode: 404,
       statusMessage: "No files were saved for this hold",
@@ -107,12 +92,6 @@ export default defineEventHandler(async (event) => {
   for (const path of worksheetFiles) {
     await fetchFile(path, `worksheets/${path.split("/").pop()}`);
   }
-  for (const file of posterFiles) {
-    await fetchFile(
-      file.filePath,
-      `posters/${file.posterId}-${file.fileName || "poster.pdf"}`,
-    );
-  }
 
   const name = `${job.user.givenName} ${job.user.familyName}`.trim();
   const info = [
@@ -124,7 +103,7 @@ export default defineEventHandler(async (event) => {
       ? `Reach them at: ${job.worksheetHoldEmail}`
       : null,
     job.worksheetHeldAt
-      ? `Whole batch held since ${job.worksheetHeldAt.toISOString()}: ${
+      ? `Held since ${job.worksheetHeldAt.toISOString()}: ${
           holdReason(job.worksheetHoldReason) === "unsupported_platform"
             ? "unsupported platform"
             : "worksheet problem"
@@ -132,11 +111,6 @@ export default defineEventHandler(async (event) => {
       : null,
     job.worksheetHoldProblems.length && job.worksheetHeldAt
       ? `Why it was refused:\n${job.worksheetHoldProblems.map((p) => `- ${p}`).join("\n")}`
-      : null,
-    heldPosters.length
-      ? `Posters held since ${job.postersHeldAt!.toISOString()} (no worksheet row):\n${heldPosters
-          .map((p) => `- #${p.posterId} ${p.fileName} (${p.reason})`)
-          .join("\n")}`
       : null,
     missing.length
       ? `Could not be fetched from Bunny:\n${missing.map((p) => `- ${p}`).join("\n")}`

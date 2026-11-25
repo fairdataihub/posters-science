@@ -583,8 +583,8 @@ model BulkSubmission {
   // waiting to be saved into the metadata grid. Cleared once nothing is left.
   posterSheet Json?
 
-  // "Other platform" poster worksheets: true once the organizer has sent us
-  // their platform details on Slack.
+  // True once the team was pinged on Slack about this batch's worksheet hold
+  // (a refused worksheet or an unsupported platform sent to us).
   posterPlatformDetailsSubmittedToSlack Boolean @default(false)
 
   // Worksheet hold: set when the organizer sends a refused worksheet to the
@@ -602,13 +602,6 @@ model BulkSubmission {
   worksheetHoldProblems String[]  @default([])
   // The email the organizer confirmed we should use about the worksheets.
   worksheetHoldEmail    String?
-
-  // Partial hold: posters no worksheet row linked to (or whose pairing the
-  // organizer unlinked), sent to the team from Review. They can't be
-  // published until an admin releases them; the rest of the batch can.
-  // [{ posterId, fileName, reason: "no_row" | "unlinked" }]
-  postersHeldAt DateTime?
-  heldPosters   Json      @default("[]")
 
   error String?
 

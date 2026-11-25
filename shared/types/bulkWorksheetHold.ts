@@ -1,10 +1,3 @@
-/** A poster held at Review because no worksheet row matched it. */
-export type HeldPoster = {
-  posterId: number;
-  fileName: string;
-  reason: "no_row" | "unlinked";
-};
-
 /** Why a whole batch is held. */
 export type WorksheetHoldReason = "unsupported_platform" | "worksheet_error";
 
@@ -14,7 +7,4 @@ export type WorksheetHoldStatus = {
   heldAt: string | null;
   heldReason: WorksheetHoldReason | null;
   heldPlatform: string | null;
-  /** Some posters are held from publishing. */
-  postersHeldAt: string | null;
-  heldPosters: HeldPoster[];
 };
