@@ -5,6 +5,7 @@ export type DashboardBatchStatus =
   | "extracting"
   | "review"
   | "ready"
+  | "on_hold"
   | "failed";
 
 export const DASHBOARD_BATCH_STATUS_OPTIONS = [
@@ -12,6 +13,7 @@ export const DASHBOARD_BATCH_STATUS_OPTIONS = [
   { value: "extracting", label: "Extracting metadata" },
   { value: "review", label: "Ready for review" },
   { value: "ready", label: "Ready to publish" },
+  { value: "on_hold", label: "On hold" },
   { value: "failed", label: "Needs attention" },
 ] satisfies { value: DashboardBatchStatus; label: string }[];
 
@@ -20,6 +22,8 @@ export function dashboardBatchStatus(
   batch: DashboardBulkSubmission,
 ): DashboardBatchStatus {
   if (batch.status === "failed") return "failed";
+  // Waiting on us: the batch is on a worksheet hold.
+  if (batch.hold) return "on_hold";
   if (batch.status === "processing" && batch.hasActiveExtraction) {
     return "extracting";
   }

@@ -1,5 +1,6 @@
 import { createError } from "h3";
 import { createId } from "@paralleldrive/cuid2";
+import { currentWizardRelease } from "~~/server/utils/bulkImportWizardRelease";
 import type { BulkPosterSubmissionJob } from "#shared/types/bulkPosterSubmissionJob";
 import type {
   BulkPosterSubmissionJobRepository,
@@ -21,6 +22,7 @@ export const mockBulkPosterSubmissionJobRepository: BulkPosterSubmissionJobRepos
         userId: input.userId,
         name: input.name.trim(),
         wizardStep: "upload",
+        wizardRelease: currentWizardRelease(),
         status: "draft",
         stagedPosters: [],
         posterCount: null,

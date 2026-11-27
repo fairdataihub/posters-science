@@ -66,13 +66,18 @@ export async function deleteUserDraftPoster(
   const batchId = poster.extractionJob?.batchId;
 
   // The extraction job goes with the poster, so its batch has one file fewer.
+  // A batch can't hold zero files, so the last one removes the batch; submitting
+  // the wizard batch again creates a new one.
   await prisma.$transaction([
     prisma.poster.delete({ where: { id: posterId } }),
     ...(batchId
       ? [
           prisma.extractionBatch.updateMany({
-            where: { id: batchId, totalFiles: { gt: 0 } },
+            where: { id: batchId, totalFiles: { gt: 1 } },
             data: { totalFiles: { decrement: 1 } },
+          }),
+          prisma.extractionBatch.deleteMany({
+            where: { id: batchId, totalFiles: { lte: 1 }, jobs: { none: {} } },
           }),
         ]
       : []),

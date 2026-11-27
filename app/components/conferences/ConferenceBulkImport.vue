@@ -78,8 +78,26 @@ import type { PreviewValidationGroup } from "~/components/conferences/BulkImport
 import type { BulkImportStepBlock } from "~/composables/useBulkImportWizard";
 import BulkImportSpreadsheetStep from "~/components/conferences/BulkImportSpreadsheetStep.vue";
 import BulkImportPublishStep from "~/components/conferences/BulkImportPublishStep.vue";
+import BulkPosterSheetMapping from "~/components/conferences/BulkPosterSheetMapping.vue";
+import type { FeatureFlags } from "#shared/utils/features";
 
 const router = useRouter();
+// Optional poster information sheet on the posters step (feature flag).
+const { data: featureFlags } = useLazyFetch<FeatureFlags>("/api/features", {
+  server: false,
+});
+/** The flags, waiting for them if the lazy fetch hasn't returned yet. */
+async function currentFeatureFlags(): Promise<FeatureFlags | null> {
+  if (featureFlags.value) return featureFlags.value;
+  try {
+    return await $fetch<FeatureFlags>("/api/features");
+  } catch {
+    return null;
+  }
+}
+const posterSheetRef = ref<InstanceType<typeof BulkPosterSheetMapping> | null>(
+  null,
+);
 const route = useRoute();
 
 function fetchErrorStatusCode(error: unknown): number | undefined {
@@ -260,6 +278,25 @@ function resetPosterUploadProgressIfIdle() {
 const stagedPosterFileNames = computed(() =>
   stagedPosters.value.map((poster) => poster.fileName),
 );
+
+/**
+ * Poster file names for linking a poster sheet: stored posters plus files
+ * still uploading, so a sheet dropped mid-upload links to every file. The
+ * server re-links rows to the stored names once the uploads land.
+ */
+const posterSheetFileNames = computed(() => {
+  const names = new Map<string, string>();
+  for (const name of stagedPosterFileNames.value) {
+    names.set(name.toLowerCase(), name);
+  }
+  for (const [name, state] of Object.entries(posterRowStatus.value)) {
+    if (state.status === "uploading" && !names.has(name.toLowerCase())) {
+      names.set(name.toLowerCase(), name);
+    }
+  }
+
+  return [...names.values()];
+});
 
 const posterListRows = computed((): PosterListRow[] => {
   const byKey = new Map<string, PosterListRow>();
@@ -713,6 +750,12 @@ async function loadBatchExtractionStatusesFromItems() {
   }
 }
 
+/**
+ * Set when a batch last opened on an older release was sent back to the
+ * first step, so the organizer sees steps added since. Shown once.
+ */
+const releaseResetNotice = ref(false);
+
 async function ensureResumeJobLoaded() {
   const id = props.initialJobId ?? jobId.value;
   if (!id || resumeJobLoading.value) return;
@@ -742,6 +785,8 @@ async function ensureResumeJobLoaded() {
     let step =
       normalizeBulkImportWizardStep(job.wizardStep) ??
       resolveResumeWizardStep();
+    /** Kept at Submit: published, or waiting for an embargo to end. */
+    let pinnedToPublish = false;
 
     if (job.status !== "completed") {
       try {
@@ -754,12 +799,38 @@ async function ensureResumeJobLoaded() {
           completion.awaitingEmbargoRelease
         ) {
           step = "publish";
+          pinnedToPublish = true;
         }
       } catch {
         // Keep saved wizard step.
       }
     } else {
       step = "publish";
+      pinnedToPublish = true;
+    }
+
+    // A batch last opened on a lower release (each deploy is one) starts
+    // again at the first step, so the organizer walks through any steps
+    // added since. Progress is kept; Continue moves forward again. A page
+    // loaded before a deploy (lower than the batch) leaves it alone.
+    // Only while poster worksheets are on: with the flag off there are no new
+    // steps to see, so production batches aren't sent back on every deploy.
+    // Unstamped batches are sent back once when the flag is turned on.
+    const firstStep = wizardSteps[0]!.id;
+    const release = Number(useRuntimeConfig().public.wizardRelease) || 0;
+    const flags = await currentFeatureFlags();
+    if (flags?.poster_sheet_mapping && (job.wizardRelease ?? -1) < release) {
+      const sendBack = !pinnedToPublish && step !== firstStep;
+      if (sendBack) {
+        step = firstStep;
+        releaseResetNotice.value = true;
+      }
+      void updateBulkPosterSubmissionJob(job.id, {
+        releaseSeen: true,
+        ...(sendBack && { wizardStep: firstStep }),
+      }).catch(() => {
+        // Seen again next time; nothing is lost.
+      });
     }
 
     if (
@@ -1762,6 +1833,18 @@ async function saveUploadStep(): Promise<boolean> {
     return false;
   }
 
+  // Poster worksheet cards: one must be chosen; each card adds its own checks.
+  const worksheetProblem = posterSheetRef.value?.validate() ?? null;
+  if (worksheetProblem) {
+    toast.add({
+      title: "Poster worksheets",
+      description: worksheetProblem,
+      color: "warning",
+    });
+
+    return false;
+  }
+
   // Save a renamed batch.
   try {
     await persistSetupJob();
@@ -2271,6 +2354,17 @@ async function startImport() {
 
       <template v-else-if="currentStep === 'upload'">
         <div class="space-y-4">
+          <UAlert
+            v-if="releaseResetNotice"
+            color="info"
+            variant="subtle"
+            icon="i-lucide-sparkles"
+            title="Posters.science has been updated"
+            description="We've brought you back to the first step to see what's new. Your progress is saved."
+            close
+            @update:open="releaseResetNotice = false"
+          />
+
           <div>
             <h3 class="text-base font-semibold">
               Step {{ currentStepNumber }}: Posters
@@ -2424,6 +2518,13 @@ async function startImport() {
               </template>
             </div>
           </div>
+
+          <BulkPosterSheetMapping
+            v-if="featureFlags?.poster_sheet_mapping && jobId"
+            ref="posterSheetRef"
+            :bulk-job-id="jobId"
+            :poster-file-names="posterSheetFileNames"
+          />
         </div>
 
         <div

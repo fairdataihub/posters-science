@@ -14,6 +14,7 @@ import {
   posterLicenseBucket,
   posterRepository,
 } from "~~/server/utils/dashboardPublished";
+import { dashboardHold } from "~~/server/utils/bulkWorksheetHold";
 
 import {
   posterCountsAsDashboardInProgress,
@@ -66,6 +67,9 @@ const bulkDashboardSelect = {
   collection: {
     select: { id: true, profileId: true, slug: true, name: true },
   },
+  worksheetHeldAt: true,
+  worksheetHoldReason: true,
+  worksheetHoldPlatform: true,
 } as const;
 
 async function loadBulkDashboardRows(userId: string) {
@@ -268,6 +272,7 @@ export default defineEventHandler(async (event) => {
           name: bulk.collection.name,
         }
       : null,
+    hold: dashboardHold(bulk),
   });
 
   const bulkSubmissions = bulkSubmissionRows.map(mapBulkSubmissionRow);

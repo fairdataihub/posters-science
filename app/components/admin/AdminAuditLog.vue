@@ -41,6 +41,7 @@ const actionLabels: Record<string, string> = {
   RESTORE_ORGANIZATION: "Restored organization",
   HIDE_COLLECTION: "Hid collection",
   RESTORE_COLLECTION: "Restored collection",
+  RELEASE_WORKSHEET_HOLD: "Released worksheet hold",
 };
 
 const actionItems = [

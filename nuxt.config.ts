@@ -145,6 +145,7 @@ export default defineNuxtConfig({
     },
     resendApiKey: "",
     logwatchUrl: "",
+    slackWebhookUrl: "",
     siteUrl: "http://localhost:3000",
     zenodoClientId: "",
     zenodoClientSecret: "",
@@ -179,6 +180,11 @@ export default defineNuxtConfig({
       // FEATURE FLAG (versioning): remove once user versioning is live in production.
       // Override at container start with NUXT_PUBLIC_VERSIONING_ENABLED=true.
       versioningEnabled: false,
+      // Bulk wizard release: a number that goes up on every deploy (the
+      // deploy workflow's run number, NUXT_PUBLIC_WIZARD_RELEASE). A batch
+      // last opened on a lower release starts again at the first step.
+      // 0 in development.
+      wizardRelease: 0,
     },
   },
   vite: {

@@ -45,6 +45,11 @@ const tabs = [
     icon: "material-symbols:build",
     value: "maintenance",
   },
+  {
+    label: "Worksheet holds",
+    icon: "material-symbols:pending-actions",
+    value: "worksheet-holds",
+  },
   { label: "Audit Log", icon: "material-symbols:history", value: "audit" },
 ];
 
@@ -156,6 +161,10 @@ async function onChanged() {
 
       <div v-show="activeTab === 'maintenance'">
         <AdminMaintenancePanel @changed="onChanged" />
+      </div>
+
+      <div v-show="activeTab === 'worksheet-holds'">
+        <AdminWorksheetHolds @changed="onChanged" />
       </div>
 
       <div v-show="activeTab === 'audit'">

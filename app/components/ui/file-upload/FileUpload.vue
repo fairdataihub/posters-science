@@ -105,6 +105,13 @@ function removeFile(index: number) {
   if (fileInputRef.value) fileInputRef.value.value = "";
 }
 
+/** 512 B, 14 KB, 2.4 MB: small files don't read as 0.00 MB. */
+function formatFileSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 function onFileChange(e: Event) {
   const input = e.target as HTMLInputElement;
   if (!input.files) return;
@@ -255,10 +262,62 @@ defineExpose({ clearFiles });
 
           <div
             class="relative mx-auto w-full max-w-xl space-y-4"
-            :class="hideFileList ? 'mt-4' : 'mt-10'"
+            :class="hideFileList ? 'mt-4' : multiple ? 'mt-6' : 'mt-10'"
           >
+            <!-- Several files: one short row each, scrolling past a few -->
+            <div
+              v-if="multiple && files.length && !hideFileList"
+              class="relative z-40 overflow-hidden rounded-md border border-gray-200 bg-white text-left shadow-sm dark:border-neutral-800 dark:bg-neutral-900"
+              @click.stop
+            >
+              <p
+                class="border-b border-gray-200 px-3 py-2 text-xs font-medium text-neutral-500 dark:border-neutral-800 dark:text-neutral-400"
+              >
+                {{ files.length }} {{ files.length === 1 ? "file" : "files" }}
+                added
+              </p>
+
+              <ul
+                class="max-h-64 divide-y divide-gray-100 overflow-y-auto dark:divide-neutral-800"
+              >
+                <li
+                  v-for="(file, idx) in files"
+                  :key="`file-${idx}-${file.name}`"
+                  class="flex items-center gap-3 px-3 py-2"
+                >
+                  <Icon
+                    name="heroicons:document-text-20-solid"
+                    class="shrink-0 text-neutral-400"
+                    size="16"
+                  />
+
+                  <span
+                    class="min-w-0 flex-1 truncate text-sm text-neutral-700 dark:text-neutral-300"
+                    :title="file.name"
+                  >
+                    {{ file.name }}
+                  </span>
+
+                  <span
+                    class="shrink-0 text-xs text-neutral-500 tabular-nums dark:text-neutral-400"
+                  >
+                    {{ formatFileSize(file.size) }}
+                  </span>
+
+                  <button
+                    type="button"
+                    class="shrink-0 rounded p-1 text-neutral-400 transition-colors hover:bg-gray-100 hover:text-neutral-700 dark:hover:bg-neutral-800 dark:hover:text-neutral-200"
+                    :aria-label="`Remove ${file.name}`"
+                    @click.stop="removeFile(idx)"
+                  >
+                    <Icon name="heroicons:x-mark-20-solid" size="16" />
+                  </button>
+                </li>
+              </ul>
+            </div>
+
             <Motion
-              v-for="(file, idx) in files"
+              v-for="(file, idx) in multiple ? [] : files"
               v-show="!hideFileList"
               :key="`file-${idx}`"
               :initial="{ opacity: 0, scaleX: 0 }"

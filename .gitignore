@@ -41,3 +41,5 @@ reports/
 
 # Database snapshots
 db-snapshots
+
+/conference-worksheets/

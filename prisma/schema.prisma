@@ -78,7 +78,7 @@ model User {
 
   adminAuditLogs AdminAuditLog[] @relation("AdminActions")
 
-  bulkSubmissions BulkSubmission[]
+  bulkSubmissions        BulkSubmission[]
   maintenanceFlagUpdates MaintenanceFlag[] @relation("MaintenanceFlagUpdates")
 
   @@index([emailAddress])
@@ -506,7 +506,9 @@ model ZenodoDeposition {
   depositionId           Int     @unique // Last published Zenodo deposition ID
   status                 String  @default("unpublished") // draft, published, unpublished
   lastPublishedZenodoDoi String? // Last published Zenodo DOI
-  /** ISO date (YYYY-MM-DD, UTC) when Zenodo file download embargo ends; null if files are public. */
+  /**
+   * ISO date (YYYY-MM-DD, UTC) when Zenodo file download embargo ends; null if files are public.
+   */
   filesEmbargoUntil      String?
 
   user   User   @relation(fields: [userId], references: [id])
@@ -558,10 +560,14 @@ model BulkSubmission {
   name String
 
   // setup | upload | conference | submit
-  wizardStep String @default("upload")
+  wizardStep    String @default("upload")
+  // The release (deploy run number) the wizard last opened this batch on. A
+  // batch opened on a higher release starts again at the first step, so
+  // organizers see steps added since. Null for batches from before this was kept.
+  wizardRelease Int?
   // draft | processing | completed | failed
-  status String @default("draft")
-  stagedPosters Json @default("[]")
+  status        String @default("draft")
+  stagedPosters Json   @default("[]")
 
   licenseMetadataFileName String?
   licenseMetadataFilePath String?
@@ -572,6 +578,30 @@ model BulkSubmission {
   posterCount Int?
 
   submissionSummary Json?
+
+  // Confirmed organizer poster sheet (rows, title matches, flags to check)
+  // waiting to be saved into the metadata grid. Cleared once nothing is left.
+  posterSheet Json?
+
+  // True once the team was pinged on Slack about this batch's worksheet hold
+  // (a refused worksheet or an unsupported platform sent to us).
+  posterPlatformDetailsSubmittedToSlack Boolean @default(false)
+
+  // Worksheet hold: set when the organizer sends a refused worksheet to the
+  // team ("Send it to us"). The batch stays on the first step until an admin
+  // releases it; the organizer then adds the worksheet again. Files are the
+  // Bunny paths of what they sent.
+  worksheetHeldAt       DateTime?
+  worksheetHoldFiles    String[]  @default([])
+  // Why the batch is held: unsupported_platform (Other platform card: we
+  // add support for it) or worksheet_error (a supported platform's worksheet
+  // was refused: we fix it). Platform is what the organizer named or chose;
+  // problems are why the worksheet was refused.
+  worksheetHoldReason   String?
+  worksheetHoldPlatform String?
+  worksheetHoldProblems String[]  @default([])
+  // The email the organizer confirmed we should use about the worksheets.
+  worksheetHoldEmail    String?
 
   error String?
 

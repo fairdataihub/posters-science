@@ -1,6 +1,8 @@
 import type { BulkImportSubmissionSummary } from "#shared/types/bulkImportLicenses";
 import { getBulkPosterSubmissionJobRepository } from "~~/server/utils/bulkPosterSubmissionJobs";
 import { updateBulkJobBodySchema } from "~~/server/utils/bulkJobPatchBody";
+import { currentWizardRelease } from "~~/server/utils/bulkImportWizardRelease";
+import { assertWorksheetNotHeld } from "~~/server/utils/bulkWorksheetHold";
 
 export default defineEventHandler(async (event) => {
   const session = await requireDbUserSession(event);
@@ -25,7 +27,14 @@ export default defineEventHandler(async (event) => {
   }
 
   // Merge into the stored summary here, so the client never sends it whole.
-  const { name, wizardStep, conference, uniformLicense, reviewEmbargo } = body;
+  const {
+    name,
+    wizardStep,
+    releaseSeen,
+    conference,
+    uniformLicense,
+    reviewEmbargo,
+  } = body;
   const summary =
     conference || uniformLicense || reviewEmbargo
       ? {
@@ -41,10 +50,18 @@ export default defineEventHandler(async (event) => {
         }
       : undefined;
 
+  // A held batch stays on the first step until its worksheet is released.
+  if (wizardStep && wizardStep !== "upload") {
+    await assertWorksheetNotHeld(jobId);
+  }
+
   try {
     return await repository.updateForUser(jobId, session.user.id, {
       ...(name !== undefined && { name }),
       ...(wizardStep && { wizardStep }),
+      ...(releaseSeen && {
+        wizardRelease: Math.max(job.wizardRelease ?? 0, currentWizardRelease()),
+      }),
       ...(summary && { submissionSummary: summary }),
     });
   } catch (error) {
