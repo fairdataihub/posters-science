@@ -60,7 +60,6 @@ const sheetName = computed(() =>
 );
 const result = ref<PosterSheetMappingResult | null>(null);
 const loading = ref(false);
-/** True while the confirm panel is open. */
 /** The file(s) last refused, named in the rejection dialog. */
 const rejectedName = ref("");
 /** Overrides "Fix this in your file…" when the file itself is fine. */
@@ -125,7 +124,7 @@ const CHOICE_CARDS: {
   {
     label: "Other platform",
     description:
-      "Send us worksheets from a platform we don't support yet, so we can look into it",
+      "Send us your platform's worksheets and we'll get back to you within 7 days",
     value: "other",
   },
   {
@@ -869,22 +868,39 @@ const sheetRowCount = computed(
     (result.value?.pairs?.length ?? 0) + (result.value?.match_rows.length ?? 0),
 );
 
-/** Uploaded posters vs posters in the sheet, when the counts differ. */
+/**
+ * Posters with no worksheet row, when that's already certain: every row is
+ * linked to a file by name or number, so none waits for title matching.
+ * Null while some rows still wait to be matched by title after extraction.
+ */
+const postersWithoutRow = computed<string[] | null>(() => {
+  const mapped = result.value;
+  if (!mapped || mapped.match_rows?.length) return null;
+  const linked = new Set(
+    (mapped.pairs ?? []).map((pair) => pair.file_name.toLowerCase()),
+  );
+
+  return props.posterFileNames.filter(
+    (name) => !linked.has(name.toLowerCase()),
+  );
+});
+
+/** How the uploaded posters and the worksheet's rows line up, when they don't. */
 const posterCountNote = computed(() => {
+  const posters = (n: number) => `${n} ${n === 1 ? "poster" : "posters"}`;
+  const missing = postersWithoutRow.value;
+  if (missing) {
+    if (!missing.length) return null;
+    const one = missing.length === 1;
+
+    return `We couldn't find ${posters(missing.length)} in your worksheet. ${one ? "Its" : "Their"} details will be extracted from the ${one ? "poster" : "posters"}.`;
+  }
+
   const uploaded = props.posterFileNames.length;
   const inSheet = sheetRowCount.value;
   if (!uploaded || !inSheet || uploaded === inSheet) return null;
-  const posters = (n: number) => `${n} ${n === 1 ? "poster" : "posters"}`;
 
-  if (uploaded > inSheet) {
-    const rest = uploaded - inSheet;
-
-    return `We couldn't find ${posters(rest)} in your worksheet. ${rest === 1 ? "Its details" : "Their details"} will be extracted from the ${rest === 1 ? "poster" : "posters"}.`;
-  }
-
-  const extra = inSheet - uploaded;
-
-  return `Your worksheet lists ${posters(inSheet)}, but ${uploaded} ${uploaded === 1 ? "was" : "were"} uploaded. The other ${extra} ${extra === 1 ? "row won't" : "rows won't"} be used.`;
+  return `Your worksheet has ${inSheet} ${inSheet === 1 ? "row" : "rows"} for ${posters(uploaded)}. We'll match them by title once the posters are read, and any poster without a row keeps the details read from it.`;
 });
 
 function removeSheet() {
@@ -1148,14 +1164,35 @@ watch(
         />
       </div>
 
-      <!-- Counts differ: one line saying how many don't line up -->
-      <p
+      <!-- Posters and rows don't line up: one line, plus the posters without
+           a row when that's already certain -->
+      <div
         v-if="confirmedName && posterCountNote"
-        class="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50/60 p-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300"
+        class="rounded-lg border border-amber-200 bg-amber-50/60 p-3 text-sm dark:border-amber-900/60 dark:bg-amber-950/20"
       >
-        <UIcon name="i-lucide-triangle-alert" class="mt-0.5 size-4 shrink-0" />
-        {{ posterCountNote }}
-      </p>
+        <p class="flex items-start gap-2 text-amber-800 dark:text-amber-300">
+          <UIcon
+            name="i-lucide-triangle-alert"
+            class="mt-0.5 size-4 shrink-0"
+          />
+          {{ posterCountNote }}
+        </p>
+
+        <ul
+          v-if="postersWithoutRow?.length"
+          class="mt-2 max-h-32 divide-y divide-amber-100 overflow-y-auto rounded-md border border-amber-200/70 bg-white/70 text-xs dark:divide-amber-900/40 dark:border-amber-900/60 dark:bg-neutral-900/40"
+          aria-label="Posters not in your worksheet"
+        >
+          <li
+            v-for="name in postersWithoutRow"
+            :key="name"
+            class="truncate px-2.5 py-1 font-mono"
+            :title="name"
+          >
+            {{ name }}
+          </li>
+        </ul>
+      </div>
 
       <template v-if="showFilesBox">
         <!-- Expected files and format, ticked off as they're added -->
