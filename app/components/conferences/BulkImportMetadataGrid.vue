@@ -27,24 +27,11 @@ import IdentifierOrcidSearch from "~/components/identifier/IdentifierOrcidSearch
 import IdentifierRorSearch from "~/components/identifier/IdentifierRorSearch.vue";
 import { mergePosterSheetIntoGrid } from "#shared/utils/posterSheetToGrid";
 import {
-  acceptPendingFlaggedRow,
   forgetSavedPosterSheetRows,
   loadPendingPosterSheet,
   matchPendingPosterSheetByTitle,
   readPendingPosterSheet,
-  unlinkPendingFlaggedRow,
-  updateUnmatchedPosters,
-  writePendingPosterSheet,
 } from "~/utils/posterSheetPending";
-import {
-  creatorNames,
-  flaggedRowsToReview,
-  postersWithoutRow,
-  rowsWithoutPoster,
-} from "#shared/utils/posterSheetTitleMatch";
-import type { PosterSheetFlaggedRow } from "#shared/types/posterSheetMapping";
-import BulkPosterSheetTitleMatches from "~/components/conferences/BulkPosterSheetTitleMatches.vue";
-import BulkPosterSheetUnmatched from "~/components/conferences/BulkPosterSheetUnmatched.vue";
 
 /**
  * Spreadsheet-style editor for batch poster metadata. Sheets and columns come
@@ -1431,67 +1418,6 @@ function resetChanges() {
 
 /** File names merged from the poster sheet and not saved yet. */
 const posterSheetUnsaved = ref<string[]>([]);
-/** Pairings to check (until accepted or unlinked), and sheet rows still without a poster. */
-const posterSheetReview = ref<PosterSheetFlaggedRow[]>([]);
-const posterSheetWaiting = ref(0);
-/** Bumped whenever the pending sheet is re-read, so computeds see changes. */
-const posterSheetTick = ref(0);
-
-/** Every poster without a worksheet row. */
-const posterSheetUnmatchedAll = computed(() => {
-  void posterSheetTick.value;
-  const pending = readPendingPosterSheet(props.bulkJobId);
-  if (!pending || !grid.value) return [];
-
-  return postersWithoutRow(pending, grid.value.posters);
-});
-
-/** The ones the organizer hasn't seen the notice for yet. */
-const posterSheetUnmatched = computed(() => {
-  void posterSheetTick.value;
-  const pending = readPendingPosterSheet(props.bulkJobId);
-  const decided = new Set(
-    (pending?.unmatchedDecided ?? []).map((name) => name.toLowerCase()),
-  );
-
-  return posterSheetUnmatchedAll.value.filter(
-    (poster) => !decided.has(poster.fileName.toLowerCase()),
-  );
-});
-
-// The pending sheet is kept until each of these has been seen.
-watch(posterSheetUnmatchedAll, (all) => {
-  updateUnmatchedPosters(props.bulkJobId, {
-    unmatchedFiles: all.map((poster) => poster.fileName),
-  });
-});
-
-/** OK on the notice: these posters keep what was read from them. */
-function dismissUnmatched() {
-  updateUnmatchedPosters(props.bulkJobId, {
-    decided: posterSheetUnmatched.value.map((poster) => poster.fileName),
-  });
-  posterSheetTick.value += 1;
-}
-
-function refreshPosterSheetReview() {
-  const pending = readPendingPosterSheet(props.bulkJobId);
-  // Authors read from the poster: kept for each flagged row, or else the
-  // last saved values of a poster the sheet has not filled yet.
-  posterSheetReview.value = flaggedRowsToReview(pending).map((row) => {
-    if (row.poster_authors) return row;
-    const posterId = posterIdForFile(row.file_name);
-    const snap = posterId ? savedPosterSnapshots.value.get(posterId) : null;
-    const saved = snap
-      ? (JSON.parse(snap) as Record<string, Record<string, unknown>[]>)
-      : null;
-
-    return { ...row, poster_authors: creatorNames(saved?.Creators) };
-  });
-  posterSheetWaiting.value = rowsWithoutPoster(pending);
-  posterSheetTick.value += 1;
-}
-
 function posterIdForFile(fileName: string): string | null {
   const key = fileName.trim().toLowerCase();
   const poster = grid.value?.posters.find(
@@ -1501,30 +1427,15 @@ function posterIdForFile(fileName: string): string | null {
   return poster ? String(poster.id) : null;
 }
 
-/** One poster's rows on every tab, without row keys. */
-function posterRowsOf(
-  rows: Record<string, EditableRow[]>,
-  posterId: string,
-): Record<string, BulkReviewGridRow[]> {
-  const out: Record<string, BulkReviewGridRow[]> = {};
-  for (const [name, list] of Object.entries(rows)) {
-    out[name] = stripKeys(list.filter((row) => row.poster_id === posterId));
-  }
-
-  return out;
-}
-
 /**
  * Fill the grid from a poster sheet confirmed on the posters step. Merged
- * cells show as unsaved changes so the user sees and saves them. For a
- * flagged pairing, the poster's rows from before the merge are kept on the
- * pending sheet, so unlinking it later can put them back.
+ * cells show as unsaved changes so the user sees and saves them. Posters
+ * without a row keep what was read from them.
  */
 function applyPendingPosterSheet(
   data: BulkReviewMetadataGrid,
   rows: Record<string, EditableRow[]>,
 ): { rows: Record<string, EditableRow[]>; changed: boolean } {
-  refreshPosterSheetReview();
   const pending = readPendingPosterSheet(props.bulkJobId);
   if (!pending || !props.bulkJobId) return { rows, changed: false };
   const merged = mergePosterSheetIntoGrid(data, rows, pending.sheets);
@@ -1534,23 +1445,9 @@ function applyPendingPosterSheet(
   }
   posterSheetUnsaved.value = merged.appliedFileNames;
 
-  const changedIds = new Set(merged.changedPosterIds);
-  const beforeSheet = { ...(pending.beforeSheet ?? {}) };
-  let kept = false;
-  for (const flagged of posterSheetReview.value) {
-    if (beforeSheet[flagged.row_key]) continue;
-    const posterId = posterIdForFile(flagged.file_name);
-    if (!posterId || !changedIds.has(posterId)) continue;
-    beforeSheet[flagged.row_key] = posterRowsOf(rows, posterId);
-    kept = true;
-  }
-  if (kept) {
-    void writePendingPosterSheet(props.bulkJobId, { ...pending, beforeSheet });
-  }
-
   if (merged.changedPosterIds.length) {
     toast.add({
-      title: "Filled from your poster sheet",
+      title: "Filled from your worksheet",
       description: `${merged.changedPosterIds.length} poster(s) updated from ${pending.sheetFileName}. Save to keep these values.`,
       color: "info",
     });
@@ -1561,7 +1458,7 @@ function applyPendingPosterSheet(
 
 /**
  * Forget sheet rows only for the posters that actually saved; rows for
- * posters that did not save stay pending. Flagged pairings stay listed.
+ * posters that did not save stay pending.
  */
 function onGridSaved(savedPosterIds: number[]) {
   if (!savedPosterIds.length) return;
@@ -1576,59 +1473,6 @@ function onGridSaved(savedPosterIds: number[]) {
   posterSheetUnsaved.value = posterSheetUnsaved.value.filter(
     (name) => !savedKeys.has(name.toLowerCase()),
   );
-  refreshPosterSheetReview();
-}
-
-/** Warn (without blocking) when a save goes ahead with pairings still unchecked. */
-function warnUncheckedPosterSheetRows() {
-  const count = posterSheetReview.value.length;
-  if (!count) return;
-  toast.add({
-    title: "Poster sheet pairings still to check",
-    description: `${count} poster(s) were paired with a sheet row that may be wrong. They stay listed above the grid until you accept or unlink each one.`,
-    color: "warning",
-  });
-}
-
-function onAcceptFlaggedRow(rowKey: string) {
-  acceptPendingFlaggedRow(props.bulkJobId, rowKey);
-  refreshPosterSheetReview();
-}
-
-/**
- * Undo a wrong pairing in place: that poster's rows go back to what they were
- * before the sheet filled them, and other unsaved edits in the grid stay.
- */
-function onUnlinkFlaggedRow(rowKey: string) {
-  const pending = readPendingPosterSheet(props.bulkJobId);
-  const flagged = posterSheetReview.value.find((row) => row.row_key === rowKey);
-  const posterId = flagged ? posterIdForFile(flagged.file_name) : null;
-  let before = pending?.beforeSheet?.[rowKey];
-  if (!before && posterId) {
-    const snap = savedPosterSnapshots.value.get(posterId);
-    before = snap
-      ? (JSON.parse(snap) as Record<string, BulkReviewGridRow[]>)
-      : undefined;
-  }
-  unlinkPendingFlaggedRow(props.bulkJobId, rowKey);
-
-  if (posterId && before) {
-    const next: Record<string, EditableRow[]> = {};
-    for (const [name, list] of Object.entries(sheetRows.value)) {
-      const at = list.findIndex((row) => row.poster_id === posterId);
-      const others = list.filter((row) => row.poster_id !== posterId);
-      const restored = (before[name] ?? []).map(withKey);
-      others.splice(at < 0 ? others.length : at, 0, ...restored);
-      next[name] = others;
-    }
-    sheetRows.value = next;
-    dirty.value = true;
-    const file = flagged!.file_name.toLowerCase();
-    posterSheetUnsaved.value = posterSheetUnsaved.value.filter(
-      (name) => name.toLowerCase() !== file,
-    );
-  }
-  refreshPosterSheetReview();
 }
 
 const unsavedOnCloseModalOpen = ref(false);
@@ -1675,7 +1519,6 @@ async function save(): Promise<boolean> {
     });
     if (saveAttempted) {
       onGridSaved(savedPosterIds);
-      warnUncheckedPosterSheetRows();
     }
     await showValidationOutcome(issues, "inform", savedPosterIds, saveAttempted);
     return issues.length === 0;
@@ -1710,7 +1553,6 @@ async function prepareStepTransition(): Promise<boolean> {
     });
     if (saveAttempted) {
       onGridSaved(savedPosterIds);
-      warnUncheckedPosterSheetRows();
     }
 
     if (issues.length === 0) {
@@ -1846,20 +1688,6 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
           save a draft or continue to poster previews.
         </p>
       </div>
-
-      <BulkPosterSheetUnmatched
-        v-if="posterSheetUnmatched.length"
-        :posters="posterSheetUnmatched"
-        @dismiss="dismissUnmatched"
-      />
-
-      <BulkPosterSheetTitleMatches
-        v-if="posterSheetReview.length || posterSheetWaiting"
-        :matches="posterSheetReview"
-        :waiting="posterSheetWaiting"
-        @accept="onAcceptFlaggedRow"
-        @unlink="onUnlinkFlaggedRow"
-      />
 
       <!-- Toolbar -->
       <div class="flex shrink-0 flex-wrap items-center gap-3">

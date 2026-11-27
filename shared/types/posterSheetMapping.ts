@@ -170,7 +170,7 @@ export type PosterSheetTitleMatch = {
     | "words_fuzzy"
     | "best_remaining"
     | "number_suggested";
-  /** "high" is applied as is; "review" is shown for the organizer to check */
+  /** How sure the matcher is; every match is used either way */
   confidence: "high" | "review";
   /** Loop round that made the match */
   round?: number;
@@ -203,28 +203,6 @@ export type PosterSheetMatchResult = {
   unmatched_files: string[];
 };
 
-/**
- * A pairing the organizer should check: a title match that needed more than
- * the exact title, or a file name or number pairing whose titles disagree.
- */
-export type PosterSheetFlaggedRow = {
-  row_key: string;
-  file_name: string;
-  /** How the row was paired; for a file pairing, why the check failed */
-  method: PosterSheetTitleMatch["method"] | PosterSheetPair["method"];
-  reason?: PosterSheetPairCheck["reason"];
-  score: number;
-  author_score: number | null;
-  row_title: string;
-  poster_title: string;
-  /** The row's number in the organizer's sheet, when known */
-  row_number?: number;
-  /** Authors in the sheet row */
-  row_authors: string[];
-  /** Authors read from the poster (before the sheet filled it); null when not known */
-  poster_authors: string[] | null;
-};
-
 /** What the wizard keeps after the user confirms a sheet. */
 export type PendingPosterSheet = {
   sheetFileName: string;
@@ -235,36 +213,10 @@ export type PendingPosterSheet = {
   matchRows?: PosterSheetMatchRow[];
   /** row_key -> the title match applied to it */
   titleMatches?: Record<string, PosterSheetTitleMatch>;
-  /** "row_key|file_name" pairs the organizer unlinked; never matched again */
-  rejectedMatches?: string[];
-  /** row_keys of flagged matches the organizer accepted */
-  acceptedMatches?: string[];
   /** Rows the sheet paired with a file; kept after their rows are saved */
   pairs?: PosterSheetPair[];
-  /** row_key -> title check of a paired row (agree or disagree; unchecked ones are retried) */
-  pairChecks?: Record<string, PosterSheetPairCheck>;
   /** Per row notes from the sheet (project license, the poster's own DOI) */
   hints?: PosterSheetMappingResult["hints"];
-  /**
-   * row_key -> that poster's grid rows before the sheet filled them, kept for
-   * flagged rows only, so unlinking can put the extracted values back even
-   * after a save.
-   */
-  beforeSheet?: Record<string, Record<string, Record<string, string>[]>>;
   /** Poster file names the browser had when the sheet was mapped (some may still be uploading) */
   browserFileNames?: string[];
-  /**
-   * Posters with no worksheet row at Review, and the ones the organizer has
-   * seen the notice for. The sheet is kept until all are seen.
-   */
-  unmatchedFiles?: string[];
-  unmatchedDecided?: string[];
-};
-
-/** A poster no worksheet row is linked to; it keeps what was read from it. */
-export type UnmatchedPoster = {
-  posterId: number;
-  fileName: string;
-  /** no_row: nothing paired it; unlinked: the organizer unlinked its row */
-  reason: "no_row" | "unlinked";
 };

@@ -1,26 +1,18 @@
 import type { BulkReviewMetadataGrid } from "#shared/types/bulkReviewMetadataGrid";
 import type {
   PendingPosterSheet,
-  PosterSheetFlaggedRow,
   PosterSheetMatchRow,
   PosterSheetPair,
-  PosterSheetPairCheck,
   PosterSheetTitleMatch,
-  UnmatchedPoster,
 } from "#shared/types/posterSheetMapping";
 
 /**
- * After posters extract, POST /sheets/match does two things for a confirmed
- * poster sheet:
- * - links rows that have no file yet to posters by title (and authors when
- *   titles are close), including a file suggested by the row's number when
- *   its title agrees;
- * - checks the title of every row the sheet already paired with a file (file
- *   name column, close file name, number at the start of the name), so a
- *   wrong file is caught however it was paired.
- * These helpers build that request from the grid, write matches and checks
- * back onto the pending sheet, and handle the organizer accepting or
- * unlinking a flagged pairing. Pure functions, no I/O.
+ * After posters extract, POST /sheets/match links worksheet rows that have
+ * no file yet to posters by title (and authors when titles are close),
+ * including a file suggested by the row's number when its title agrees.
+ * These helpers build that request from the grid and write the matches back
+ * onto the pending sheet. Posters left without a row keep what was read
+ * from them. Pure functions, no I/O.
  */
 
 const CREATORS_SHEET = "Creators";
@@ -56,10 +48,9 @@ function linkedFileNames(pending: PendingPosterSheet): Set<string> {
 }
 
 /**
- * Rows still waiting for a poster, paired rows not checked yet, and the
- * extracted posters. Posters without a title (still extracting) are left for
- * a later pass. Paired posters are sent too: the API checks them and keeps
- * them out of title matching.
+ * Rows still waiting for a poster, and the extracted posters no row is
+ * linked to yet. Posters without a title (still extracting) are left for a
+ * later pass.
  */
 export function titleMatchInput(
   pending: PendingPosterSheet,
@@ -88,41 +79,18 @@ export function titleMatchInput(
     ]);
   }
 
-  // Files a title match took are out; paired files stay in for their check.
-  // A sheet confirmed before pairs were stored has no `pairs`: its linked
-  // files are kept out of matching as before.
-  const pairFiles = new Set(
-    (pending.pairs ?? []).map((p) => lower(p.file_name)),
-  );
+  // Files already linked (file name column, number, or an earlier title
+  // match) are kept out of title matching.
   const linked = linkedFileNames(pending);
   const posters = grid.posters
-    .filter((poster) => {
-      const file = lower(poster.fileName);
-
-      return poster.title && (pairFiles.has(file) || !linked.has(file));
-    })
+    .filter((poster) => poster.title && !linked.has(lower(poster.fileName)))
     .map((poster) => ({
       file_name: poster.fileName,
       title: poster.title,
       authors: authorsByPoster.get(String(poster.id)) ?? [],
     }));
 
-  const checks = pending.pairChecks ?? {};
-  const pairs = (pending.pairs ?? [])
-    .filter((pair) => {
-      const check = checks[pair.row_key];
-
-      return !check || check.status === "unchecked";
-    })
-    .map(({ row_key, file_name, title, authors, method }) => ({
-      row_key,
-      file_name,
-      title,
-      authors,
-      method,
-    }));
-
-  return { rows, posters, pairs };
+  return { rows, posters, pairs: [] };
 }
 
 /** Apply new matches: each matched row now carries its poster's file name. */
@@ -130,12 +98,10 @@ export function applyTitleMatches(
   pending: PendingPosterSheet,
   matches: PosterSheetTitleMatch[],
 ): { pending: PendingPosterSheet; applied: PosterSheetTitleMatch[] } {
-  const rejected = new Set(pending.rejectedMatches ?? []);
   const titleMatches = { ...(pending.titleMatches ?? {}) };
   const taken = linkedFileNames(pending);
   const applied: PosterSheetTitleMatch[] = [];
   for (const match of matches) {
-    if (rejected.has(`${match.row_key}|${match.file_name}`)) continue;
     if (titleMatches[match.row_key] || taken.has(lower(match.file_name)))
       continue;
     titleMatches[match.row_key] = match;
@@ -154,240 +120,4 @@ export function applyTitleMatches(
   }
 
   return { pending: { ...pending, sheets, titleMatches }, applied };
-}
-
-/**
- * Keep the title checks of paired rows. "unchecked" ones (poster not
- * extracted yet) are not kept, so they are sent again on a later pass.
- */
-export function applyPairChecks(
-  pending: PendingPosterSheet,
-  checks: PosterSheetPairCheck[] | undefined,
-): PendingPosterSheet {
-  if (!checks?.length) return pending;
-  const pairChecks = { ...(pending.pairChecks ?? {}) };
-  let changed = false;
-  for (const check of checks) {
-    if (!check?.row_key || check.status === "unchecked") continue;
-    if (pairChecks[check.row_key]?.status === check.status) continue;
-    pairChecks[check.row_key] = check;
-    changed = true;
-  }
-
-  return changed ? { ...pending, pairChecks } : pending;
-}
-
-/**
- * Pairings to show for checking: title matches that needed more than the
- * exact title (number-suggested files included), and paired rows whose
- * title check disagrees. They stay listed, saved or not, until the
- * organizer accepts or unlinks each one.
- */
-export function flaggedRowsToReview(
-  pending: PendingPosterSheet | null,
-): PosterSheetFlaggedRow[] {
-  if (!pending) return [];
-  const accepted = new Set(pending.acceptedMatches ?? []);
-  const out: PosterSheetFlaggedRow[] = [];
-  const matchRows = new Map(
-    (pending.matchRows ?? []).map((row) => [row.row_key, row]),
-  );
-  for (const match of Object.values(pending.titleMatches ?? {})) {
-    if (match.confidence !== "review" || accepted.has(match.row_key)) continue;
-    const row = matchRows.get(match.row_key);
-    out.push({
-      row_key: match.row_key,
-      file_name: match.file_name,
-      method: match.method,
-      score: match.score,
-      author_score: match.author_score,
-      row_title: match.row_title,
-      poster_title: match.poster_title,
-      row_number: row?.row,
-      row_authors: row?.authors ?? [],
-      poster_authors: authorsBeforeSheet(pending, match.row_key),
-    });
-  }
-  const paired = new Map(
-    (pending.pairs ?? []).map((pair) => [pair.row_key, pair]),
-  );
-  for (const check of Object.values(pending.pairChecks ?? {})) {
-    const pair = paired.get(check.row_key);
-    if (!pair || check.status !== "disagree" || accepted.has(check.row_key))
-      continue;
-    out.push({
-      row_key: check.row_key,
-      file_name: check.file_name,
-      method: pair.method,
-      reason: check.reason,
-      score: check.words_score ?? check.title_score ?? 0,
-      author_score: check.author_score ?? null,
-      row_title: check.row_title,
-      poster_title: check.poster_title,
-      row_number: pair.row,
-      row_authors: pair.authors ?? [],
-      poster_authors: authorsBeforeSheet(pending, check.row_key),
-    });
-  }
-
-  return out;
-}
-
-/**
- * Creator names a flagged poster had before the sheet filled it (what was
- * read from the poster), or null when that was not kept.
- */
-export function creatorNames(
-  rows: Record<string, unknown>[] | undefined,
-): string[] | null {
-  if (!rows) return null;
-
-  return rows
-    .map((row) =>
-      [row.given_name, row.family_name]
-        .filter((part) => typeof part === "string" && part.trim())
-        .join(" "),
-    )
-    .filter(Boolean);
-}
-
-function authorsBeforeSheet(
-  pending: PendingPosterSheet,
-  rowKey: string,
-): string[] | null {
-  return creatorNames(pending.beforeSheet?.[rowKey]?.[CREATORS_SHEET]);
-}
-
-/** The organizer confirms a flagged pairing; it leaves the review list. */
-export function acceptFlaggedRow(
-  pending: PendingPosterSheet,
-  rowKey: string,
-): PendingPosterSheet {
-  if ((pending.acceptedMatches ?? []).includes(rowKey)) return pending;
-  const beforeSheet = Object.fromEntries(
-    Object.entries(pending.beforeSheet ?? {}).filter(([key]) => key !== rowKey),
-  );
-
-  return {
-    ...pending,
-    acceptedMatches: [...(pending.acceptedMatches ?? []), rowKey],
-    beforeSheet,
-  };
-}
-
-function withoutFile(
-  pending: PendingPosterSheet,
-  rowKey: string,
-): PendingPosterSheet["sheets"] {
-  const sheets: PendingPosterSheet["sheets"] = {};
-  for (const [name, rows] of Object.entries(pending.sheets)) {
-    sheets[name] = rows.map((row) =>
-      row.row_key === rowKey ? { ...row, file_name: "" } : row,
-    );
-  }
-
-  return sheets;
-}
-
-/**
- * The organizer says a flagged pairing is wrong. The row's file is removed
- * and the pair is never made again. A title match goes back to waiting; a
- * file pairing becomes a row waiting for a title match, which will not pick
- * that file again.
- */
-export function unlinkFlaggedRow(
-  pending: PendingPosterSheet,
-  rowKey: string,
-): PendingPosterSheet {
-  const beforeSheet = Object.fromEntries(
-    Object.entries(pending.beforeSheet ?? {}).filter(([key]) => key !== rowKey),
-  );
-  const acceptedMatches = (pending.acceptedMatches ?? []).filter(
-    (key) => key !== rowKey,
-  );
-
-  const match = pending.titleMatches?.[rowKey];
-  if (match) {
-    const titleMatches = Object.fromEntries(
-      Object.entries(pending.titleMatches ?? {}).filter(
-        ([key]) => key !== rowKey,
-      ),
-    );
-
-    return {
-      ...pending,
-      sheets: withoutFile(pending, rowKey),
-      titleMatches,
-      beforeSheet,
-      acceptedMatches,
-      rejectedMatches: [
-        ...(pending.rejectedMatches ?? []),
-        `${rowKey}|${match.file_name}`,
-      ],
-    };
-  }
-
-  const pair = (pending.pairs ?? []).find((p) => p.row_key === rowKey);
-  if (!pair) return pending;
-  const pairChecks = Object.fromEntries(
-    Object.entries(pending.pairChecks ?? {}).filter(([key]) => key !== rowKey),
-  );
-
-  return {
-    ...pending,
-    sheets: withoutFile(pending, rowKey),
-    pairs: (pending.pairs ?? []).filter((p) => p.row_key !== rowKey),
-    pairChecks,
-    matchRows: [
-      ...(pending.matchRows ?? []).filter((row) => row.row_key !== rowKey),
-      {
-        row_key: rowKey,
-        row: pair.row,
-        title: pair.title,
-        authors: pair.authors,
-        number: "",
-      },
-    ],
-    beforeSheet,
-    acceptedMatches,
-    rejectedMatches: [
-      ...(pending.rejectedMatches ?? []),
-      `${rowKey}|${pair.file_name}`,
-    ],
-  };
-}
-
-/** Rows that need the organizer: flagged pairings not yet accepted or unlinked. */
-export function rowsToCheck(pending: PendingPosterSheet | null): Set<string> {
-  return new Set(flaggedRowsToReview(pending).map((row) => row.row_key));
-}
-
-/** Sheet rows that still have no poster. */
-export function rowsWithoutPoster(pending: PendingPosterSheet | null): number {
-  if (!pending?.matchRows) return 0;
-  const matched = new Set(Object.keys(pending.titleMatches ?? {}));
-
-  return pending.matchRows.filter((row) => !matched.has(row.row_key)).length;
-}
-
-/** Posters no worksheet row is linked to, either never matched or unlinked. */
-export function postersWithoutRow(
-  pending: PendingPosterSheet | null,
-  posters: { id: number | string; fileName: string }[],
-): UnmatchedPoster[] {
-  if (!pending) return [];
-  const linked = linkedFileNames(pending);
-  const unlinked = new Set(
-    (pending.rejectedMatches ?? []).map((pair) =>
-      lower(pair.slice(pair.indexOf("|") + 1)),
-    ),
-  );
-
-  return posters
-    .filter((poster) => !linked.has(lower(poster.fileName)))
-    .map((poster) => ({
-      posterId: Number(poster.id),
-      fileName: poster.fileName,
-      reason: unlinked.has(lower(poster.fileName)) ? "unlinked" : "no_row",
-    }));
 }

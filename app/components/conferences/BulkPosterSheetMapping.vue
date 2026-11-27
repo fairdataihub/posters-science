@@ -32,8 +32,8 @@ import WorksheetContactEmail from "~/components/conferences/WorksheetContactEmai
  *
  * Rows link to files by a file name column, or by a submission number at the
  * start of the file names. Rows left over are matched by title after
- * extraction, every pairing gets a title check, and the grid lists matches
- * and disagreeing pairings for the organizer to check. The confirmed sheet is
+ * extraction. Posters no row links to keep what was read from them, and the
+ * grid lists them for the organizer. The confirmed sheet is
  * stored on the batch, so it survives a reload or another device.
  *
  * The poster file names sent with the sheet include files still uploading, so
@@ -856,11 +856,8 @@ function useSheet() {
     sheets: result.value.sheets,
     matchRows: result.value.match_rows,
     pairs: result.value.pairs ?? [],
-    pairChecks: {},
     hints: result.value.hints,
     titleMatches: {},
-    rejectedMatches: [],
-    acceptedMatches: [],
     browserFileNames: [...props.posterFileNames],
   });
   confirmedName.value = sheetName.value;
@@ -882,44 +879,12 @@ const posterCountNote = computed(() => {
   if (uploaded > inSheet) {
     const rest = uploaded - inSheet;
 
-    return `Your worksheet covers ${inSheet} of ${posters(uploaded)}. We'll read the other ${rest} from ${rest === 1 ? "the poster" : "their posters"}.`;
+    return `We couldn't find ${posters(rest)} in your worksheet. ${rest === 1 ? "Its details" : "Their details"} will be extracted from the ${rest === 1 ? "poster" : "posters"}.`;
   }
 
   const extra = inSheet - uploaded;
 
   return `Your worksheet lists ${posters(inSheet)}, but ${uploaded} ${uploaded === 1 ? "was" : "were"} uploaded. The other ${extra} ${extra === 1 ? "row won't" : "rows won't"} be used.`;
-});
-
-/**
- * The worksheet's poster rows in sheet order, with the file each is already
- * linked to (by file name or number). Rows without one are matched by title
- * after extraction.
- */
-const sheetPosterRows = computed(() =>
-  [
-    ...(result.value?.pairs ?? []).map((p) => ({
-      row: p.row,
-      title: p.title,
-      file: p.file_name as string | null,
-    })),
-    ...(result.value?.match_rows ?? []).map((r) => ({
-      row: r.row,
-      title: r.title,
-      file: null as string | null,
-    })),
-  ].sort((a, b) => a.row - b.row),
-);
-
-/** The uploaded posters, each with the worksheet row it's linked to, if any. */
-const uploadedPosters = computed(() => {
-  const rowFor = new Map(
-    (result.value?.pairs ?? []).map((p) => [p.file_name, p.row]),
-  );
-
-  return props.posterFileNames.map((name) => ({
-    name,
-    row: rowFor.get(name) ?? null,
-  }));
 });
 
 function removeSheet() {
@@ -1183,108 +1148,14 @@ watch(
         />
       </div>
 
-      <!-- Counts differ: the uploaded posters and the worksheet's rows, side by side -->
-      <section
+      <!-- Counts differ: one line saying how many don't line up -->
+      <p
         v-if="confirmedName && posterCountNote"
-        class="space-y-3 rounded-lg border border-amber-200 bg-amber-50/60 p-3 sm:p-4 dark:border-amber-900/60 dark:bg-amber-950/20"
-        aria-label="Posters uploaded and posters in your worksheet"
+        class="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50/60 p-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300"
       >
-        <p
-          class="flex items-start gap-2 text-sm text-amber-800 dark:text-amber-300"
-        >
-          <UIcon
-            name="i-lucide-triangle-alert"
-            class="mt-0.5 size-4 shrink-0"
-          />
-          {{ posterCountNote }}
-        </p>
-
-        <div class="grid items-start gap-3 sm:grid-cols-2">
-          <div
-            class="border-default bg-default flex min-w-0 flex-col overflow-hidden rounded-md border"
-          >
-            <h4
-              class="border-default bg-elevated/60 flex items-center justify-between gap-2 border-b px-3 py-2 text-xs font-semibold"
-            >
-              <span class="flex items-center gap-1.5">
-                <UIcon name="i-lucide-file-text" class="size-3.5" />
-                Posters uploaded
-              </span>
-
-              <span class="text-muted font-normal tabular-nums">
-                {{ uploadedPosters.length }}
-              </span>
-            </h4>
-
-            <ul class="divide-default max-h-[500px] divide-y overflow-y-auto">
-              <li
-                v-for="poster in uploadedPosters"
-                :key="poster.name"
-                class="flex items-center justify-between gap-3 px-3 py-1.5 text-sm"
-              >
-                <span class="min-w-0 truncate" :title="poster.name">
-                  {{ poster.name }}
-                </span>
-
-                <span
-                  v-if="poster.row"
-                  class="text-muted shrink-0 text-xs tabular-nums"
-                >
-                  Row {{ poster.row }}
-                </span>
-              </li>
-            </ul>
-          </div>
-
-          <div
-            class="border-default bg-default flex min-w-0 flex-col overflow-hidden rounded-md border"
-          >
-            <h4
-              class="border-default bg-elevated/60 flex items-center justify-between gap-2 border-b px-3 py-2 text-xs font-semibold"
-            >
-              <span class="flex items-center gap-1.5">
-                <UIcon name="i-lucide-table" class="size-3.5" />
-                In your worksheet
-              </span>
-
-              <span class="text-muted font-normal tabular-nums">
-                {{ sheetPosterRows.length }}
-              </span>
-            </h4>
-
-            <ul class="divide-default max-h-[500px] divide-y overflow-y-auto">
-              <li
-                v-for="row in sheetPosterRows"
-                :key="row.row"
-                class="flex items-baseline gap-3 px-3 py-1.5 text-sm"
-              >
-                <span class="text-muted w-14 shrink-0 text-xs tabular-nums">
-                  Row {{ row.row }}
-                </span>
-
-                <span class="min-w-0 flex-1">
-                  <span class="line-clamp-2" :title="row.title">
-                    {{ row.title || "(no title)" }}
-                  </span>
-
-                  <span
-                    v-if="row.file"
-                    class="text-muted block truncate text-xs"
-                    :title="row.file"
-                  >
-                    {{ row.file }}
-                  </span>
-                </span>
-              </li>
-            </ul>
-          </div>
-        </div>
-
-        <p class="text-muted text-xs">
-          Rows not linked to a file yet are paired with posters by title after
-          we read them.
-        </p>
-      </section>
+        <UIcon name="i-lucide-triangle-alert" class="mt-0.5 size-4 shrink-0" />
+        {{ posterCountNote }}
+      </p>
 
       <template v-if="showFilesBox">
         <!-- Expected files and format, ticked off as they're added -->

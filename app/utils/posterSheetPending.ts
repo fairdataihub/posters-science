@@ -6,17 +6,13 @@ import type {
   PosterSheetTitleMatch,
 } from "#shared/types/posterSheetMapping";
 import {
-  acceptFlaggedRow,
-  applyPairChecks,
   applyTitleMatches,
-  flaggedRowsToReview,
   titleMatchInput,
-  unlinkFlaggedRow,
 } from "#shared/utils/posterSheetTitleMatch";
 
 /**
  * Keeps a confirmed poster sheet until its rows are saved into the metadata
- * grid and every flagged pairing is checked. The sheet is confirmed on the
+ * grid. The sheet is confirmed on the
  * upload step, but grid rows only exist once posters finish extracting, so
  * the rows wait and are merged in as posters arrive.
  *
@@ -145,50 +141,9 @@ export function clearPendingPosterSheet(jobId: string): Promise<unknown> {
   return enqueue(jobId, () => $fetch(endpoint(jobId), { method: "DELETE" }));
 }
 
-/** Posters without a row the organizer hasn't dealt with yet. */
-function undecidedUnmatched(pending: PendingPosterSheet): string[] {
-  const decided = new Set(
-    (pending.unmatchedDecided ?? []).map((name) => name.toLowerCase()),
-  );
-
-  return (pending.unmatchedFiles ?? []).filter(
-    (name) => !decided.has(name.toLowerCase()),
-  );
-}
-
-/** Saves the posters without a row, and the ones dealt with, if changed. */
-export function updateUnmatchedPosters(
-  jobId: string | null,
-  change: { unmatchedFiles?: string[]; decided?: string[] },
-) {
-  const pending = readPendingPosterSheet(jobId);
-  if (!jobId || !pending) return;
-  const unmatchedFiles = change.unmatchedFiles ?? pending.unmatchedFiles ?? [];
-  const unmatchedDecided = [
-    ...new Set([
-      ...(pending.unmatchedDecided ?? []),
-      ...(change.decided ?? []),
-    ]),
-  ];
-  const same = (a: string[] = [], b: string[] = []) =>
-    a.length === b.length && a.every((value, i) => value === b[i]);
-  if (
-    same(unmatchedFiles, pending.unmatchedFiles) &&
-    same(unmatchedDecided, pending.unmatchedDecided)
-  ) {
-    return;
-  }
-  void writePendingPosterSheet(jobId, {
-    ...pending,
-    unmatchedFiles,
-    unmatchedDecided,
-  });
-}
-
 /**
  * Drop rows for posters whose sheet values were saved; keep the rest pending.
- * Flagged pairings stay until each is accepted or unlinked; the sheet is
- * cleared once no rows and no flags are left.
+ * The sheet is cleared once no rows are left.
  */
 export function forgetSavedPosterSheetRows(
   jobId: string | null,
@@ -207,12 +162,7 @@ export function forgetSavedPosterSheetRows(
   const waiting = (next.matchRows ?? []).some(
     (row) => !next.titleMatches?.[row.row_key],
   );
-  if (
-    Object.keys(sheets).length === 0 &&
-    !waiting &&
-    flaggedRowsToReview(next).length === 0 &&
-    undecidedUnmatched(next).length === 0
-  ) {
+  if (Object.keys(sheets).length === 0 && !waiting) {
     void clearPendingPosterSheet(jobId);
   } else {
     void writePendingPosterSheet(jobId, next);
@@ -221,8 +171,8 @@ export function forgetSavedPosterSheetRows(
 
 /**
  * Link sheet rows that have no file name to extracted posters by title (and
- * authors when titles are close), and check the titles of rows paired by file
- * name or number. Runs whenever the grid loads, so posters that finish
+ * authors when titles are close). Every match is used, without asking the
+ * organizer. Runs whenever the grid loads, so posters that finish
  * extracting later are handled on a later load. Returns the matches applied in
  * this pass.
  */
@@ -233,17 +183,15 @@ export async function matchPendingPosterSheetByTitle(
   const pending = readPendingPosterSheet(jobId);
   if (!jobId || !pending) return [];
   const input = titleMatchInput(pending, grid);
-  const hasRows = input.rows.length && input.posters.length;
-  if (!hasRows && !input.pairs.length) return [];
+  if (!input.rows.length || !input.posters.length) return [];
   try {
     const result = await $fetch<PosterSheetMatchResult>(
       `/api/bulk-poster-submissions/${jobId}/poster-sheet-match`,
       { method: "POST", body: input },
     );
     const matched = applyTitleMatches(pending, result.matches ?? []);
-    const checked = applyPairChecks(matched.pending, result.pair_checks);
-    if (matched.applied.length || checked !== matched.pending) {
-      await writePendingPosterSheet(jobId, checked);
+    if (matched.applied.length) {
+      await writePendingPosterSheet(jobId, matched.pending);
     }
 
     return matched.applied;
@@ -251,18 +199,4 @@ export async function matchPendingPosterSheetByTitle(
     // Matching is a helper: the grid still loads, and rows wait for the next try.
     return [];
   }
-}
-
-/** The organizer says a flagged pairing is right. */
-export function acceptPendingFlaggedRow(jobId: string | null, rowKey: string) {
-  const pending = readPendingPosterSheet(jobId);
-  if (!jobId || !pending) return;
-  void writePendingPosterSheet(jobId, acceptFlaggedRow(pending, rowKey));
-}
-
-/** The organizer says a flagged pairing is wrong; the pair is never made again. */
-export function unlinkPendingFlaggedRow(jobId: string | null, rowKey: string) {
-  const pending = readPendingPosterSheet(jobId);
-  if (!jobId || !pending) return;
-  void writePendingPosterSheet(jobId, unlinkFlaggedRow(pending, rowKey));
 }
