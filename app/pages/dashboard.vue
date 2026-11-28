@@ -21,7 +21,6 @@ import type {
   DashboardPosterFeedResponse,
   PosterRepository,
 } from "#shared/types/dashboardFeed";
-import type { OrcidSuggestions } from "#shared/types/orcidSuggestions";
 import type {
   BulkSubmissionCompletionPoster,
   BulkSubmissionCompletionResponse,
@@ -54,7 +53,7 @@ definePageMeta({
 const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Posters.science")}&description=${encodeURIComponent("Manage and track your scientific posters")}&app=posters-science&org=fairdataihub`;
 
 useSeoMeta({
-  title: "Dashboard - Posters.science",
+  title: "Dashboard",
   description: "Manage and track your scientific posters.",
   ogTitle: "Dashboard - Posters.science",
   ogDescription: "Manage and track your scientific posters.",
@@ -294,14 +293,24 @@ const publishedPosters = computed(() =>
   ),
 );
 // Auto-indexed posters that list the user's ORCID iD, shown in the Suggested
-// tab. Fetched in the browser so the dashboard doesn't wait on the search.
+// tab. Shared with the sidebar, so its Suggested link follows claims made here.
 const {
   data: orcidSuggestions,
   error: orcidSuggestionsError,
   refresh: refreshOrcidSuggestions,
-} = useFetch<OrcidSuggestions>("/api/user/orcid-suggestions", {
-  server: false,
-  lazy: true,
+} = useOrcidSuggestions();
+
+// The sidebar marks the open view, which can be a default with no ?tab.
+const openDashboardView = useOpenDashboardView();
+watch(
+  activeDashboardTab,
+  (view) => {
+    openDashboardView.value = view;
+  },
+  { immediate: true },
+);
+onBeforeUnmount(() => {
+  openDashboardView.value = null;
 });
 // Only an iD verified through ORCID sign-in gets suggestions here, never one
 // typed into Settings.
@@ -346,8 +355,8 @@ const dashboardViews = computed((): DashboardViewOption[] => [
 // FEATURE FLAG (versioning)
 const versioningEnabled = useVersioningEnabled();
 
-// The Published view lists one kind of poster at a time, chosen in the
-// sidebar.
+// The Published view lists one kind of poster at a time, chosen in the Show
+// menu at the start of the search row.
 const publishedFilterTests: Record<
   PublishedFilter,
   (poster: Poster) => boolean
@@ -356,7 +365,7 @@ const publishedFilterTests: Record<
   owned: (poster) => !poster.claimed,
   claimed: (poster) => poster.claimed,
   bulk: (poster) => !!poster.bulkSubmission,
-  // The same posters that show "View published versions" on their card.
+  // The same posters that show "Show published versions" on their card.
   versions: (poster) => publishedVersionHistory(poster).length > 0,
 };
 
@@ -927,6 +936,12 @@ function publishedHistoryExpanded(poster: Poster) {
   return expandedPublishedFamilies.value.has(poster.rootPosterId);
 }
 
+// A long version history shows its newest rows first, then more on request,
+// like a long batch. Opening or closing it starts over at the first rows.
+const PUBLISHED_VERSION_ROWS_SHOWN = 5;
+const PUBLISHED_VERSION_ROWS_MORE = 10;
+const shownPublishedVersionRows = ref<Record<number, number>>({});
+
 function togglePublishedHistory(poster: Poster) {
   const expanded = new Set(expandedPublishedFamilies.value);
 
@@ -935,8 +950,47 @@ function togglePublishedHistory(poster: Poster) {
   } else {
     expanded.add(poster.rootPosterId);
   }
+  shownPublishedVersionRows.value = {
+    ...shownPublishedVersionRows.value,
+    [poster.rootPosterId]: PUBLISHED_VERSION_ROWS_SHOWN,
+  };
 
   expandedPublishedFamilies.value = expanded;
+}
+
+// The "Hide published versions" under a long list: closes it and goes back to
+// the card's own toggle, as closing a batch does.
+async function closePublishedHistory(poster: Poster) {
+  togglePublishedHistory(poster);
+  await nextTick();
+  const toggle = document.getElementById(
+    `versions-toggle-${poster.rootPosterId}`,
+  );
+  toggle?.focus({ preventScroll: true });
+  toggle?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
+
+function shownPublishedVersions(poster: Poster) {
+  return publishedVersionHistory(poster).slice(
+    0,
+    shownPublishedVersionRows.value[poster.rootPosterId] ??
+      PUBLISHED_VERSION_ROWS_SHOWN,
+  );
+}
+
+function hiddenPublishedVersionCount(poster: Poster) {
+  return (
+    publishedVersionHistory(poster).length -
+    shownPublishedVersions(poster).length
+  );
+}
+
+function showMorePublishedVersions(poster: Poster) {
+  shownPublishedVersionRows.value = {
+    ...shownPublishedVersionRows.value,
+    [poster.rootPosterId]:
+      shownPublishedVersions(poster).length + PUBLISHED_VERSION_ROWS_MORE,
+  };
 }
 
 const { data, error, refresh } =
@@ -2550,52 +2604,35 @@ function posterMenuItems(poster: Poster) {
 </script>
 
 <template>
-  <DashboardShell>
-    <template #sidebar="{ collapsed, closeMenu }">
-      <DashboardSidebarNav
-        v-model:view="activeDashboardTab"
-        v-model:filter="publishedFilter"
-        v-model:progress-filter="inProgressFilter"
-        :progress-filters="inProgressFilterOptions"
-        :collapsed="collapsed"
-        :views="dashboardViews"
-        :filters="publishedFilterOptions"
-        @navigate="closeMenu"
+  <DashboardPage
+    :title="activeFilterLabel ?? activeViewLabel"
+    :breadcrumb="
+      activeFilterLabel
+        ? [
+            {
+              label: activeViewLabel,
+              to: { path: '/dashboard', query: { tab: activeDashboardTab } },
+            },
+          ]
+        : []
+    "
+    :description="activeDashboardDescription"
+  >
+    <template #actions>
+      <!-- /share lets people choose one poster or a batch. -->
+      <UButton
+        label="Share Posters"
+        to="/share"
+        size="md"
+        trailing-icon="line-md:file-upload"
+        color="primary"
+        variant="solid"
+        aria-label="Share Posters"
+        :ui="{ label: 'max-sm:hidden' }"
       />
     </template>
 
-    <template #header>
-      <UDashboardNavbar :ui="{ right: 'gap-3' }">
-        <template #leading>
-          <UDashboardSidebarCollapse />
-        </template>
-
-        <template #title>
-          <span class="truncate">{{ activeViewLabel }}</span>
-
-          <span
-            v-if="activeFilterLabel"
-            class="text-muted truncate font-normal"
-          >
-            / {{ activeFilterLabel }}
-          </span>
-        </template>
-
-        <template #right>
-          <!-- /share lets people choose one poster or a batch. -->
-          <UButton
-            label="Share Posters"
-            to="/share"
-            size="md"
-            trailing-icon="line-md:file-upload"
-            color="primary"
-            variant="solid"
-            aria-label="Share Posters"
-            :ui="{ label: 'max-sm:hidden' }"
-          />
-        </template>
-      </UDashboardNavbar>
-
+    <template #toolbar>
       <DashboardInProgressToolbar
         v-if="
           activeDashboardTab === 'in-progress' &&
@@ -2631,130 +2668,128 @@ function posterMenuItems(poster: Poster) {
       />
     </template>
 
-    <template #body>
-      <MaintenanceNotice maintenance-key="extraction" />
+    <MaintenanceNotice maintenance-key="extraction" />
 
-      <MaintenanceNotice maintenance-key="zenodo" />
+    <MaintenanceNotice maintenance-key="zenodo" />
 
-      <OrganizationInviteBanner />
+    <OrganizationInviteBanner />
 
-      <DashboardOrcidSuggestions
-        v-if="activeDashboardTab === 'suggested'"
-        :data="orcidSuggestions ?? null"
-        @changed="refreshOrcidSuggestions"
-        @claimed="onOrcidSuggestionsClaimed"
+    <DashboardOrcidSuggestions
+      v-if="activeDashboardTab === 'suggested'"
+      :data="orcidSuggestions ?? null"
+      @changed="refreshOrcidSuggestions"
+      @claimed="onOrcidSuggestionsClaimed"
+    />
+
+    <DashboardPublishedKindEmpty
+      v-else-if="publishedKindEmpty && publishedFilter !== 'all'"
+      :kind="publishedFilter"
+      :suggestion-count="orcidSuggestionCount"
+      :deleted-hidden="!showTombstonedPosters && tombstonedPosterCount > 0"
+      @show-suggested="activeDashboardTab = 'suggested'"
+    />
+
+    <section
+      v-else-if="
+        activeTabHasItems ||
+        (activeDashboardTab === 'published' && publishedTabHasItems) ||
+        (activeDashboardTab === 'in-progress' &&
+          (inProgressDashboardItems.length > 0 ||
+            inProgressSearch ||
+            batchStatuses.length ||
+            inProgressFilter !== 'all'))
+      "
+      class="space-y-3"
+    >
+      <UAlert
+        v-if="activeDashboardTab === 'published' && publishedSearchFailed"
+        color="error"
+        variant="subtle"
+        icon="i-lucide-circle-alert"
+        title="The search didn't run"
+        description="Try it again in a moment."
+        :actions="[
+          {
+            label: 'Try again',
+            color: 'error',
+            variant: 'outline',
+            onClick: () => refreshPublishedSearch(),
+          },
+        ]"
       />
 
-      <DashboardPublishedKindEmpty
-        v-else-if="publishedKindEmpty && publishedFilter !== 'all'"
-        :kind="publishedFilter"
-        :suggestion-count="orcidSuggestionCount"
-        :deleted-hidden="!showTombstonedPosters && tombstonedPosterCount > 0"
-        @show-suggested="activeDashboardTab = 'suggested'"
-      />
-
-      <section
-        v-else-if="
-          activeTabHasItems ||
-          (activeDashboardTab === 'published' && publishedTabHasItems) ||
-          (activeDashboardTab === 'in-progress' &&
-            (inProgressDashboardItems.length > 0 ||
-              inProgressSearch ||
-              batchStatuses.length ||
-              inProgressFilter !== 'all'))
-        "
-        class="space-y-3"
+      <div
+        v-if="activeDashboardTab === 'published' && publishedSearchPending"
+        class="text-muted flex items-center justify-center gap-2 py-12 text-sm"
       >
-        <p class="text-muted text-sm">{{ activeDashboardDescription }}</p>
+        <UIcon name="i-lucide-loader-circle" class="size-4 animate-spin" />
+        Searching your posters...
+      </div>
 
-        <UAlert
-          v-if="activeDashboardTab === 'published' && publishedSearchFailed"
-          color="error"
-          variant="subtle"
-          icon="i-lucide-circle-alert"
-          title="The search didn't run"
-          description="Try it again in a moment."
-          :actions="[
-            {
-              label: 'Try again',
-              color: 'error',
-              variant: 'outline',
-              onClick: () => refreshPublishedSearch(),
-            },
-          ]"
+      <div
+        v-else-if="!activeTabHasItems"
+        class="mx-auto flex max-w-md flex-col items-center gap-3 py-12 text-center"
+      >
+        <Icon name="i-lucide-search-x" class="text-muted h-12 w-12" />
+
+        <h3 class="text-lg font-medium">
+          No
+          {{
+            activeDashboardTab === "in-progress"
+              ? "drafts or batches"
+              : "posters"
+          }}
+          match
+        </h3>
+
+        <p class="text-muted text-sm">
+          Try another search or filter.
+          <template v-if="!showTombstonedPosters && tombstonedPosterCount > 0">
+            Deleted posters are hidden.
+          </template>
+        </p>
+
+        <UButton
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-x"
+          label="Clear search and filters"
+          @click="
+            activeDashboardTab === 'in-progress'
+              ? clearInProgressSearchAndFilters()
+              : clearPublishedSearchAndFilters()
+          "
         />
+      </div>
 
-        <div
-          v-if="activeDashboardTab === 'published' && publishedSearchPending"
-          class="text-muted flex items-center justify-center gap-2 py-12 text-sm"
-        >
-          <UIcon name="i-lucide-loader-circle" class="size-4 animate-spin" />
-          Searching your posters...
-        </div>
-
-        <div
-          v-else-if="!activeTabHasItems"
-          class="mx-auto flex max-w-md flex-col items-center gap-3 py-12 text-center"
-        >
-          <Icon name="i-lucide-search-x" class="text-muted h-12 w-12" />
-
-          <h3 class="text-lg font-medium">
-            No
-            {{
-              activeDashboardTab === "in-progress"
-                ? "drafts or batches"
-                : "posters"
-            }}
-            match
-          </h3>
-
-          <p class="text-muted text-sm">
-            Try another search or filter.
-            <template
-              v-if="!showTombstonedPosters && tombstonedPosterCount > 0"
+      <UPageList v-else class="max-md:flex max-md:flex-col max-md:gap-4">
+        <template v-for="item in activeTabListItems" :key="item.key">
+          <template v-if="item.type === 'bulk'">
+            <DashboardBulkSubmissionCard
+              :bulk="item.bulk"
+              :highlight="
+                activeDashboardTab === 'in-progress'
+                  ? [inProgressSearch]
+                  : publishedHighlight?.title
+              "
+              :summary-panel-id="
+                item.batch ? `batch-summary-${item.bulk.id}` : undefined
+              "
+              :summary-expanded="publishedBatchExpanded(item.bulk.id)"
+              @toggle-summary="togglePublishedBatch(item.bulk.id)"
+              @delete="openDeleteBulkModal"
             >
-              Deleted posters are hidden.
-            </template>
-          </p>
-
-          <UButton
-            color="neutral"
-            variant="outline"
-            icon="i-lucide-x"
-            label="Clear search and filters"
-            @click="
-              activeDashboardTab === 'in-progress'
-                ? clearInProgressSearchAndFilters()
-                : clearPublishedSearchAndFilters()
-            "
-          />
-        </div>
-
-        <UPageList v-else class="max-md:flex max-md:flex-col max-md:gap-4">
-          <template v-for="item in activeTabListItems" :key="item.key">
-            <template v-if="item.type === 'bulk'">
-              <DashboardBulkSubmissionCard
-                :bulk="item.bulk"
-                :highlight="
-                  activeDashboardTab === 'in-progress'
-                    ? [inProgressSearch]
-                    : publishedHighlight?.title
-                "
-                :summary-panel-id="
-                  item.batch ? `batch-summary-${item.bulk.id}` : undefined
-                "
-                :summary-expanded="publishedBatchExpanded(item.bulk.id)"
-                @toggle-summary="togglePublishedBatch(item.bulk.id)"
-                @delete="openDeleteBulkModal"
-              />
-
-              <!-- The batch summary, in place: the summary page's details,
-                   then the batch's posters listed like a poster's version
-                   history, each row keeping the full card's actions. -->
+              <!-- The batch summary, inside the card under its text: the
+                   summary page's details, then the batch's posters, each row
+                   keeping the full card's actions. Clicks and keys stop here
+                   so they don't reach the card's own toggle. -->
               <div
                 v-if="item.batch && publishedBatchExpanded(item.bulk.id)"
                 :id="`batch-summary-${item.bulk.id}`"
-                class="border-default ml-6 space-y-2 border-l-2 py-2 pl-5"
+                class="cursor-default space-y-2 max-md:px-4 max-md:pb-2 md:pl-[182px]"
+                @click.stop
+                @keydown.enter.stop
+                @keydown.space.stop
               >
                 <DashboardBatchSummaryStrip :bulk="item.bulk" />
 
@@ -2823,12 +2858,10 @@ function posterMenuItems(poster: Poster) {
                       />
                     </span>
 
-                    <img
+                    <PosterImage
                       v-else
-                      :src="
-                        getImage(poster) ||
-                        `https://api.dicebear.com/9.x/shapes/svg?seed=${poster.id}`
-                      "
+                      :src="getImage(poster)"
+                      :seed="poster.id"
                       :alt="getCardTitle(poster)"
                       class="h-14 w-12 shrink-0 rounded object-contain"
                     />
@@ -3069,73 +3102,76 @@ function posterMenuItems(poster: Poster) {
                   />
                 </div>
               </div>
-            </template>
+            </DashboardBulkSubmissionCard>
+          </template>
 
-            <template v-else>
-              <template v-for="poster in [item.poster]" :key="poster.id">
-                <UPageCard
-                  variant="ghost"
-                  class="group border-default h-50 overflow-hidden rounded-none border-t border-b transition-all duration-300 max-md:h-auto max-md:rounded-xl max-md:border max-md:bg-white max-md:shadow-sm dark:max-md:bg-gray-950"
-                  :class="
-                    poster.tombstone
-                      ? 'cursor-pointer opacity-70 hover:opacity-100'
-                      : 'cursor-pointer max-md:hover:shadow-md'
-                  "
-                  :aria-haspopup="poster.tombstone ? 'dialog' : undefined"
-                  tabindex="0"
-                  @click="openPoster(poster)"
-                  @keydown.enter="openPoster(poster)"
-                  @keydown.space.prevent="openPoster(poster)"
+          <template v-else>
+            <template v-for="poster in [item.poster]" :key="poster.id">
+              <!-- min-w-0: the card can hold its version list, whose one-line
+                   titles would otherwise widen it past a phone's screen. -->
+              <UPageCard
+                variant="ghost"
+                :ui="{ container: 'min-w-0' }"
+                class="group border-default overflow-hidden rounded-none border-t border-b transition-all duration-300 max-md:h-auto max-md:rounded-xl max-md:border max-md:bg-white max-md:shadow-sm dark:max-md:bg-gray-950"
+                :class="
+                  poster.tombstone
+                    ? 'cursor-pointer opacity-70 hover:opacity-100'
+                    : 'cursor-pointer max-md:hover:shadow-md'
+                "
+                :aria-haspopup="poster.tombstone ? 'dialog' : undefined"
+                tabindex="0"
+                @click="openPoster(poster)"
+                @keydown.enter="openPoster(poster)"
+                @keydown.space.prevent="openPoster(poster)"
+              >
+                <div
+                  class="flex h-37.5 gap-8 max-md:h-auto max-md:flex-col max-md:gap-0"
                 >
                   <div
-                    class="flex h-full gap-8 max-md:h-auto max-md:flex-col max-md:gap-0"
+                    class="max-md:border-default h-full w-[150px] shrink-0 overflow-hidden max-md:h-44 max-md:w-full max-md:border-b"
                   >
                     <div
-                      class="max-md:border-default h-full w-[150px] shrink-0 overflow-hidden max-md:h-44 max-md:w-full max-md:border-b"
+                      v-if="posterPreviewMissing(poster)"
+                      class="flex h-full flex-col items-center justify-center gap-1.5 p-2 text-center max-md:min-h-44"
                     >
-                      <div
-                        v-if="posterPreviewMissing(poster)"
-                        class="flex h-full flex-col items-center justify-center gap-1.5 p-2 text-center max-md:min-h-44"
-                      >
-                        <UIcon
-                          name="i-lucide-image-off"
-                          class="size-5 text-gray-400 dark:text-gray-500"
-                        />
-
-                        <span class="text-xs text-gray-500 dark:text-gray-400">
-                          Preview unavailable
-                        </span>
-
-                        <UButton
-                          size="xs"
-                          color="neutral"
-                          variant="subtle"
-                          icon="i-lucide-refresh-cw"
-                          :loading="
-                            regeneratingThumbnailIds.includes(poster.id)
-                          "
-                          @click.stop="regenerateThumbnail(poster)"
-                        >
-                          Generate
-                        </UButton>
-                      </div>
-
-                      <img
-                        v-else
-                        :src="
-                          getImage(poster) ||
-                          `https://api.dicebear.com/9.x/shapes/svg?seed=${poster.id}`
-                        "
-                        :alt="getCardTitle(poster)"
-                        class="max-h-[150px] w-full object-contain p-2 transition-transform duration-300 max-md:h-full max-md:max-h-none max-md:p-3"
-                        :class="{ 'group-hover:scale-105': !poster.tombstone }"
+                      <UIcon
+                        name="i-lucide-image-off"
+                        class="size-5 text-gray-400 dark:text-gray-500"
                       />
+
+                      <span class="text-xs text-gray-500 dark:text-gray-400">
+                        Preview unavailable
+                      </span>
+
+                      <UButton
+                        size="xs"
+                        color="neutral"
+                        variant="subtle"
+                        icon="i-lucide-refresh-cw"
+                        :loading="regeneratingThumbnailIds.includes(poster.id)"
+                        @click.stop="regenerateThumbnail(poster)"
+                      >
+                        Generate
+                      </UButton>
                     </div>
 
-                    <div
-                      class="flex h-full w-full min-w-0 flex-col justify-between py-1 max-md:h-auto max-md:gap-3 max-md:p-4 max-md:py-4"
-                    >
-                      <div class="flex flex-col gap-2">
+                    <PosterImage
+                      v-else
+                      :src="getImage(poster)"
+                      :seed="poster.id"
+                      :alt="getCardTitle(poster)"
+                      class="max-h-[150px] w-full object-contain p-2 transition-transform duration-300 max-md:h-full max-md:max-h-none max-md:p-3"
+                      :class="{ 'group-hover:scale-105': !poster.tombstone }"
+                    />
+                  </div>
+
+                  <div
+                    class="flex h-full w-full min-w-0 flex-col justify-between py-1 max-md:h-auto max-md:gap-3 max-md:p-4 max-md:py-4"
+                  >
+                    <div class="flex flex-col gap-2">
+                      <!-- The badges, with the poster's "..." menu at the
+                             end of the same line. -->
+                      <div class="flex items-start justify-between gap-2">
                         <div class="flex flex-wrap items-center gap-2">
                           <UBadge
                             :color="posterStatusPresentation(poster).color"
@@ -3146,8 +3182,11 @@ function posterMenuItems(poster: Poster) {
                             {{ posterStatusPresentation(poster).label }}
                           </UBadge>
 
+                          <!-- Not needed when the view lists claims only. -->
                           <UTooltip
-                            v-if="poster.claimed"
+                            v-if="
+                              poster.claimed && publishedFilter !== 'claimed'
+                            "
                             text="You claimed this poster. Only its original publisher can edit it."
                           >
                             <UBadge
@@ -3243,305 +3282,321 @@ function posterMenuItems(poster: Poster) {
                               draftVersionLabel(poster)
                             }}
                           </UBadge>
+                        </div>
 
-                          <!-- FEATURE FLAG (versioning) -->
-                          <button
+                        <!-- Stops here so opening the menu doesn't open the
+                             poster. -->
+                        <div
+                          v-if="!poster.tombstone"
+                          class="-my-0.5 shrink-0"
+                          @click.stop
+                          @keydown.enter.stop
+                          @keydown.space.stop
+                        >
+                          <UDropdownMenu
+                            v-if="
+                              posterShowsPublishedDashboardActions(poster)
+                                ? publishedPosterMenuItems(poster).length
+                                : posterMenuItems(poster).length
+                            "
+                            :items="
+                              posterShowsPublishedDashboardActions(poster)
+                                ? publishedPosterMenuItems(poster)
+                                : posterMenuItems(poster)
+                            "
+                            :content="{ align: 'end' }"
+                            :ui="{ itemLeadingIcon: 'self-center' }"
+                          >
+                            <UButton
+                              color="neutral"
+                              variant="ghost"
+                              icon="i-lucide-ellipsis-vertical"
+                              size="xs"
+                              aria-label="More poster actions"
+                              :loading="
+                                organizationPromptLoadingId ===
+                                  poster.rootPosterId ||
+                                collectionPromptLoadingId ===
+                                  poster.rootPosterId
+                              "
+                            />
+                          </UDropdownMenu>
+                        </div>
+                      </div>
+
+                      <h3
+                        class="line-clamp-2 max-h-14 overflow-hidden text-lg font-semibold break-words"
+                        :title="getCardTitle(poster)"
+                      >
+                        <SearchHighlight
+                          :text="
+                            getCardDisplayTitle(poster) || 'No title available'
+                          "
+                          :term="publishedHighlight?.title"
+                        />
+                      </h3>
+
+                      <div class="flex flex-col gap-1">
+                        <p
+                          :class="[
+                            'text-sm',
+                            expandedDescriptions.has(poster.id)
+                              ? ''
+                              : 'line-clamp-2',
+                          ]"
+                        >
+                          <SearchHighlight
+                            :text="
+                              getCardDescription(poster) ||
+                              'No description available'
+                            "
+                            :term="publishedHighlight?.description"
+                          />
+                        </p>
+
+                        <button
+                          v-if="getCardDescription(poster).length > 100"
+                          class="text-primary w-fit text-left text-xs font-medium md:hidden"
+                          @click.stop="toggleDescription(poster.id)"
+                        >
+                          {{
+                            expandedDescriptions.has(poster.id)
+                              ? "Show less"
+                              : "Show more"
+                          }}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div
+                      class="border-default flex items-center justify-between border-t pt-2 text-xs max-md:flex-wrap max-md:gap-y-2"
+                    >
+                      <div
+                        class="text-muted flex items-center gap-2 max-md:flex-col max-md:items-start max-md:gap-1"
+                      >
+                        <span
+                          v-if="poster.claimedAt"
+                          class="flex items-center gap-1"
+                        >
+                          <Icon name="heroicons:hand-raised" class="h-3 w-3" />
+                          Claimed
+                          {{ dayjs(poster.claimedAt).format("MMMM D, YYYY") }}
+                        </span>
+
+                        <span v-else class="flex items-center gap-1">
+                          <Icon
+                            name="heroicons:calendar-days"
+                            class="h-3 w-3"
+                          />
+                          Created
+                          {{ dayjs(poster.created).format("MMMM D, YYYY") }}
+                        </span>
+
+                        <span
+                          v-if="posterEmbargoTimeRemainingLabel(poster)"
+                          class="border-default flex items-center gap-1 border-l pl-2 max-md:border-l-0 max-md:pl-0"
+                        >
+                          <Icon name="i-lucide-lock" class="h-3 w-3" />
+                          {{ posterEmbargoTimeRemainingLabel(poster) }}
+                          <span
+                            v-if="poster.zenodoFilesEmbargoUntil"
+                            class="text-muted"
+                          >
+                            (until
+                            {{
+                              formatZenodoFileEmbargoUntilLabel(
+                                poster.zenodoFilesEmbargoUntil,
+                              )
+                            }}
+                            UTC)
+                          </span>
+                        </span>
+
+                        <span
+                          v-if="
+                            poster.publishedAt &&
+                            posterShowsPublishedDashboardActions(poster)
+                          "
+                          class="border-default flex items-center gap-1 border-l pl-2 max-md:border-l-0 max-md:pl-0"
+                        >
+                          <Icon
+                            name="heroicons:presentation-chart-bar"
+                            class="h-3 w-3"
+                          />
+                          Published
+                          {{ dayjs(poster.publishedAt).format("MMMM D, YYYY") }}
+                        </span>
+
+                        <span
+                          v-else-if="
+                            poster.publishedAt &&
+                            isPosterZenodoEmbargoActive(poster)
+                          "
+                          class="border-default flex items-center gap-1 border-l pl-2 max-md:border-l-0 max-md:pl-0"
+                        >
+                          <Icon
+                            name="heroicons:presentation-chart-bar"
+                            class="h-3 w-3"
+                          />
+                          Submitted to Zenodo
+                          {{ dayjs(poster.publishedAt).format("MMMM D, YYYY") }}
+                        </span>
+                      </div>
+
+                      <div
+                        v-if="!poster.tombstone"
+                        class="flex items-center gap-2 max-md:flex-wrap"
+                        @click.stop
+                      >
+                        <!-- The whole card opens the poster, so there's no
+                               View poster button. -->
+                        <template
+                          v-if="posterShowsPublishedDashboardActions(poster)"
+                        >
+                          <!-- FEATURE FLAG (versioning). Opens the earlier
+                               versions inside the card. -->
+                          <UButton
                             v-if="
                               versioningEnabled &&
                               poster.status === 'published' &&
                               poster.isLatestPublished &&
                               publishedVersionHistory(poster).length > 0
                             "
-                            class="text-primary inline-flex items-center gap-1 text-xs font-medium hover:underline"
+                            :id="`versions-toggle-${poster.rootPosterId}`"
+                            color="neutral"
+                            variant="outline"
+                            size="xs"
+                            :label="
+                              publishedHistoryExpanded(poster)
+                                ? 'Hide published versions'
+                                : `Show published versions (${publishedFamilyCount(poster)})`
+                            "
+                            trailing-icon="i-lucide-chevron-down"
                             :aria-expanded="publishedHistoryExpanded(poster)"
-                            @click.stop="togglePublishedHistory(poster)"
-                          >
-                            {{
-                              publishedHistoryExpanded(poster) ? "Hide" : "View"
-                            }}
-                            {{ publishedFamilyCount(poster) }} published
-                            versions
-                            <Icon
-                              name="i-lucide-chevron-down"
-                              class="h-3.5 w-3.5 transition-transform"
-                              :class="{
-                                'rotate-180': publishedHistoryExpanded(poster),
-                              }"
-                            />
-                          </button>
-                        </div>
-
-                        <h3
-                          class="line-clamp-2 max-h-14 overflow-hidden text-lg font-semibold break-words"
-                          :title="getCardTitle(poster)"
-                        >
-                          <SearchHighlight
-                            :text="
-                              getCardDisplayTitle(poster) ||
-                              'No title available'
-                            "
-                            :term="publishedHighlight?.title"
+                            :aria-controls="`versions-${poster.rootPosterId}`"
+                            :ui="{
+                              trailingIcon: publishedHistoryExpanded(poster)
+                                ? 'rotate-180 transition-transform'
+                                : 'transition-transform',
+                            }"
+                            @click="togglePublishedHistory(poster)"
                           />
-                        </h3>
 
-                        <div class="flex flex-col gap-1">
-                          <p
-                            :class="[
-                              'text-sm',
-                              expandedDescriptions.has(poster.id)
-                                ? ''
-                                : 'line-clamp-2',
-                            ]"
-                          >
-                            <SearchHighlight
-                              :text="
-                                getCardDescription(poster) ||
-                                'No description available'
-                              "
-                              :term="publishedHighlight?.description"
-                            />
-                          </p>
-
-                          <button
-                            v-if="getCardDescription(poster).length > 100"
-                            class="text-primary w-fit text-left text-xs font-medium md:hidden"
-                            @click.stop="toggleDescription(poster.id)"
-                          >
-                            {{
-                              expandedDescriptions.has(poster.id)
-                                ? "Show less"
-                                : "Show more"
-                            }}
-                          </button>
-                        </div>
-                      </div>
-
-                      <div
-                        class="border-default flex items-center justify-between border-t pt-2 text-xs max-md:flex-wrap max-md:gap-y-2"
-                      >
-                        <div
-                          class="text-muted flex items-center gap-2 max-md:flex-col max-md:items-start max-md:gap-1"
-                        >
-                          <span
-                            v-if="poster.claimedAt"
-                            class="flex items-center gap-1"
-                          >
-                            <Icon
-                              name="heroicons:hand-raised"
-                              class="h-3 w-3"
-                            />
-                            Claimed
-                            {{ dayjs(poster.claimedAt).format("MMMM D, YYYY") }}
-                          </span>
-
-                          <span v-else class="flex items-center gap-1">
-                            <Icon
-                              name="heroicons:calendar-days"
-                              class="h-3 w-3"
-                            />
-                            Created
-                            {{ dayjs(poster.created).format("MMMM D, YYYY") }}
-                          </span>
-
-                          <span
-                            v-if="posterEmbargoTimeRemainingLabel(poster)"
-                            class="border-default flex items-center gap-1 border-l pl-2 max-md:border-l-0 max-md:pl-0"
-                          >
-                            <Icon name="i-lucide-lock" class="h-3 w-3" />
-                            {{ posterEmbargoTimeRemainingLabel(poster) }}
-                            <span
-                              v-if="poster.zenodoFilesEmbargoUntil"
-                              class="text-muted"
-                            >
-                              (until
-                              {{
-                                formatZenodoFileEmbargoUntilLabel(
-                                  poster.zenodoFilesEmbargoUntil,
-                                )
-                              }}
-                              UTC)
-                            </span>
-                          </span>
-
-                          <span
+                          <!-- FEATURE FLAG (versioning) -->
+                          <UButton
                             v-if="
-                              poster.publishedAt &&
-                              posterShowsPublishedDashboardActions(poster)
+                              versioningEnabled &&
+                              poster.isLatestPublished &&
+                              poster.activeVersionDraft
                             "
-                            class="border-default flex items-center gap-1 border-l pl-2 max-md:border-l-0 max-md:pl-0"
-                          >
-                            <Icon
-                              name="heroicons:presentation-chart-bar"
-                              class="h-3 w-3"
-                            />
-                            Published
-                            {{
-                              dayjs(poster.publishedAt).format("MMMM D, YYYY")
-                            }}
-                          </span>
+                            color="primary"
+                            variant="subtle"
+                            label="Review draft"
+                            icon="i-lucide-file-pen-line"
+                            size="xs"
+                            @click="reviewPendingDraft(poster)"
+                          />
 
-                          <span
-                            v-else-if="
-                              poster.publishedAt &&
-                              isPosterZenodoEmbargoActive(poster)
+                          <!-- FEATURE FLAG (versioning) -->
+                          <UTooltip
+                            v-if="
+                              versioningEnabled &&
+                              poster.isLatestPublished &&
+                              !poster.automated &&
+                              !poster.activeVersionDraft
                             "
-                            class="border-default flex items-center gap-1 border-l pl-2 max-md:border-l-0 max-md:pl-0"
+                            :text="versionActionTooltip(poster)"
                           >
-                            <Icon
-                              name="heroicons:presentation-chart-bar"
-                              class="h-3 w-3"
-                            />
-                            Submitted to Zenodo
-                            {{
-                              dayjs(poster.publishedAt).format("MMMM D, YYYY")
-                            }}
-                          </span>
-                        </div>
-
-                        <div
-                          v-if="!poster.tombstone"
-                          class="flex items-center gap-2 max-md:flex-wrap"
-                          @click.stop
-                        >
-                          <template
-                            v-if="posterShowsPublishedDashboardActions(poster)"
-                          >
-                            <UButton
-                              color="neutral"
-                              variant="subtle"
-                              label="View poster"
-                              icon="i-lucide-eye"
-                              size="xs"
-                              @click="openPoster(poster)"
-                            />
-
-                            <!-- FEATURE FLAG (versioning) -->
-                            <UButton
-                              v-if="
-                                versioningEnabled &&
-                                poster.isLatestPublished &&
-                                poster.activeVersionDraft
-                              "
-                              color="primary"
-                              variant="subtle"
-                              label="Review draft"
-                              icon="i-lucide-file-pen-line"
-                              size="xs"
-                              @click="reviewPendingDraft(poster)"
-                            />
-
-                            <!-- FEATURE FLAG (versioning) -->
-                            <UTooltip
-                              v-if="
-                                versioningEnabled &&
-                                poster.isLatestPublished &&
-                                !poster.automated &&
-                                !poster.activeVersionDraft
-                              "
-                              :text="versionActionTooltip(poster)"
-                            >
-                              <span class="inline-flex">
-                                <UButton
-                                  color="primary"
-                                  variant="subtle"
-                                  label="Edit"
-                                  icon="i-lucide-pencil"
-                                  size="xs"
-                                  :disabled="versionActionDisabled(poster)"
-                                  @click="openVersionWorkflow(poster)"
-                                />
-                              </span>
-                            </UTooltip>
-
-                            <UDropdownMenu
-                              v-if="publishedPosterMenuItems(poster).length"
-                              :items="publishedPosterMenuItems(poster)"
-                              :content="{ align: 'end' }"
-                              :ui="{ itemLeadingIcon: 'self-center' }"
-                            >
+                            <span class="inline-flex">
                               <UButton
-                                color="neutral"
-                                variant="ghost"
-                                icon="i-lucide-ellipsis-vertical"
+                                color="primary"
+                                variant="subtle"
+                                label="Edit"
+                                icon="i-lucide-pencil"
                                 size="xs"
-                                aria-label="More poster actions"
-                                :loading="
-                                  organizationPromptLoadingId ===
-                                    poster.rootPosterId ||
-                                  collectionPromptLoadingId ===
-                                    poster.rootPosterId
-                                "
+                                :disabled="versionActionDisabled(poster)"
+                                @click="openVersionWorkflow(poster)"
                               />
-                            </UDropdownMenu>
-                          </template>
+                            </span>
+                          </UTooltip>
+                        </template>
 
-                          <template v-else>
-                            <UButton
-                              color="primary"
-                              variant="subtle"
-                              :label="inProgressActionLabel(poster)"
-                              :icon="
-                                isVersionPreparing(poster)
-                                  ? 'i-lucide-activity'
-                                  : 'line-md:arrow-right'
-                              "
-                              trailing
-                              size="xs"
-                              @click="openInProgressPoster(poster)"
-                            />
-
-                            <UDropdownMenu
-                              v-if="posterMenuItems(poster).length"
-                              :items="posterMenuItems(poster)"
-                              :content="{ align: 'end' }"
-                              :ui="{ itemLeadingIcon: 'self-center' }"
-                            >
-                              <UButton
-                                color="neutral"
-                                variant="ghost"
-                                icon="i-lucide-ellipsis-vertical"
-                                size="xs"
-                                aria-label="More poster actions"
-                              />
-                            </UDropdownMenu>
-                          </template>
-                        </div>
+                        <template v-else>
+                          <UButton
+                            color="primary"
+                            variant="subtle"
+                            :label="inProgressActionLabel(poster)"
+                            :icon="
+                              isVersionPreparing(poster)
+                                ? 'i-lucide-activity'
+                                : 'line-md:arrow-right'
+                            "
+                            trailing
+                            size="xs"
+                            @click="openInProgressPoster(poster)"
+                          />
+                        </template>
                       </div>
                     </div>
                   </div>
-                </UPageCard>
+                </div>
 
-                <!-- FEATURE FLAG (versioning) -->
+                <!-- FEATURE FLAG (versioning). The earlier versions, inside
+                     the card under its text. Clicks and keys stop here so
+                     they don't also open the card's poster. -->
                 <div
                   v-if="
                     versioningEnabled &&
                     poster.status === 'published' &&
                     publishedHistoryExpanded(poster)
                   "
-                  class="border-default ml-6 space-y-2 border-l-2 py-2 pl-5"
+                  :id="`versions-${poster.rootPosterId}`"
+                  class="cursor-default max-md:px-4 max-md:pb-2 md:pl-[182px]"
+                  @click.stop
+                  @keydown.enter.stop
+                  @keydown.space.stop
                 >
-                  <div
-                    v-for="version in publishedVersionHistory(poster)"
-                    :key="version.id"
-                    class="hover:border-primary/40 hover:bg-primary/5 border-default flex w-full items-center gap-2 rounded-lg border bg-white p-3 transition-colors dark:bg-gray-950"
-                  >
-                    <button
-                      type="button"
-                      class="flex min-w-0 flex-1 items-center gap-4 text-left"
-                      @click="openPoster(version)"
+                  <p class="text-muted mb-2 text-xs font-medium">
+                    Earlier versions
+                    <template
+                      v-if="
+                        publishedVersionHistory(poster).length >
+                        PUBLISHED_VERSION_ROWS_SHOWN
+                      "
                     >
-                      <img
-                        :src="
-                          getImage(version) ||
-                          `https://api.dicebear.com/9.x/shapes/svg?seed=${version.id}`
-                        "
-                        :alt="getCardTitle(version)"
-                        class="h-14 w-12 shrink-0 rounded object-contain"
-                      />
+                      (showing {{ shownPublishedVersions(poster).length }} of
+                      {{ publishedVersionHistory(poster).length }})
+                    </template>
+                  </p>
 
-                      <span class="min-w-0 flex-1">
-                        <span class="flex flex-wrap items-center gap-2">
-                          <UBadge color="neutral" variant="soft" size="sm">
+                  <ul
+                    class="border-default divide-default divide-y overflow-hidden rounded-lg border"
+                  >
+                    <li
+                      v-for="version in shownPublishedVersions(poster)"
+                      :key="version.id"
+                    >
+                      <button
+                        type="button"
+                        class="hover:bg-elevated flex w-full items-center gap-3 px-3 py-2 text-left transition-colors"
+                        @click="openPoster(version)"
+                      >
+                        <PosterImage
+                          :src="getImage(version)"
+                          :seed="version.id"
+                          :alt="getCardTitle(version)"
+                          class="h-10 w-8 shrink-0 rounded object-contain"
+                        />
+
+                        <span
+                          class="flex min-w-0 flex-1 items-center gap-3 max-sm:flex-col max-sm:items-start max-sm:gap-1"
+                        >
+                          <UBadge
+                            color="neutral"
+                            variant="soft"
+                            size="sm"
+                            class="min-w-18 shrink-0 justify-center"
+                          >
                             Version {{ displayedVersion(version) }}
                           </UBadge>
 
@@ -3550,127 +3605,158 @@ function posterMenuItems(poster: Poster) {
                             color="error"
                             variant="solid"
                             size="sm"
+                            class="shrink-0"
                           >
                             Tombstoned
                           </UBadge>
-                        </span>
 
-                        <span class="mt-1 block truncate text-sm font-medium">
-                          {{
-                            getCardDisplayTitle(version) || "No title available"
-                          }}
+                          <span
+                            class="min-w-0 flex-1 truncate text-sm max-sm:self-stretch"
+                          >
+                            {{
+                              getCardDisplayTitle(version) ||
+                              "No title available"
+                            }}
+                          </span>
                         </span>
 
                         <span
                           v-if="version.publishedAt"
-                          class="text-muted text-xs"
+                          class="text-muted shrink-0 text-xs max-sm:hidden"
                         >
                           Published
                           {{
                             dayjs(version.publishedAt).format("MMMM D, YYYY")
                           }}
                         </span>
-                      </span>
 
-                      <Icon
-                        name="i-lucide-chevron-right"
-                        class="text-muted h-4 w-4 shrink-0"
-                      />
-                    </button>
+                        <Icon
+                          name="i-lucide-chevron-right"
+                          class="text-muted h-4 w-4 shrink-0"
+                        />
+                      </button>
+                    </li>
+                  </ul>
+
+                  <div
+                    v-if="
+                      publishedVersionHistory(poster).length >
+                      PUBLISHED_VERSION_ROWS_SHOWN
+                    "
+                    class="mt-2 flex flex-wrap items-center gap-2"
+                  >
+                    <UButton
+                      v-if="hiddenPublishedVersionCount(poster) > 0"
+                      color="neutral"
+                      variant="ghost"
+                      size="xs"
+                      icon="i-lucide-chevron-down"
+                      :label="`Show ${Math.min(PUBLISHED_VERSION_ROWS_MORE, hiddenPublishedVersionCount(poster))} more`"
+                      @click="showMorePublishedVersions(poster)"
+                    />
+
+                    <UButton
+                      label="Hide published versions"
+                      icon="i-lucide-chevron-up"
+                      color="neutral"
+                      variant="ghost"
+                      size="xs"
+                      @click="closePublishedHistory(poster)"
+                    />
                   </div>
                 </div>
-              </template>
+              </UPageCard>
             </template>
           </template>
-        </UPageList>
-      </section>
+        </template>
+      </UPageList>
+    </section>
 
+    <div
+      v-else-if="visiblePosterCount > 0"
+      class="mx-auto flex max-w-md flex-col items-center gap-3 py-12 text-center"
+    >
+      <Icon
+        :name="
+          activeDashboardTab === 'in-progress'
+            ? 'i-lucide-circle-check'
+            : 'i-lucide-book-open'
+        "
+        class="text-muted h-12 w-12"
+      />
+
+      <h3 class="text-lg font-medium">
+        {{
+          activeDashboardTab === "in-progress"
+            ? "No posters in progress"
+            : "No published posters"
+        }}
+      </h3>
+
+      <p class="text-muted text-sm">
+        {{
+          activeDashboardTab === "in-progress"
+            ? "All of your posters are up to date."
+            : "Your published posters will appear here."
+        }}
+      </p>
+    </div>
+
+    <div v-else class="py-12 text-center">
       <div
-        v-else-if="visiblePosterCount > 0"
-        class="mx-auto flex max-w-md flex-col items-center gap-3 py-12 text-center"
+        v-if="posters.length > 0"
+        class="mx-auto flex max-w-md flex-col items-center gap-3"
       >
-        <Icon
-          :name="
-            activeDashboardTab === 'in-progress'
-              ? 'i-lucide-circle-check'
-              : 'i-lucide-book-open'
-          "
-          class="text-muted h-12 w-12"
-        />
+        <Icon name="i-lucide-archive-x" class="text-muted h-12 w-12" />
 
-        <h3 class="text-lg font-medium">
-          {{
-            activeDashboardTab === "in-progress"
-              ? "No posters in progress"
-              : "No published posters"
-          }}
-        </h3>
+        <h3 class="text-lg font-medium">Deleted posters are hidden</h3>
 
         <p class="text-muted text-sm">
-          {{
-            activeDashboardTab === "in-progress"
-              ? "All of your posters are up to date."
-              : "Your published posters will appear here."
-          }}
+          Turn on Show deleted posters under Filters and sorting to include them
+          in your dashboard.
         </p>
+
+        <UButton
+          label="Show deleted posters"
+          color="neutral"
+          variant="subtle"
+          @click="showTombstonedPosters = true"
+        />
       </div>
 
-      <div v-else class="py-12 text-center">
+      <NuxtLink
+        v-else
+        to="/share"
+        class="group inline-block rounded-2xl px-8 py-6 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800/50"
+      >
         <div
-          v-if="posters.length > 0"
-          class="mx-auto flex max-w-md flex-col items-center gap-3"
+          class="mx-auto mb-4 flex h-24 w-24 items-center justify-center rounded-full bg-gray-100 transition-colors group-hover:bg-gray-200"
         >
-          <Icon name="i-lucide-archive-x" class="text-muted h-12 w-12" />
-
-          <h3 class="text-lg font-medium">Deleted posters are hidden</h3>
-
-          <p class="text-muted text-sm">
-            Turn on Show deleted posters under Filters and sorting to include
-            them in your dashboard.
-          </p>
-
-          <UButton
-            label="Show deleted posters"
-            color="neutral"
-            variant="subtle"
-            @click="showTombstonedPosters = true"
+          <Icon
+            name="heroicons:document-text"
+            class="h-12 w-12 text-gray-400 transition-colors group-hover:text-gray-500"
           />
         </div>
 
-        <NuxtLink
-          v-else
-          to="/share"
-          class="group inline-block rounded-2xl px-8 py-6 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800/50"
+        <h3 class="mb-2 text-lg font-medium text-gray-900 dark:text-gray-100">
+          {{
+            activeDashboardTab === "published"
+              ? "No published posters yet"
+              : "No posters in progress"
+          }}
+        </h3>
+
+        <p
+          class="mb-6 text-gray-500 underline-offset-2 group-hover:underline dark:text-gray-400"
         >
-          <div
-            class="mx-auto mb-4 flex h-24 w-24 items-center justify-center rounded-full bg-gray-100 transition-colors group-hover:bg-gray-200"
-          >
-            <Icon
-              name="heroicons:document-text"
-              class="h-12 w-12 text-gray-400 transition-colors group-hover:text-gray-500"
-            />
-          </div>
-
-          <h3 class="mb-2 text-lg font-medium text-gray-900 dark:text-gray-100">
-            {{
-              activeDashboardTab === "published"
-                ? "No published posters yet"
-                : "No posters in progress"
-            }}
-          </h3>
-
-          <p
-            class="mb-6 text-gray-500 underline-offset-2 group-hover:underline dark:text-gray-400"
-          >
-            {{
-              activeDashboardTab === "published"
-                ? "Your published posters will appear here after your first submission."
-                : "Start sharing a poster or bulk upload. Your drafts will appear here."
-            }}
-          </p>
-        </NuxtLink>
-      </div>
-    </template>
+          {{
+            activeDashboardTab === "published"
+              ? "Your published posters will appear here after your first submission."
+              : "Start sharing a poster or bulk upload. Your drafts will appear here."
+          }}
+        </p>
+      </NuxtLink>
+    </div>
 
     <UModal
       v-model:open="removeClaimOpen"
@@ -4238,5 +4324,5 @@ function posterMenuItems(poster: Poster) {
         </div>
       </template>
     </UModal>
-  </DashboardShell>
+  </DashboardPage>
 </template>

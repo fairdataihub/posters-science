@@ -3,12 +3,13 @@ import dayjs from "dayjs";
 
 definePageMeta({
   middleware: ["auth"],
+  appShell: true,
 });
 
 const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Liked Posters - Posters.science")}&description=${encodeURIComponent("View and revisit the posters you liked on Posters.science")}&app=posters-science&org=fairdataihub`;
 
 useSeoMeta({
-  title: "Liked Posters - Posters.science",
+  title: "Liked Posters",
   description: "Posters you have liked on Posters.science.",
   ogTitle: "Liked Posters - Posters.science",
   ogDescription: "Posters you have liked on Posters.science.",
@@ -52,20 +53,16 @@ if (error.value) {
 </script>
 
 <template>
-  <div class="mx-auto flex w-full max-w-screen-xl flex-col gap-6 px-6">
-    <UPageHeader
-      title="Liked Posters"
-      description="Posters you have liked."
-      :links="[
-        {
-          label: 'Discover Posters',
-          to: '/discover',
-          icon: 'heroicons:magnifying-glass',
-          color: 'primary' as const,
-          variant: 'outline' as const,
-        },
-      ]"
-    />
+  <DashboardPage title="Liked Posters" description="Posters you have liked.">
+    <template #actions>
+      <UButton
+        label="Discover Posters"
+        to="/discover"
+        icon="heroicons:magnifying-glass"
+        color="primary"
+        variant="outline"
+      />
+    </template>
 
     <UiSpinner :loading="status === 'pending'" overlay>
       <UPageGrid v-if="posters.length > 0">
@@ -150,5 +147,5 @@ if (error.value) {
         </template>
       </UEmpty>
     </UiSpinner>
-  </div>
+  </DashboardPage>
 </template>

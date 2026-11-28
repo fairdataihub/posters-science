@@ -4,6 +4,7 @@ import { parseApiError } from "~/utils/apiError";
 
 definePageMeta({
   middleware: ["auth"],
+  appShell: true,
 });
 
 useSeoMeta({
@@ -129,138 +130,135 @@ function onExists(collectionId: string) {
 </script>
 
 <template>
-  <div class="min-h-screen bg-gray-50 dark:bg-gray-900">
-    <UContainer>
-      <UPage>
-        <UPageHeader
-          title="Collections"
-          description="Group published posters, such as the posters from one conference or project, and share them as one page. Each poster still belongs to the person who published it."
-          :links="[
+  <DashboardPage
+    title="Collections"
+    description="Group published posters, such as the posters from one conference or project, and share them as one page. Each poster still belongs to the person who published it."
+  >
+    <template #actions>
+      <UButton
+        label="New collection"
+        icon="i-heroicons-plus"
+        @click="openCreate"
+      />
+    </template>
+
+    <div class="mx-auto w-full max-w-(--ui-container)">
+      <UPageBody class="mt-0 pb-0">
+        <UAlert
+          v-if="error"
+          color="error"
+          variant="subtle"
+          icon="i-heroicons-exclamation-circle"
+          title="Could not load your collections"
+          :actions="[
             {
-              label: 'New collection',
-              icon: 'i-heroicons-plus',
-              onClick: openCreate,
+              label: 'Try again',
+              color: 'error',
+              variant: 'solid',
+              onClick: () => refresh(),
             },
           ]"
         />
 
-        <UPageBody>
-          <UAlert
-            v-if="error"
-            color="error"
-            variant="subtle"
-            icon="i-heroicons-exclamation-circle"
-            title="Could not load your collections"
+        <UiSpinner v-else :loading="status === 'pending'" subtle>
+          <UEmpty
+            v-if="collections.length === 0"
+            icon="i-lucide-library-big"
+            title="You don't have any collections yet"
+            description="Make one for a conference, a project or a lab, then add your own posters or any poster from Discover."
             :actions="[
               {
-                label: 'Try again',
-                color: 'error',
-                variant: 'solid',
-                onClick: () => refresh(),
+                label: 'Create a collection',
+                icon: 'i-heroicons-plus',
+                onClick: openCreate,
               },
             ]"
           />
 
-          <UiSpinner v-else :loading="status === 'pending'" subtle>
-            <UEmpty
-              v-if="collections.length === 0"
-              icon="i-lucide-library-big"
-              title="You don't have any collections yet"
-              description="Make one for a conference, a project or a lab, then add your own posters or any poster from Discover."
-              :actions="[
-                {
-                  label: 'Create a collection',
-                  icon: 'i-heroicons-plus',
-                  onClick: openCreate,
-                },
-              ]"
-            />
+          <ul v-else class="grid w-full gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <li v-for="collection in collections" :key="collection.id">
+              <UCard class="h-full" :ui="{ body: 'space-y-3' }">
+                <NuxtLink :to="managePath(collection.id)" class="block">
+                  <CollectionCovers :covers="collection.covers" />
+                </NuxtLink>
 
-            <ul v-else class="grid w-full gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              <li v-for="collection in collections" :key="collection.id">
-                <UCard class="h-full" :ui="{ body: 'space-y-3' }">
-                  <NuxtLink :to="managePath(collection.id)" class="block">
-                    <CollectionCovers :covers="collection.covers" />
+                <div class="min-w-0">
+                  <NuxtLink
+                    :to="managePath(collection.id)"
+                    class="line-clamp-2 font-semibold break-words hover:underline"
+                  >
+                    {{ collection.name }}
                   </NuxtLink>
 
-                  <div class="min-w-0">
-                    <NuxtLink
-                      :to="managePath(collection.id)"
-                      class="line-clamp-2 font-semibold break-words hover:underline"
-                    >
-                      {{ collection.name }}
-                    </NuxtLink>
-
-                    <p
-                      v-if="collection.conference"
-                      class="text-muted mt-0.5 truncate text-sm"
-                    >
-                      {{ collection.conference }}
-                    </p>
-                  </div>
-
-                  <div
-                    class="text-muted flex flex-wrap items-center gap-2 text-sm"
+                  <p
+                    v-if="collection.conference"
+                    class="text-muted mt-0.5 truncate text-sm"
                   >
-                    <UBadge
-                      v-if="collection.hidden"
-                      color="error"
-                      variant="subtle"
-                      size="sm"
-                      icon="i-heroicons-eye-slash"
-                    >
-                      Hidden
-                    </UBadge>
+                    {{ collection.conference }}
+                  </p>
+                </div>
 
-                    <UBadge
-                      v-else
-                      :color="collection.isPublic ? 'success' : 'neutral'"
-                      variant="subtle"
-                      size="sm"
-                      :icon="
-                        collection.isPublic
-                          ? 'i-heroicons-globe-alt'
-                          : 'i-heroicons-lock-closed'
-                      "
-                    >
-                      {{ collection.isPublic ? "Public" : "Private" }}
-                    </UBadge>
+                <div
+                  class="text-muted flex flex-wrap items-center gap-2 text-sm"
+                >
+                  <UBadge
+                    v-if="collection.hidden"
+                    color="error"
+                    variant="subtle"
+                    size="sm"
+                    icon="i-heroicons-eye-slash"
+                  >
+                    Hidden
+                  </UBadge>
 
-                    <span>
-                      {{ collection.posterCount.toLocaleString() }}
-                      {{ collection.posterCount === 1 ? "poster" : "posters" }}
-                    </span>
-                  </div>
+                  <UBadge
+                    v-else
+                    :color="collection.isPublic ? 'success' : 'neutral'"
+                    variant="subtle"
+                    size="sm"
+                    :icon="
+                      collection.isPublic
+                        ? 'i-heroicons-globe-alt'
+                        : 'i-heroicons-lock-closed'
+                    "
+                  >
+                    {{ collection.isPublic ? "Public" : "Private" }}
+                  </UBadge>
 
-                  <div class="flex flex-wrap items-center gap-2">
-                    <UButton
-                      :to="collection.path"
-                      size="sm"
-                      color="neutral"
-                      variant="subtle"
-                      :label="
-                        collection.isPublic && !collection.hidden
-                          ? 'View page'
-                          : 'Preview'
-                      "
-                    />
+                  <span>
+                    {{ collection.posterCount.toLocaleString() }}
+                    {{ collection.posterCount === 1 ? "poster" : "posters" }}
+                  </span>
+                </div>
 
-                    <UButton
-                      size="sm"
-                      color="neutral"
-                      variant="outline"
-                      icon="i-heroicons-cog-6-tooth"
-                      label="Manage"
-                      :to="managePath(collection.id)"
-                    />
-                  </div>
-                </UCard>
-              </li>
-            </ul>
-          </UiSpinner>
-        </UPageBody>
-      </UPage>
-    </UContainer>
+                <div class="flex flex-wrap items-center gap-2">
+                  <UButton
+                    :to="collection.path"
+                    size="sm"
+                    color="neutral"
+                    variant="subtle"
+                    :label="
+                      collection.isPublic && !collection.hidden
+                        ? 'View page'
+                        : 'Preview'
+                    "
+                  />
+
+                  <UButton
+                    size="sm"
+                    color="neutral"
+                    variant="outline"
+                    icon="i-heroicons-cog-6-tooth"
+                    label="Manage"
+                    :to="managePath(collection.id)"
+                  />
+                </div>
+              </UCard>
+            </li>
+          </ul>
+        </UiSpinner>
+      </UPageBody>
+    </div>
 
     <CollectionCreatePane
       v-model:open="paneOpen"
@@ -268,5 +266,5 @@ function onExists(collectionId: string) {
       @created="onCreated"
       @exists="onExists"
     />
-  </div>
+  </DashboardPage>
 </template>

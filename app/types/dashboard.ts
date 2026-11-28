@@ -12,14 +12,14 @@ export type InProgressFilterOption = {
   count: number;
 };
 
-/** A view listed in the sidebar. Counts belong beside the results. */
+/** A dashboard view, named in the page header. Counts belong beside the results. */
 export type DashboardViewOption = {
   value: DashboardView;
   label: string;
   icon: string;
 };
 
-/** A Published filter as the sidebar lists it. */
+/** A Published filter as the Show menu lists it. */
 export type PublishedFilterOption = {
   value: PublishedFilter;
   label: string;

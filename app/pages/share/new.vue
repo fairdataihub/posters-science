@@ -8,6 +8,7 @@ import {
 
 definePageMeta({
   middleware: ["auth"],
+  appShell: true,
 });
 
 const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Share a Poster - Posters.science")}&description=${encodeURIComponent("Upload and share your scientific poster with the community")}&app=posters-science&org=fairdataihub`;
@@ -262,23 +263,12 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="mx-auto flex w-full max-w-screen-xl flex-col gap-6 px-6">
-    <UPageHeader
-      title="Upload Poster"
-      description="Upload the PDF or image file of your poster."
-    >
-      <template #headline>
-        <UBreadcrumb
-          :items="[
-            { label: 'Dashboard', to: '/dashboard' },
-            { label: 'Share Posters', to: '/share' },
-            { label: 'Upload Poster', to: '/share/new' },
-          ]"
-        />
-      </template>
-    </UPageHeader>
-
-    <div class="lg:col-span-2">
+  <DashboardPage
+    title="Upload Poster"
+    :breadcrumb="[{ label: 'Share Posters', to: '/share' }]"
+    description="Upload the PDF or image file of your poster."
+  >
+    <div class="mx-auto w-full max-w-screen-xl">
       <UiSpinner :loading="status === 2 || isUploading" overlay subtle>
         <UCard>
           <div class="space-y-6">
@@ -363,5 +353,5 @@ onUnmounted(() => {
         </UCard>
       </UiSpinner>
     </div>
-  </div>
+  </DashboardPage>
 </template>

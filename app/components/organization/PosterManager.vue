@@ -39,13 +39,6 @@ async function load() {
 onMounted(load);
 watch(() => props.organizationId, load);
 
-function thumbnail(poster: { posterId: number; imageUrl: string }) {
-  return (
-    poster.imageUrl ||
-    `https://api.dicebear.com/9.x/shapes/svg?seed=${poster.posterId}`
-  );
-}
-
 function addedByLabel(poster: OrganizationListedPoster) {
   if (poster.addedByMe) return "Added by you";
   if (!poster.addedByMember)
@@ -236,8 +229,9 @@ async function remove(poster: OrganizationListedPoster) {
             :key="poster.posterId"
             class="flex items-center gap-3 p-3"
           >
-            <img
-              :src="thumbnail(poster)"
+            <PosterImage
+              :src="poster.imageUrl"
+              :seed="poster.posterId"
               alt=""
               class="h-14 w-12 shrink-0 rounded object-contain"
             />
@@ -330,8 +324,9 @@ async function remove(poster: OrganizationListedPoster) {
               :key="poster.posterId"
               class="flex items-center gap-3 p-3"
             >
-              <img
-                :src="thumbnail(poster)"
+              <PosterImage
+                :src="poster.imageUrl"
+                :seed="poster.posterId"
                 alt=""
                 class="h-14 w-12 shrink-0 rounded object-contain"
               />

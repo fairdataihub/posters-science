@@ -17,9 +17,10 @@ defineProps<{
       :key="slot"
       class="flex items-center justify-center overflow-hidden bg-white dark:bg-gray-900"
     >
-      <img
+      <PosterImage
         v-if="covers[slot - 1]"
         :src="covers[slot - 1]!.imageUrl"
+        :seed="covers[slot - 1]!.posterId"
         alt=""
         loading="lazy"
         class="h-full w-full object-contain"

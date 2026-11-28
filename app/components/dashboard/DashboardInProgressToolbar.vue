@@ -43,6 +43,17 @@ function clearAll() {
       button-label="Search"
       @submit="search = draft.trim()"
     >
+      <template v-if="kinds.length > 1" #leading>
+        <USelect
+          v-model="kind"
+          :items="kinds"
+          value-key="value"
+          label-key="label"
+          aria-label="Show"
+          class="w-full sm:w-48"
+        />
+      </template>
+
       <div class="flex grow items-center justify-between gap-3">
         <p class="text-muted text-sm" aria-live="polite">
           {{ resultSummary }}
@@ -64,27 +75,6 @@ function clearAll() {
 
           <template #content>
             <div class="w-80 max-w-[calc(100vw-2rem)] space-y-5 p-4">
-              <div class="space-y-2 lg:hidden">
-                <p class="text-sm font-medium">Show</p>
-
-                <div
-                  class="flex flex-wrap gap-2"
-                  role="group"
-                  aria-label="In progress kind"
-                >
-                  <UButton
-                    v-for="option in kinds"
-                    :key="option.value"
-                    :label="option.label"
-                    size="xs"
-                    :color="kind === option.value ? 'primary' : 'neutral'"
-                    :variant="kind === option.value ? 'solid' : 'outline'"
-                    :aria-pressed="kind === option.value"
-                    @click="kind = option.value"
-                  />
-                </div>
-              </div>
-
               <UCheckboxGroup
                 v-if="hasBatches"
                 v-model="statuses"

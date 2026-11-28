@@ -8,6 +8,7 @@ import { parseApiError } from "~/utils/apiError";
 
 definePageMeta({
   middleware: ["auth"],
+  appShell: true,
 });
 
 const route = useRoute();
@@ -200,308 +201,291 @@ async function deleteOrganization() {
 </script>
 
 <template>
-  <div class="min-h-screen bg-gray-50 dark:bg-gray-900">
-    <UContainer>
-      <UPage>
-        <UEmpty
-          v-if="error || !organization"
-          class="py-16"
-          icon="i-lucide-building-2"
-          title="Organization not found"
-          description="This organization doesn't exist or you aren't a member of it."
-          :actions="[
-            {
-              label: 'Your organizations',
-              to: '/organizations',
-              color: 'neutral',
-              variant: 'subtle',
-            },
-          ]"
+  <DashboardPage
+    :title="organization?.name ?? 'Not found'"
+    :breadcrumb="[{ label: 'Organizations', to: '/organizations' }]"
+  >
+    <template v-if="!error && organization" #title>
+      <UAvatar
+        :src="organization.avatarUrl"
+        :alt="organization.name"
+        size="xs"
+        class="shrink-0"
+      />
+
+      <span class="truncate">{{ organization.name }}</span>
+    </template>
+
+    <template v-if="!error && organization" #description>
+      <span class="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <span class="flex items-center gap-1.5">
+          <UBadge :color="isOwner ? 'primary' : 'neutral'" variant="subtle">
+            {{ isOwner ? "Owner" : "Member" }}
+          </UBadge>
+
+          <UBadge
+            v-if="organization.hidden"
+            color="error"
+            variant="subtle"
+            icon="i-heroicons-eye-slash"
+          >
+            Hidden
+          </UBadge>
+
+          <UBadge
+            v-else
+            :color="organization.profilePublic ? 'success' : 'neutral'"
+            variant="subtle"
+            :icon="
+              organization.profilePublic
+                ? 'i-heroicons-globe-alt'
+                : 'i-heroicons-lock-closed'
+            "
+          >
+            {{ organization.profilePublic ? "Public" : "Private" }}
+          </UBadge>
+        </span>
+
+        <span class="flex items-center gap-2">
+          <span>
+            {{ organization.memberCount.toLocaleString() }}
+            {{ organization.memberCount === 1 ? "member" : "members" }}
+          </span>
+
+          <span class="text-dimmed" aria-hidden="true">·</span>
+
+          <span>
+            {{ organization.posterCount.toLocaleString() }}
+            {{ organization.posterCount === 1 ? "poster" : "posters" }}
+          </span>
+        </span>
+      </span>
+    </template>
+
+    <template v-if="!error && organization" #actions>
+      <UButton
+        :label="'View page'"
+        icon="i-heroicons-arrow-top-right-on-square"
+        :to="organization.path"
+        color="neutral"
+        variant="subtle"
+      />
+    </template>
+
+    <div class="mx-auto w-full max-w-(--ui-container)">
+      <UEmpty
+        v-if="error || !organization"
+        class="py-16"
+        icon="i-lucide-building-2"
+        title="Organization not found"
+        description="This organization doesn't exist or you aren't a member of it."
+        :actions="[
+          {
+            label: 'Your organizations',
+            to: '/organizations',
+            color: 'neutral',
+            variant: 'subtle',
+          },
+        ]"
+      />
+
+      <UPageBody v-else class="mt-0 space-y-6 pb-0">
+        <UAlert
+          v-if="organization.hidden"
+          color="error"
+          variant="subtle"
+          icon="i-heroicons-eye-slash"
+          title="Hidden by the Posters.science team"
+          :description="`The public page is unavailable, and posters are not affected. Reason: ${organization.hiddenReason}`"
         />
 
-        <template v-else>
-          <UPageHeader
-            :links="[
-              {
-                label: 'View page',
-                icon: 'i-heroicons-arrow-top-right-on-square',
-                to: organization.path,
-                color: 'neutral',
-                variant: 'subtle',
-              },
-            ]"
-          >
-            <template #headline>
-              <ULink
-                to="/organizations"
-                class="text-muted hover:text-default flex items-center gap-1 text-sm"
-              >
-                <UIcon name="i-heroicons-arrow-left" />
-                All organizations
-              </ULink>
+        <UTabs
+          v-model="activeTab"
+          :items="tabItems"
+          :content="false"
+          class="w-full"
+        />
+
+        <UCard v-if="activeTab === 'posters'">
+          <OrganizationPosterManager
+            :organization-id="organization.id"
+            :organization-name="organization.name"
+            :role="organization.role"
+            @changed="refresh()"
+          />
+        </UCard>
+
+        <UCard v-else-if="activeTab === 'collections'">
+          <OrganizationCollectionManager
+            :organization-id="organization.id"
+            :organization-name="organization.name"
+            :role="organization.role"
+          />
+        </UCard>
+
+        <UCard v-else-if="activeTab === 'members'">
+          <OrganizationMemberManager
+            :key="`${organization.id}-${organization.role}`"
+            :organization-id="organization.id"
+            :organization-name="organization.name"
+            @changed="refresh()"
+            @left="onLeft"
+          />
+        </UCard>
+
+        <div v-else class="space-y-6">
+          <UCard>
+            <template #header>
+              <h2 class="text-base font-semibold">Public page</h2>
             </template>
 
-            <template #title>
-              <span class="flex min-w-0 items-center gap-3">
-                <UAvatar
-                  :src="organization.avatarUrl"
-                  :alt="organization.name"
-                  size="lg"
-                  class="shrink-0"
+            <div class="space-y-3">
+              <p class="text-muted text-sm">
+                {{
+                  organization.hidden
+                    ? "Only members and site admins can see this page while it is hidden."
+                    : organization.profilePublic
+                      ? "Anyone with the link can see this organization's name, description, website and the posters its members have chosen to show. Members are never named, and search engines are asked not to index it."
+                      : "Only members can see this page. Make it public to share the organization's name, description, website and the posters its members have chosen to show. Members are never named."
+                }}
+              </p>
+
+              <div class="flex flex-wrap items-center gap-2">
+                <code
+                  class="rounded bg-gray-100 px-2 py-1 text-sm break-all dark:bg-gray-800"
+                >
+                  {{ publicUrl }}
+                </code>
+
+                <UButton
+                  size="xs"
+                  color="neutral"
+                  variant="subtle"
+                  icon="i-heroicons-clipboard"
+                  label="Copy link"
+                  @click="copyLink"
+                />
+              </div>
+
+              <template v-if="isOwner && !organization.hidden">
+                <UButton
+                  v-if="organization.profilePublic"
+                  size="sm"
+                  color="warning"
+                  variant="subtle"
+                  icon="i-heroicons-lock-closed"
+                  label="Make page private"
+                  :loading="updatingVisibility"
+                  @click="setVisibility(false)"
                 />
 
-                <span class="min-w-0 break-words">{{ organization.name }}</span>
-              </span>
-            </template>
-
-            <template #description>
-              <span class="flex flex-wrap items-center gap-2 text-sm">
-                <UBadge
-                  :color="isOwner ? 'primary' : 'neutral'"
-                  variant="subtle"
-                >
-                  {{ isOwner ? "Owner" : "Member" }}
-                </UBadge>
-
-                <UBadge
-                  v-if="organization.hidden"
-                  color="error"
-                  variant="subtle"
-                  icon="i-heroicons-eye-slash"
-                >
-                  Hidden
-                </UBadge>
-
-                <UBadge
+                <UButton
                   v-else
-                  :color="organization.profilePublic ? 'success' : 'neutral'"
-                  variant="subtle"
-                  :icon="
-                    organization.profilePublic
-                      ? 'i-heroicons-globe-alt'
-                      : 'i-heroicons-lock-closed'
-                  "
-                >
-                  {{ organization.profilePublic ? "Public" : "Private" }}
-                </UBadge>
-
-                <span>
-                  {{ organization.memberCount.toLocaleString() }}
-                  {{ organization.memberCount === 1 ? "member" : "members" }}
-                </span>
-
-                <span>
-                  {{ organization.posterCount.toLocaleString() }}
-                  {{ organization.posterCount === 1 ? "poster" : "posters" }}
-                </span>
-              </span>
-            </template>
-          </UPageHeader>
-
-          <UPageBody class="space-y-6">
-            <UAlert
-              v-if="organization.hidden"
-              color="error"
-              variant="subtle"
-              icon="i-heroicons-eye-slash"
-              title="Hidden by the Posters.science team"
-              :description="`The public page is unavailable, and posters are not affected. Reason: ${organization.hiddenReason}`"
-            />
-
-            <UTabs
-              v-model="activeTab"
-              :items="tabItems"
-              :content="false"
-              class="w-full"
-            />
-
-            <UCard v-if="activeTab === 'posters'">
-              <OrganizationPosterManager
-                :organization-id="organization.id"
-                :organization-name="organization.name"
-                :role="organization.role"
-                @changed="refresh()"
-              />
-            </UCard>
-
-            <UCard v-else-if="activeTab === 'collections'">
-              <OrganizationCollectionManager
-                :organization-id="organization.id"
-                :organization-name="organization.name"
-                :role="organization.role"
-              />
-            </UCard>
-
-            <UCard v-else-if="activeTab === 'members'">
-              <OrganizationMemberManager
-                :key="`${organization.id}-${organization.role}`"
-                :organization-id="organization.id"
-                :organization-name="organization.name"
-                @changed="refresh()"
-                @left="onLeft"
-              />
-            </UCard>
-
-            <div v-else class="space-y-6">
-              <UCard>
-                <template #header>
-                  <h2 class="text-base font-semibold">Public page</h2>
-                </template>
-
-                <div class="space-y-3">
-                  <p class="text-muted text-sm">
-                    {{
-                      organization.hidden
-                        ? "Only members and site admins can see this page while it is hidden."
-                        : organization.profilePublic
-                          ? "Anyone with the link can see this organization's name, description, website and the posters its members have chosen to show. Members are never named, and search engines are asked not to index it."
-                          : "Only members can see this page. Make it public to share the organization's name, description, website and the posters its members have chosen to show. Members are never named."
-                    }}
-                  </p>
-
-                  <div class="flex flex-wrap items-center gap-2">
-                    <code
-                      class="rounded bg-gray-100 px-2 py-1 text-sm break-all dark:bg-gray-800"
-                    >
-                      {{ publicUrl }}
-                    </code>
-
-                    <UButton
-                      size="xs"
-                      color="neutral"
-                      variant="subtle"
-                      icon="i-heroicons-clipboard"
-                      label="Copy link"
-                      @click="copyLink"
-                    />
-                  </div>
-
-                  <template v-if="isOwner && !organization.hidden">
-                    <UButton
-                      v-if="organization.profilePublic"
-                      size="sm"
-                      color="warning"
-                      variant="subtle"
-                      icon="i-heroicons-lock-closed"
-                      label="Make page private"
-                      :loading="updatingVisibility"
-                      @click="setVisibility(false)"
-                    />
-
-                    <UButton
-                      v-else
-                      size="sm"
-                      icon="i-heroicons-globe-alt"
-                      label="Make page public"
-                      :loading="updatingVisibility"
-                      @click="setVisibility(true)"
-                    />
-                  </template>
-
-                  <USwitch
-                    v-if="isOwner"
-                    :model-value="organization.showMemberCount"
-                    :loading="updatingMemberCount"
-                    :disabled="updatingMemberCount"
-                    label="Show the number of members"
-                    description="Visitors see how many members the organization has, but never who they are. Members always see the count."
-                    class="border-default border-t pt-3"
-                    @update:model-value="setShowMemberCount"
-                  />
-
-                  <p
-                    v-else
-                    class="text-muted border-default border-t pt-3 text-sm"
-                  >
-                    {{
-                      organization.showMemberCount
-                        ? "The public page shows how many members the organization has, but never who they are."
-                        : "The public page doesn't show how many members the organization has."
-                    }}
-                    Only an owner can change this.
-                  </p>
-                </div>
-              </UCard>
-
-              <UCard>
-                <template #header>
-                  <h2 class="text-base font-semibold">Details</h2>
-                </template>
-
-                <OrganizationDetailsForm
-                  v-if="isOwner"
-                  :key="organization.id"
-                  :initial="{
-                    name: organization.name,
-                    description: organization.description,
-                    websiteUrl: organization.websiteUrl,
-                  }"
-                  submit-label="Save changes"
-                  :loading="saving"
-                  @submit="saveDetails"
+                  size="sm"
+                  icon="i-heroicons-globe-alt"
+                  label="Make page public"
+                  :loading="updatingVisibility"
+                  @click="setVisibility(true)"
                 />
+              </template>
 
-                <dl v-else class="space-y-3 text-sm">
-                  <div>
-                    <dt class="font-medium">Name</dt>
+              <USwitch
+                v-if="isOwner"
+                :model-value="organization.showMemberCount"
+                :loading="updatingMemberCount"
+                :disabled="updatingMemberCount"
+                label="Show the number of members"
+                description="Visitors see how many members the organization has, but never who they are. Members always see the count."
+                class="border-default border-t pt-3"
+                @update:model-value="setShowMemberCount"
+              />
 
-                    <dd class="text-muted break-words">
-                      {{ organization.name }}
-                    </dd>
-                  </div>
-
-                  <div>
-                    <dt class="font-medium">Description</dt>
-
-                    <dd class="text-muted break-words whitespace-pre-line">
-                      {{ organization.description || "None yet" }}
-                    </dd>
-                  </div>
-
-                  <div>
-                    <dt class="font-medium">Website</dt>
-
-                    <dd class="text-muted break-all">
-                      {{ organization.websiteUrl || "None yet" }}
-                    </dd>
-                  </div>
-
-                  <p class="text-muted">
-                    Only an owner can change these details.
-                  </p>
-                </dl>
-              </UCard>
-
-              <UCard v-if="isOwner">
-                <template #header>
-                  <h2 class="text-base font-semibold">Delete organization</h2>
-                </template>
-
-                <div class="space-y-3">
-                  <p class="text-muted text-sm">
-                    {{
-                      organization.hidden
-                        ? "A hidden organization can't be deleted. Contact the Posters.science team if you need it removed."
-                        : "This removes the page, its members and its list of posters. The posters themselves stay published and keep their owners."
-                    }}
-                  </p>
-
-                  <UButton
-                    size="sm"
-                    color="error"
-                    variant="subtle"
-                    icon="i-heroicons-trash"
-                    label="Delete organization"
-                    :disabled="organization.hidden"
-                    @click="deleteOpen = true"
-                  />
-                </div>
-              </UCard>
+              <p v-else class="text-muted border-default border-t pt-3 text-sm">
+                {{
+                  organization.showMemberCount
+                    ? "The public page shows how many members the organization has, but never who they are."
+                    : "The public page doesn't show how many members the organization has."
+                }}
+                Only an owner can change this.
+              </p>
             </div>
-          </UPageBody>
-        </template>
-      </UPage>
-    </UContainer>
+          </UCard>
+
+          <UCard>
+            <template #header>
+              <h2 class="text-base font-semibold">Details</h2>
+            </template>
+
+            <OrganizationDetailsForm
+              v-if="isOwner"
+              :key="organization.id"
+              :initial="{
+                name: organization.name,
+                description: organization.description,
+                websiteUrl: organization.websiteUrl,
+              }"
+              submit-label="Save changes"
+              :loading="saving"
+              @submit="saveDetails"
+            />
+
+            <dl v-else class="space-y-3 text-sm">
+              <div>
+                <dt class="font-medium">Name</dt>
+
+                <dd class="text-muted break-words">
+                  {{ organization.name }}
+                </dd>
+              </div>
+
+              <div>
+                <dt class="font-medium">Description</dt>
+
+                <dd class="text-muted break-words whitespace-pre-line">
+                  {{ organization.description || "None yet" }}
+                </dd>
+              </div>
+
+              <div>
+                <dt class="font-medium">Website</dt>
+
+                <dd class="text-muted break-all">
+                  {{ organization.websiteUrl || "None yet" }}
+                </dd>
+              </div>
+
+              <p class="text-muted">Only an owner can change these details.</p>
+            </dl>
+          </UCard>
+
+          <UCard v-if="isOwner">
+            <template #header>
+              <h2 class="text-base font-semibold">Delete organization</h2>
+            </template>
+
+            <div class="space-y-3">
+              <p class="text-muted text-sm">
+                {{
+                  organization.hidden
+                    ? "A hidden organization can't be deleted. Contact the Posters.science team if you need it removed."
+                    : "This removes the page, its members and its list of posters. The posters themselves stay published and keep their owners."
+                }}
+              </p>
+
+              <UButton
+                size="sm"
+                color="error"
+                variant="subtle"
+                icon="i-heroicons-trash"
+                label="Delete organization"
+                :disabled="organization.hidden"
+                @click="deleteOpen = true"
+              />
+            </div>
+          </UCard>
+        </div>
+      </UPageBody>
+    </div>
 
     <UModal
       v-model:open="deleteOpen"
@@ -526,5 +510,5 @@ async function deleteOrganization() {
         </div>
       </template>
     </UModal>
-  </div>
+  </DashboardPage>
 </template>

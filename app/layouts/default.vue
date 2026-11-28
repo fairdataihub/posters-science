@@ -64,6 +64,12 @@ const headerItems = computed<NavigationMenuItem[]>(() => [
   // },
 ]);
 
+const logoutItem: NavigationMenuItem = {
+  icon: "majesticons:logout",
+  label: "Logout",
+  onSelect: logout,
+};
+
 const mobileProfileNavItems = computed<NavigationMenuItem[]>(() => [
   {
     icon: "material-symbols:account-circle",
@@ -90,11 +96,7 @@ const mobileProfileNavItems = computed<NavigationMenuItem[]>(() => [
     label: "Settings",
     to: "/profile",
   },
-  {
-    icon: "majesticons:logout",
-    label: "Logout",
-    onSelect: logout,
-  },
+  logoutItem,
 ]);
 
 const mobileFeedbackNavItems: NavigationMenuItem[] = [
@@ -116,9 +118,10 @@ const footerItems: NavigationMenuItem[] = [
 
 <template>
   <!-- fitViewport pages end at the footer with no scroll: main fills only
-       the space the header and footer leave. appShell pages, such as the
-       dashboard, fill the window under the header and scroll inside their
-       own panels, so they have no footer or floating feedback button. -->
+       the space the header and footer leave. appShell pages, the signed-in
+       ones such as the dashboard and /share, get the sidebar and fill the
+       window under the header, scrolling inside their own panels, so they
+       have no footer or floating feedback button. -->
   <div
     class="relative"
     :class="{
@@ -168,10 +171,10 @@ const footerItems: NavigationMenuItem[] = [
         right: 'lg:flex-none',
       }"
     >
+      <!-- UHeader already links its title to /, so no link here: a link
+           inside a link breaks hydration. -->
       <template #title>
-        <NuxtLink to="/" class="flex text-2xl font-bold">
-          Posters.science
-        </NuxtLink>
+        <span class="text-2xl">Posters.science</span>
       </template>
 
       <UNavigationMenu :items="headerItems" />
@@ -268,6 +271,23 @@ const footerItems: NavigationMenuItem[] = [
               </NuxtLink>
             </div>
 
+            <!-- On appShell pages this is the only menu on mobile (the
+                 sidebar shows from lg up), so it lists the sidebar's links
+                 in place of the account list. -->
+            <div v-else-if="route.meta.appShell" class="flex flex-col gap-2">
+              <DashboardSidebarNav />
+
+              <USeparator />
+
+              <DashboardSidebarFooter />
+
+              <UNavigationMenu
+                :items="[logoutItem]"
+                orientation="vertical"
+                class="w-full"
+              />
+            </div>
+
             <div v-else class="flex flex-col">
               <div class="flex items-center gap-3 px-3 py-2">
                 <UAvatar
@@ -309,7 +329,11 @@ const footerItems: NavigationMenuItem[] = [
         'relative min-h-0 flex-1': route.meta.appShell,
       }"
     >
-      <slot />
+      <DashboardShell v-if="route.meta.appShell">
+        <slot />
+      </DashboardShell>
+
+      <slot v-else />
     </UMain>
 
     <UFooter v-if="!route.meta.appShell">

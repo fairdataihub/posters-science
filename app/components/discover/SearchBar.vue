@@ -7,9 +7,10 @@ import {
 } from "#shared/utils/discoverSearch";
 
 // The Discover search box: the input, its field-prefix help and the line that
-// explains what the submitted search matched. Used on /discover and on public
-// profiles, so both understand the same search syntax. Anything in the default
-// slot sits on the same row as the input, and wraps below it when narrow.
+// explains what the submitted search matched. Used on /discover, on public
+// profiles and on the dashboard, so all understand the same search syntax.
+// The leading slot goes before the input and the default slot after it, on
+// the same row, wrapping when narrow.
 
 const props = withDefaults(
   defineProps<{
@@ -89,6 +90,8 @@ const searchScopeLabel = computed(() => {
 <template>
   <div>
     <div class="flex flex-wrap items-center gap-x-4 gap-y-3 pb-4">
+      <slot name="leading" />
+
       <div class="flex w-full items-center gap-2 sm:w-auto">
         <UTooltip
           :ui="{ content: 'h-auto max-w-md items-start p-3' }"

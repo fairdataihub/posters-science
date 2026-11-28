@@ -4,7 +4,7 @@ import { useEventListener } from "@vueuse/core";
 const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("FAQ - Posters.science")}&description=${encodeURIComponent("Answers to common questions about Posters.science")}&app=posters-science&org=fairdataihub`;
 
 useSeoMeta({
-  title: "FAQ - Posters.science",
+  title: "FAQ",
   description:
     "Answers to common questions about finding, sharing and claiming scientific posters on Posters.science.",
   ogTitle: "FAQ - Posters.science",

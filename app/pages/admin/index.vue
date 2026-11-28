@@ -16,7 +16,7 @@ definePageMeta({
 const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Admin - Posters.science")}&description=${encodeURIComponent("Administrative dashboard for managing Posters.science")}&app=posters-science&org=fairdataihub`;
 
 useSeoMeta({
-  title: "Admin - Posters.science",
+  title: "Admin",
   description: "Administrative dashboard for managing Posters.science.",
   ogTitle: "Admin - Posters.science",
   ogDescription: "Administrative dashboard for managing Posters.science.",

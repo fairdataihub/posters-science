@@ -13,7 +13,7 @@ type SupportedConference = {
 const ogImage = `https://kalai.fairdataihub.org/api/generate?title=${encodeURIComponent("Conferences - Posters.science")}&description=${encodeURIComponent("Browse conferences supported on Posters.science and submit your poster")}&app=posters-science&org=fairdataihub`;
 
 useSeoMeta({
-  title: "Conferences - Posters.science",
+  title: "Conferences",
   description:
     "Browse conferences supported on Posters.science and submit your poster.",
   ogTitle: "Conferences - Posters.science",
@@ -132,6 +132,7 @@ function browsePostersFor(conferenceId: string) {
               <p class="text-primary text-sm font-semibold">
                 {{ conference.acronym }} {{ conference.year }}
               </p>
+
               <h3 class="line-clamp-2 min-h-14 text-lg font-semibold">
                 {{ conference.name }}
               </h3>
@@ -149,6 +150,7 @@ function browsePostersFor(conferenceId: string) {
                 />
                 {{ conference.location }}
               </li>
+
               <li class="flex items-center gap-2">
                 <UIcon
                   name="i-lucide-calendar"
@@ -156,6 +158,7 @@ function browsePostersFor(conferenceId: string) {
                 />
                 {{ conference.dateRange }}
               </li>
+
               <li class="flex items-center gap-2">
                 <UIcon
                   name="i-lucide-images"
@@ -176,6 +179,7 @@ function browsePostersFor(conferenceId: string) {
                 label="Browse Posters"
                 class="flex-1 justify-center sm:flex-none"
               />
+
               <UButton
                 :to="posterSubmitTo(conference.id)"
                 icon="material-symbols:post-add"
